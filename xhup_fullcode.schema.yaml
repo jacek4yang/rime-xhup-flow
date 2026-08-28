@@ -1,0 +1,77 @@
+# Rime schema
+# encoding: utf-8
+---
+schema:
+  schema_id: xhup_fullcode
+  name: 小鹤音形·全码优先
+  version: 2026.08.28
+  author:
+    - 小鹤官方音形键位
+    - Rime 社区集成
+  description: |
+    面向通用 Rime 环境的小鹤音形方案。
+    四码单字使用高权重固定候选，适合全码盲打；连续双拼音节可组成词语和句子。
+    两字母音节后可直接追加首个形码形成三码输入，也可使用 / 加一至两个形码显式辅助选字。
+
+switches:
+  - name: ascii_mode
+    reset: 0
+    states: [中文, English]
+  - name: ascii_punct
+    states: [。，, ．，]
+  - name: full_shape
+    states: [半角, 全角]
+
+engine:
+  processors:
+    - ascii_composer
+    - recognizer
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - ascii_segmentor
+    - matcher
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - punct_translator
+    - script_translator
+  filters:
+    - uniquifier
+
+speller:
+  alphabet: zyxwvutsrqponmlkjihgfedcba/
+  initials: zyxwvutsrqponmlkjihgfedcba
+  delimiter: " '"
+  algebra:
+    - derive|^([a-z][a-z])~([a-z])([a-z])$|$1$2|
+    - derive|^([a-z][a-z])~([a-z])([a-z])$|$1/$2$3|
+    - derive|^([a-z][a-z])~([a-z])([a-z])$|$1/$2|
+    - derive/^([a-z][a-z])~([a-z])([a-z])$/$1/
+    - erase/.*~.*/
+
+translator:
+  dictionary: xhup_fullcode
+  prism: xhup_fullcode
+  user_dict: xhup_fullcode_user
+  enable_completion: true
+  enable_sentence: true
+  enable_user_dict: true
+  spelling_hints: 0
+  max_sentence_length: 12
+  disable_user_dict_for_patterns:
+    - '^[a-z]{4}$'
+
+punctuator:
+  import_preset: default
+
+key_binder:
+  import_preset: default
+
+recognizer:
+  import_preset: default
