@@ -1,0 +1,11 @@
+# Rime dictionary
+# encoding: utf-8
+---
+name: xhup_fullcode
+version: 2026.08.28
+sort: by_weight
+import_tables:
+  - xhup_fullcode_fixed_chars
+  - flypy_chars
+  - flypy_base
+...
