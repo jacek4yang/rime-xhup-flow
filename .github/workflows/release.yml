@@ -1,0 +1,367 @@
+name: 构建并发布
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - VERSION
+      - .github/workflows/release.yml
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 发布版本，例如 1.0.1；必须与 VERSION 文件一致
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: 校验、打包并发布
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 确定发布版本
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          FILE_VERSION="$(tr -d '[:space:]' < VERSION)"
+          FILE_VERSION="${FILE_VERSION#v}"
+
+          if [[ -n "${INPUT_VERSION:-}" ]]; then
+            REQUESTED_VERSION="${INPUT_VERSION#v}"
+            if [[ "$REQUESTED_VERSION" != "$FILE_VERSION" ]]; then
+              echo "::error::手动输入版本 $REQUESTED_VERSION 与 VERSION 文件中的 $FILE_VERSION 不一致"
+              exit 1
+            fi
+          fi
+
+          if ! [[ "$FILE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::VERSION 格式无效：$FILE_VERSION"
+            exit 1
+          fi
+
+          echo "version=$FILE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$FILE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "准备发布 v$FILE_VERSION"
+
+      - name: 补齐并校验固定来源词典
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import hashlib
+          import json
+          import time
+          import urllib.request
+          from pathlib import Path
+
+          SOURCES = [
+              {
+                  "repo": "boomker/rime-fast-xhup",
+                  "blob": "8c3303f5cf46f03c9e60fd64f6436bab9eaec294",
+                  "path": "flypy_base.dict.yaml",
+                  "sha256": "214f963d1f2f112599c7a6f466ffc1f93f213ef0c018e015d186e34b75f13fbb",
+              },
+              {
+                  "repo": "boomker/rime-fast-xhup",
+                  "blob": "3c2773335c8108bbe896b9af588d619e22045132",
+                  "path": "flypy_chars.dict.yaml",
+                  "sha256": "5eeda7a9976cf7d8ed1bc487bdccc02d7f423425515d814309328ff61b6b4291",
+              },
+          ]
+
+          def sha256(path: Path) -> str:
+              h = hashlib.sha256()
+              with path.open("rb") as f:
+                  for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          def fetch_blob(repo: str, blob: str, target: Path, expected: str) -> None:
+              if target.exists() and sha256(target) == expected:
+                  print(f"{target}: 已存在且校验通过")
+                  return
+
+              url = f"https://api.github.com/repos/{repo}/git/blobs/{blob}"
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "rime-xhup-fullcode-release",
+                  },
+              )
+
+              last_error = None
+              for attempt in range(1, 6):
+                  try:
+                      print(f"下载 {target}：第 {attempt} 次尝试")
+                      with urllib.request.urlopen(request, timeout=180) as response:
+                          payload = json.load(response)
+                      if payload.get("encoding") != "base64":
+                          raise RuntimeError(f"GitHub Blob 编码异常：{payload.get('encoding')!r}")
+                      content = base64.b64decode(payload["content"])
+                      target.write_bytes(content)
+                      actual = sha256(target)
+                      if actual != expected:
+                          target.unlink(missing_ok=True)
+                          raise RuntimeError(
+                              f"{target} SHA-256 不匹配：期望 {expected}，实际 {actual}"
+                          )
+                      print(f"{target}: SHA-256 校验通过")
+                      return
+                  except Exception as exc:  # noqa: BLE001
+                      last_error = exc
+                      if attempt < 5:
+                          time.sleep(attempt * 3)
+
+              raise RuntimeError(f"无法获取 {target}: {last_error}")
+
+          for item in SOURCES:
+              fetch_blob(
+                  item["repo"],
+                  item["blob"],
+                  Path(item["path"]),
+                  item["sha256"],
+              )
+          PY
+
+          printf '%s  %s\n' \
+            '214f963d1f2f112599c7a6f466ffc1f93f213ef0c018e015d186e34b75f13fbb' \
+            'flypy_base.dict.yaml' | sha256sum -c -
+
+          printf '%s  %s\n' \
+            '5eeda7a9976cf7d8ed1bc487bdccc02d7f423425515d814309328ff61b6b4291' \
+            'flypy_chars.dict.yaml' | sha256sum -c -
+
+      - name: 生成四码单字高权重词典
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          source = Path("flypy_chars.dict.yaml")
+          target = Path("xhup_fullcode_fixed_chars.dict.yaml")
+
+          lines = source.read_text(encoding="utf-8").splitlines()
+          try:
+              data_start = lines.index("...") + 1
+          except ValueError as exc:
+              raise SystemExit("flypy_chars.dict.yaml 缺少词典头结束标记 ...") from exc
+
+          rows = []
+          for line in lines[data_start:]:
+              if not line.strip():
+                  continue
+              parts = line.split("\t")
+              if len(parts) < 3:
+                  raise SystemExit(f"无法解析词典行：{line!r}")
+              text, code, weight = parts[0], parts[1], parts[2]
+              rows.append(f"{text}\t{code.replace('~', '')}\t{1_000_000_000 + int(weight)}")
+
+          output = "\n".join(
+              [
+                  "# Rime dictionary",
+                  "# encoding: utf-8",
+                  "---",
+                  "name: xhup_fullcode_fixed_chars",
+                  "version: 2026.08.28",
+                  "sort: by_weight",
+                  "...",
+                  *rows,
+              ]
+          ) + "\n"
+
+          target.write_text(output, encoding="utf-8", newline="\n")
+          PY
+
+          printf '%s  %s\n' \
+            '2279019377051ceaf264c77f09dc2653623ec30d6297a1e40b13ee50044f1507' \
+            'xhup_fullcode_fixed_chars.dict.yaml' | sha256sum -c -
+
+      - name: 检查方案完整性和隐私文件
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required=(
+            README.md
+            CHANGELOG.md
+            NOTICE.md
+            LICENSE
+            VERSION
+            default.custom.yaml
+            xhup_fullcode.schema.yaml
+            xhup_fullcode.dict.yaml
+            xhup_fullcode_fixed_chars.dict.yaml
+            flypy_chars.dict.yaml
+            flypy_base.dict.yaml
+          )
+
+          for file in "${required[@]}"; do
+            if [[ ! -s "$file" ]]; then
+              echo "::error::缺少必要文件或文件为空：$file"
+              exit 1
+            fi
+          done
+
+          grep -q 'schema_id: xhup_fullcode' xhup_fullcode.schema.yaml
+          grep -q 'dictionary: xhup_fullcode' xhup_fullcode.schema.yaml
+          grep -q 'user_dict: xhup_fullcode_user' xhup_fullcode.schema.yaml
+          grep -q 'xhup_fullcode_fixed_chars' xhup_fullcode.dict.yaml
+          grep -q 'flypy_chars' xhup_fullcode.dict.yaml
+          grep -q 'flypy_base' xhup_fullcode.dict.yaml
+
+          if git ls-files | grep -E '(^|/)(installation\.yaml|user\.yaml|sync/|build/|[^/]*\.userdb(/|$)|[^/]*\.userdb\.txt$)' ; then
+            echo "::error::仓库中发现不应公开的 Rime 本机状态或个人数据"
+            exit 1
+          fi
+
+          if grep -RniE 't14p|installation_id|sync_dir' \
+              README.md CHANGELOG.md NOTICE.md default.custom.yaml \
+              xhup_fullcode.schema.yaml xhup_fullcode.dict.yaml; then
+            echo "::error::发现设备相关残留信息"
+            exit 1
+          fi
+
+          echo "完整性与隐私检查通过"
+
+      - name: 将固定词典写入仓库
+        id: materialize
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git add \
+            flypy_base.dict.yaml \
+            flypy_chars.dict.yaml \
+            xhup_fullcode_fixed_chars.dict.yaml
+
+          if git diff --cached --quiet; then
+            echo "词典文件已经是固定版本，无需提交"
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'chore: 固化 v${{ steps.version.outputs.version }} 词典数据 [skip ci]'
+            git push origin HEAD:main
+          fi
+
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: 生成发布包
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION='${{ steps.version.outputs.version }}'
+          PACKAGE="rime-xhup-fullcode-v${VERSION}"
+
+          rm -rf dist
+          mkdir -p "dist/$PACKAGE"
+
+          cp \
+            README.md \
+            CHANGELOG.md \
+            NOTICE.md \
+            LICENSE \
+            VERSION \
+            default.custom.yaml \
+            xhup_fullcode.schema.yaml \
+            xhup_fullcode.dict.yaml \
+            xhup_fullcode_fixed_chars.dict.yaml \
+            flypy_chars.dict.yaml \
+            flypy_base.dict.yaml \
+            "dist/$PACKAGE/"
+
+          (
+            cd dist
+            zip -9 -q -r "$PACKAGE.zip" "$PACKAGE"
+          )
+
+          (
+            cd dist
+            sha256sum "$PACKAGE.zip" > SHA256SUMS.txt
+          )
+
+          echo "package=$PACKAGE" >> "$GITHUB_OUTPUT"
+          echo "zip=dist/$PACKAGE.zip" >> "$GITHUB_OUTPUT"
+          echo "sha256=dist/SHA256SUMS.txt" >> "$GITHUB_OUTPUT"
+
+          ls -lh "dist/$PACKAGE.zip" dist/SHA256SUMS.txt
+          cat dist/SHA256SUMS.txt
+
+      - name: 发布 GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TARGET_COMMIT: ${{ steps.materialize.outputs.commit }}
+          ZIP_FILE: ${{ steps.package.outputs.zip }}
+          SHA_FILE: ${{ steps.package.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在，本次不重复创建。"
+            exit 0
+          fi
+
+          cat > /tmp/release-notes.md <<EOF
+          # Rime 小鹤音形·全码优先 $TAG
+
+          首个面向中文用户公开发布的小鹤音形全码优先方案。
+
+          ## 主要内容
+
+          - 小鹤双拼 + 鹤形辅助码；
+          - 四码单字高权重固定候选；
+          - 保留连续组词与句子输入；
+          - 支持三码形码辅助与 \`/\` 显式形码辅助；
+          - Windows、macOS、Linux 通用；
+          - 已移除设备标识、同步 UUID、个人 userdb 与构建缓存；
+          - 发布包内包含完整方案和固定版本基础词典。
+
+          ## 下载
+
+          普通用户下载：
+
+          \`rime-xhup-fullcode-v${VERSION}.zip\`
+
+          下载后按照仓库 README 中对应系统的中文安装教程操作。
+
+          \`SHA256SUMS.txt\` 用于校验发布包完整性。
+          EOF
+
+          gh release create "$TAG" \
+            "$ZIP_FILE" \
+            "$SHA_FILE" \
+            --target "$TARGET_COMMIT" \
+            --title "Rime 小鹤音形·全码优先 $TAG" \
+            --notes-file /tmp/release-notes.md
+
+          echo "已发布 $TAG"
