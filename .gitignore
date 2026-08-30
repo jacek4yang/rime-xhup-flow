@@ -1,0 +1,35 @@
+# Rime 本地部署生成文件
+/build/
+*.bin
+*.reverse.bin
+*.prism.bin
+*.table.bin
+
+# 设备身份与本机状态
+/installation.yaml
+/user.yaml
+/sync/
+
+# 个人用户词典 / LevelDB
+*.userdb/
+*.userdb.txt
+*.ldb
+LOCK
+LOG
+LOG.old
+MANIFEST-*
+CURRENT
+
+# 本地备份与压缩包
+*.7z
+*.zip
+*.tar
+*.tar.gz
+*.bak
+*~
+
+# 系统与编辑器文件
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
