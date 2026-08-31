@@ -4,7 +4,14 @@ AI 代理在本仓库工作的入口约束。详细流程见 [CONTRIBUTING.md](C
 
 ## 项目概述
 
-Rime「小鹤音形·全码优先」输入方案:纯静态 YAML 方案与词典文件,无应用代码、无构建系统。校验、打包与发布由 `.github/workflows/release.yml` 在发布时完成。各文件用途见 README 的「仓库文件说明」一节。
+本仓库是 XHUP Flow 项目,包含:
+
+- 根目录的 Rime「小鹤音形·全码优先」输入方案与词典(静态 YAML,行为保持不变);校验、打包与发布由 `.github/workflows/release.yml` 完成,各文件用途见 README 的「仓库文件说明」一节。
+- Rust workspace(`crates/xhup-core`、`crates/xhup-analyzer`、`crates/xhup-generator`、`crates/xhup-cli`):承载领域逻辑。
+- `trainer/`:Tauri 2 + React + TypeScript + Vite + pnpm 桌面应用,`trainer/src-tauri` 是 workspace 成员。
+- `data/`、`rime/`:预留目录。
+
+架构边界:Rust 负责领域逻辑;React 负责展示与交互;Tauri 仅作薄平台层。
 
 ## 硬性规则
 
@@ -28,7 +35,7 @@ Rime「小鹤音形·全码优先」输入方案:纯静态 YAML 方案与词典�
 
 ## 入库规则
 
-绝不提交:构建产物、运行时状态、本地缓存、机器相关文件(如 `installation.yaml`、`user.yaml`、`sync/`)、密钥与凭据、本地 AI 会话数据、个人用户词典与输入学习数据。
+绝不提交:构建产物(`build/`、`target/`、`dist/`、`*.bin` 等)、运行时状态、本地缓存与依赖目录(`node_modules/` 等)、机器相关文件(如 `installation.yaml`、`user.yaml`、`sync/`)、密钥与凭据、本地 AI 会话数据、个人用户词典与输入学习数据。
 
 可复现生成的项目产物,仅在仓库策略明确要求跟踪时才可提交——例如 `xhup_fullcode_fixed_chars.dict.yaml` 由发布流程生成并按策略固化跟踪。
 
@@ -45,4 +52,6 @@ Rime「小鹤音形·全码优先」输入方案:纯静态 YAML 方案与词典�
 ## 验证
 
 - 通用:`git diff --check`、`git status --short`、`git diff --stat`。
+- Rust:`cargo check --workspace`、`cargo test --workspace`。
+- trainer 前端:`pnpm -C trainer build`;完整 Tauri 管线:`pnpm -C trainer tauri build --debug --no-bundle`。
 - 修改 YAML 方案或词典时:校验 YAML 语法,并在 PR 中说明验证方式;发布流程会执行完整性与隐私文件检查。

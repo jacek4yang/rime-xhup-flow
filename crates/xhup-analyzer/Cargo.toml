@@ -1,0 +1,5 @@
+[package]
+name = "xhup-analyzer"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
