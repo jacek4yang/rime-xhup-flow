@@ -4,7 +4,7 @@
 //! `data/double_pinyin/`、`data/pinyin/`(唯一事实来源);内建数据假定当前 XHUP Flow
 //! 仓库的目录结构。
 //!
-//! 本 crate 不涉及输入法语义、词典、组词或候选排序。
+//! 本 crate 不涉及词典、组词、候选排序等更高层输入逻辑。
 #![forbid(unsafe_code)]
 
 mod code;
