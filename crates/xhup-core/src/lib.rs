@@ -1,4 +1,4 @@
-//! XHUP Flow 领域核心:XHUP 键盘码的底层表示、规范双拼布局与规范输入音节清单。
+//! XHUP Flow 领域核心:XHUP 键盘码的底层表示、规范双拼布局、规范输入音节清单与音节编码。
 //!
 //! 内建规范小鹤双拼布局与规范输入音节清单经 `include_str!` 嵌入仓库级项目数据
 //! `data/double_pinyin/`、`data/pinyin/`(唯一事实来源);内建数据假定当前 XHUP Flow
@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 mod code;
+mod encoder;
 mod input_syllable;
 mod key;
 mod layout;
