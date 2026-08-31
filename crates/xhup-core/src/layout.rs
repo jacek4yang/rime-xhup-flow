@@ -132,42 +132,58 @@ impl DoublePinyinLayout {
     }
 }
 
+/// 一行两列 TSV 的私有中间表示;保留行号以便不变量报错精确定位。
+struct TsvRow {
+    row: usize,
+    first: &'static str,
+    second: &'static str,
+}
+
 /// 解析内嵌规范数据。结构不变量被破坏时 panic,消息含文件名与行号。
 fn parse_canonical() -> DoublePinyinLayout {
-    let initials = tsv_rows(INITIALS_TSV, "initials.tsv")
-        .into_iter()
-        .map(|(initial, key)| InitialMapping {
-            initial,
-            key: parse_key_field(key, "initials.tsv"),
-        })
-        .collect();
-    let finals = tsv_rows(FINALS_TSV, "finals.tsv")
-        .into_iter()
-        .map(|(final_, key)| FinalMapping {
-            final_,
-            key: parse_key_field(key, "finals.tsv"),
-        })
-        .collect();
-    let zero_initials = tsv_rows(ZERO_INITIALS_TSV, "zero_initials.tsv")
-        .into_iter()
-        .map(|(syllable, code)| ZeroInitialMapping {
-            syllable,
-            code: code
-                .parse()
-                .unwrap_or_else(|err| panic!("zero_initials.tsv 编码非法: {code:?}({err})")),
-        })
-        .collect();
     DoublePinyinLayout {
-        initials,
-        finals,
-        zero_initials,
+        initials: parse_initials(INITIALS_TSV, "initials.tsv"),
+        finals: parse_finals(FINALS_TSV, "finals.tsv"),
+        zero_initials: parse_zero_initials(ZERO_INITIALS_TSV, "zero_initials.tsv"),
     }
+}
+
+fn parse_initials(tsv: &'static str, name: &str) -> Box<[InitialMapping]> {
+    tsv_rows(tsv, name)
+        .into_iter()
+        .map(|row| InitialMapping {
+            initial: row.first,
+            key: parse_key_field(row.second, name, row.row),
+        })
+        .collect()
+}
+
+fn parse_finals(tsv: &'static str, name: &str) -> Box<[FinalMapping]> {
+    tsv_rows(tsv, name)
+        .into_iter()
+        .map(|row| FinalMapping {
+            final_: row.first,
+            key: parse_key_field(row.second, name, row.row),
+        })
+        .collect()
+}
+
+fn parse_zero_initials(tsv: &'static str, name: &str) -> Box<[ZeroInitialMapping]> {
+    tsv_rows(tsv, name)
+        .into_iter()
+        .map(|row| ZeroInitialMapping {
+            syllable: row.first,
+            code: row.second.parse().unwrap_or_else(|err| {
+                panic!("{name} 第 {} 行编码非法: {:?}({err})", row.row, row.second)
+            }),
+        })
+        .collect()
 }
 
 /// 逐行解析两列 TSV;零拷贝借用内嵌 `&'static str` 切片。
 /// 校验:恰好两个字段、字段非空、首列严格升序(同时排除重复)。
-fn tsv_rows(tsv: &'static str, name: &str) -> Vec<(&'static str, &'static str)> {
-    let mut rows = Vec::new();
+fn tsv_rows(tsv: &'static str, name: &str) -> Vec<TsvRow> {
+    let mut rows: Vec<TsvRow> = Vec::new();
     for (index, line) in tsv.lines().enumerate() {
         let row = index + 1;
         let fields: Vec<&str> = line.split('\t').collect();
@@ -180,25 +196,28 @@ fn tsv_rows(tsv: &'static str, name: &str) -> Vec<(&'static str, &'static str)> 
             !first.is_empty() && !second.is_empty(),
             "{name} 第 {row} 行字段不能为空"
         );
-        if let Some(&(previous, _)) = rows.last() {
+        if let Some(previous) = rows.last() {
             assert!(
-                previous < first,
+                previous.first < first,
                 "{name} 第 {row} 行首列未按字典序严格升序(重复或乱序): {first:?}"
             );
         }
-        rows.push((first, second));
+        rows.push(TsvRow { row, first, second });
     }
     rows
 }
 
 /// 键位字段必须为单字符且通过 [`Key`] 校验。
-fn parse_key_field(value: &'static str, name: &str) -> Key {
+fn parse_key_field(value: &'static str, name: &str, row: usize) -> Key {
     let mut chars = value.chars();
     let ch = chars
         .next()
-        .unwrap_or_else(|| panic!("{name} 键位字段为空"));
-    assert!(chars.next().is_none(), "{name} 键位应为单字符: {value:?}");
-    Key::from_char(ch).unwrap_or_else(|_| panic!("{name} 键位非法: {value:?}"))
+        .unwrap_or_else(|| panic!("{name} 第 {row} 行键位字段为空"));
+    assert!(
+        chars.next().is_none(),
+        "{name} 第 {row} 行键位应为单字符: {value:?}"
+    );
+    Key::from_char(ch).unwrap_or_else(|_| panic!("{name} 第 {row} 行键位非法: {value:?}"))
 }
 
 #[cfg(test)]
@@ -293,5 +312,47 @@ mod tests {
         // 枚举条目暴露类型化 `DoublePinyinCode`,可直接使用
         let typed: DoublePinyinCode = zero_initials[2].code();
         assert_eq!(typed.to_string(), "an");
+    }
+
+    fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+        if let Some(message) = payload.downcast_ref::<String>() {
+            message.clone()
+        } else if let Some(message) = payload.downcast_ref::<&'static str>() {
+            (*message).to_owned()
+        } else {
+            String::new()
+        }
+    }
+
+    #[test]
+    fn invalid_initial_key_panic_reports_filename_and_row() {
+        let payload = std::panic::catch_unwind(|| parse_initials("b\tb\nch\tI\n", "initials.tsv"))
+            .unwrap_err();
+        let message = panic_message(payload);
+        assert!(message.contains("initials.tsv"), "{message}");
+        assert!(message.contains("第 2 行"), "{message}");
+        assert!(message.contains("\"I\""), "{message}");
+    }
+
+    #[test]
+    fn invalid_final_key_panic_reports_filename_and_row() {
+        let payload =
+            std::panic::catch_unwind(|| parse_finals("a\ta\nang\t1\n", "finals.tsv")).unwrap_err();
+        let message = panic_message(payload);
+        assert!(message.contains("finals.tsv"), "{message}");
+        assert!(message.contains("第 2 行"), "{message}");
+        assert!(message.contains("\"1\""), "{message}");
+    }
+
+    #[test]
+    fn invalid_zero_initial_code_panic_reports_filename_and_row() {
+        let payload = std::panic::catch_unwind(|| {
+            parse_zero_initials("a\taa\nang\tabc\n", "zero_initials.tsv")
+        })
+        .unwrap_err();
+        let message = panic_message(payload);
+        assert!(message.contains("zero_initials.tsv"), "{message}");
+        assert!(message.contains("第 2 行"), "{message}");
+        assert!(message.contains("\"abc\""), "{message}");
     }
 }
