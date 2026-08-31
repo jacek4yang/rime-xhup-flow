@@ -116,6 +116,21 @@ impl DoublePinyinLayout {
             .map(|mapping| mapping.code)
     }
 
+    /// 结构组合:声母键 + 韵母键 → 双键编码。
+    ///
+    /// 仅表达键盘布局层面的结构组合,**不做普通话音系校验**:
+    /// 只要声母与韵母各自存在于规范布局中即组合成功,
+    /// 即使该组合并非真实音节(如 `b + iong`)。
+    /// 音节合法性由未来的音系层负责。
+    ///
+    /// 精确匹配,不做大小写或 `ü` 归一化。
+    /// 零声母音节不走此路径,见 [`Self::zero_initial_code`]。
+    pub fn compose(&self, initial: &str, final_: &str) -> Option<DoublePinyinCode> {
+        let initial_key = self.initial_key(initial)?;
+        let final_key = self.final_key(final_)?;
+        Some(DoublePinyinCode::new([initial_key, final_key]))
+    }
+
     /// 全部声母映射(规范顺序)。
     pub fn initials(&self) -> &[InitialMapping] {
         &self.initials
@@ -354,5 +369,61 @@ mod tests {
         assert!(message.contains("zero_initials.tsv"), "{message}");
         assert!(message.contains("第 2 行"), "{message}");
         assert!(message.contains("\"abc\""), "{message}");
+    }
+
+    #[test]
+    fn compose_ordinary_combinations() {
+        let layout = DoublePinyinLayout::canonical();
+        // 恒等声母、特殊声母 zh/ch/sh、共享/特殊韵母、ASCII v 表示的 ü 族
+        for (initial, final_, expected) in [
+            ("b", "a", "ba"),
+            ("zh", "ang", "vh"),
+            ("ch", "eng", "ig"),
+            ("sh", "uang", "ul"),
+            ("x", "ue", "xt"),
+            ("n", "v", "nv"),
+        ] {
+            let code = layout.compose(initial, final_).unwrap();
+            assert_eq!(code.to_string(), expected, "{initial} + {final_}");
+        }
+    }
+
+    #[test]
+    fn compose_shared_final_keys_produce_same_code() {
+        let layout = DoublePinyinLayout::canonical();
+        // ing 与 uai 规范键位同为 k,组合结果相同是预期行为
+        assert_eq!(
+            layout.compose("j", "ing").unwrap(),
+            layout.compose("j", "uai").unwrap()
+        );
+        assert_eq!(layout.compose("j", "ing").unwrap().to_string(), "jk");
+    }
+
+    #[test]
+    fn compose_lookup_failure_returns_none() {
+        let layout = DoublePinyinLayout::canonical();
+        assert_eq!(layout.compose("zz", "ang"), None);
+        assert_eq!(layout.compose("zh", "zzz"), None);
+        assert_eq!(layout.compose("ZH", "ang"), None);
+        assert_eq!(layout.compose("zh", "ANG"), None);
+        // 不做 Unicode ü 归一化
+        assert_eq!(layout.compose("x", "üe"), None);
+    }
+
+    #[test]
+    fn compose_is_structural_not_phonotactic() {
+        let layout = DoublePinyinLayout::canonical();
+        // 架构边界:b 与 iong 各自存在于规范布局即组合成功;
+        // 本层不断言 "biong" 是合法普通话音节,音节合法性归未来的音系层。
+        let code = layout.compose("b", "iong").unwrap();
+        assert_eq!(code.to_string(), "bs");
+    }
+
+    #[test]
+    fn zero_initial_stays_on_explicit_path() {
+        let layout = DoublePinyinLayout::canonical();
+        assert_eq!(layout.zero_initial_code("ang").unwrap().to_string(), "ah");
+        // compose 不接受零声母:空字符串声母不是合法初始
+        assert_eq!(layout.compose("", "ang"), None);
     }
 }
