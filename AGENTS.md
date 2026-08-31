@@ -52,6 +52,6 @@ AI 代理在本仓库工作的入口约束。详细流程见 [CONTRIBUTING.md](C
 ## 验证
 
 - 通用:`git diff --check`、`git status --short`、`git diff --stat`。
-- Rust:`cargo check --workspace`、`cargo test --workspace`。
-- trainer 前端:`pnpm -C trainer build`;完整 Tauri 管线:`pnpm -C trainer tauri build --debug --no-bundle`。
+- Rust(与 `.github/workflows/ci.yml` 一致):`cargo fmt --all -- --check`、`cargo check --workspace --all-targets --locked`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`。
+- trainer 前端:`pnpm -C trainer install --frozen-lockfile`、`pnpm -C trainer build`;完整 Tauri 管线(仅本地):`pnpm -C trainer tauri build --debug --no-bundle`。
 - 修改 YAML 方案或词典时:校验 YAML 语法,并在 PR 中说明验证方式;发布流程会执行完整性与隐私文件检查。

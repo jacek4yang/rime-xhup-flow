@@ -64,8 +64,9 @@
 ## 验证要求
 
 - 所有变更:`git diff --check`、`git status --short`、`git diff --stat`,并人工审查最终 diff。
-- Rust 变更:`cargo check --workspace`、`cargo test --workspace`。
-- trainer 变更:`pnpm -C trainer build`;需要验证完整 Tauri 管线时:`pnpm -C trainer tauri build --debug --no-bundle`。
+- Rust 变更:`cargo fmt --all -- --check`、`cargo check --workspace --all-targets --locked`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`。
+- trainer 变更:`pnpm -C trainer install --frozen-lockfile`、`pnpm -C trainer build`;需要验证完整 Tauri 管线时(仅本地):`pnpm -C trainer tauri build --debug --no-bundle`。
+- PR 与 main 推送由 `.github/workflows/ci.yml` 强制执行上述 Rust 与 trainer 检查;本地提交前应先跑通相同命令。
 - 修改 YAML 方案或词典时:校验 YAML 语法(缩进只用空格),并在 PR 中说明验证方式。
 - 行为变更必须是有意为之:在 PR 中说明变更内容、原因与验证方式。
 - 治理、文档类变更不得改动输入方案与词典文件。
