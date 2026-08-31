@@ -1,6 +1,6 @@
 # 贡献指南
 
-本文档定义本仓库的开发工作流,同时适用于人类贡献者与 AI 代理。仓库采用「人类操作员 + 长时运行代理」模式:操作员拥有架构、范围、评审与合并决策权;代理在同一会话中按任务逐个实现。
+本文档定义本仓库的开发工作流,同时适用于人类贡献者与 AI 代理。仓库包含根目录的 Rime 输入方案与词典、Rust workspace(`crates/`)和 `trainer/` 桌面应用(Tauri 2 + React)。仓库采用「人类操作员 + 长时运行代理」模式:操作员拥有架构、范围、评审与合并决策权;代理在同一会话中按任务逐个实现。
 
 ## 分支策略
 
@@ -50,9 +50,9 @@
 
 以下内容**绝不提交**:
 
-- 构建产物与部署生成文件(`build/`、`*.bin` 等)。
+- 构建产物与部署生成文件(`build/`、`*.bin`、`target/`、`dist/` 等)。
 - 运行时状态与机器相关文件(`installation.yaml`、`user.yaml`、`sync/` 等)。
-- 本地缓存与依赖目录。
+- 本地缓存与依赖目录(`node_modules/` 等)。
 - 密钥与凭据(`.env`、私钥、访问令牌等)。
 - 个人数据(`*.userdb/`、`*.userdb.txt` 等用户词典与输入学习数据)。
 - AI 工具的本地会话、状态与缓存数据。
@@ -64,6 +64,8 @@
 ## 验证要求
 
 - 所有变更:`git diff --check`、`git status --short`、`git diff --stat`,并人工审查最终 diff。
+- Rust 变更:`cargo check --workspace`、`cargo test --workspace`。
+- trainer 变更:`pnpm -C trainer build`;需要验证完整 Tauri 管线时:`pnpm -C trainer tauri build --debug --no-bundle`。
 - 修改 YAML 方案或词典时:校验 YAML 语法(缩进只用空格),并在 PR 中说明验证方式。
 - 行为变更必须是有意为之:在 PR 中说明变更内容、原因与验证方式。
 - 治理、文档类变更不得改动输入方案与词典文件。

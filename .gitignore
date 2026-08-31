@@ -34,6 +34,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Rust 构建产物
+/target/
+
 # AI 工具本地会话与状态(仅明确属于本地数据者;工具的项目级配置目录不整体忽略)
 .aider.chat.history.md
 .aider.input.history

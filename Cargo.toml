@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/xhup-core",
+    "crates/xhup-analyzer",
+    "crates/xhup-generator",
+    "crates/xhup-cli",
+    "trainer/src-tauri",
+]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "LGPL-3.0-only"

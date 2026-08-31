@@ -1,0 +1,5 @@
+[package]
+name = "xhup-core"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
