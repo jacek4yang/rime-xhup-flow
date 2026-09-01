@@ -58,3 +58,10 @@ pnpm tauri build      # Tauri 桌面打包
 
 练习记录仅保存在本机浏览器 / 应用本地存储中(`localStorage`),
 没有任何统计上报、账号或云同步。
+
+## Alpha 测试
+
+Trainer 的 Windows x64 与 Android Alpha 预发布版通过 GitHub
+Pre-release 分发(手动触发,tag 形如 `trainer-v0.1.0-alpha.1`)。
+真人验收清单、结果汇报格式与 Android 签名密钥管理见
+[docs/testing/trainer-alpha-windows-android.md](../docs/testing/trainer-alpha-windows-android.md)。
