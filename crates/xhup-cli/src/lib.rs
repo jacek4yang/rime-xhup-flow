@@ -11,7 +11,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Parser, Subcommand};
-use xhup_generator::{RIME_CHAR_DICTIONARY_FILENAME, generate_rime_char_dictionary};
+use xhup_generator::generate_rime_artifacts;
 
 /// XHUP Flow 命令行工具的参数模型(经 clap 解析构造)。
 #[derive(Debug, Parser)]
@@ -118,21 +118,23 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
         Command::Generate(args) => match args.target {
             GenerateTarget::Rime(args) => {
-                let artifact = generate_rime(&args.output)?;
-                println!("已生成: {}", artifact.display());
+                let count = generate_rime(&args.output)?;
+                println!("已生成 {count} 个 Rime 源文件: {}", args.output.display());
                 Ok(())
             }
         },
     }
 }
 
-/// 生成规范单字全码 Rime 词典到 `output` 目录,返回最终产物路径。
+/// 生成便携 Rime 源包到 `output` 目录,返回产物数量。
 ///
-/// 先写同目录临时文件,再替换最终产物,避免正常生成过程中直接截断已有
-/// 最终文件:临时文件写失败时已有最终产物不受影响;替换失败时尽力删除
-/// 临时文件并返回原始替换错误。临时文件名固定,故不支持同时向同一输出
-/// 目录并发生成;中断残留的临时文件会被下一次生成直接覆盖。
-fn generate_rime(output: &Path) -> Result<PathBuf, CliError> {
+/// 先在内存生成全部产物内容,再把每个产物的同目录临时文件全部写完,
+/// 最后逐个替换最终产物:临时文件写失败时尚未替换任何最终产物,尽力
+/// 清理已写临时文件后返回原始错误;替换阶段不是事务,中途失败可能留下
+/// 部分更新的包(已接受的限制),此时尽力清理剩余临时文件并返回原始
+/// 替换错误。临时文件名固定,故不支持同时向同一输出目录并发生成;
+/// 中断残留的临时文件会被下一次生成直接覆盖。
+fn generate_rime(output: &Path) -> Result<usize, CliError> {
     if output.exists() && !output.is_dir() {
         return Err(CliError::OutputNotDirectory {
             path: output.to_path_buf(),
@@ -143,20 +145,36 @@ fn generate_rime(output: &Path) -> Result<PathBuf, CliError> {
         source,
     })?;
 
-    let artifact = output.join(RIME_CHAR_DICTIONARY_FILENAME);
-    let temporary = output.join(format!(".{RIME_CHAR_DICTIONARY_FILENAME}.tmp"));
-    let content = generate_rime_char_dictionary();
-    fs::write(&temporary, content.as_bytes()).map_err(|source| CliError::WriteTemporaryFile {
-        path: temporary.clone(),
-        source,
-    })?;
-    if let Err(source) = fs::rename(&temporary, &artifact) {
-        let _ = fs::remove_file(&temporary);
-        return Err(CliError::ReplaceArtifact {
-            temporary,
-            artifact,
-            source,
-        });
+    let artifacts = generate_rime_artifacts();
+    let mut prepared = Vec::with_capacity(artifacts.len());
+    for artifact in &artifacts {
+        let final_path = output.join(artifact.filename());
+        let temporary = output.join(format!(".{}.tmp", artifact.filename()));
+        if let Err(source) = fs::write(&temporary, artifact.contents().as_bytes()) {
+            for (temporary, _) in &prepared {
+                let _ = fs::remove_file(temporary);
+            }
+            let _ = fs::remove_file(&temporary);
+            return Err(CliError::WriteTemporaryFile {
+                path: temporary,
+                source,
+            });
+        }
+        prepared.push((temporary, final_path));
     }
-    Ok(artifact)
+
+    let count = prepared.len();
+    for (index, (temporary, final_path)) in prepared.iter().enumerate() {
+        if let Err(source) = fs::rename(temporary, final_path) {
+            for (temporary, _) in &prepared[index..] {
+                let _ = fs::remove_file(temporary);
+            }
+            return Err(CliError::ReplaceArtifact {
+                temporary: temporary.clone(),
+                artifact: final_path.clone(),
+                source,
+            });
+        }
+    }
+    Ok(count)
 }
