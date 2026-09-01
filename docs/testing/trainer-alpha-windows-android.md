@@ -307,8 +307,16 @@ gh workflow run trainer-alpha.yml \
 gh run watch
 ```
 
-`-f publish=false` 为演练模式:完整构建、签名(若 Secret 已配置)、
-校验、上传工作流产物,但**不创建 GitHub Release**。
+`-f publish=false` 为演练模式,同样**要求四个 Android 签名 Secret 已配置**:
+
+- 执行真实签名 Android 构建(与正式发布完全相同的签名链路);
+- `apksigner verify` 校验签名并记录证书 SHA-256;
+- 构建 Windows 安装包;
+- 上传全部工作流产物(签名 APK,无 `-UNSIGNED` 后缀);
+- **不创建 GitHub Release / tag**。
+
+手动触发(workflow_dispatch)一律签名;Pull Request 是唯一的未签名
+打包模式,用于在不暴露 Secret 的前提下验证打包链路。
 
 已存在的 `trainer-v<版本>` tag 或同名 Release 会导致发布失败——
 Alpha 版本不可变,修复请递增为 `alpha.2` 并递增 `android_version_code`。

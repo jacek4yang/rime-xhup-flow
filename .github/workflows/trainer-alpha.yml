@@ -40,6 +40,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       windows_version: ${{ steps.meta.outputs.windows_version }}
       android_version_code: ${{ steps.meta.outputs.android_version_code }}
+      sign_android: ${{ steps.meta.outputs.sign_android }}
       publish: ${{ steps.meta.outputs.publish }}
 
     steps:
@@ -61,6 +62,8 @@ jobs:
             version="$INPUT_VERSION"
             vcode="$INPUT_VCODE"
             publish="$INPUT_PUBLISH"
+            # 手动触发一律走真实签名链路(含演练),保证 publish=true 前签名路径已验证
+            sign_android="true"
             if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-alpha\.[1-9][0-9]*$ ]]; then
               echo "::error::版本号 '$version' 不合法,必须形如 0.1.0-alpha.1(semver-alpha.N)"
               exit 1
@@ -76,6 +79,7 @@ jobs:
           else
             version="0.1.0-alpha.ci.${PR_NUMBER}"
             vcode="1"
+            sign_android="false"
             publish="false"
           fi
           # MSI/WiX 要求 prerelease 为纯数字,因此 Windows 打包使用派生版本:
@@ -92,13 +96,15 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "windows_version=$win_version" >> "$GITHUB_OUTPUT"
           echo "android_version_code=$vcode" >> "$GITHUB_OUTPUT"
+          echo "sign_android=$sign_android" >> "$GITHUB_OUTPUT"
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           {
             echo "### 发布元数据"
             echo "- 版本: \`$version\`"
             echo "- Windows 打包版本(MSI 兼容): \`$win_version\`"
             echo "- Android versionCode: \`$vcode\`"
-            echo "- 发布 GitHub Pre-release: \`$publish\`"
+            echo "- Android 签名: \`$sign_android\`"
+            echo "- 创建 GitHub Pre-release: \`$publish\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 敏感文件审计
@@ -208,6 +214,7 @@ jobs:
       VERSION: ${{ needs.validate.outputs.version }}
       VCODE: ${{ needs.validate.outputs.android_version_code }}
       PUBLISH: ${{ needs.validate.outputs.publish }}
+      SIGN_ANDROID: ${{ needs.validate.outputs.sign_android }}
       NDK_VERSION: "27.2.12479018"
       BUILD_TOOLS_VERSION: "36.0.0"
 
@@ -266,8 +273,8 @@ jobs:
       - name: 安装依赖
         run: pnpm -C trainer install --frozen-lockfile
 
-      - name: 配置 Android 签名(仅正式发布)
-        if: needs.validate.outputs.publish == 'true'
+      - name: 配置 Android 签名(手动 Alpha 构建)
+        if: needs.validate.outputs.sign_android == 'true'
         env:
           ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -277,7 +284,7 @@ jobs:
           set -euo pipefail
           for name in ANDROID_KEY_BASE64 ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ANDROID_STORE_PASSWORD; do
             if [[ -z "${!name:-}" ]]; then
-              echo "::error::正式发布缺少必需的签名 Secret: $name"
+              echo "::error::手动 Alpha 构建缺少必需的签名 Secret: $name"
               exit 1
             fi
           done
@@ -312,14 +319,14 @@ jobs:
           set -euo pipefail
           apk_dir="trainer/src-tauri/gen/android/app/build/outputs/apk/universal/release"
           suffix=""
-          if [[ "$PUBLISH" == "true" ]]; then
+          if [[ "$SIGN_ANDROID" == "true" ]]; then
             apk="$apk_dir/app-universal-release.apk"
           else
             apk="$apk_dir/app-universal-release-unsigned.apk"
             suffix="-UNSIGNED"
           fi
           [[ -s "$apk" ]] || { echo "::error::APK 不存在或大小为 0: $apk"; exit 1; }
-          if [[ "$PUBLISH" == "true" ]]; then
+          if [[ "$SIGN_ANDROID" == "true" ]]; then
             apksigner="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/apksigner"
             "$apksigner" verify "$apk"
             certs="$("$apksigner" verify --print-certs "$apk")"
@@ -346,10 +353,15 @@ jobs:
             echo "### Android universal APK 打包"
             echo "- 版本: \`$VERSION\` / versionCode \`$VCODE\`"
             echo "- APK: \`$APK_NAME\`"
-            if [[ "$PUBLISH" == "true" ]]; then
+            if [[ "$SIGN_ANDROID" == "true" ]]; then
               echo "- 签名: 已签名(apksigner 校验通过)"
             else
-              echo "- 签名: 未签名(CI 验证用途,不作为正式测试版本)"
+              echo "- 签名: 未签名(PR packaging 验证)"
+            fi
+            if [[ "$PUBLISH" == "true" ]]; then
+              echo "- 发布: 是"
+            else
+              echo "- 发布: 否"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
