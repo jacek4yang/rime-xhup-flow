@@ -75,7 +75,7 @@ fn first_generation_creates_directory_and_all_artifacts() {
 }
 
 #[test]
-fn generated_file_set_is_exact_and_top_dictionary_imports_both_tables() {
+fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
     let output = temp_output();
 
     generate(&output).unwrap();
@@ -91,9 +91,10 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_both_tables() {
             "xhup_flow.dict.yaml",
             "xhup_flow.schema.yaml",
             "xhup_flow_chars.dict.yaml",
+            "xhup_flow_shortcuts.dict.yaml",
             "xhup_flow_words.dict.yaml",
         ],
-        "输出应为且仅为 4 个 Rime 源文件"
+        "输出应为且仅为 5 个 Rime 源文件"
     );
     for filename in &filenames {
         assert!(
@@ -102,6 +103,10 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_both_tables() {
         );
     }
     let top = fs::read_to_string(output.join("xhup_flow.dict.yaml")).unwrap();
+    assert!(
+        top.contains("  - xhup_flow_shortcuts"),
+        "顶层词典应导入一级简码词典"
+    );
     assert!(
         top.contains("  - xhup_flow_chars"),
         "顶层词典应导入单字词典"
