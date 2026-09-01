@@ -15,6 +15,9 @@ use xhup_core::{FullCode, XhupHanzi};
 /// 词典名称。
 const DICTIONARY_NAME: &str = "xhup_flow_chars";
 
+/// 生成的单字全码词典文件名(生成器拥有的产物标识,调用方不得自行命名)。
+pub const RIME_CHAR_DICTIONARY_FILENAME: &str = "xhup_flow_chars.dict.yaml";
+
 /// 一条生成的规范单字全码关系。
 ///
 /// 表示一个规范汉字的一个可接受全码。条目不携带权重或优先级;其在词典
@@ -163,5 +166,14 @@ mod tests {
             .collect();
         let expected: BTreeSet<char> = ['枸', '桔', '椐', '橘', '驹'].into_iter().collect();
         assert_eq!(hanzi, expected);
+    }
+
+    #[test]
+    fn dictionary_filename_matches_dictionary_name() {
+        // 产物文件名由词典名机械派生,防止两者漂移。
+        assert_eq!(
+            RIME_CHAR_DICTIONARY_FILENAME,
+            format!("{DICTIONARY_NAME}.dict.yaml")
+        );
     }
 }

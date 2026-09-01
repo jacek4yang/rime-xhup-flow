@@ -1,3 +1,14 @@
-fn main() {
-    println!("xhup-cli:XHUP Flow 命令行工具(占位)");
+use std::process::ExitCode;
+
+use clap::Parser;
+use xhup_cli::{Cli, run};
+
+fn main() -> ExitCode {
+    match run(Cli::parse()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("错误: {error}");
+            ExitCode::FAILURE
+        }
+    }
 }

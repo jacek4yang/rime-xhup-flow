@@ -3,3 +3,13 @@ name = "xhup-cli"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+
+[dependencies]
+clap = { version = "4", default-features = false, features = [
+    "std",
+    "derive",
+    "help",
+    "usage",
+    "error-context",
+] }
+xhup-generator = { path = "../xhup-generator" }
