@@ -65,11 +65,24 @@ jobs:
   trainer:
     name: trainer 前端
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: 检出仓库
         uses: actions/checkout@v7
+
+      - name: 准备 Rust 工具链
+        run: rustup show
+
+      - name: 缓存 Cargo 下载
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rust-trainer-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '**/Cargo.toml') }}
+          restore-keys: |
+            rust-trainer-${{ runner.os }}-
 
       - name: 安装 pnpm
         uses: pnpm/action-setup@v6
@@ -86,5 +99,8 @@ jobs:
       - name: 安装依赖
         run: pnpm -C trainer install --frozen-lockfile
 
-      - name: 构建前端
+      - name: 单元与组件测试
+        run: pnpm -C trainer test
+
+      - name: 构建前端(自动生成规范训练数据)
         run: pnpm -C trainer build

@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Rust 生成的训练数据(pnpm dev/build 自动重新生成)
+/public/generated/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
