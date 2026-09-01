@@ -1,0 +1,257 @@
+name: Trainer Alpha
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/trainer-alpha.yml"
+      - "trainer/**"
+      - "docs/testing/trainer-alpha-windows-android.md"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Trainer Alpha 版本,例如 0.1.0-alpha.1"
+        required: true
+        default: "0.1.0-alpha.1"
+      android_version_code:
+        description: "Android 单调递增 versionCode"
+        required: true
+        default: "1"
+      publish:
+        description: "创建 GitHub Pre-release"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trainer-alpha-${{ github.ref }}-${{ inputs.version || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: 元数据校验与安全审计
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      android_version_code: ${{ steps.meta.outputs.android_version_code }}
+      publish: ${{ steps.meta.outputs.publish }}
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7
+
+      - name: 解析并校验发布元数据
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_VCODE: ${{ inputs.android_version_code }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            version="$INPUT_VERSION"
+            vcode="$INPUT_VCODE"
+            publish="$INPUT_PUBLISH"
+            if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-alpha\.[1-9][0-9]*$ ]]; then
+              echo "::error::版本号 '$version' 不合法,必须形如 0.1.0-alpha.1(semver-alpha.N)"
+              exit 1
+            fi
+            if ! [[ "$vcode" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::android_version_code '$vcode' 不合法,必须是 >= 1 的正整数"
+              exit 1
+            fi
+            if [[ "$publish" == "true" && "$REF" != "refs/heads/main" ]]; then
+              echo "::error::publish=true 只允许在 main 分支上运行(当前 ref: $REF)"
+              exit 1
+            fi
+          else
+            version="0.1.0-alpha.ci.${PR_NUMBER}"
+            vcode="1"
+            publish="false"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "android_version_code=$vcode" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          {
+            echo "### 发布元数据"
+            echo "- 版本: \`$version\`"
+            echo "- Android versionCode: \`$vcode\`"
+            echo "- 发布 GitHub Pre-release: \`$publish\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 敏感文件审计
+        run: |
+          set -euo pipefail
+          hits="$(git ls-files | grep -Ei '\.(jks|keystore)$|keystore\.properties$|local\.properties$' || true)"
+          if [[ -n "$hits" ]]; then
+            echo "::error::版本库中不应包含签名密钥或本机路径文件:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "敏感文件审计通过"
+
+  windows:
+    name: Windows x64 打包
+    needs: validate
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7
+
+      - name: 准备 Rust 工具链
+        run: rustup show
+
+      - name: 缓存 Cargo 下载
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rust-alpha-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '**/Cargo.toml') }}
+          restore-keys: |
+            rust-alpha-${{ runner.os }}-
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: trainer/package.json
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: trainer/pnpm-lock.yaml
+
+      - name: 安装依赖
+        run: pnpm -C trainer install --frozen-lockfile
+
+      - name: 生成临时版本覆盖配置
+        run: |
+          $path = Join-Path $env:RUNNER_TEMP 'trainer-alpha-config.json'
+          [System.IO.File]::WriteAllText($path, "{`"version`":`"$env:VERSION`"}")
+          "ALPHA_CONFIG=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Get-Content $path
+
+      - name: Tauri 构建(NSIS + MSI)
+        run: pnpm -C trainer tauri build --config "$env:ALPHA_CONFIG" --bundles nsis,msi
+
+      - name: 校验并重命名产物
+        run: |
+          $nsis = @(Get-ChildItem "trainer/src-tauri/target/release/bundle/nsis" -Filter "*.exe")
+          $msi = @(Get-ChildItem "trainer/src-tauri/target/release/bundle/msi" -Filter "*.msi")
+          if ($nsis.Count -ne 1) { throw "期望恰好 1 个 NSIS 安装包,实际 $($nsis.Count)" }
+          if ($msi.Count -ne 1) { throw "期望恰好 1 个 MSI 安装包,实际 $($msi.Count)" }
+          if ($nsis[0].Length -le 0) { throw "NSIS 安装包大小为 0" }
+          if ($msi[0].Length -le 0) { throw "MSI 安装包大小为 0" }
+          $dest = "artifacts/windows"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $setupName = "xhup-flow-trainer-v$env:VERSION-windows-x64-setup.exe"
+          $msiName = "xhup-flow-trainer-v$env:VERSION-windows-x64.msi"
+          Copy-Item $nsis[0].FullName "$dest/$setupName"
+          Copy-Item $msi[0].FullName "$dest/$msiName"
+          "SETUP_NAME=$setupName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "MSI_NAME=$msiName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: 上传 Windows 产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: trainer-alpha-windows-${{ needs.validate.outputs.version }}
+          path: artifacts/windows/
+          retention-days: 7
+
+      - name: 构建摘要
+        run: |
+          @"
+          ### Windows x64 打包
+          - 版本: ``$env:VERSION``
+          - NSIS: ``$env:SETUP_NAME``
+          - MSI: ``$env:MSI_NAME``
+          - 签名: 未签名(Alpha 阶段不做 Authenticode)
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+  android-bootstrap:
+    # 临时 job:首次远程生成 Android 原生工程,产物经审计后纳入版本控制,
+    # 随后本 job 会被正式的 Android 打包 job 取代。
+    name: Android 工程引导(临时)
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7
+
+      - name: 准备 Rust 工具链
+        run: rustup show
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: trainer/package.json
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: trainer/pnpm-lock.yaml
+
+      - name: 安装 Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 安装 Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: 安装 Android SDK 组件
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.2.12479018"
+
+      - name: 安装依赖
+        run: pnpm -C trainer install --frozen-lockfile
+
+      - name: 初始化 Android 原生工程
+        run: |
+          export NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          pnpm -C trainer tauri android init --ci --skip-targets-install
+
+      - name: 清理环境与构建残留
+        run: |
+          cd trainer/src-tauri/gen/android
+          rm -rf .gradle build app/build .cxx local.properties keystore.properties
+          find . -name "*.jks" -delete
+          find . -name "*.keystore" -delete
+          find . -type d -name "build" -prune -exec rm -rf {} +
+          find . -type d -name ".cxx" -prune -exec rm -rf {} +
+
+      - name: 上传 Android 工程引导产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-project-bootstrap
+          path: trainer/src-tauri/gen/android/
+          retention-days: 7
+
+      - name: 构建摘要
+        run: |
+          echo "### Android 工程引导(临时)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 产物: \`android-project-bootstrap\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 用途: 下载审计后提交到 trainer/src-tauri/gen/android/,本 job 将被移除" >> "$GITHUB_STEP_SUMMARY"
