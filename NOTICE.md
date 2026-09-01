@@ -73,6 +73,16 @@ SHA-256：
 - 将四码单字高权重表改为可重复生成；
 - 增加跨平台中文安装教程和自动 Release 流程。
 
+## 候选排名频率数据
+
+`data/frequency/wanxiang_reading_scores.tsv` 提取自万象单字频率数据并归一化到本项目规范读音：
+
+- 来源仓库：[`amzxyz/rime-wanxiang`](https://github.com/amzxyz/rime-wanxiang)，固定提交 `7ec998b28c9a5c57260d2ba24b264c1c1820e0ef`，文件 `dicts/zi.dict.yaml`（Git Blob `9a69cb891f2e0c158313d14e0ea6c3925ca081ef`）
+- 语义上游：[`amzxyz/RIME-LMDG`](https://github.com/amzxyz/RIME-LMDG)
+- 该数据集适用 CC BY 4.0 署名要求，许可证全文见 [`data/frequency/LICENSE.wanxiang`](data/frequency/LICENSE.wanxiang)；提取规则与覆盖审计见 [`data/frequency/README.md`](data/frequency/README.md)
+
+再分发该 TSV（包括包含它的生成产物）时须保留上述署名与许可信息。该数据不因入库而改授 LGPL。
+
 ## 许可证
 
 仓库保留上游配置随附的 LGPL-3.0 许可证文本，见 [`LICENSE`](LICENSE)。

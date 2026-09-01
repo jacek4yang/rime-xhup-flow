@@ -16,6 +16,15 @@ use crate::key::{InvalidKeyError, Key};
 pub struct KeySequence(Box<[Key]>);
 
 impl KeySequence {
+    /// 由按键切片构造:空切片返回 [`KeySequenceError::Empty`],
+    /// 非空切片拷贝为独立的不可变序列。
+    pub fn from_keys(keys: &[Key]) -> Result<Self, KeySequenceError> {
+        if keys.is_empty() {
+            return Err(KeySequenceError::Empty);
+        }
+        Ok(Self(keys.to_vec().into_boxed_slice()))
+    }
+
     /// 序列长度(键数)。保证不小于 1。
     pub fn len(&self) -> usize {
         self.0.len()
@@ -129,6 +138,30 @@ mod tests {
                 Err(KeySequenceError::InvalidKey(_))
             ));
         }
+    }
+
+    #[test]
+    fn from_keys_rejects_empty_slice() {
+        assert_eq!(KeySequence::from_keys(&[]), Err(KeySequenceError::Empty));
+    }
+
+    #[test]
+    fn from_keys_accepts_one_to_four_keys() {
+        let keys: Vec<Key> = ('a'..='d').map(|ch| Key::from_char(ch).unwrap()).collect();
+        for len in 1..=4 {
+            let seq = KeySequence::from_keys(&keys[..len]).unwrap();
+            assert_eq!(seq.len(), len);
+            assert_eq!(seq.as_slice(), &keys[..len]);
+        }
+    }
+
+    #[test]
+    fn from_keys_copies_into_independent_sequence() {
+        let keys = [Key::from_char('x').unwrap(), Key::from_char('k').unwrap()];
+        let seq = KeySequence::from_keys(&keys).unwrap();
+        assert_eq!(seq.to_string(), "xk");
+        let reparsed: KeySequence = seq.to_string().parse().unwrap();
+        assert_eq!(reparsed, seq);
     }
 
     #[test]

@@ -11,7 +11,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Parser, Subcommand};
-use xhup_generator::generate_rime_artifacts;
+use xhup_generator::{TRAINER_DATA_FILENAME, generate_rime_artifacts, generate_trainer_dataset};
 
 /// XHUP Flow 命令行工具的参数模型(经 clap 解析构造)。
 #[derive(Debug, Parser)]
@@ -35,12 +35,14 @@ struct GenerateArgs {
 
 #[derive(Debug, Subcommand)]
 enum GenerateTarget {
-    /// 生成规范单字全码词典 xhup_flow_chars.dict.yaml
-    Rime(RimeArgs),
+    /// 生成便携 Rime 源包(单字词典、顶层词典与方案)
+    Rime(OutputArgs),
+    /// 生成训练器规范数据集 xhup_flow_trainer.json
+    Trainer(OutputArgs),
 }
 
 #[derive(Debug, Args)]
-struct RimeArgs {
+struct OutputArgs {
     /// 生成产物输出目录(不存在则递归创建)
     #[arg(long)]
     output: PathBuf,
@@ -118,23 +120,37 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
         Command::Generate(args) => match args.target {
             GenerateTarget::Rime(args) => {
-                let count = generate_rime(&args.output)?;
+                let artifacts = generate_rime_artifacts();
+                let files: Vec<(&str, &str)> = artifacts
+                    .iter()
+                    .map(|artifact| (artifact.filename(), artifact.contents()))
+                    .collect();
+                let count = write_outputs(&args.output, &files)?;
                 println!("已生成 {count} 个 Rime 源文件: {}", args.output.display());
+                Ok(())
+            }
+            GenerateTarget::Trainer(args) => {
+                let dataset = generate_trainer_dataset();
+                write_outputs(&args.output, &[(TRAINER_DATA_FILENAME, dataset.as_str())])?;
+                println!(
+                    "已生成训练器数据集: {}",
+                    args.output.join(TRAINER_DATA_FILENAME).display()
+                );
                 Ok(())
             }
         },
     }
 }
 
-/// 生成便携 Rime 源包到 `output` 目录,返回产物数量。
+/// 把 `(文件名, 内容)` 集合安全写入 `output` 目录,返回产物数量。
 ///
-/// 先在内存生成全部产物内容,再把每个产物的同目录临时文件全部写完,
+/// 先在内存备好全部产物内容,再把每个产物的同目录临时文件全部写完,
 /// 最后逐个替换最终产物:临时文件写失败时尚未替换任何最终产物,尽力
 /// 清理已写临时文件后返回原始错误;替换阶段不是事务,中途失败可能留下
 /// 部分更新的包(已接受的限制),此时尽力清理剩余临时文件并返回原始
 /// 替换错误。临时文件名固定,故不支持同时向同一输出目录并发生成;
 /// 中断残留的临时文件会被下一次生成直接覆盖。
-fn generate_rime(output: &Path) -> Result<usize, CliError> {
+fn write_outputs(output: &Path, files: &[(&str, &str)]) -> Result<usize, CliError> {
     if output.exists() && !output.is_dir() {
         return Err(CliError::OutputNotDirectory {
             path: output.to_path_buf(),
@@ -145,12 +161,11 @@ fn generate_rime(output: &Path) -> Result<usize, CliError> {
         source,
     })?;
 
-    let artifacts = generate_rime_artifacts();
-    let mut prepared = Vec::with_capacity(artifacts.len());
-    for artifact in &artifacts {
-        let final_path = output.join(artifact.filename());
-        let temporary = output.join(format!(".{}.tmp", artifact.filename()));
-        if let Err(source) = fs::write(&temporary, artifact.contents().as_bytes()) {
+    let mut prepared = Vec::with_capacity(files.len());
+    for (filename, contents) in files {
+        let final_path = output.join(filename);
+        let temporary = output.join(format!(".{filename}.tmp"));
+        if let Err(source) = fs::write(&temporary, contents.as_bytes()) {
             for (temporary, _) in &prepared {
                 let _ = fs::remove_file(temporary);
             }
