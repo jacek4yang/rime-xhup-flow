@@ -22,6 +22,11 @@ use std::process::ExitCode;
 
 use xhup_core::XhupHanzi;
 
+#[path = "common/wanxiang.rs"]
+mod wanxiang;
+
+use wanxiang::normalize_reading;
+
 /// 输出 TSV 的注释头(行数行在写出前追加)。
 const HEADER: &str = "\
 # XHUP Flow 规范读音频率数据:万象 / RIME-LMDG 单字源分数的规范子集
@@ -168,28 +173,4 @@ fn extract(text: &str) -> ExtractReport {
     }
     report.scores = scores;
     report
-}
-
-/// 把带调拼音归一化为项目规范无调读音。
-///
-/// ü 族映射为 ASCII `v`(不是 `u`,ü/v 在 XHUP 语义中区分);
-/// 归一化后仍含非小写 ASCII 字母的输入返回 `None`(坏行,显式忽略)。
-fn normalize_reading(pinyin: &str) -> Option<String> {
-    let mut out = String::with_capacity(pinyin.len());
-    for ch in pinyin.chars() {
-        let mapped = match ch {
-            'ā' | 'á' | 'ǎ' | 'à' => 'a',
-            'ē' | 'é' | 'ě' | 'è' => 'e',
-            'ī' | 'í' | 'ǐ' | 'ì' => 'i',
-            'ō' | 'ó' | 'ǒ' | 'ò' => 'o',
-            'ū' | 'ú' | 'ǔ' | 'ù' => 'u',
-            'ü' | 'ǖ' | 'ǘ' | 'ǚ' | 'ǜ' => 'v',
-            'ń' | 'ň' | 'ǹ' => 'n',
-            'ḿ' => 'm',
-            _ if ch.is_ascii_lowercase() => ch,
-            _ => return None,
-        };
-        out.push(mapped);
-    }
-    if out.is_empty() { None } else { Some(out) }
 }

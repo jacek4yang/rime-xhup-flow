@@ -83,6 +83,16 @@ SHA-256：
 
 再分发该 TSV（包括包含它的生成产物）时须保留上述署名与许可信息。该数据不因入库而改授 LGPL。
 
+## 固定高频词语数据
+
+`data/words/wanxiang_base_words.tsv` 提取自万象基础词库并归一化到本项目规范读音：
+
+- 来源仓库：[`amzxyz/rime-wanxiang`](https://github.com/amzxyz/rime-wanxiang)，固定提交 `4618d67a978ff4f41b165c10b35558d38e333ab1`，文件 `dicts/jichu.dict.yaml`（Git Blob `a0f66e2fc6130f3f1c9b2e5109644c8b893477b0`）
+- 语义上游：[`amzxyz/RIME-LMDG`](https://github.com/amzxyz/RIME-LMDG)
+- 该数据集适用 CC BY 4.0 署名要求，许可证全文见 [`data/words/LICENSE.wanxiang`](data/words/LICENSE.wanxiang)；提取、选择、碰撞过滤规则与覆盖审计见 [`data/words/README.md`](data/words/README.md)
+
+再分发该 TSV（包括由它生成的 `xhup_flow_words.dict.yaml` 等数据产物）时须保留上述署名与许可信息。该数据不因入库而改授 LGPL。
+
 ## 许可证
 
 仓库保留上游配置随附的 LGPL-3.0 许可证文本，见 [`LICENSE`](LICENSE)。

@@ -75,6 +75,48 @@ fn first_generation_creates_directory_and_all_artifacts() {
 }
 
 #[test]
+fn generated_file_set_is_exact_and_top_dictionary_imports_both_tables() {
+    let output = temp_output();
+
+    generate(&output).unwrap();
+
+    let mut filenames: Vec<String> = fs::read_dir(&output)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    filenames.sort();
+    assert_eq!(
+        filenames,
+        [
+            "xhup_flow.dict.yaml",
+            "xhup_flow.schema.yaml",
+            "xhup_flow_chars.dict.yaml",
+            "xhup_flow_words.dict.yaml",
+        ],
+        "输出应为且仅为 4 个 Rime 源文件"
+    );
+    for filename in &filenames {
+        assert!(
+            fs::metadata(output.join(filename)).unwrap().len() > 0,
+            "{filename} 应非空"
+        );
+    }
+    let top = fs::read_to_string(output.join("xhup_flow.dict.yaml")).unwrap();
+    assert!(
+        top.contains("  - xhup_flow_chars"),
+        "顶层词典应导入单字词典"
+    );
+    assert!(
+        top.contains("  - xhup_flow_words"),
+        "顶层词典应导入词语词典"
+    );
+    let schema = fs::read_to_string(output.join("xhup_flow.schema.yaml")).unwrap();
+    assert!(schema.contains("xhup_flow"), "方案应引用 xhup_flow");
+
+    fs::remove_dir_all(&output).unwrap();
+}
+
+#[test]
 fn existing_artifacts_are_replaced_exactly() {
     let output = temp_output();
     fs::create_dir_all(&output).unwrap();
