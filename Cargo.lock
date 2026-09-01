@@ -4435,6 +4435,9 @@ version = "0.1.0"
 [[package]]
 name = "xhup-generator"
 version = "0.1.0"
+dependencies = [
+ "xhup-core",
+]
 
 [[package]]
 name = "yoke"
