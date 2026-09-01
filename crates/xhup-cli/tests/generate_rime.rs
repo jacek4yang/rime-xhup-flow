@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use clap::Parser;
 use xhup_cli::{Cli, CliError, run};
-use xhup_generator::{RIME_CHAR_DICTIONARY_FILENAME, generate_rime_char_dictionary};
+use xhup_generator::generate_rime_artifacts;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -33,37 +33,58 @@ fn generate(output: &Path) -> Result<(), CliError> {
     run(cli)
 }
 
+/// 校验输出目录内:每个产物字节与生成器一致,且无任何临时文件残留。
+fn assert_artifacts_match_generator(output: &Path) {
+    let artifacts = generate_rime_artifacts();
+    assert!(!artifacts.is_empty());
+    for artifact in &artifacts {
+        let final_path = output.join(artifact.filename());
+        assert_eq!(
+            fs::read(&final_path).unwrap(),
+            artifact.contents().as_bytes(),
+            "{} 字节与生成器一致",
+            artifact.filename()
+        );
+        let temporary = output.join(format!(".{}.tmp", artifact.filename()));
+        assert!(
+            !temporary.exists(),
+            "{} 成功后临时文件不残留",
+            artifact.filename()
+        );
+    }
+}
+
 #[test]
-fn first_generation_creates_directory_and_artifact() {
+fn first_generation_creates_directory_and_all_artifacts() {
     let output = temp_output();
-    let artifact = output.join(RIME_CHAR_DICTIONARY_FILENAME);
-    let temporary = output.join(format!(".{RIME_CHAR_DICTIONARY_FILENAME}.tmp"));
 
     generate(&output).unwrap();
 
-    assert!(artifact.is_file());
+    assert_artifacts_match_generator(&output);
+    let filenames: Vec<String> = fs::read_dir(&output)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
     assert_eq!(
-        fs::read(&artifact).unwrap(),
-        generate_rime_char_dictionary().as_bytes()
+        filenames.len(),
+        generate_rime_artifacts().len(),
+        "输出目录恰含全部产物且无其他文件"
     );
-    assert!(!temporary.exists(), "成功后临时文件不残留");
 
     fs::remove_dir_all(&output).unwrap();
 }
 
 #[test]
-fn existing_artifact_is_replaced_exactly() {
+fn existing_artifacts_are_replaced_exactly() {
     let output = temp_output();
     fs::create_dir_all(&output).unwrap();
-    let artifact = output.join(RIME_CHAR_DICTIONARY_FILENAME);
-    fs::write(&artifact, "垃圾内容").unwrap();
+    for artifact in generate_rime_artifacts() {
+        fs::write(output.join(artifact.filename()), "垃圾内容").unwrap();
+    }
 
     generate(&output).unwrap();
 
-    assert_eq!(
-        fs::read(&artifact).unwrap(),
-        generate_rime_char_dictionary().as_bytes()
-    );
+    assert_artifacts_match_generator(&output);
 
     fs::remove_dir_all(&output).unwrap();
 }
@@ -99,14 +120,29 @@ fn output_path_as_regular_file_fails() {
 #[test]
 fn repeated_generation_is_byte_identical() {
     let output = temp_output();
-    let artifact = output.join(RIME_CHAR_DICTIONARY_FILENAME);
 
     generate(&output).unwrap();
-    let first = fs::read(&artifact).unwrap();
+    let first = read_all_artifacts(&output);
     generate(&output).unwrap();
-    let second = fs::read(&artifact).unwrap();
+    let second = read_all_artifacts(&output);
 
     assert_eq!(first, second);
 
     fs::remove_dir_all(&output).unwrap();
+}
+
+/// 读取输出目录内全部产物内容(按文件名排序,便于比较)。
+fn read_all_artifacts(output: &Path) -> Vec<(String, Vec<u8>)> {
+    let mut all: Vec<(String, Vec<u8>)> = fs::read_dir(output)
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            (
+                path.file_name().unwrap().to_string_lossy().into_owned(),
+                fs::read(&path).unwrap(),
+            )
+        })
+        .collect();
+    all.sort();
+    all
 }

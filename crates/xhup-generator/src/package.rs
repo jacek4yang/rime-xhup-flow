@@ -1,0 +1,90 @@
+//! 跨平台便携 Rime 源包的模板渲染与多产物生成。
+//!
+//! 便携核心只使用标准 librime 核心组件,不引用 Lua、OpenCC、
+//! octagram、predict 等可选插件组件,也不包含任何前端私有配置;同一份
+//! 生成包面向 ibus-rime、fcitx5-rime、Weasel、Squirrel、fcitx5-macos、
+//! fcitx5-android 等主流前端。
+//!
+//! 当前方案是固定精确编码层:显式生成的编码直接精确查表,不做运行时
+//! 拼写运算、候选补全枚举、组句与用户词学习。短码、词语、短语与自适应
+//! 连续输入将在后续数据层以独立层加入。
+//!
+//! 模板是 `rime/templates/*.yaml.in` 源文件,唯一占位符为 `{{VERSION}}`
+//! (渲染为 crate 的 package version)。在相同规范数据、相同生成器源码
+//! (含 package version)与相同模板下,生成结果字节级一致。
+
+use crate::rime::{RIME_CHAR_DICTIONARY_FILENAME, generate_rime_char_dictionary};
+
+/// 顶层词典产物文件名。
+const RIME_DICTIONARY_FILENAME: &str = "xhup_flow.dict.yaml";
+
+/// 方案产物文件名。
+const RIME_SCHEMA_FILENAME: &str = "xhup_flow.schema.yaml";
+
+/// 顶层词典模板。
+const DICTIONARY_TEMPLATE: &str = include_str!("../../../rime/templates/xhup_flow.dict.yaml.in");
+
+/// 方案模板。
+const SCHEMA_TEMPLATE: &str = include_str!("../../../rime/templates/xhup_flow.schema.yaml.in");
+
+/// 模板中唯一的占位符。
+const VERSION_PLACEHOLDER: &str = "{{VERSION}}";
+
+/// 便携 Rime 源包中的一个生成产物。
+///
+/// 文件名与内容均由生成器拥有;调用方(如 CLI)只负责落盘,
+/// 不了解任何 Rime 语义。
+#[derive(Debug)]
+pub struct RimeArtifact {
+    filename: &'static str,
+    contents: String,
+}
+
+impl RimeArtifact {
+    /// 产物文件名(相对包根)。
+    pub fn filename(&self) -> &'static str {
+        self.filename
+    }
+
+    /// 产物内容(UTF-8、LF 换行、恰好一个末尾换行)。
+    pub fn contents(&self) -> &str {
+        &self.contents
+    }
+}
+
+/// 渲染模板:把恰好一次的 `{{VERSION}}` 替换为 package version。
+///
+/// 模板是入库源文件,占位符缺失/多余或渲染后残留 `{{` 均属源码级错误,
+/// 直接断言失败。
+fn render_template(template: &str, name: &str) -> String {
+    let count = template.matches(VERSION_PLACEHOLDER).count();
+    assert_eq!(
+        count, 1,
+        "{name}: 模板应恰含一个 {VERSION_PLACEHOLDER} 占位符"
+    );
+    let rendered = template.replace(VERSION_PLACEHOLDER, env!("CARGO_PKG_VERSION"));
+    assert!(!rendered.contains("{{"), "{name}: 渲染后存在未解析占位符");
+    rendered
+}
+
+/// 生成完整的便携 Rime 源包产物集合。
+///
+/// 产物顺序固定且面向依赖关系:单字全码词典 → 顶层词典(导入前者)→
+/// 方案(使用前者)。同一规范数据、生成器源码与模板产生同一顺序、
+/// 字节级一致的产物集合。
+pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
+    vec![
+        RimeArtifact {
+            filename: RIME_CHAR_DICTIONARY_FILENAME,
+            contents: generate_rime_char_dictionary(),
+        },
+        RimeArtifact {
+            filename: RIME_DICTIONARY_FILENAME,
+            contents: render_template(DICTIONARY_TEMPLATE, RIME_DICTIONARY_FILENAME),
+        },
+        RimeArtifact {
+            filename: RIME_SCHEMA_FILENAME,
+            contents: render_template(SCHEMA_TEMPLATE, RIME_SCHEMA_FILENAME),
+        },
+    ]
+}
