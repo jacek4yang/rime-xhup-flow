@@ -9,4 +9,7 @@
 
 mod rime;
 
-pub use rime::{RimeCharEntry, canonical_char_entries, generate_rime_char_dictionary};
+pub use rime::{
+    RIME_CHAR_DICTIONARY_FILENAME, RimeCharEntry, canonical_char_entries,
+    generate_rime_char_dictionary,
+};
