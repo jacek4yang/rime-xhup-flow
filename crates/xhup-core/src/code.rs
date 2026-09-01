@@ -133,6 +133,10 @@ impl fmt::Display for ShapeCode {
 /// 全码:恰好四个合法按键。
 ///
 /// 仅表示结构上的四键全码,不涉及拆字、重码或候选排序规则。
+///
+/// 组合/分解语义:前两个键为双拼音码、后两个键为形码,见
+/// [`FullCode::from_parts`]。该关系是纯粹的结构拼接,`FullCode` 本身不做
+/// 规范音码/形码的成员校验。
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct FullCode([Key; 4]);
 
@@ -145,6 +149,25 @@ impl FullCode {
     /// 以切片形式访问四个按键。
     pub fn as_slice(&self) -> &[Key] {
         &self.0
+    }
+
+    /// 由双拼音码与形码组合成全码:前两键为音码,后两键为形码。
+    ///
+    /// 全函数、零分配;两个来源类型已各自保证恰好两个合法按键。
+    pub const fn from_parts(double_pinyin: DoublePinyinCode, shape: ShapeCode) -> Self {
+        let [a, b] = double_pinyin.0;
+        let [c, d] = shape.0;
+        Self([a, b, c, d])
+    }
+
+    /// 全码的前两键:双拼音码部分。
+    pub const fn double_pinyin_code(self) -> DoublePinyinCode {
+        DoublePinyinCode::new([self.0[0], self.0[1]])
+    }
+
+    /// 全码的后两键:形码部分。
+    pub const fn shape_code(self) -> ShapeCode {
+        ShapeCode::new([self.0[2], self.0[3]])
     }
 }
 
@@ -280,5 +303,46 @@ mod tests {
         let code: FullCode = "xhup".parse().unwrap();
         let reparsed: FullCode = code.to_string().parse().unwrap();
         assert_eq!(reparsed, code);
+    }
+
+    #[test]
+    fn full_code_composes_from_sound_and_shape() {
+        // 音码前两键 + 形码后两键
+        for (sound, shape, expected) in [
+            ("vh", "mt", "vhmt"),
+            ("aa", "aa", "aaaa"),
+            ("zz", "zz", "zzzz"),
+        ] {
+            let sound: DoublePinyinCode = sound.parse().unwrap();
+            let shape: ShapeCode = shape.parse().unwrap();
+            let full = FullCode::from_parts(sound, shape);
+            assert_eq!(full.to_string(), expected);
+            assert_eq!(full, expected.parse().unwrap());
+            assert_eq!(full.double_pinyin_code(), sound);
+            assert_eq!(full.shape_code(), shape);
+        }
+    }
+
+    #[test]
+    fn full_code_composition_round_trips_exhaustively() {
+        // 26^4 = 456,976 个结构值:组合后分解必然还原,分解后组合必然还原
+        let keys: Vec<Key> = ('a'..='z').map(|ch| Key::from_char(ch).unwrap()).collect();
+        for &a in &keys {
+            for &b in &keys {
+                let sound = DoublePinyinCode::new([a, b]);
+                for &c in &keys {
+                    for &d in &keys {
+                        let shape = ShapeCode::new([c, d]);
+                        let full = FullCode::from_parts(sound, shape);
+                        assert_eq!(full.double_pinyin_code(), sound);
+                        assert_eq!(full.shape_code(), shape);
+                        assert_eq!(
+                            FullCode::from_parts(full.double_pinyin_code(), full.shape_code()),
+                            full
+                        );
+                    }
+                }
+            }
+        }
     }
 }
