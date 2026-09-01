@@ -1,16 +1,26 @@
-//! 规范单字全码 Rime 词典的推导与确定性序列化。
+//! 规范单字 Rime 词典的推导与确定性序列化。
 //!
-//! 本模块把 `xhup-core` 的规范数据(可编码规范读音 × 规范形码)投影为
-//! 唯一的 `(规范汉字, 全码)` 语义条目,再序列化为完整的 Rime 源词典文本。
+//! 本模块包含两部分:
 //!
-//! 条目的输出顺序只是确定性的**序列化顺序**(汉字按 Unicode 码点升序、
-//! 同字内全码按键序升序),不代表 Rime 候选排序、频率或首选读音/形码。
-//! 输出不包含日期、时间、主机、路径等任何易变内容:在相同规范数据与相同
-//! xhup-generator 源码(含其 package version)下,生成结果字节级一致。
+//! - [`RimeCharEntry`] / [`canonical_char_entries`]:规范 `(汉字, 全码)` 语义
+//!   关系 API——仅表示四键全码的成员资格,不携带排名信息,语义冻结;
+//! - [`generate_rime_char_dictionary`]:固定层静态单字词典(2/3/4 码)的
+//!   Rime 投影,数据来自 [`crate::char_codes`] 的最终化条目集——与
+//!   [`crate::generate_trainer_dataset`] 共享同一份数据,不存在第二份
+//!   推导/排名实现。
+//!
+//! 词典每行 `汉字<TAB>码<TAB>权重`:候选排名由显式权重表达(同码正数且唯一,
+//! 越大越靠前,排名证据为万象聚合读音分数);行输出顺序只是确定性的**序列化
+//! 顺序**(码长升序、码字典序升序、权重降序、汉字 Unicode 标量升序)。
+//! 输出不包含日期、时间、主机、路径等任何易变内容:在相同规范数据、相同
+//! 频率数据与相同 xhup-generator 源码(含其 package version)下,生成结果
+//! 字节级一致。
 
 use std::collections::BTreeSet;
 
 use xhup_core::{FullCode, XhupHanzi};
+
+use crate::char_codes::finalized_char_code_entries;
 
 /// 词典名称。
 const DICTIONARY_NAME: &str = "xhup_flow_chars";
@@ -65,16 +75,14 @@ pub fn canonical_char_entries() -> Vec<RimeCharEntry> {
     entries
 }
 
-/// 生成完整的规范单字全码 Rime 源词典文本。
+/// 生成完整的固定层静态单字 Rime 源词典文本(2/3/4 码)。
 ///
-/// 输出为 UTF-8(写入字节时)、LF 换行、恰好一个末尾换行、无 BOM;
-/// `sort: by_weight` 且不输出权重列——本词典不承诺任何候选排序。
+/// 序列化 [`crate::char_codes`] 的最终化条目集:每行 `汉字<TAB>码<TAB>权重`,
+/// 所有行都携带显式确定性权重(排名证据为万象聚合读音分数;权重是排名结果
+/// 的输出表示,不是来源分数本身)。输出为 UTF-8(写入字节时)、LF 换行、
+/// 恰好一个末尾换行、无 BOM;行顺序为码长升序、码字典序升序、权重降序、
+/// 汉字 Unicode 标量升序。
 pub fn generate_rime_char_dictionary() -> String {
-    render_char_dictionary(&canonical_char_entries())
-}
-
-/// 把单字全码条目序列化为 Rime 源词典文本。
-fn render_char_dictionary(entries: &[RimeCharEntry]) -> String {
     let mut out = String::new();
     out.push_str("# Rime dictionary\n");
     out.push_str("# encoding: utf-8\n");
@@ -84,10 +92,12 @@ fn render_char_dictionary(entries: &[RimeCharEntry]) -> String {
     out.push_str("\nversion: \"");
     out.push_str(env!("CARGO_PKG_VERSION"));
     out.push_str("\"\nsort: by_weight\nuse_preset_vocabulary: false\n...\n");
-    for entry in entries {
+    for entry in finalized_char_code_entries() {
         out.push(entry.hanzi().as_char());
         out.push('\t');
         out.push_str(&entry.code().to_string());
+        out.push('\t');
+        out.push_str(&entry.rime_weight().to_string());
         out.push('\n');
     }
     out
