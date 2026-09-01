@@ -97,6 +97,39 @@ impl fmt::Display for DoublePinyinCode {
     }
 }
 
+/// 形码单元:恰好两个合法按键。
+///
+/// 仅表示结构上的双键形码单元;不表示该形码已实际指派给某个规范汉字
+/// (规范指派关系见 `XhupHanzi::shape_codes()`)。
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct ShapeCode([Key; 2]);
+
+impl ShapeCode {
+    /// 由两个合法按键构造。
+    pub const fn new(keys: [Key; 2]) -> Self {
+        Self(keys)
+    }
+
+    /// 以切片形式访问两个按键。
+    pub fn as_slice(&self) -> &[Key] {
+        &self.0
+    }
+}
+
+impl FromStr for ShapeCode {
+    type Err = CodeError;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        parse_fixed(input).map(Self)
+    }
+}
+
+impl fmt::Display for ShapeCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_keys(&self.0, f)
+    }
+}
+
 /// 全码:恰好四个合法按键。
 ///
 /// 仅表示结构上的四键全码,不涉及拆字、重码或候选排序规则。
@@ -171,6 +204,41 @@ mod tests {
     fn double_pinyin_display_round_trips() {
         let code: DoublePinyinCode = "xh".parse().unwrap();
         let reparsed: DoublePinyinCode = code.to_string().parse().unwrap();
+        assert_eq!(reparsed, code);
+    }
+
+    #[test]
+    fn shape_code_accepts_exactly_two_valid_keys() {
+        let code: ShapeCode = "kk".parse().unwrap();
+        let keys = [Key::from_char('k').unwrap(), Key::from_char('k').unwrap()];
+        assert_eq!(code, ShapeCode::new(keys));
+        assert_eq!(code.as_slice(), &keys);
+        assert_eq!(code.to_string(), "kk");
+    }
+
+    #[test]
+    fn shape_code_rejects_wrong_lengths() {
+        for (input, actual) in [("", 0), ("k", 1), ("kkd", 3)] {
+            assert_eq!(
+                input.parse::<ShapeCode>(),
+                Err(CodeError::InvalidLength {
+                    expected: 2,
+                    actual
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn shape_code_reports_invalid_char_before_length() {
+        assert_eq!("k!".parse::<ShapeCode>(), Err(invalid_key('!')));
+        assert_eq!("中".parse::<ShapeCode>(), Err(invalid_key('中')));
+    }
+
+    #[test]
+    fn shape_code_display_round_trips() {
+        let code: ShapeCode = "kd".parse().unwrap();
+        let reparsed: ShapeCode = code.to_string().parse().unwrap();
         assert_eq!(reparsed, code);
     }
 
