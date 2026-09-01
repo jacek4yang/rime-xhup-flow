@@ -6,14 +6,17 @@
 //! fcitx5-android 等主流前端。
 //!
 //! 当前方案是固定精确编码层:显式生成的编码直接精确查表,不做运行时
-//! 拼写运算、候选补全枚举、组句与用户词学习。短码、词语、短语与自适应
-//! 连续输入将在后续数据层以独立层加入。
+//! 拼写运算、候选补全枚举、组句与用户词学习。已提供固定层静态单字
+//! (2/3/4 码)与固定层静态高频词语(2~4 字词 4/6/8 键,逐字规范双拼
+//! 两码按字序拼接;二字词仅收录不与规范四码单字全码冲突的 semantic
+//! entry)。短码、长短语与自适应连续输入将在后续数据层以独立层加入。
 //!
 //! 模板是 `rime/templates/*.yaml.in` 源文件,唯一占位符为 `{{VERSION}}`
 //! (渲染为 crate 的 package version)。在相同规范数据、相同生成器源码
 //! (含 package version)与相同模板下,生成结果字节级一致。
 
 use crate::rime::{RIME_CHAR_DICTIONARY_FILENAME, generate_rime_char_dictionary};
+use crate::rime_words::{RIME_WORD_DICTIONARY_FILENAME, generate_rime_word_dictionary};
 
 /// 顶层词典产物文件名。
 const RIME_DICTIONARY_FILENAME: &str = "xhup_flow.dict.yaml";
@@ -69,14 +72,18 @@ fn render_template(template: &str, name: &str) -> String {
 
 /// 生成完整的便携 Rime 源包产物集合。
 ///
-/// 产物顺序固定且面向依赖关系:单字全码词典 → 顶层词典(导入前者)→
-/// 方案(使用前者)。同一规范数据、生成器源码与模板产生同一顺序、
-/// 字节级一致的产物集合。
+/// 产物顺序固定且面向依赖关系:单字全码词典 → 固定层词语词典 →
+/// 顶层词典(导入前两者)→ 方案(使用前者)。同一规范数据、生成器源码
+/// 与模板产生同一顺序、字节级一致的产物集合。
 pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
     vec![
         RimeArtifact {
             filename: RIME_CHAR_DICTIONARY_FILENAME,
             contents: generate_rime_char_dictionary(),
+        },
+        RimeArtifact {
+            filename: RIME_WORD_DICTIONARY_FILENAME,
+            contents: generate_rime_word_dictionary(),
         },
         RimeArtifact {
             filename: RIME_DICTIONARY_FILENAME,
