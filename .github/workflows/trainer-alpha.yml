@@ -38,6 +38,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      windows_version: ${{ steps.meta.outputs.windows_version }}
       android_version_code: ${{ steps.meta.outputs.android_version_code }}
       publish: ${{ steps.meta.outputs.publish }}
 
@@ -77,12 +78,25 @@ jobs:
             vcode="1"
             publish="false"
           fi
+          # MSI/WiX 要求 prerelease 为纯数字,因此 Windows 打包使用派生版本:
+          # 0.1.0-alpha.1 -> 0.1.0-1;0.1.0-alpha.ci.18 -> 0.1.0-18
+          # 对外文件名与 Release 仍使用完整 Alpha 版本字符串。
+          if [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-alpha\.([0-9]+)$ ]]; then
+            win_version="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+          elif [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-alpha\.ci\.([0-9]+)$ ]]; then
+            win_version="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+          else
+            echo "::error::无法从 '$version' 派生 Windows 兼容版本"
+            exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "windows_version=$win_version" >> "$GITHUB_OUTPUT"
           echo "android_version_code=$vcode" >> "$GITHUB_OUTPUT"
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           {
             echo "### 发布元数据"
             echo "- 版本: \`$version\`"
+            echo "- Windows 打包版本(MSI 兼容): \`$win_version\`"
             echo "- Android versionCode: \`$vcode\`"
             echo "- 发布 GitHub Pre-release: \`$publish\`"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -105,6 +119,7 @@ jobs:
     timeout-minutes: 60
     env:
       VERSION: ${{ needs.validate.outputs.version }}
+      WIN_VERSION: ${{ needs.validate.outputs.windows_version }}
 
     steps:
       - name: 检出仓库
@@ -141,7 +156,7 @@ jobs:
       - name: 生成临时版本覆盖配置
         run: |
           $path = Join-Path $env:RUNNER_TEMP 'trainer-alpha-config.json'
-          [System.IO.File]::WriteAllText($path, "{`"version`":`"$env:VERSION`"}")
+          [System.IO.File]::WriteAllText($path, "{`"version`":`"$env:WIN_VERSION`"}")
           "ALPHA_CONFIG=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Get-Content $path
 
@@ -150,8 +165,8 @@ jobs:
 
       - name: 校验并重命名产物
         run: |
-          $nsis = @(Get-ChildItem "trainer/src-tauri/target/release/bundle/nsis" -Filter "*.exe")
-          $msi = @(Get-ChildItem "trainer/src-tauri/target/release/bundle/msi" -Filter "*.msi")
+          $nsis = @(Get-ChildItem "target/release/bundle/nsis" -Filter "*.exe")
+          $msi = @(Get-ChildItem "target/release/bundle/msi" -Filter "*.msi")
           if ($nsis.Count -ne 1) { throw "期望恰好 1 个 NSIS 安装包,实际 $($nsis.Count)" }
           if ($msi.Count -ne 1) { throw "期望恰好 1 个 MSI 安装包,实际 $($msi.Count)" }
           if ($nsis[0].Length -le 0) { throw "NSIS 安装包大小为 0" }
@@ -176,26 +191,48 @@ jobs:
         run: |
           @"
           ### Windows x64 打包
-          - 版本: ``$env:VERSION``
+          - 版本: ``$env:VERSION``(安装包内部版本 ``$env:WIN_VERSION``,MSI 兼容)
           - NSIS: ``$env:SETUP_NAME``
           - MSI: ``$env:MSI_NAME``
           - 签名: 未签名(Alpha 阶段不做 Authenticode)
           "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
-  android-bootstrap:
-    # 临时 job:首次远程生成 Android 原生工程,产物经审计后纳入版本控制,
-    # 随后本 job 会被正式的 Android 打包 job 取代。
-    name: Android 工程引导(临时)
+  android:
+    name: Android universal APK 打包
     needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    outputs:
+      cert_sha256: ${{ steps.verify.outputs.cert_sha256 }}
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+      VCODE: ${{ needs.validate.outputs.android_version_code }}
+      PUBLISH: ${{ needs.validate.outputs.publish }}
+      NDK_VERSION: "27.2.12479018"
+      BUILD_TOOLS_VERSION: "36.0.0"
 
     steps:
       - name: 检出仓库
         uses: actions/checkout@v7
 
-      - name: 准备 Rust 工具链
-        run: rustup show
+      - name: 准备 Rust 工具链与 Android 目标
+        run: |
+          rustup show
+          rustup target add \
+            aarch64-linux-android \
+            armv7-linux-androideabi \
+            i686-linux-android \
+            x86_64-linux-android
+
+      - name: 缓存 Cargo 下载
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rust-alpha-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '**/Cargo.toml') }}
+          restore-keys: |
+            rust-alpha-${{ runner.os }}-
 
       - name: 安装 pnpm
         uses: pnpm/action-setup@v6
@@ -218,40 +255,237 @@ jobs:
       - name: 安装 Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: 安装 Android SDK 组件
+      - name: 安装 Android SDK 组件(固定版本)
         run: |
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-36" \
-            "build-tools;36.0.0" \
-            "ndk;27.2.12479018"
+            "build-tools;${BUILD_TOOLS_VERSION}" \
+            "ndk;${NDK_VERSION}"
 
       - name: 安装依赖
         run: pnpm -C trainer install --frozen-lockfile
 
-      - name: 初始化 Android 原生工程
+      - name: 配置 Android 签名(仅正式发布)
+        if: needs.validate.outputs.publish == 'true'
+        env:
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
-          export NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
-          pnpm -C trainer tauri android init --ci --skip-targets-install
+          set -euo pipefail
+          for name in ANDROID_KEY_BASE64 ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ANDROID_STORE_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::正式发布缺少必需的签名 Secret: $name"
+              exit 1
+            fi
+          done
+          keyfile="$RUNNER_TEMP/xhup-flow-android.jks"
+          echo "$ANDROID_KEY_BASE64" | base64 -d > "$keyfile"
+          chmod 600 "$keyfile"
+          props="trainer/src-tauri/gen/android/keystore.properties"
+          {
+            echo "storeFile=$keyfile"
+            echo "storePassword=$ANDROID_STORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+          } > "$props"
+          chmod 600 "$props"
+          echo "签名配置就绪(keystore.properties 为运行时临时文件,不入库)"
 
-      - name: 清理环境与构建残留
+      - name: 生成临时版本覆盖配置
         run: |
-          cd trainer/src-tauri/gen/android
-          rm -rf .gradle build app/build .cxx local.properties keystore.properties
-          find . -name "*.jks" -delete
-          find . -name "*.keystore" -delete
-          find . -type d -name "build" -prune -exec rm -rf {} +
-          find . -type d -name ".cxx" -prune -exec rm -rf {} +
+          cfg="$RUNNER_TEMP/trainer-alpha-config.json"
+          printf '{"version":"%s","bundle":{"android":{"versionCode":%s}}}' "$VERSION" "$VCODE" > "$cfg"
+          echo "ALPHA_CONFIG=$cfg" >> "$GITHUB_ENV"
+          cat "$cfg"
 
-      - name: 上传 Android 工程引导产物
+      - name: Tauri Android 构建(universal APK)
+        run: |
+          export NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          pnpm -C trainer tauri android build --apk --config "$ALPHA_CONFIG"
+
+      - name: 校验 APK 与签名
+        id: verify
+        run: |
+          set -euo pipefail
+          apk_dir="trainer/src-tauri/gen/android/app/build/outputs/apk/universal/release"
+          suffix=""
+          if [[ "$PUBLISH" == "true" ]]; then
+            apk="$apk_dir/app-universal-release.apk"
+          else
+            apk="$apk_dir/app-universal-release-unsigned.apk"
+            suffix="-UNSIGNED"
+          fi
+          [[ -s "$apk" ]] || { echo "::error::APK 不存在或大小为 0: $apk"; exit 1; }
+          if [[ "$PUBLISH" == "true" ]]; then
+            apksigner="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/apksigner"
+            "$apksigner" verify "$apk"
+            certs="$("$apksigner" verify --print-certs "$apk")"
+            echo "$certs"
+            digest="$(echo "$certs" | grep -oP 'SHA-256 digest:\s*\K[0-9a-f]+' | head -1)"
+            [[ -n "$digest" ]] || { echo "::error::无法提取签名证书 SHA-256"; exit 1; }
+            echo "cert_sha256=$digest" >> "$GITHUB_OUTPUT"
+          fi
+          mkdir -p artifacts/android
+          final="xhup-flow-trainer-v${VERSION}-android-universal${suffix}.apk"
+          cp "$apk" "artifacts/android/$final"
+          echo "APK_NAME=$final" >> "$GITHUB_ENV"
+
+      - name: 上传 Android 产物
         uses: actions/upload-artifact@v7
         with:
-          name: android-project-bootstrap
-          path: trainer/src-tauri/gen/android/
+          name: trainer-alpha-android-${{ needs.validate.outputs.version }}
+          path: artifacts/android/
           retention-days: 7
 
       - name: 构建摘要
         run: |
-          echo "### Android 工程引导(临时)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- 产物: \`android-project-bootstrap\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- 用途: 下载审计后提交到 trainer/src-tauri/gen/android/,本 job 将被移除" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Android universal APK 打包"
+            echo "- 版本: \`$VERSION\` / versionCode \`$VCODE\`"
+            echo "- APK: \`$APK_NAME\`"
+            if [[ "$PUBLISH" == "true" ]]; then
+              echo "- 签名: 已签名(apksigner 校验通过)"
+            else
+              echo "- 签名: 未签名(CI 验证用途,不作为正式测试版本)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: 发布 GitHub Pre-release
+    needs: [validate, windows, android]
+    if: github.event_name == 'workflow_dispatch' && needs.validate.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.validate.outputs.version }}
+      WIN_VERSION: ${{ needs.validate.outputs.windows_version }}
+      VCODE: ${{ needs.validate.outputs.android_version_code }}
+      CERT_SHA256: ${{ needs.android.outputs.cert_sha256 }}
+
+    steps:
+      - name: 下载平台产物
+        uses: actions/download-artifact@v8
+        with:
+          pattern: trainer-alpha-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: 发布前校验
+        run: |
+          set -euo pipefail
+          tag="trainer-v$VERSION"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "::error::tag 已存在: $tag。Alpha 版本不可变,请递增版本号"
+            exit 1
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::error::Release 已存在: $tag。Alpha 版本不可变,请递增版本号"
+            exit 1
+          fi
+          for f in \
+            "xhup-flow-trainer-v$VERSION-windows-x64-setup.exe" \
+            "xhup-flow-trainer-v$VERSION-windows-x64.msi" \
+            "xhup-flow-trainer-v$VERSION-android-universal.apk"; do
+            [[ -s "artifacts/$f" ]] || { echo "::error::缺少发布资产或大小为 0: $f"; exit 1; }
+          done
+          echo "发布前校验通过:tag/release 不存在,三个平台资产齐备"
+
+      - name: 生成 SHA256SUMS 与 BUILD-INFO
+        run: |
+          set -euo pipefail
+          cd artifacts
+          sha256sum -- *.apk *.exe *.msi | LC_ALL=C sort -k2 > SHA256SUMS.txt
+          {
+            echo "Trainer 版本: $VERSION"
+            echo "Git tag: trainer-v$VERSION"
+            echo "Git commit: $GITHUB_SHA"
+            echo "Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo ""
+            echo "Windows 目标: x86_64-pc-windows-msvc(NSIS + MSI)"
+            echo "Windows 安装包内部版本: $WIN_VERSION(MSI 兼容,纯数字 prerelease)"
+            echo "Windows 签名: 未签名(Alpha 阶段)"
+            echo ""
+            echo "Android 包名: io.github.jacek4yang.xhupflow"
+            echo "Android versionCode: $VCODE"
+            echo "Android APK: universal(aarch64 / armv7 / i686 / x86_64)"
+            echo "Java: 17 (Temurin)"
+            echo "compileSdk: 36 / targetSdk: 36 / minSdk: 24"
+            echo "Build Tools: 36.0.0"
+            echo "NDK: 27.2.12479018"
+            echo "Android 签名证书 SHA-256: $CERT_SHA256"
+          } > BUILD-INFO.txt
+          cat SHA256SUMS.txt
+          cat BUILD-INFO.txt
+
+      - name: 创建 Pre-release
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/RELEASE-NOTES.md"
+          cat > "$notes" <<EOF
+          # XHUP Flow Trainer v$VERSION
+
+          **这是用于真实设备验收的 Alpha 测试版本,不是稳定版。**
+
+          人工验证状态(GitHub Actions 构建通过 ≠ 验收通过):
+
+          - Windows: **待验证(UNVERIFIED)**
+          - Android: **待验证(UNVERIFIED)**
+
+          ## 测试平台
+
+          - Windows 11 x64
+          - Android 手机(universal APK)
+
+          ## 包含功能
+
+          - 双拼(2 码)/ 音形(3 码)/ 全码(4 码)/ 综合训练
+          - 错题回炉
+          - 键位参考
+          - 本地进度(仅保存在本机,无网络同步)
+          - 深浅主题
+
+          ## 下载
+
+          | 文件 | 平台 |
+          | ---- | ---- |
+          | \`xhup-flow-trainer-v$VERSION-windows-x64-setup.exe\` | Windows(NSIS 安装包) |
+          | \`xhup-flow-trainer-v$VERSION-windows-x64.msi\` | Windows(MSI 安装包) |
+          | \`xhup-flow-trainer-v$VERSION-android-universal.apk\` | Android(通用 APK) |
+          | \`SHA256SUMS.txt\` | 完整性校验 |
+          | \`BUILD-INFO.txt\` | 构建元数据 |
+
+          ## 已知说明
+
+          - **Windows**:安装包未进行 Authenticode 代码签名,SmartScreen
+            可能提示「未知发布者」,Alpha 阶段属预期;请先用 \`SHA256SUMS.txt\`
+            校验文件完整性,且不要为此全局关闭系统安全防护。
+          - **Android**:APK 已使用项目固定 Android 签名密钥签名;
+            安装时只需允许当前下载来源(浏览器/文件管理器)安装应用。
+
+          ## 人工验收
+
+          验收协议与清单: \`docs/testing/trainer-alpha-windows-android.md\`
+
+          完整性:安装前请比对 \`SHA256SUMS.txt\`。
+          EOF
+          cd artifacts
+          gh release create "trainer-v$VERSION" \
+            --title "XHUP Flow Trainer v$VERSION" \
+            --notes-file "$notes" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            "xhup-flow-trainer-v$VERSION-windows-x64-setup.exe" \
+            "xhup-flow-trainer-v$VERSION-windows-x64.msi" \
+            "xhup-flow-trainer-v$VERSION-android-universal.apk" \
+            SHA256SUMS.txt \
+            BUILD-INFO.txt
+          url="$(gh release view "trainer-v$VERSION" --json url -q .url)"
+          echo "### 发布完成" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Release: $url" >> "$GITHUB_STEP_SUMMARY"

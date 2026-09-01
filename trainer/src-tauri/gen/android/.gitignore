@@ -1,0 +1,14 @@
+# 本机构建状态与签名密钥,永不提交
+.gradle/
+.cxx/
+build/
+app/build/
+local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# Tauri CLI 在构建期生成,不入库
+/tauri.settings.gradle
+/app/tauri.build.gradle.kts
+/app/tauri.properties
