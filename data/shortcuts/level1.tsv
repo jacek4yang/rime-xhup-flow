@@ -1,0 +1,31 @@
+# XHUP Flow 一级简码映射:显式方案设计数据(非词频推导)
+# 小鹤官方公开更新记录确认一级简码机制仍在使用;
+# 26 键映射由本项目冻结并维护,修改视为 breaking scheme change
+# serialization: QWERTY 物理布局顺序(qwertyuiop / asdfghjkl / zxcvbnm)
+# rows: 26
+q	去
+w	我
+e	二
+r	人
+t	他
+y	一
+u	是
+i	出
+o	哦
+p	平
+a	啊
+s	三
+d	的
+f	非
+g	个
+h	和
+j	就
+k	可
+l	了
+z	在
+x	小
+c	才
+v	这
+b	不
+n	你
+m	没
