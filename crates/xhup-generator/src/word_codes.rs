@@ -47,6 +47,10 @@ impl FinalizedWordCodeEntry {
         &self.code
     }
 
+    pub(crate) fn frequency_score(&self) -> u64 {
+        self.frequency_score
+    }
+
     pub(crate) fn rime_weight(&self) -> u32 {
         self.rime_weight
     }
