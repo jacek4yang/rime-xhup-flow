@@ -199,7 +199,9 @@ impl FrequencyModel {
                     let hanzi = text.chars().next().expect("单字候选恰为一字");
                     char_share * self.three_key_probability(hanzi, (keys[0], keys[1]), score, usage)
                 }
-                CandidateSource::FixedWord => (1.0 - char_share) * self.word_probability(score),
+                CandidateSource::FixedWord | CandidateSource::WordShortcut => {
+                    (1.0 - char_share) * self.word_probability(score)
+                }
             },
             FrequencyScale::RawDiagnostic => score as f64,
         }

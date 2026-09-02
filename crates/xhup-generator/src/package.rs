@@ -18,6 +18,9 @@
 
 use crate::rime::{RIME_CHAR_DICTIONARY_FILENAME, generate_rime_char_dictionary};
 use crate::rime_shortcuts::{RIME_SHORTCUT_DICTIONARY_FILENAME, generate_rime_shortcut_dictionary};
+use crate::rime_word_shortcuts::{
+    RIME_WORD_SHORTCUT_DICTIONARY_FILENAME, generate_rime_word_shortcut_dictionary,
+};
 use crate::rime_words::{RIME_WORD_DICTIONARY_FILENAME, generate_rime_word_dictionary};
 
 /// 顶层词典产物文件名。
@@ -75,9 +78,9 @@ fn render_template(template: &str, name: &str) -> String {
 /// 生成完整的便携 Rime 源包产物集合。
 ///
 /// 产物顺序固定且面向输入层级:一级简码词典(1 键)→ 单字全码词典
-/// (2/3/4 码)→ 固定层词语词典(4/6/8 键)→ 顶层词典(导入前三者)→
-/// 方案(使用前者)。同一规范数据、生成器源码与模板产生同一顺序、
-/// 字节级一致的产物集合。
+/// (2/3/4 码)→ 词语简码词典(高稳健零冲突别名,3~7 键)→ 固定层词语
+/// 词典(4/6/8 键)→ 顶层词典(导入前四者)→ 方案(使用前者)。同一规范
+/// 数据、生成器源码与模板产生同一顺序、字节级一致的产物集合。
 pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
     vec![
         RimeArtifact {
@@ -87,6 +90,10 @@ pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
         RimeArtifact {
             filename: RIME_CHAR_DICTIONARY_FILENAME,
             contents: generate_rime_char_dictionary(),
+        },
+        RimeArtifact {
+            filename: RIME_WORD_SHORTCUT_DICTIONARY_FILENAME,
+            contents: generate_rime_word_shortcut_dictionary(),
         },
         RimeArtifact {
             filename: RIME_WORD_DICTIONARY_FILENAME,

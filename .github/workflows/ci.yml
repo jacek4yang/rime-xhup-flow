@@ -104,3 +104,46 @@ jobs:
 
       - name: 构建前端(自动生成规范训练数据)
         run: pnpm -C trainer build
+
+  librime:
+    name: librime runtime integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7
+
+      - name: 准备 Rust 工具链
+        run: rustup show
+
+      - name: 缓存 Cargo 下载
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rust-librime-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '**/Cargo.toml') }}
+          restore-keys: |
+            rust-librime-${{ runner.os }}-
+
+      - name: 安装 librime 运行时与开发文件
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            librime-dev \
+            librime-bin \
+            rime-prelude \
+            pkg-config
+
+      - name: 打印 librime 环境
+        run: |
+          rime_deployer --help 2>&1 | head -3 || true
+          pkg-config --modversion rime || true
+          dpkg-query -W librime-dev librime-bin rime-prelude || true
+
+      - name: 生成 Rime 包
+        run: cargo run -p xhup-cli --locked -- generate rime --output /tmp/xhup-flow-package
+
+      - name: librime session 冒烟测试
+        run: tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package

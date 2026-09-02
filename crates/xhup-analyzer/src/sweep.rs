@@ -111,8 +111,11 @@ pub struct SweepRun {
     pub outcome: OptimizationOutcome,
 }
 
-/// 执行完整 sweep:主网格 + raw 诊断。
-pub fn run_sweep(
+/// 执行 normalized 主网格(不含 raw 诊断运行)。
+///
+/// production selection 的快速路径复用本函数:只跑 ZERO_REGRESSION 的
+/// 30 次 normalized 运行,结果与完整 sweep 中对应数据严格一致。
+pub fn run_normalized_grid(
     targets: &[WordTarget],
     occupancy: &CodeOccupancy,
     frequency: &FrequencyModel,
@@ -144,6 +147,20 @@ pub fn run_sweep(
                 }
             }
         }
+    }
+    runs
+}
+
+/// 执行完整 sweep:主网格 + raw 诊断。
+pub fn run_sweep(
+    targets: &[WordTarget],
+    occupancy: &CodeOccupancy,
+    frequency: &FrequencyModel,
+    profiles: &[OptimizationProfile],
+) -> Vec<SweepRun> {
+    let points = operating_points();
+    let mut runs = run_normalized_grid(targets, occupancy, frequency, profiles);
+    for &profile in profiles {
         // raw-score 诊断:balanced 点 × 3 混合比(raw 不使用混合比,但频率聚合
         // 仍按目标全量;为对齐 grid 结构仅跑 balanced 一次即可说明尺度风险)。
         let balanced = points[2];

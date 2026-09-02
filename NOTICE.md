@@ -93,6 +93,15 @@ SHA-256：
 
 再分发该 TSV（包括由它生成的 `xhup_flow_words.dict.yaml` 等数据产物）时须保留上述署名与许可信息。该数据不因入库而改授 LGPL。
 
+## 词语简码选择集
+
+`data/shortcuts/word_zero_regression.tsv` 由 `data/words/wanxiang_base_words.tsv` 的词语/频率证据经本项目 analyzer 的 production selection policy（`zero-regression-high-v1`）确定性导出：
+
+- 上游来源、固定提交、Git Blob 与 `data/words/wanxiang_base_words.tsv` 完全相同；
+- 该选择集同样适用 CC BY 4.0 署名要求，许可证全文见 [`data/words/LICENSE.wanxiang`](data/words/LICENSE.wanxiang)；选择规则与兼容策略见 [`data/shortcuts/README.md`](data/shortcuts/README.md)。
+
+再分发该 TSV（包括由它生成的 `xhup_flow_word_shortcuts.dict.yaml` 等数据产物）时须保留上述署名与许可信息。该数据不因入库而改授 LGPL；项目 Rust 代码仍保持 LGPL-3.0-only。
+
 ## 许可证
 
 仓库保留上游配置随附的 LGPL-3.0 许可证文本，见 [`LICENSE`](LICENSE)。

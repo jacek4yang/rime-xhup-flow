@@ -8,5 +8,6 @@ use_preset_vocabulary: false
 import_tables:
   - xhup_flow_shortcuts
   - xhup_flow_chars
+  - xhup_flow_word_shortcuts
   - xhup_flow_words
 ...
