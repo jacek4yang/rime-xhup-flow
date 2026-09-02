@@ -23,10 +23,12 @@ mod frequency;
 mod package;
 mod rime;
 mod rime_shortcuts;
+mod rime_word_shortcuts;
 mod rime_words;
 mod shortcuts;
 mod trainer;
 mod word_codes;
+mod word_shortcuts;
 mod words;
 
 pub use analysis::{
@@ -40,7 +42,11 @@ pub use rime::{
     generate_rime_char_dictionary,
 };
 pub use rime_shortcuts::{RIME_SHORTCUT_DICTIONARY_FILENAME, generate_rime_shortcut_dictionary};
+pub use rime_word_shortcuts::{
+    RIME_WORD_SHORTCUT_DICTIONARY_FILENAME, generate_rime_word_shortcut_dictionary,
+};
 pub use rime_words::{RIME_WORD_DICTIONARY_FILENAME, generate_rime_word_dictionary};
 pub use shortcuts::{Level1ShortcutEntry, canonical_level1_shortcuts};
 pub use trainer::{TRAINER_DATA_FILENAME, generate_trainer_dataset};
 pub use word_codes::{RimeWordCodeEntry, canonical_word_code_entries};
+pub use word_shortcuts::{CanonicalWordShortcutEntry, canonical_word_shortcut_entries};

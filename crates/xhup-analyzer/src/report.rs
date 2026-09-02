@@ -11,9 +11,11 @@ use std::time::Duration;
 
 use crate::candidates::WordTarget;
 use crate::frequency::{CharCodeUsage, FrequencyScale};
-use crate::occupancy::CandidateSource;
+use crate::occupancy::{CandidateSource, CodeOccupancy, LayerAudit};
 use crate::optimize::{OptimizationOutcome, OptimizationProfile, evaluate_target};
-use crate::sweep::{Robustness, SweepRun, classify, operating_points, robustness_map};
+use crate::sweep::{
+    OperatingPointId, Robustness, SweepRun, classify, operating_points, robustness_map,
+};
 use crate::{AnalysisData, CostModel};
 use xhup_core::KeySequence;
 
@@ -40,16 +42,16 @@ pub fn balanced_scale() -> FrequencyScale {
     }
 }
 
-/// balanced operating point 的成本模型。
+/// balanced operating point 的成本模型(typed identity,无数组位置依赖)。
 pub fn balanced_cost() -> CostModel {
-    operating_points()[2].cost_model()
+    OperatingPointId::Balanced.operating_point().cost_model()
 }
 
 /// 在 sweep 结果中定位某 profile 的 balanced 主运行(50:50 / conservative)。
 fn find_balanced_run(runs: &[SweepRun], profile: OptimizationProfile) -> Option<&SweepRun> {
     runs.iter().find(|run| {
         run.profile == profile
-            && run.point == "balanced"
+            && run.point == OperatingPointId::Balanced
             && !run.diagnostic
             && matches!(
                 run.scale,
@@ -174,22 +176,14 @@ fn section_overview(out: &mut String, data: &AnalysisData, timings: &Timings) {
 
 fn section_occupancy(out: &mut String, data: &AnalysisData) {
     let audit = data.occupancy.layer_audit();
-    writeln!(out, "## 当前 code-space 占用(从 canonical data 现算)").unwrap();
-    writeln!(out).unwrap();
-    writeln!(out, "分层行数:").unwrap();
     writeln!(
         out,
-        "  1-key level1 shortcuts: {}",
-        audit.level1_shortcut_rows
+        "## 优化 baseline code-space 占用(从 canonical data 现算)"
     )
     .unwrap();
-    writeln!(out, "  2-key chars:            {}", audit.char_2key_rows).unwrap();
-    writeln!(out, "  3-key chars:            {}", audit.char_3key_rows).unwrap();
-    writeln!(out, "  4-key chars(FullCode): {}", audit.char_4key_rows).unwrap();
-    writeln!(out, "  4-key words:            {}", audit.word_4key_rows).unwrap();
-    writeln!(out, "  6-key words:            {}", audit.word_6key_rows).unwrap();
-    writeln!(out, "  8-key words:            {}", audit.word_8key_rows).unwrap();
-    writeln!(out, "  total rows:             {}", audit.total_rows()).unwrap();
+    writeln!(out).unwrap();
+    render_layer_audit_lines(out, &audit);
+    writeln!(out, "(baseline 不含已入库的词语简码层)").unwrap();
     writeln!(out).unwrap();
     writeln!(
         out,
@@ -232,6 +226,43 @@ fn section_occupancy(out: &mut String, data: &AnalysisData) {
         .unwrap();
     }
     writeln!(out).unwrap();
+
+    // 当前真实生产占用:baseline + 已入库词语简码层。后续优化与碰撞审计
+    // 必须能看到这些已占用码位,不能假装它们仍为空。
+    let production = CodeOccupancy::build_current_production();
+    let production_audit = production.layer_audit();
+    writeln!(out, "## 当前生产 code-space 占用(baseline + 词语简码层)").unwrap();
+    writeln!(out).unwrap();
+    render_layer_audit_lines(out, &production_audit);
+    writeln!(out).unwrap();
+}
+
+fn render_layer_audit_lines(out: &mut String, audit: &LayerAudit) {
+    writeln!(out, "分层行数:").unwrap();
+    writeln!(
+        out,
+        "  1-key level1 shortcuts: {}",
+        audit.level1_shortcut_rows
+    )
+    .unwrap();
+    writeln!(out, "  2-key chars:            {}", audit.char_2key_rows).unwrap();
+    writeln!(out, "  3-key chars:            {}", audit.char_3key_rows).unwrap();
+    writeln!(out, "  4-key chars(FullCode): {}", audit.char_4key_rows).unwrap();
+    writeln!(out, "  4-key words:            {}", audit.word_4key_rows).unwrap();
+    writeln!(out, "  6-key words:            {}", audit.word_6key_rows).unwrap();
+    writeln!(out, "  8-key words:            {}", audit.word_8key_rows).unwrap();
+    writeln!(
+        out,
+        "  word shortcuts:         {} (3-key {} / 4-key {} / 5-key {} / 6-key {} / 7-key {})",
+        audit.word_shortcut_rows(),
+        audit.word_shortcut_3key_rows,
+        audit.word_shortcut_4key_rows,
+        audit.word_shortcut_5key_rows,
+        audit.word_shortcut_6key_rows,
+        audit.word_shortcut_7key_rows,
+    )
+    .unwrap();
+    writeln!(out, "  total rows:             {}", audit.total_rows()).unwrap();
 }
 
 fn section_frequency_audit(out: &mut String, data: &AnalysisData) {
@@ -824,7 +855,7 @@ fn section_operating_points(out: &mut String, runs: &[SweepRun]) {
         for point in operating_points() {
             let run = runs.iter().find(|r| {
                 r.profile == profile
-                    && r.point == point.name
+                    && r.point == point.id
                     && !r.diagnostic
                     && matches!(
                         r.scale,
@@ -839,7 +870,7 @@ fn section_operating_points(out: &mut String, runs: &[SweepRun]) {
                 writeln!(
                     out,
                     "| {} | {} | {:.4e} | {:.2}% | {} | {} | {:.4e} | {:.2} |",
-                    point.name,
+                    point.id.label(),
                     s.assigned_words,
                     s.weighted_keys_saved(),
                     s.saving_percentage(),

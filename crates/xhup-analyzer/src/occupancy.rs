@@ -1,14 +1,23 @@
-//! 生产码位占用:从 generator 的公共/分析投影重建当前固定层 exact-code 空间。
+//! 生产码位占用:从 generator 的公共/分析投影重建 exact-code 空间。
 //!
-//! 本模块是 optimizer 的全部"现状"事实来源:一级简码(1 键)、静态单字
-//! (2/3/4 码)、静态词语(4/6/8 键)按码分组,候选顺序由显式 Rime 权重
-//! 降序表达。所有统计都从真实 canonical data 现算,不硬编码行数。
+//! 本模块是 optimizer 的全部"现状"事实来源,显式区分两种语义:
+//!
+//! - [`CodeOccupancy::build_baseline_fixed`]:一级简码(1 键)+ 静态单字
+//!   (2/3/4 码)+ 静态词语(4/6/8 键),即 optimizer 的历史/优化 baseline,
+//!   **不包含**已入库的词语简码层。production selection 永远基于它。
+//! - [`CodeOccupancy::build_current_production`]:baseline + 已入库的
+//!   高稳健零冲突词语简码层(`data/shortcuts/word_zero_regression.tsv`),
+//!   即当前真实生产占用。审计与后续优化必须能看到这些已占用码位。
+//!
+//! 候选顺序由显式 Rime 权重降序表达。所有统计都从真实 canonical data 现算,
+//! 不硬编码行数。
 
 use std::collections::BTreeMap;
 
 use xhup_core::KeySequence;
 use xhup_generator::{
-    canonical_level1_shortcuts, char_code_analysis_entries, word_code_analysis_entries,
+    canonical_level1_shortcuts, canonical_word_shortcut_entries, char_code_analysis_entries,
+    word_code_analysis_entries,
 };
 
 /// 现有候选的来源层。
@@ -20,6 +29,8 @@ pub enum CandidateSource {
     CharCode,
     /// 静态高频词语层(4/6/8 键)。
     FixedWord,
+    /// 已入库的高稳健零冲突词语简码层(3~7 键 alias)。
+    WordShortcut,
 }
 
 impl CandidateSource {
@@ -29,6 +40,7 @@ impl CandidateSource {
             CandidateSource::Level1Shortcut => "level1_shortcut",
             CandidateSource::CharCode => "char_code",
             CandidateSource::FixedWord => "fixed_word",
+            CandidateSource::WordShortcut => "word_shortcut",
         }
     }
 }
@@ -50,6 +62,8 @@ pub enum CollisionClass {
     FullCodeChar,
     /// 命中固定词语(4/6/8 键)。
     FixedWord,
+    /// 命中已入库的词语简码(3~7 键)。
+    WordShortcut,
     /// 同时命中多个来源层。
     Multiple,
 }
@@ -64,6 +78,7 @@ impl CollisionClass {
             CollisionClass::Char3Key => "3KEY_CHAR",
             CollisionClass::FullCodeChar => "FULLCODE_CHAR",
             CollisionClass::FixedWord => "FIXED_WORD",
+            CollisionClass::WordShortcut => "WORD_SHORTCUT",
             CollisionClass::Multiple => "MULTIPLE",
         }
     }
@@ -101,21 +116,34 @@ impl ExistingCandidate {
         self.rime_weight
     }
 
-    /// 万象聚合频率分数(一级简码无频率证据,恒为 0)。
+    /// 万象聚合频率分数(一级简码无频率证据,恒为 0;词语简码复制其
+    /// `(词, 完整码)` 对应的真实词频分数)。
     pub fn frequency_score(&self) -> u64 {
         self.frequency_score
     }
 }
 
-/// 当前固定层 exact-code 占用表。
+/// 固定层 exact-code 占用表(baseline 或含词语简码层的当前生产占用,
+/// 由构建入口决定)。
 pub struct CodeOccupancy {
     /// 码 → 候选组(组内按权重降序,rank 已回填)。
     groups: BTreeMap<KeySequence, Vec<ExistingCandidate>>,
 }
 
 impl CodeOccupancy {
-    /// 从 generator 的只读投影完整重建当前生产码位占用。
-    pub fn build() -> Self {
+    /// 重建优化 baseline 固定层占用:一级简码 + 静态单字 + 静态词语,
+    /// **不包含**已入库的词语简码层。production selection 永远基于它。
+    pub fn build_baseline_fixed() -> Self {
+        Self::build_impl(false)
+    }
+
+    /// 重建当前真实生产占用:baseline fixed + 已入库的高稳健零冲突词语
+    /// 简码层。词语简码候选携带其 `(词, 完整码)` 对应的真实词频证据。
+    pub fn build_current_production() -> Self {
+        Self::build_impl(true)
+    }
+
+    fn build_impl(with_word_shortcuts: bool) -> Self {
         let mut groups: BTreeMap<KeySequence, Vec<ExistingCandidate>> = BTreeMap::new();
         let mut push = |code: &KeySequence,
                         text: String,
@@ -162,6 +190,27 @@ impl CodeOccupancy {
                 entry.frequency_score(),
             );
         }
+        if with_word_shortcuts {
+            // (词, 完整码) → 真实词频分数;TSV 解析已保证每个 (词, 完整码)
+            // 在固定词层存在,查不到即数据损坏,直接 panic。
+            let word_entries = word_code_analysis_entries();
+            let word_scores: BTreeMap<(&str, &KeySequence), u64> = word_entries
+                .iter()
+                .map(|entry| ((entry.word(), entry.code()), entry.frequency_score()))
+                .collect();
+            for entry in canonical_word_shortcut_entries() {
+                let frequency_score = *word_scores
+                    .get(&(entry.word(), entry.full_code()))
+                    .expect("词语简码的 (词, 完整码) 必须存在于固定词层");
+                push(
+                    entry.shortcut_code(),
+                    entry.word().to_string(),
+                    CandidateSource::WordShortcut,
+                    1,
+                    frequency_score,
+                );
+            }
+        }
 
         // 组内排序:权重降序;权重同码唯一,文本升序仅为确定性兜底。
         for group in groups.values_mut() {
@@ -200,6 +249,7 @@ impl CodeOccupancy {
             (CandidateSource::CharCode, 3) => CollisionClass::Char3Key,
             (CandidateSource::CharCode, _) => CollisionClass::FullCodeChar,
             (CandidateSource::FixedWord, _) => CollisionClass::FixedWord,
+            (CandidateSource::WordShortcut, _) => CollisionClass::WordShortcut,
         }
     }
 
@@ -231,6 +281,13 @@ impl CodeOccupancy {
                         4 => audit.word_4key_rows += 1,
                         6 => audit.word_6key_rows += 1,
                         _ => audit.word_8key_rows += 1,
+                    },
+                    CandidateSource::WordShortcut => match code.len() {
+                        3 => audit.word_shortcut_3key_rows += 1,
+                        4 => audit.word_shortcut_4key_rows += 1,
+                        5 => audit.word_shortcut_5key_rows += 1,
+                        6 => audit.word_shortcut_6key_rows += 1,
+                        _ => audit.word_shortcut_7key_rows += 1,
                     },
                 }
             }
@@ -351,9 +408,28 @@ pub struct LayerAudit {
     pub word_6key_rows: usize,
     /// 8 键词语行数。
     pub word_8key_rows: usize,
+    /// 3 键词语简码行数。
+    pub word_shortcut_3key_rows: usize,
+    /// 4 键词语简码行数。
+    pub word_shortcut_4key_rows: usize,
+    /// 5 键词语简码行数。
+    pub word_shortcut_5key_rows: usize,
+    /// 6 键词语简码行数。
+    pub word_shortcut_6key_rows: usize,
+    /// 7 键词语简码行数。
+    pub word_shortcut_7key_rows: usize,
 }
 
 impl LayerAudit {
+    /// 词语简码层全部行数(3~7 键合计)。
+    pub fn word_shortcut_rows(&self) -> usize {
+        self.word_shortcut_3key_rows
+            + self.word_shortcut_4key_rows
+            + self.word_shortcut_5key_rows
+            + self.word_shortcut_6key_rows
+            + self.word_shortcut_7key_rows
+    }
+
     /// 全部行数合计。
     pub fn total_rows(&self) -> usize {
         self.level1_shortcut_rows
@@ -363,5 +439,6 @@ impl LayerAudit {
             + self.word_4key_rows
             + self.word_6key_rows
             + self.word_8key_rows
+            + self.word_shortcut_rows()
     }
 }

@@ -32,3 +32,43 @@ scheme change。
 
 本文件不涉及第三方数据许可证;26 个离散键值事实为本项目维护的方案
 设计数据。
+
+# 词语简码(高稳健零冲突层)
+
+`word_zero_regression.tsv` 是 XHUP Flow **词语简码层的唯一事实来源**:
+每行 `词<TAB>完整码<TAB>简码<TAB>模式`(模式为逐字 F/I 投影,
+F = 完整双拼两键,I = 双拼首键),按 `简码长度 → 简码 → 词` 的
+canonical 顺序序列化(LF、无 BOM、恰好一个末尾换行)。
+
+## 数据性质
+
+与 `level1.tsv` 的显式设计数据不同,本文件是由
+`data/words/wanxiang_base_words.tsv` 的词语/频率证据经 `xhup-analyzer`
+的 production selection policy(`zero-regression-high-v1`)**确定性导出**
+的选择集:
+
+- profile:ZERO_REGRESSION(简码在 baseline fixed exact-code 空间中完全
+  空闲,不与一级简码、单字 2/3/4 码、固定词 4/6/8 键冲突);
+- reference run:balanced operating point × normalized(char:word = 50:50,
+  3 码单字 conservative 归属假设);
+- robustness gate:30 次 normalized sensitivity 运行中同码票数 ≥ 4/5
+  (整数票数比较,非浮点),且最多票码与 reference assignment 码一致。
+
+简码是**新增别名**,不替换完整码:每个词的完整码关系在固定词层完整保留。
+本层不包含任何与既有编码冲突的关系(例如「时间」的 `uij`/`ujm` 与 3 码
+单字冲突,明确不属于本层)。
+
+## 兼容策略
+
+本文件一旦发布即属于**稳定的用户肌肉记忆兼容接口**。更新它必须经由显式
+analyzer export + diff review + policy version review;analyzer 算法的演进
+不得自动删除或更换已发布的 `词 → 简码` 关系——修改已发布关系视为
+breaking scheme change,与一级简码的肌肉记忆保护原则一致。
+
+## 许可证
+
+本文件派生自万象词库证据,与 `data/words/wanxiang_base_words.tsv` 同源,
+适用 CC BY 4.0 署名要求,许可证全文见
+[`../words/LICENSE.wanxiang`](../words/LICENSE.wanxiang);再分发(包括由它
+生成的 `xhup_flow_word_shortcuts.dict.yaml` 等数据产物)须保留该署名与
+许可信息。该数据不因入库而改授 LGPL。

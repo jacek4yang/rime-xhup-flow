@@ -13,11 +13,98 @@ use crate::frequency::{CharCodeUsage, FrequencyModel, FrequencyScale};
 use crate::occupancy::CodeOccupancy;
 use crate::optimize::{OptimizationOutcome, OptimizationProfile, optimize};
 
+/// operating point 的稳定 typed identity。
+///
+/// production policy(`zero-regression-high-v1`)的 reference run 以此为准,
+/// 不依赖展示字符串或数组位置;展示文字通过 [`OperatingPointId::label`] 获得。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum OperatingPointId {
+    /// 极保守(rank/歧义/扰动成本最高,模式切换有惩罚)。
+    VeryConservative,
+    /// 保守。
+    Conservative,
+    /// 均衡(production reference 运行点)。
+    Balanced,
+    /// 激进。
+    Aggressive,
+    /// 极激进。
+    VeryAggressive,
+}
+
+impl OperatingPointId {
+    /// 全部 identity(very conservative → very aggressive)。
+    pub const ALL: [OperatingPointId; 5] = [
+        OperatingPointId::VeryConservative,
+        OperatingPointId::Conservative,
+        OperatingPointId::Balanced,
+        OperatingPointId::Aggressive,
+        OperatingPointId::VeryAggressive,
+    ];
+
+    /// 报告用稳定标签。
+    pub fn label(self) -> &'static str {
+        match self {
+            OperatingPointId::VeryConservative => "very_conservative",
+            OperatingPointId::Conservative => "conservative",
+            OperatingPointId::Balanced => "balanced",
+            OperatingPointId::Aggressive => "aggressive",
+            OperatingPointId::VeryAggressive => "very_aggressive",
+        }
+    }
+
+    /// 该 identity 对应的成本参数组合(typed,无数组位置依赖)。
+    pub fn operating_point(self) -> OperatingPoint {
+        let id = self;
+        match self {
+            OperatingPointId::VeryConservative => OperatingPoint {
+                id,
+                selection_rank2_9: 2.0,
+                selection_rank10_plus: 4.0,
+                ambiguity_coeff: 1.0,
+                disruption_coeff: 4.0,
+                mode_complexity_per_transition: 0.1,
+            },
+            OperatingPointId::Conservative => OperatingPoint {
+                id,
+                selection_rank2_9: 1.5,
+                selection_rank10_plus: 3.0,
+                ambiguity_coeff: 0.75,
+                disruption_coeff: 2.0,
+                mode_complexity_per_transition: 0.05,
+            },
+            OperatingPointId::Balanced => OperatingPoint {
+                id,
+                selection_rank2_9: 1.0,
+                selection_rank10_plus: 2.0,
+                ambiguity_coeff: 0.5,
+                disruption_coeff: 1.0,
+                mode_complexity_per_transition: 0.0,
+            },
+            OperatingPointId::Aggressive => OperatingPoint {
+                id,
+                selection_rank2_9: 0.5,
+                selection_rank10_plus: 1.0,
+                ambiguity_coeff: 0.25,
+                disruption_coeff: 0.5,
+                mode_complexity_per_transition: 0.0,
+            },
+            OperatingPointId::VeryAggressive => OperatingPoint {
+                id,
+                selection_rank2_9: 0.25,
+                selection_rank10_plus: 0.5,
+                ambiguity_coeff: 0.1,
+                disruption_coeff: 0.25,
+                mode_complexity_per_transition: 0.0,
+            },
+        }
+    }
+}
+
 /// 一个代表性 operating point(成本参数组合)。
 #[derive(Clone, Copy, Debug)]
 pub struct OperatingPoint {
-    /// 名称(报告用)。
-    pub name: &'static str,
+    /// 稳定 typed identity(展示文字:`id.label()`)。
+    pub id: OperatingPointId,
     /// rank 2..=9 选择成本。
     pub selection_rank2_9: f64,
     /// rank ≥ 10 选择成本。
@@ -46,48 +133,7 @@ impl OperatingPoint {
 
 /// 五个代表性 operating points(very conservative → very aggressive)。
 pub fn operating_points() -> [OperatingPoint; 5] {
-    [
-        OperatingPoint {
-            name: "very_conservative",
-            selection_rank2_9: 2.0,
-            selection_rank10_plus: 4.0,
-            ambiguity_coeff: 1.0,
-            disruption_coeff: 4.0,
-            mode_complexity_per_transition: 0.1,
-        },
-        OperatingPoint {
-            name: "conservative",
-            selection_rank2_9: 1.5,
-            selection_rank10_plus: 3.0,
-            ambiguity_coeff: 0.75,
-            disruption_coeff: 2.0,
-            mode_complexity_per_transition: 0.05,
-        },
-        OperatingPoint {
-            name: "balanced",
-            selection_rank2_9: 1.0,
-            selection_rank10_plus: 2.0,
-            ambiguity_coeff: 0.5,
-            disruption_coeff: 1.0,
-            mode_complexity_per_transition: 0.0,
-        },
-        OperatingPoint {
-            name: "aggressive",
-            selection_rank2_9: 0.5,
-            selection_rank10_plus: 1.0,
-            ambiguity_coeff: 0.25,
-            disruption_coeff: 0.5,
-            mode_complexity_per_transition: 0.0,
-        },
-        OperatingPoint {
-            name: "very_aggressive",
-            selection_rank2_9: 0.25,
-            selection_rank10_plus: 0.5,
-            ambiguity_coeff: 0.1,
-            disruption_coeff: 0.25,
-            mode_complexity_per_transition: 0.0,
-        },
-    ]
+    OperatingPointId::ALL.map(OperatingPointId::operating_point)
 }
 
 /// char:word 混合比(char 侧占比)。
@@ -101,8 +147,8 @@ pub struct SweepRun {
     pub label: String,
     /// profile。
     pub profile: OptimizationProfile,
-    /// operating point 名称。
-    pub point: &'static str,
+    /// operating point 的稳定 typed identity。
+    pub point: OperatingPointId,
     /// 频率尺度。
     pub scale: FrequencyScale,
     /// 是否 raw-score 诊断运行(不进入稳健性统计)。
@@ -111,8 +157,11 @@ pub struct SweepRun {
     pub outcome: OptimizationOutcome,
 }
 
-/// 执行完整 sweep:主网格 + raw 诊断。
-pub fn run_sweep(
+/// 执行 normalized 主网格(不含 raw 诊断运行)。
+///
+/// production selection 的快速路径复用本函数:只跑 ZERO_REGRESSION 的
+/// 30 次 normalized 运行,结果与完整 sweep 中对应数据严格一致。
+pub fn run_normalized_grid(
     targets: &[WordTarget],
     occupancy: &CodeOccupancy,
     frequency: &FrequencyModel,
@@ -131,12 +180,12 @@ pub fn run_sweep(
                         label: format!(
                             "{} | {} | {} | {}",
                             profile.label(),
-                            point.name,
+                            point.id.label(),
                             mixture_label,
                             usage.label()
                         ),
                         profile,
-                        point: point.name,
+                        point: point.id,
                         scale,
                         diagnostic: false,
                         outcome,
@@ -144,9 +193,22 @@ pub fn run_sweep(
                 }
             }
         }
+    }
+    runs
+}
+
+/// 执行完整 sweep:主网格 + raw 诊断。
+pub fn run_sweep(
+    targets: &[WordTarget],
+    occupancy: &CodeOccupancy,
+    frequency: &FrequencyModel,
+    profiles: &[OptimizationProfile],
+) -> Vec<SweepRun> {
+    let mut runs = run_normalized_grid(targets, occupancy, frequency, profiles);
+    for &profile in profiles {
         // raw-score 诊断:balanced 点 × 3 混合比(raw 不使用混合比,但频率聚合
         // 仍按目标全量;为对齐 grid 结构仅跑 balanced 一次即可说明尺度风险)。
-        let balanced = points[2];
+        let balanced = OperatingPointId::Balanced.operating_point();
         let scale = FrequencyScale::RawDiagnostic;
         let outcome = optimize(
             targets,
@@ -157,9 +219,13 @@ pub fn run_sweep(
             profile,
         );
         runs.push(SweepRun {
-            label: format!("{} | {} | raw-diagnostic", profile.label(), balanced.name),
+            label: format!(
+                "{} | {} | raw-diagnostic",
+                profile.label(),
+                balanced.id.label()
+            ),
             profile,
-            point: balanced.name,
+            point: balanced.id,
             scale,
             diagnostic: true,
             outcome,

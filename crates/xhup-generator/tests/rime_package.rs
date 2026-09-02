@@ -3,7 +3,7 @@
 
 use xhup_generator::{
     generate_rime_artifacts, generate_rime_char_dictionary, generate_rime_shortcut_dictionary,
-    generate_rime_word_dictionary,
+    generate_rime_word_dictionary, generate_rime_word_shortcut_dictionary,
 };
 
 /// 按文件名取产物内容。
@@ -24,11 +24,12 @@ fn artifact_set_is_exact_and_ordered() {
         [
             "xhup_flow_shortcuts.dict.yaml",
             "xhup_flow_chars.dict.yaml",
+            "xhup_flow_word_shortcuts.dict.yaml",
             "xhup_flow_words.dict.yaml",
             "xhup_flow.dict.yaml",
             "xhup_flow.schema.yaml",
         ],
-        "产物集合与顺序固定:简码词典 → 单字词典 → 词语词典 → 顶层词典 → 方案"
+        "产物集合与顺序固定:简码词典 → 单字词典 → 词语简码词典 → 词语词典 → 顶层词典 → 方案"
     );
 }
 
@@ -53,6 +54,16 @@ fn char_dictionary_reuses_existing_generator() {
 }
 
 #[test]
+fn word_shortcut_dictionary_reuses_existing_generator() {
+    let artifacts = generate_rime_artifacts();
+    assert_eq!(
+        contents_of(&artifacts, "xhup_flow_word_shortcuts.dict.yaml"),
+        generate_rime_word_shortcut_dictionary(),
+        "词语简码词典产物与既有生成器字节一致"
+    );
+}
+
+#[test]
 fn word_dictionary_reuses_existing_generator() {
     let artifacts = generate_rime_artifacts();
     assert_eq!(
@@ -63,7 +74,7 @@ fn word_dictionary_reuses_existing_generator() {
 }
 
 #[test]
-fn top_dictionary_imports_shortcut_char_and_word_dictionaries() {
+fn top_dictionary_imports_all_layer_dictionaries() {
     let artifacts = generate_rime_artifacts();
     let dict = contents_of(&artifacts, "xhup_flow.dict.yaml");
     let expected_version = format!("version: \"{}\"", env!("CARGO_PKG_VERSION"));
@@ -75,6 +86,7 @@ fn top_dictionary_imports_shortcut_char_and_word_dictionaries() {
         "import_tables:",
         "  - xhup_flow_shortcuts",
         "  - xhup_flow_chars",
+        "  - xhup_flow_word_shortcuts",
         "  - xhup_flow_words",
     ] {
         assert!(dict.contains(line), "顶层词典缺少 `{line}`");
