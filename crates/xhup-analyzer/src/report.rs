@@ -264,6 +264,94 @@ fn section_frequency_audit(out: &mut String, data: &AnalysisData) {
     )
     .unwrap();
     writeln!(out).unwrap();
+
+    // ── 单字 domain 归一化审计 ──────────────────────────────────
+    // Normalized 单字 domain 只含 3 码单字关系(OPTIMIZED 中唯一可重排的单字
+    // 层;4 码规范全码硬保护、1/2 键 shortcut 不可达,不参与归一化)。
+    let three_key: Vec<&crate::CharCodeAnalysisEntry> =
+        data.chars.iter().filter(|e| e.code().len() == 3).collect();
+    writeln!(
+        out,
+        "单字 domain 归一化审计(normalized 模型仅以 3 码单字关系为 domain):"
+    )
+    .unwrap();
+    writeln!(out, "  3-key char relation count:  {}", three_key.len()).unwrap();
+    writeln!(
+        out,
+        "  3-key conservative raw total: {}",
+        data.frequency.char_total_conservative()
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "  3-key split raw total:        {:.1}",
+        data.frequency.char_total_split()
+    )
+    .unwrap();
+    for usage in [CharCodeUsage::Conservative, CharCodeUsage::Split] {
+        let sum = char_domain_mass(
+            data,
+            &FrequencyScale::Normalized {
+                char_share: 1.0,
+                usage,
+            },
+        );
+        writeln!(out, "  normalized sum({}): {:.12}", usage.label(), sum).unwrap();
+    }
+    writeln!(out).unwrap();
+    writeln!(
+        out,
+        "| char:word | conservative char mass | split char mass |"
+    )
+    .unwrap();
+    for char_share in [0.25, 0.50, 0.75] {
+        let conservative = char_domain_mass(
+            data,
+            &FrequencyScale::Normalized {
+                char_share,
+                usage: CharCodeUsage::Conservative,
+            },
+        );
+        let split = char_domain_mass(
+            data,
+            &FrequencyScale::Normalized {
+                char_share,
+                usage: CharCodeUsage::Split,
+            },
+        );
+        writeln!(
+            out,
+            "| {:.0}:{:.0} | {conservative:.6} | {split:.6} |",
+            char_share * 100.0,
+            (1.0 - char_share) * 100.0
+        )
+        .unwrap();
+    }
+    writeln!(out).unwrap();
+    writeln!(
+        out,
+        "混合后 char 侧总质量恒等于设定的 char_share(上表),domain 不被 2/4 码关系稀释。"
+    )
+    .unwrap();
+    writeln!(out).unwrap();
+}
+
+/// 全部 3 码单字关系在指定尺度下的归一化权重合计(频率审计用)。
+fn char_domain_mass(data: &AnalysisData, scale: &FrequencyScale) -> f64 {
+    let mut buf = [0u8; 4];
+    data.chars
+        .iter()
+        .filter(|e| e.code().len() == 3)
+        .map(|e| {
+            data.frequency.candidate_weight(
+                scale,
+                CandidateSource::CharCode,
+                e.hanzi().as_char().encode_utf8(&mut buf),
+                e.code(),
+                e.frequency_score(),
+            )
+        })
+        .sum()
 }
 
 fn section_topics(out: &mut String, data: &AnalysisData) {

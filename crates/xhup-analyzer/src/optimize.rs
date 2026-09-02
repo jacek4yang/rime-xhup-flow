@@ -294,7 +294,7 @@ pub fn evaluate_candidate(
                             scale,
                             c.source(),
                             c.text(),
-                            code.len(),
+                            code,
                             c.frequency_score(),
                         ) >= shortcut_weight
                     })
@@ -314,7 +314,7 @@ pub fn evaluate_candidate(
                         scale,
                         c.source(),
                         c.text(),
-                        code.len(),
+                        code,
                         c.frequency_score(),
                     );
                     evaluation.disruptions.push(DisruptionRecord {
@@ -379,6 +379,35 @@ pub fn evaluate_target(
             )
         })
         .collect()
+}
+
+/// 聚合频率加权按键:before 全部按完整码计;after 仅对恰好被分配的
+/// `(word, full_code)` target 按 shortcut 码长计,其余 target 仍按完整码计。
+///
+/// target identity 是 `(word, full_code)`:同一 surface word 若未来存在多个
+/// 完整码(多音词),只有被 optimizer 选中的那个 target 享受 shortcut 节省。
+fn aggregate_weighted_keys(
+    targets: &[WordTarget],
+    assignments: &[ShortcutAssignment],
+    weight_of: impl Fn(&WordTarget) -> f64,
+) -> (f64, f64) {
+    let assigned_by_target: BTreeMap<(&str, &KeySequence), &ShortcutAssignment> = assignments
+        .iter()
+        .map(|a| ((a.word.as_str(), &a.full_code), a))
+        .collect();
+    let mut before = 0.0;
+    let mut after = 0.0;
+    for target in targets {
+        let weight = weight_of(target);
+        before += weight * target.full_code().len() as f64;
+        let keys = assigned_by_target
+            .get(&(target.word(), target.full_code()))
+            .map_or(target.full_code().len(), |a| {
+                a.evaluation.shortcut_code.len()
+            });
+        after += weight * keys as f64;
+    }
+    (before, after)
 }
 
 /// 确定性贪心优化:评分 → 全序排序 → word/code 双唯一分配。
@@ -448,23 +477,19 @@ pub fn optimize(
         assigned_words: assignments.len(),
         ..ProfileStats::default()
     };
-    let assigned_by_word: BTreeMap<&str, &ShortcutAssignment> =
-        assignments.iter().map(|a| (a.word.as_str(), a)).collect();
-    let mut shortcut_len_sum = 0usize;
-    for target in targets {
-        let weight = frequency.target_weight(scale, target.frequency_score());
-        stats.weighted_keys_before += weight * target.full_code().len() as f64;
-        if let Some(assignment) = assigned_by_word.get(target.word()) {
-            stats.weighted_keys_after += weight * assignment.evaluation.shortcut_code.len() as f64;
-            shortcut_len_sum += assignment.evaluation.shortcut_code.len();
-        } else {
-            stats.weighted_keys_after += weight * target.full_code().len() as f64;
-        }
-    }
+    let (before, after) = aggregate_weighted_keys(targets, &assignments, |t| {
+        frequency.target_weight(scale, t.frequency_score())
+    });
+    stats.weighted_keys_before = before;
+    stats.weighted_keys_after = after;
     stats.mean_shortcut_length = if assignments.is_empty() {
         0.0
     } else {
-        shortcut_len_sum as f64 / assignments.len() as f64
+        assignments
+            .iter()
+            .map(|a| a.evaluation.shortcut_code.len())
+            .sum::<usize>() as f64
+            / assignments.len() as f64
     };
     stats.exact_code_collisions = assignments
         .iter()
@@ -497,5 +522,50 @@ pub fn optimize(
         assignments,
         disruptions,
         stats,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_evaluation(shortcut_code: &KeySequence) -> CandidateEvaluation {
+        CandidateEvaluation {
+            shortcut_code: shortcut_code.clone(),
+            mode: "FI".to_string(),
+            eligible: true,
+            gate_reason: None,
+            existing_fanout: 0,
+            collision_class: CollisionClass::None,
+            baseline_fanout: 1,
+            baseline_rank: 1,
+            projected_rank: 1,
+            projected_fanout: 1,
+            breakdown: UtilityBreakdown::default(),
+            disruptions: Vec::new(),
+        }
+    }
+
+    /// 同一 surface word 的两个 `(word, full_code)` target:只有被分配的那个
+    /// 享受 shortcut 节省,另一个仍按完整码计费(不被同名 target 株连)。
+    #[test]
+    fn aggregate_weighted_keys_is_per_word_and_code() {
+        let code_a: KeySequence = "uijm".parse().unwrap();
+        let code_b: KeySequence = "uijmao".parse().unwrap();
+        let targets = vec![
+            WordTarget::new_for_test("测试词", code_a.clone(), 100),
+            WordTarget::new_for_test("测试词", code_b.clone(), 100),
+        ];
+        let assignment = ShortcutAssignment {
+            word: "测试词".to_string(),
+            full_code: code_a.clone(),
+            frequency_score: 100,
+            keys_saved: 1,
+            evaluation: test_evaluation(&"uij".parse().unwrap()),
+        };
+        let (before, after) = aggregate_weighted_keys(&targets, &[assignment], |_| 1.0);
+        assert_eq!(before, 4.0 + 6.0);
+        // (测试词, uijm) 用 shortcut uij(3 键);(测试词, uijmao) 仍按完整码 6 键。
+        assert_eq!(after, 3.0 + 6.0);
     }
 }
