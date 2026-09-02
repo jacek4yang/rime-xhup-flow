@@ -13,7 +13,9 @@ use crate::candidates::WordTarget;
 use crate::frequency::{CharCodeUsage, FrequencyScale};
 use crate::occupancy::{CandidateSource, CodeOccupancy, LayerAudit};
 use crate::optimize::{OptimizationOutcome, OptimizationProfile, evaluate_target};
-use crate::sweep::{Robustness, SweepRun, classify, operating_points, robustness_map};
+use crate::sweep::{
+    OperatingPointId, Robustness, SweepRun, classify, operating_points, robustness_map,
+};
 use crate::{AnalysisData, CostModel};
 use xhup_core::KeySequence;
 
@@ -40,16 +42,16 @@ pub fn balanced_scale() -> FrequencyScale {
     }
 }
 
-/// balanced operating point 的成本模型。
+/// balanced operating point 的成本模型(typed identity,无数组位置依赖)。
 pub fn balanced_cost() -> CostModel {
-    operating_points()[2].cost_model()
+    OperatingPointId::Balanced.operating_point().cost_model()
 }
 
 /// 在 sweep 结果中定位某 profile 的 balanced 主运行(50:50 / conservative)。
 fn find_balanced_run(runs: &[SweepRun], profile: OptimizationProfile) -> Option<&SweepRun> {
     runs.iter().find(|run| {
         run.profile == profile
-            && run.point == "balanced"
+            && run.point == OperatingPointId::Balanced
             && !run.diagnostic
             && matches!(
                 run.scale,
@@ -853,7 +855,7 @@ fn section_operating_points(out: &mut String, runs: &[SweepRun]) {
         for point in operating_points() {
             let run = runs.iter().find(|r| {
                 r.profile == profile
-                    && r.point == point.name
+                    && r.point == point.id
                     && !r.diagnostic
                     && matches!(
                         r.scale,
@@ -868,7 +870,7 @@ fn section_operating_points(out: &mut String, runs: &[SweepRun]) {
                 writeln!(
                     out,
                     "| {} | {} | {:.4e} | {:.2}% | {} | {} | {:.4e} | {:.2} |",
-                    point.name,
+                    point.id.label(),
                     s.assigned_words,
                     s.weighted_keys_saved(),
                     s.saving_percentage(),

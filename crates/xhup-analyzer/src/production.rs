@@ -25,7 +25,7 @@ use xhup_core::KeySequence;
 use crate::frequency::{CharCodeUsage, FrequencyScale};
 use crate::occupancy::CodeOccupancy;
 use crate::optimize::{OptimizationProfile, ShortcutAssignment};
-use crate::sweep::{WordRobustness, robustness_map, run_normalized_grid};
+use crate::sweep::{OperatingPointId, WordRobustness, robustness_map, run_normalized_grid};
 use crate::{AnalysisData, CostModel};
 
 /// Production selection policy 的稳定版本标识(写入 canonical TSV 头)。
@@ -48,9 +48,10 @@ pub fn reference_scale() -> FrequencyScale {
     }
 }
 
-/// reference run 的成本模型:operating points 中的 balanced 点。
+/// reference run 的成本模型:typed `OperatingPointId::Balanced`
+/// (不依赖数组位置或展示字符串)。
 pub fn reference_cost() -> CostModel {
-    crate::sweep::operating_points()[2].cost_model()
+    OperatingPointId::Balanced.operating_point().cost_model()
 }
 
 /// 一条 production 简码关系(canonical TSV 的一行)。
@@ -153,6 +154,8 @@ impl BenefitAudit {
 /// (grid 中的 balanced/50:50/conservative 运行同时即 reference run,不重复
 /// 第 31 次优化)。
 pub struct ProductionEvidence {
+    /// reference 运行的 typed operating-point identity(恒为 Balanced)。
+    pub reference_point: OperatingPointId,
     /// reference run 的 assignments(typed 选取,不依赖报告 label 文本)。
     pub reference_assignments: Vec<ShortcutAssignment>,
     /// ZERO_REGRESSION 30 次 normalized 运行的逐词稳健性。
@@ -177,7 +180,7 @@ pub fn collect_evidence(data: &AnalysisData) -> ProductionEvidence {
     let reference = runs
         .iter()
         .find(|run| {
-            run.point == "balanced"
+            run.point == OperatingPointId::Balanced
                 && matches!(
                     run.scale,
                     FrequencyScale::Normalized { char_share, usage }
@@ -187,6 +190,7 @@ pub fn collect_evidence(data: &AnalysisData) -> ProductionEvidence {
         .expect("不变量:主网格必然包含 balanced/50:50/conservative reference 运行");
     let robustness = robustness_map(&runs, OptimizationProfile::ZeroRegression);
     ProductionEvidence {
+        reference_point: reference.point,
         reference_assignments: reference.outcome.assignments.clone(),
         robustness,
     }

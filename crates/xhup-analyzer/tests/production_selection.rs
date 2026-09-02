@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 use xhup_analyzer::frequency::{CharCodeUsage, FrequencyScale};
 use xhup_analyzer::production::{ExclusionReason, ProductionEvidence, ProductionSelection};
-use xhup_analyzer::sweep::operating_points;
+use xhup_analyzer::sweep::OperatingPointId;
 use xhup_analyzer::{AnalysisData, build_analysis, production};
 
 /// 共享 fixture:分析输入 + 选择证据 + 选择结果。
@@ -51,7 +51,28 @@ fn mechanical_projection(full_code: &str, mode: &str) -> String {
 #[test]
 fn reference_policy_is_typed_and_frozen() {
     // typed reference:balanced operating point + normalized 50:50 conservative。
-    assert_eq!(operating_points()[2].name, "balanced");
+    // identity 以 OperatingPointId 为准,不依赖数组位置或展示字符串。
+    let balanced = OperatingPointId::Balanced.operating_point();
+    assert_eq!(balanced.id, OperatingPointId::Balanced);
+    assert_eq!(balanced.id.label(), "balanced");
+    let reference = production::reference_cost();
+    let expected = balanced.cost_model();
+    assert_eq!(reference.selection_rank2_9, expected.selection_rank2_9);
+    assert_eq!(
+        reference.selection_rank10_plus,
+        expected.selection_rank10_plus
+    );
+    assert_eq!(reference.ambiguity_coeff, expected.ambiguity_coeff);
+    assert_eq!(reference.disruption_coeff, expected.disruption_coeff);
+    assert_eq!(
+        reference.mode_complexity_per_transition,
+        expected.mode_complexity_per_transition
+    );
+    // evidence 的 reference 运行必须按 typed identity 定位。
+    assert_eq!(
+        fixture().evidence.reference_point,
+        OperatingPointId::Balanced
+    );
     assert!(matches!(
         production::reference_scale(),
         FrequencyScale::Normalized { char_share, usage }

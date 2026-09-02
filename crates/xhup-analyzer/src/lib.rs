@@ -41,8 +41,8 @@ pub use production::{
 };
 pub use report::{Timings, render_report};
 pub use sweep::{
-    OperatingPoint, Robustness, SweepRun, WordRobustness, classify, mixtures, operating_points,
-    robustness_map, run_normalized_grid, run_sweep,
+    OperatingPoint, OperatingPointId, Robustness, SweepRun, WordRobustness, classify, mixtures,
+    operating_points, robustness_map, run_normalized_grid, run_sweep,
 };
 pub use xhup_generator::{CharCodeAnalysisEntry, WordCodeAnalysisEntry};
 
