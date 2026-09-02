@@ -4467,6 +4467,10 @@ dependencies = [
 [[package]]
 name = "xhup-analyzer"
 version = "0.1.0"
+dependencies = [
+ "xhup-core",
+ "xhup-generator",
+]
 
 [[package]]
 name = "xhup-cli"

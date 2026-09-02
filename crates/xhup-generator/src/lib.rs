@@ -17,6 +17,7 @@
 //! version)与相同模板下,生成结果字节级一致。
 #![forbid(unsafe_code)]
 
+mod analysis;
 mod char_codes;
 mod frequency;
 mod package;
@@ -28,6 +29,10 @@ mod trainer;
 mod word_codes;
 mod words;
 
+pub use analysis::{
+    CharCodeAnalysisEntry, WordCodeAnalysisEntry, char_code_analysis_entries,
+    word_code_analysis_entries,
+};
 pub use char_codes::{RimeCharCodeEntry, canonical_char_code_entries};
 pub use package::{RimeArtifact, generate_rime_artifacts};
 pub use rime::{

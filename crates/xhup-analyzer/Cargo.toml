@@ -3,3 +3,7 @@ name = "xhup-analyzer"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+
+[dependencies]
+xhup-core = { path = "../xhup-core" }
+xhup-generator = { path = "../xhup-generator" }
