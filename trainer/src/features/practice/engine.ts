@@ -1,21 +1,25 @@
 /**
  * 练习会话状态机(纯逻辑,不依赖 React)。
  *
- * React 层只在事件回调里调用这些函数并 setState;计时只累计活跃时间,
- * 暂停 / 小结 / 设置页不计时。进度更新与持久化通过事件交给外层:
- * 引擎自己维护一份会话内进度副本供调度使用,store 侧用同一组纯函数
+ * V2:会话消费统一的 {@link TrainingItem} 抽象,单字/简码/词/组句共用
+ * 同一个状态机;不为任何模式单写引擎。计时只累计活跃时间,暂停 /
+ * 小结 / 设置页不计时。进度更新与持久化通过事件交给外层:引擎自己
+ * 维护一份会话内进度副本供调度使用,store 侧用同一组纯函数
  * (applyPerfect / applyImperfect)独立重放,数学上保持一致。
+ *
+ * 简码评分契约(B5):简码条目携带备用合法码(全码)。引擎逐键跟踪
+ * 实际输入路线——主练码(简码)完成且零错键 = perfect;改走备用路线
+ * (全码)合法可完成,但按 imperfect 计,并把路线记入事件,鼓励
+ * 简码回忆而不把全码当「无效输入」。
  */
 
-import type { TrainerEntry } from "@/lib/trainer-data";
-import { itemId } from "@/lib/trainer-data";
+import type { TrainingItem } from "@/lib/trainer-index";
 import {
   applyImperfect,
   applyPerfect,
   emptyProgress,
   type ItemProgress,
 } from "@/lib/progress";
-import type { Difficulty } from "@/lib/trainer-index";
 import {
   pickNext,
   scheduleReview,
@@ -24,11 +28,10 @@ import {
   type ReviewItem,
   type Rng,
 } from "./scheduler";
-import type { PracticeMode, QuestionOutcome } from "./types";
+import type { PracticeMode, QuestionOutcome, QuestionRoute } from "./types";
 
 export type SessionConfig = {
   mode: PracticeMode;
-  difficulty: Difficulty;
   /** 目标题数;0 表示无限。 */
   targetLength: number;
   pools: readonly QuestionPool[];
@@ -39,18 +42,29 @@ export type SessionPhase = "question" | "feedback" | "paused" | "completed";
 export type SessionState = {
   config: SessionConfig;
   phase: SessionPhase;
-  current: TrainerEntry;
+  current: TrainingItem;
+  /** 当前题实际输入路线(初始为主练码;首键分歧时切换到备用码)。 */
+  route: QuestionRoute;
   typed: string;
   hadError: boolean;
   wrongKeysThisQuestion: number;
+  /** 本题按过的键(去重;键位统计用),每题重置。 */
+  wrongKeys: string[];
   /** 最近一次按错的键(用于键盘闪烁提示),下一个按键事件后清除。 */
   lastWrongKey: string | null;
   lastOutcome: QuestionOutcome | null;
+  lastRoute: QuestionRoute | null;
   questionsCompleted: number;
   perfect: number;
   imperfect: number;
   keystrokes: number;
   wrongKeyEvents: number;
+  /** 完成的汉字数(CPM 分母;组句一次贡献多字)。 */
+  charsCompleted: number;
+  /** 退格修正次数(会话累计)。 */
+  corrections: number;
+  /** 本题退格修正次数(事件用,每题重置)。 */
+  correctionsThisQuestion: number;
   currentStreak: number;
   bestStreak: number;
   activeMs: number;
@@ -65,10 +79,16 @@ export type SessionState = {
 export type SessionEvent =
   | {
       type: "question-completed";
-      entry: TrainerEntry;
+      item: TrainingItem;
       outcome: QuestionOutcome;
+      /** 实际使用的输入路线(primary = 主练码;alternate = 备用合法码)。 */
+      routeUsed: QuestionRoute;
       keystrokes: number;
       wrongKeyEvents: number;
+      /** 本题按错的键(去重)。 */
+      wrongKeys: string[];
+      /** 本题退格修正次数。 */
+      corrections: number;
       practiceMs: number;
       bestStreak: number;
     }
@@ -80,12 +100,24 @@ export type StepResult = {
   events: SessionEvent[];
 };
 
+/** 当前题实际参与匹配的码(主练码或备用码)。 */
+export function activeCode(state: Pick<SessionState, "route" | "current">): string {
+  return state.route === "alternate" && state.current.alternateCode !== null
+    ? state.current.alternateCode
+    : state.current.primaryCode;
+}
+
 function drawQuestion(
-  state: Omit<SessionState, "current" | "phase"> & {
-    current: TrainerEntry | null;
+  state: Omit<SessionState, "current" | "phase" | "route"> & {
+    current: TrainingItem | null;
   },
   rng: Rng,
-): { current: TrainerEntry; reviewQueue: ReviewItem[]; mixedCursor: number } | null {
+): {
+  current: TrainingItem;
+  route: QuestionRoute;
+  reviewQueue: ReviewItem[];
+  mixedCursor: number;
+} | null {
   const picked = pickNext({
     mode: state.config.mode,
     pools: state.config.pools,
@@ -97,7 +129,8 @@ function drawQuestion(
   });
   if (!picked) return null;
   return {
-    current: picked.entry,
+    current: picked.item,
+    route: "primary",
     reviewQueue: picked.reviewQueue,
     mixedCursor: picked.mixedCursor,
   };
@@ -114,16 +147,22 @@ export function createSession(
     config,
     phase: "question" as const,
     current: null,
+    route: "primary" as const,
     typed: "",
     hadError: false,
     wrongKeysThisQuestion: 0,
+    wrongKeys: [] as string[],
     lastWrongKey: null,
     lastOutcome: null,
+    lastRoute: null,
     questionsCompleted: 0,
     perfect: 0,
     imperfect: 0,
     keystrokes: 0,
     wrongKeyEvents: 0,
+    charsCompleted: 0,
+    corrections: 0,
+    correctionsThisQuestion: 0,
     currentStreak: 0,
     bestStreak: 0,
     activeMs: 0,
@@ -148,13 +187,30 @@ export function typeKey(
   if (state.phase !== "question" || !/^[a-z]$/.test(key)) {
     return { state, events: [] };
   }
-  const expected = state.current.code[state.typed.length];
-  if (key !== expected) {
+  const { current } = state;
+  const primary = current.primaryCode;
+  const alternate = current.alternateCode;
+
+  // 路线判定:主练码匹配则保持;主练码分歧且备用码在「当前已输入前缀 +
+  // 本键」上连续匹配时,切换到备用合法码(全码)。已锁定的备用路线沿用。
+  let route = state.route;
+  const expectedOn = (code: string): string => code[state.typed.length];
+  if (route === "primary" && key !== expectedOn(primary)) {
+    if (alternate !== null && key === expectedOn(alternate)) {
+      route = "alternate";
+    }
+  }
+  const effective = route === "alternate" && alternate !== null ? alternate : primary;
+
+  if (key !== effective[state.typed.length]) {
     return {
       state: {
         ...state,
         hadError: true,
         wrongKeysThisQuestion: state.wrongKeysThisQuestion + 1,
+        wrongKeys: state.wrongKeys.includes(key)
+          ? state.wrongKeys
+          : [...state.wrongKeys, key],
         keystrokes: state.keystrokes + 1,
         wrongKeyEvents: state.wrongKeyEvents + 1,
         lastWrongKey: key,
@@ -166,11 +222,12 @@ export function typeKey(
   const typed = state.typed + key;
   const next: SessionState = {
     ...state,
+    route,
     typed,
     keystrokes: state.keystrokes + 1,
     lastWrongKey: null,
   };
-  if (typed !== state.current.code) {
+  if (typed !== effective) {
     return { state: next, events: [] };
   }
   return completeQuestion(next, rng, now);
@@ -181,20 +238,21 @@ function completeQuestion(
   rng: Rng,
   now: number,
 ): StepResult {
-  const outcome: QuestionOutcome = state.hadError ? "imperfect" : "perfect";
-  const id = itemId(state.current);
-  const previous =
-    state.progressById.get(id) ?? emptyProgress();
+  const routeUsed = state.route;
+  const outcome: QuestionOutcome =
+    state.hadError || routeUsed === "alternate" ? "imperfect" : "perfect";
+  const id = state.current.id;
+  const previous = state.progressById.get(id) ?? emptyProgress();
+  const practiceMsThisQuestion = now - state.lastTickAt;
   const updated =
     outcome === "perfect"
-      ? applyPerfect(previous, now)
-      : applyImperfect(previous, now);
+      ? applyPerfect(previous, now, practiceMsThisQuestion)
+      : applyImperfect(previous, now, practiceMsThisQuestion);
   const progressById = new Map(state.progressById);
   progressById.set(id, updated);
 
-  const practiceMs = state.activeMs + (now - state.lastTickAt);
-  const currentStreak =
-    outcome === "perfect" ? state.currentStreak + 1 : 0;
+  const practiceMs = state.activeMs + practiceMsThisQuestion;
+  const currentStreak = outcome === "perfect" ? state.currentStreak + 1 : 0;
   const bestStreak = Math.max(state.bestStreak, currentStreak);
   const reviewQueue =
     outcome === "imperfect"
@@ -205,9 +263,11 @@ function completeQuestion(
     ...state,
     phase: "feedback",
     lastOutcome: outcome,
+    lastRoute: routeUsed,
     questionsCompleted: state.questionsCompleted + 1,
     perfect: state.perfect + (outcome === "perfect" ? 1 : 0),
     imperfect: state.imperfect + (outcome === "imperfect" ? 1 : 0),
+    charsCompleted: state.charsCompleted + state.current.charCount,
     currentStreak,
     bestStreak,
     activeMs: practiceMs,
@@ -221,11 +281,14 @@ function completeQuestion(
     events: [
       {
         type: "question-completed",
-        entry: state.current,
+        item: state.current,
         outcome,
-        keystrokes: state.current.code.length + state.wrongKeysThisQuestion,
+        routeUsed,
+        keystrokes: activeCode(state).length + state.wrongKeysThisQuestion,
         wrongKeyEvents: state.wrongKeysThisQuestion,
-        practiceMs: practiceMs - state.activeMs,
+        wrongKeys: state.wrongKeys,
+        corrections: state.correctionsThisQuestion,
+        practiceMs: practiceMsThisQuestion,
         bestStreak,
       },
     ],
@@ -251,9 +314,7 @@ export function advance(
     };
   }
 
-  const recentIds = [...state.recentIds, itemId(state.current)].slice(
-    -RECENT_LIMIT,
-  );
+  const recentIds = [...state.recentIds, state.current.id].slice(-RECENT_LIMIT);
   const drawn = drawQuestion({ ...state, current: null, recentIds }, rng);
   if (!drawn) {
     // 池意外耗尽:视为会话结束,不产生错误。
@@ -271,18 +332,27 @@ export function advance(
       typed: "",
       hadError: false,
       wrongKeysThisQuestion: 0,
+      wrongKeys: [],
+      correctionsThisQuestion: 0,
       lastWrongKey: null,
       lastOutcome: null,
+      lastRoute: null,
       lastTickAt: now,
     },
     events: [],
   };
 }
 
-/** 退格:删除最后一个已接受的键,不影响计数。 */
+/** 退格:删除最后一个已接受的键,计入修正次数,不影响对错计数。 */
 export function backspace(state: SessionState): SessionState {
   if (state.phase !== "question" || state.typed.length === 0) return state;
-  return { ...state, typed: state.typed.slice(0, -1), lastWrongKey: null };
+  return {
+    ...state,
+    typed: state.typed.slice(0, -1),
+    corrections: state.corrections + 1,
+    correctionsThisQuestion: state.correctionsThisQuestion + 1,
+    lastWrongKey: null,
+  };
 }
 
 /** 暂停:结清活跃时间。只在出题阶段可暂停(反馈阶段转瞬即过,不可暂停)。 */
@@ -324,8 +394,8 @@ export function finish(state: SessionState, now: number): StepResult {
   };
 }
 
-/** 当前题的期望下一键(用于键盘高亮)。 */
+/** 当前题的期望下一键(用于键盘高亮;跟随实际输入路线)。 */
 export function expectedKey(state: SessionState): string | null {
   if (state.phase !== "question") return null;
-  return state.current.code[state.typed.length] ?? null;
+  return activeCode(state)[state.typed.length] ?? null;
 }

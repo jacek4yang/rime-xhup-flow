@@ -14,7 +14,7 @@ import {
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { TrainerEntry } from "@/lib/trainer-data";
+import type { TrainingItem } from "@/lib/trainer-index";
 import { DashboardView } from "@/features/dashboard/DashboardView";
 import { PracticeSetupView } from "@/features/practice/PracticeSetupView";
 import { ReviewView } from "@/features/review/ReviewView";
@@ -37,7 +37,7 @@ export function AppShell() {
   /** 跳入练习时预选的模式(今日的模式卡片)。 */
   const [presetMode, setPresetMode] = useState<PracticeMode | null>(null);
   /** 跳入练习时指定的复习条目(错题「练这些」)。 */
-  const [reviewEntries, setReviewEntries] = useState<TrainerEntry[] | null>(null);
+  const [reviewEntries, setReviewEntries] = useState<TrainingItem[] | null>(null);
 
   const goPractice = (mode: PracticeMode) => {
     setPresetMode(mode);
@@ -45,7 +45,7 @@ export function AppShell() {
     setView("practice");
   };
 
-  const goReviewPractice = (entries: TrainerEntry[]) => {
+  const goReviewPractice = (entries: TrainingItem[]) => {
     setReviewEntries(entries);
     setPresetMode(null);
     setView("practice");

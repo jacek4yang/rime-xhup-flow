@@ -4,13 +4,11 @@
  * 只考虑用户实际见过且有错误历史的条目;排序:掌握度低 → 错误多 → 最近错过。
  */
 
-import type { TrainerEntry } from "./trainer-data";
-import { itemId } from "./trainer-data";
 import type { ItemProgress } from "./progress";
-import type { TrainerIndex } from "./trainer-index";
+import type { TrainingItem, TrainerIndex } from "./trainer-index";
 
 export type WeakItem = {
-  entry: TrainerEntry;
+  item: TrainingItem;
   progress: ItemProgress;
 };
 
@@ -22,8 +20,8 @@ export function listWeakItems(
   const items: WeakItem[] = [];
   for (const [id, progress] of Object.entries(progressById)) {
     if (progress.attempts === 0 || progress.wrong === 0) continue;
-    const entry = index.byId.get(id);
-    if (entry) items.push({ entry, progress });
+    const item = index.byId.get(id);
+    if (item) items.push({ item, progress });
   }
   items.sort(
     (a, b) =>
@@ -41,5 +39,5 @@ export function itemAccuracy(progress: ItemProgress): number | null {
 }
 
 export function weakItemId(item: WeakItem): string {
-  return itemId(item.entry);
+  return item.item.id;
 }
