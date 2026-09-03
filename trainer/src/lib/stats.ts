@@ -41,3 +41,9 @@ export function formatPercent(ratio: number | null): string {
   if (ratio === null) return "—";
   return `${Math.round(ratio * 100)}%`;
 }
+
+/** 每分钟汉字数(CPM);时长不足 1s 或无汉字返回 null。 */
+export function cpm(chars: number, elapsedMs: number): number | null {
+  if (chars <= 0 || elapsedMs < 1000) return null;
+  return chars / (elapsedMs / 60000);
+}

@@ -49,6 +49,7 @@ export class BackupError extends Error {
 /** 导出备份为格式化 JSON(确定性:相同状态 + 相同时间戳 → 字节一致)。 */
 export function exportBackup(
   data: {
+    language?: string;
     theme: string;
     hintMode: HintMode;
     difficulty: Difficulty;

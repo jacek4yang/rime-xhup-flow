@@ -7,6 +7,7 @@
 
 import { useState } from "react";
 import {
+  ChartColumn,
   Grid3x3,
   House,
   Keyboard,
@@ -14,22 +15,32 @@ import {
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { I18nKey } from "@/lib/i18n";
+import { useI18n } from "@/lib/use-i18n";
 import type { TrainingItem } from "@/lib/trainer-index";
 import { DashboardView } from "@/features/dashboard/DashboardView";
 import { PracticeSetupView } from "@/features/practice/PracticeSetupView";
-import { ReviewView } from "@/features/review/ReviewView";
+import { WeaknessCenter } from "@/features/review/ReviewView";
+import { StatsView } from "@/features/stats/StatsView";
 import { ReferenceView } from "@/features/reference/ReferenceView";
 import { SettingsView } from "@/features/settings/SettingsView";
 import type { PracticeMode } from "@/features/practice/types";
 
-export type ViewKey = "today" | "practice" | "review" | "reference" | "settings";
+export type ViewKey =
+  | "today"
+  | "practice"
+  | "review"
+  | "stats"
+  | "reference"
+  | "settings";
 
-const NAV_ITEMS: { key: ViewKey; label: string; icon: typeof House }[] = [
-  { key: "today", label: "今日", icon: House },
-  { key: "practice", label: "练习", icon: Keyboard },
-  { key: "review", label: "错题", icon: RotateCcw },
-  { key: "reference", label: "键位", icon: Grid3x3 },
-  { key: "settings", label: "设置", icon: Settings },
+const NAV_ITEMS: { key: ViewKey; label: I18nKey; icon: typeof House }[] = [
+  { key: "today", label: "nav.today", icon: House },
+  { key: "practice", label: "nav.practice", icon: Keyboard },
+  { key: "review", label: "nav.review", icon: RotateCcw },
+  { key: "stats", label: "nav.stats", icon: ChartColumn },
+  { key: "reference", label: "nav.reference", icon: Grid3x3 },
+  { key: "settings", label: "nav.settings", icon: Settings },
 ];
 
 export function AppShell() {
@@ -72,7 +83,8 @@ export function AppShell() {
             onExitToToday={() => setView("today")}
           />
         )}
-        {view === "review" && <ReviewView onPracticeEntries={goReviewPractice} />}
+        {view === "review" && <WeaknessCenter onPracticeEntries={goReviewPractice} />}
+        {view === "stats" && <StatsView />}
         {view === "reference" && <ReferenceView />}
         {view === "settings" && <SettingsView />}
       </main>
@@ -88,13 +100,14 @@ function DesktopSidebar({
   active: ViewKey;
   onNavigate: (view: ViewKey) => void;
 }) {
+  const { t } = useI18n();
   return (
     <aside className="fixed inset-y-0 left-0 hidden w-52 flex-col border-r border-border bg-card/50 px-3 py-5 md:flex">
       <div className="px-2">
-        <p className="text-base font-semibold tracking-tight">XHUP Flow</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">小鹤音形训练</p>
+        <p className="text-base font-semibold tracking-tight">{t("app.name")}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{t("app.subtitle")}</p>
       </div>
-      <nav className="mt-6 flex flex-col gap-1">
+      <nav className="mt-6 flex flex-col gap-1" aria-label={t("nav.main")}>
         {NAV_ITEMS.map((item) => (
           <button
             key={item.key}
@@ -109,7 +122,7 @@ function DesktopSidebar({
             )}
           >
             <item.icon className="size-4" aria-hidden />
-            {item.label}
+            {t(item.label)}
           </button>
         ))}
       </nav>
@@ -124,10 +137,11 @@ function MobileBottomNav({
   active: ViewKey;
   onNavigate: (view: ViewKey) => void;
 }) {
+  const { t } = useI18n();
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-40 flex border-t border-border bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
-      aria-label="主导航"
+      aria-label={t("nav.main")}
     >
       {NAV_ITEMS.map((item) => (
         <button
@@ -141,7 +155,7 @@ function MobileBottomNav({
           )}
         >
           <item.icon className="size-5" aria-hidden />
-          {item.label}
+          {t(item.label)}
         </button>
       ))}
     </nav>
