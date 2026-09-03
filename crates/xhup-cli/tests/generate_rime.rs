@@ -92,12 +92,15 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
             "xhup_flow.schema.yaml",
             "xhup_flow_chars.dict.yaml",
             "xhup_flow_fixed_first_shortcuts.dict.yaml",
+            "xhup_flow_flow.dict.yaml",
+            "xhup_flow_learn.dict.yaml",
             "xhup_flow_shortcuts.dict.yaml",
+            "xhup_flow_static.schema.yaml",
             "xhup_flow_two_key_shortcuts.dict.yaml",
             "xhup_flow_word_shortcuts.dict.yaml",
             "xhup_flow_words.dict.yaml",
         ],
-        "输出应为且仅为 8 个 Rime 源文件"
+        "输出应为且仅为 11 个 Rime 源文件"
     );
     for filename in &filenames {
         assert!(
@@ -130,8 +133,21 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
         !top.contains("xhup_flow_fixed_first_shortcuts"),
         "顶层词典不得导入 FIXED_FIRST 简码词典(由独立第二 table_translator 加载)"
     );
+    assert!(
+        !top.contains("xhup_flow_flow") && !top.contains("xhup_flow_learn"),
+        "顶层词典不得导入 Flow 组句/学习词典(由独立 table_translator 加载)"
+    );
     let schema = fs::read_to_string(output.join("xhup_flow.schema.yaml")).unwrap();
     assert!(schema.contains("xhup_flow"), "方案应引用 xhup_flow");
+    assert!(
+        schema.contains("table_translator@flow"),
+        "主方案应含 Flow 组句 translator"
+    );
+    let static_schema = fs::read_to_string(output.join("xhup_flow_static.schema.yaml")).unwrap();
+    assert!(
+        !static_schema.contains("table_translator@flow"),
+        "静态兼容方案不得含 Flow translator"
+    );
 
     fs::remove_dir_all(&output).unwrap();
 }

@@ -108,7 +108,7 @@ jobs:
   librime:
     name: librime runtime integration
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: 检出仓库
@@ -155,7 +155,18 @@ jobs:
           cargo run -p xhup-analyzer --locked --bin static-shortcut-audit --
           --dump-two-key-audit-manifest /tmp/two-key.manifest
 
+      - name: 导出全静态菜单 manifest 并构建 xhup-cli
+        run: |
+          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
+            --dump-static-menu-manifest /tmp/static-menu.manifest
+          cargo build -p xhup-cli --locked
+
       - name: librime session 冒烟测试(priority preflight + 冒烟 + 全量 A/B 审计 + 二码审计)
         run: >
           tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
           /tmp/fixed-first.manifest /tmp/two-key.manifest
+
+      - name: librime Flow 引擎审计(全静态等值 + 组句 + 学习持久化 + 学习管理)
+        run: >
+          tests/librime/run-flow-audit.sh /tmp/xhup-flow-package
+          /tmp/static-menu.manifest target/debug/xhup-cli

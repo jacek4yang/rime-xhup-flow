@@ -20,6 +20,10 @@ use crate::rime::{RIME_CHAR_DICTIONARY_FILENAME, generate_rime_char_dictionary};
 use crate::rime_fixed_first_shortcuts::{
     RIME_FIXED_FIRST_SHORTCUT_DICTIONARY_FILENAME, generate_rime_fixed_first_shortcut_dictionary,
 };
+use crate::rime_flow::{
+    RIME_FLOW_DICTIONARY_FILENAME, RIME_LEARN_DICTIONARY_FILENAME, generate_rime_flow_dictionary,
+    generate_rime_learn_dictionary,
+};
 use crate::rime_shortcuts::{RIME_SHORTCUT_DICTIONARY_FILENAME, generate_rime_shortcut_dictionary};
 use crate::rime_two_key_shortcuts::{
     RIME_TWO_KEY_SHORTCUT_DICTIONARY_FILENAME, generate_rime_two_key_shortcut_dictionary,
@@ -35,11 +39,18 @@ const RIME_DICTIONARY_FILENAME: &str = "xhup_flow.dict.yaml";
 /// 方案产物文件名。
 const RIME_SCHEMA_FILENAME: &str = "xhup_flow.schema.yaml";
 
+/// 静态兼容方案产物文件名(Flow 引擎的静态回退,不重复静态词典)。
+const RIME_STATIC_SCHEMA_FILENAME: &str = "xhup_flow_static.schema.yaml";
+
 /// 顶层词典模板。
 const DICTIONARY_TEMPLATE: &str = include_str!("../../../rime/templates/xhup_flow.dict.yaml.in");
 
 /// 方案模板。
 const SCHEMA_TEMPLATE: &str = include_str!("../../../rime/templates/xhup_flow.schema.yaml.in");
+
+/// 静态兼容方案模板。
+const STATIC_SCHEMA_TEMPLATE: &str =
+    include_str!("../../../rime/templates/xhup_flow_static.schema.yaml.in");
 
 /// 模板中唯一的占位符。
 const VERSION_PLACEHOLDER: &str = "{{VERSION}}";
@@ -90,6 +101,17 @@ fn render_template(template: &str, name: &str) -> String {
 /// 由方案中独立的第二 table_translator 加载,不被顶层词典导入)→ 方案
 /// (使用前者)。同一规范数据、生成器源码与模板产生同一顺序、字节级一致
 /// 的产物集合。
+/// 生成完整的便携 Rime 源包产物集合。
+///
+/// 产物顺序固定且面向输入层级:一级简码词典(1 键)→ 单字全码词典
+/// (2/3/4 码)→ 词语简码词典(高稳健零冲突别名,3~7 键)→ 二码零冲突
+/// 词语简码词典(2 键空码别名)→ 固定层词语词典(4/6/8 键)→ 顶层词典
+/// (导入前五者)→ FIXED_FIRST 词语简码词典(高稳健重码别名,3/4/6 键,
+/// 由方案中独立的第二 table_translator 加载,不被顶层词典导入)→
+/// Flow 词典(组句/学习专用,canonical 全码关系,无简码别名,由
+/// table_translator@flow 加载,不被顶层词典导入)→ 主方案(Flow 引擎)
+/// → 静态兼容方案(无 Flow translator 的回退)。同一规范数据、生成器
+/// 源码与模板产生同一顺序、字节级一致的产物集合。
 pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
     vec![
         RimeArtifact {
@@ -121,8 +143,20 @@ pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
             contents: generate_rime_fixed_first_shortcut_dictionary(),
         },
         RimeArtifact {
+            filename: RIME_FLOW_DICTIONARY_FILENAME,
+            contents: generate_rime_flow_dictionary(),
+        },
+        RimeArtifact {
+            filename: RIME_LEARN_DICTIONARY_FILENAME,
+            contents: generate_rime_learn_dictionary(),
+        },
+        RimeArtifact {
             filename: RIME_SCHEMA_FILENAME,
             contents: render_template(SCHEMA_TEMPLATE, RIME_SCHEMA_FILENAME),
+        },
+        RimeArtifact {
+            filename: RIME_STATIC_SCHEMA_FILENAME,
+            contents: render_template(STATIC_SCHEMA_TEMPLATE, RIME_STATIC_SCHEMA_FILENAME),
         },
     ]
 }
