@@ -166,6 +166,13 @@ impl ShortcutMode {
     pub fn for_test() -> Self {
         ShortcutMode(Box::new([Mode::Full]))
     }
+
+    /// 研究构造:由逐字模式切片构造(仅供 two_key_study 等分析模块;
+    /// 对集成测试可见)。
+    #[doc(hidden)]
+    pub fn from_modes_for_study(modes: &[Mode]) -> Self {
+        ShortcutMode(modes.to_vec().into_boxed_slice())
+    }
 }
 
 /// 一条词语简码候选。

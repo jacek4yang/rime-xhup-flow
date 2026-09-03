@@ -140,3 +140,56 @@ analyzer 算法演进不得自动删除或更换已发布的 `词 → 简码` �
 [`../words/LICENSE.wanxiang`](../words/LICENSE.wanxiang)(包括由它生成的
 `xhup_flow_fixed_first_shortcuts.dict.yaml` 等数据产物);不因入库而改授
 LGPL。
+
+# 词语简码(二码零冲突层)
+
+`word_two_key_zero_regression.tsv` 是 XHUP Flow **第三层词语简码的唯一
+事实来源**:格式 `词<TAB>完整码<TAB>简码<TAB>模式`(每行模式恒为
+`II`),canonical 顺序 `简码 → 词`(全部 2 键,长度无差异)。
+
+## 数据性质
+
+本文件由万象词语/频率证据经 `xhup-analyzer` 的 production selection
+policy(`two-key-zero-regression-v1`)**确定性导出**:
+
+- candidate grammar:**monotone-suffix-initials-v2**(2 字词 × `II`
+  模式 × 2 键;两字双拼首键,如 `时间 uijm → uj`,但 `uj` 为占用码,
+  结构性不在本层);
+- candidate universe:**仅完全空闲的 2 键 exact code**(baseline
+  2/3/4 码单字、4/6/8 键固定词与既有词语简码层全部未使用)—— 新词
+  是该码唯一的 exact 候选(rank 1),严格零冲突,与
+  `word_zero_regression.tsv` 同构但作用于 2 键空间;
+- target universe:无既有 ZR/FIXED_FIRST 简码的 2 字词(一词最多一条
+  简码的现行政策);
+- 竞争:每个 2 键码恰选一词,确定性排序(净收益 DESC → 频率 DESC →
+  词 ASC → 完整码 ASC);
+- robustness gate:30 次 normalized 敏感性网格中同码同词胜出票数
+  ≥ 4/5(整数交叉乘法判定),且 reference 运行净收益为正;
+- reference run:balanced × normalized(50:50,Conservative)。
+
+**占用码(char fanout > 0)的 2 键候选不在本层**:对占用码的
+SAFE_APPEND(词追加到既有 2 键单字之后)与 OPTIMAL_INSERT(允许重排
+的理论上限)仅存在于 analyzer 研究报告(`static-shortcut-audit
+--study-two-key`),是否生产化属未来独立 policy 决策。
+
+## 运行时
+
+本层词典 `xhup_flow_two_key_shortcuts` 由顶层词典 import(与 ZR 层
+同构):选定码在既有 exact-code 空间完全空闲,新增候选是该码唯一
+exact 候选,不存在次序影响;安全来自「码本来就空」,不依赖 import
+顺序。
+
+## 兼容策略
+
+与零冲突层相同:一旦发布即属于**稳定的用户肌肉记忆兼容接口**。
+更新必须经由显式 analyzer export + diff review + policy version
+review;analyzer 算法演进不得自动删除或更换已发布的 `词 → 简码`
+关系,修改已发布关系视为 breaking scheme change。
+
+## 许可证
+
+与 `word_zero_regression.tsv` 相同:派生自万象词库证据,适用 CC BY
+4.0 署名要求,许可证全文见
+[`../words/LICENSE.wanxiang`](../words/LICENSE.wanxiang)(包括由它
+生成的 `xhup_flow_two_key_shortcuts.dict.yaml` 等数据产物);不因
+入库而改授 LGPL。
