@@ -1,7 +1,7 @@
 # XHUP Flow high-robustness FIXED_FIRST word shortcuts.
 # Source universe: data/words/wanxiang_base_words.tsv
 # Existing production words excluded: data/shortcuts/word_zero_regression.tsv
-# Selection: FIXED_FIRST / colliding-only (fanout 1..=8) / balanced / normalized 50:50 conservative
+# Selection: FIXED_FIRST / colliding-only (baseline fanout > 0) / balanced / normalized 50:50 conservative
 # Robustness gate: same-code stability >= 4/5 over 30 normalized sensitivity runs
 # policy: fixed-first-high-v1
 爱比	aibi	aib	FI
@@ -1613,6 +1613,7 @@
 互联网上	hulmwhuh	hlwu	IIII
 活了下来	holexxld	hlxl	IIII
 浑然天成	hyrjtmig	hrti	IIII
+华盛顿邮	hxugdyyz	hudy	IIII
 沪深指数	huufviuu	huvu	IIII
 还是愿意	hduiyryi	huyy	IIII
 会来了	hvldle	hvll	FII

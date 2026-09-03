@@ -42,6 +42,10 @@
 
 #define SEP '\x1f'
 
+/* 与 run-runtime-smoke.sh 中审计 deployment 的临时 menu/page_size 一致
+ * (仅测试枚举配置,不属于 production schema)。 */
+#define TEST_MENU_PAGE_SIZE 500
+
 typedef struct {
     char code[16];
     char *word;
@@ -132,8 +136,10 @@ static int count_occurrences(const char *menu, const char *word) {
     return count;
 }
 
-/* 读取 manifest(跳过 # 注释行)。 */
-static Row *load_manifest(const char *path, size_t *out_count) {
+/* 读取 manifest(跳过 # 注释行);同时返回最大期望名次,用于动态
+ * rank histogram 与测试 page_size 覆盖断言。 */
+static Row *load_manifest(const char *path, size_t *out_count,
+                          int *out_max_expected_rank) {
     FILE *fp = fopen(path, "r");
     if (!fp) {
         fprintf(stderr, "无法打开 manifest %s\n", path);
@@ -141,6 +147,7 @@ static Row *load_manifest(const char *path, size_t *out_count) {
     }
     Row *rows = NULL;
     size_t count = 0, cap = 0;
+    int max_expected_rank = 0;
     char line[4096];
     while (fgets(line, sizeof(line), fp)) {
         if (line[0] == '#') continue;
@@ -173,6 +180,9 @@ static Row *load_manifest(const char *path, size_t *out_count) {
         row->word = strdup(word);
         row->fanout = atoi(fanout);
         row->expected_rank = atoi(expected_rank);
+        if (row->expected_rank > max_expected_rank) {
+            max_expected_rank = row->expected_rank;
+        }
         /* manifest 的逗号分隔菜单换成内部 \x1f 分隔,便于逐项比较。 */
         row->baseline_menu = strdup(menu);
         for (char *p = row->baseline_menu; *p; ++p) {
@@ -186,6 +196,7 @@ static Row *load_manifest(const char *path, size_t *out_count) {
     }
     fclose(fp);
     *out_count = count;
+    *out_max_expected_rank = max_expected_rank;
     return rows;
 }
 
@@ -259,10 +270,11 @@ static int run_control(const char *shared, const char *control_dir,
     return failures == 0 ? 0 : 1;
 }
 
-/* PRODUCTION 趟:菜单 == CONTROL + 末尾目标词。 */
+/* PRODUCTION 趟:菜单 == CONTROL + 末尾目标词。
+ * rank histogram 按 manifest 最大期望名次动态分配,不截断深 rank。 */
 static int run_production(const char *shared, const char *production_dir,
                           const Row *rows, size_t count,
-                          const char *capture_in) {
+                          const char *capture_in, int max_expected_rank) {
     /* 读 capture:与 manifest 同序,逐行校验码一致。 */
     FILE *capture = fopen(capture_in, "r");
     if (!capture) {
@@ -316,7 +328,7 @@ static int run_production(const char *shared, const char *production_dir,
     clock_gettime(CLOCK_MONOTONIC, &start);
     int len_mismatch = 0, prefix_mismatch = 0, rank_mismatch = 0,
         top1_changes = 0, duplicates = 0, production_commit = 0;
-    int *rank_hist = calloc(16, sizeof(int));
+    int *rank_hist = calloc((size_t)max_expected_rank + 2, sizeof(int));
     if (!rank_hist) return 2;
     int max_rank = 0;
     char *buf = malloc(1 << 16);
@@ -363,7 +375,7 @@ static int run_production(const char *shared, const char *production_dir,
             }
         } else {
             int rank = control_len + 1;
-            if (rank < 16) rank_hist[rank]++;
+            if (rank <= max_expected_rank + 1) rank_hist[rank]++;
             if (rank > max_rank) max_rank = rank;
         }
         free(expected);
@@ -410,7 +422,7 @@ static int run_production(const char *shared, const char *production_dir,
     printf("  PRODUCTION 目标词重复:             %d\n", duplicates);
     printf("  PRODUCTION auto commit/组合异常:   %d\n", production_commit);
     printf("  rank 分布(成功条目):");
-    for (int r = 2; r < 16; ++r) {
+    for (int r = 2; r <= max_expected_rank + 1; ++r) {
         if (rank_hist[r]) printf(" rank%d=%d", r, rank_hist[r]);
     }
     printf("  max=%d\n", max_rank);
@@ -440,10 +452,20 @@ int main(int argc, char **argv) {
     }
 
     size_t count = 0;
-    Row *rows = load_manifest(argv[4], &count);
+    int max_expected_rank = 0;
+    Row *rows = load_manifest(argv[4], &count, &max_expected_rank);
     if (!rows) return 2;
     printf("manifest: %zu 条 production FIXED_FIRST 简码(%s 趟)\n", count,
            argv[1]);
+    /* 测试枚举完整性断言:临时 page_size 必须覆盖最大期望名次,
+     * 否则菜单会被翻页截断(只允许调大测试配置,不改 production schema)。 */
+    if (max_expected_rank >= TEST_MENU_PAGE_SIZE) {
+        fprintf(stderr,
+                "max expected rank %d 超出测试 page_size %d,请调大 "
+                "run-runtime-smoke.sh 的临时 menu/page_size\n",
+                max_expected_rank, TEST_MENU_PAGE_SIZE);
+        return 2;
+    }
 
     rime = rime_get_api();
     if (!rime) {
@@ -454,5 +476,6 @@ int main(int argc, char **argv) {
     if (is_control) {
         return run_control(argv[2], argv[3], rows, count, argv[5]);
     }
-    return run_production(argv[2], argv[3], rows, count, argv[5]);
+    return run_production(argv[2], argv[3], rows, count, argv[5],
+                          max_expected_rank);
 }

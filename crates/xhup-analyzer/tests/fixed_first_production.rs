@@ -1,5 +1,5 @@
-//! production FIXED_FIRST 选择 policy 的测试(含 incremental universe 与
-//! fanout cap 的 synthetic 机制测试)。
+//! production FIXED_FIRST 选择 policy 的测试(含 incremental universe 的
+//! synthetic 机制测试)。
 //!
 //! 真实数据测试共享一份 evidence fixture(每个测试进程最多跑一次
 //! FIXED_FIRST 30 次 normalized 增量主网格,避免 debug CI 时间放大)。
@@ -82,7 +82,6 @@ fn reference_policy_is_typed_and_frozen() {
         production_fixed_first::FIXED_FIRST_PRODUCTION_POLICY_VERSION,
         "fixed-first-high-v1"
     );
-    assert_eq!(production_fixed_first::FIXED_FIRST_MAX_BASELINE_FANOUT, 8);
     // 整数阈值 4/5 对应 30 次运行 ≥ 24 票。
     assert_eq!(
         production::ROBUSTNESS_NUMERATOR * 30,
@@ -92,7 +91,7 @@ fn reference_policy_is_typed_and_frozen() {
 }
 
 #[test]
-fn universe_is_incremental_and_fanout_capped() {
+fn universe_is_incremental_and_colliding_only() {
     let fixture = fixture();
     let (targets, stats) = production_fixed_first::build_fixed_first_universe(&fixture.data);
     let zr_words: BTreeSet<&str> = canonical_word_shortcut_entries()
@@ -107,13 +106,13 @@ fn universe_is_incremental_and_fanout_capped() {
             .all(|target| !zr_words.contains(target.word())),
         "incremental universe 不得包含任何 ZR production 词"
     );
-    // 候选在优化前已被限制为 1..=8 baseline fanout 的重码候选。
+    // 候选在优化前已被限制为 baseline fanout > 0 的重码候选(无上限)。
     for target in &targets {
         for candidate in target.candidates() {
             let fanout = fixture.data.occupancy.fanout(candidate.shortcut_code());
             assert!(
-                (1..=production_fixed_first::FIXED_FIRST_MAX_BASELINE_FANOUT).contains(&fanout),
-                "{} {} baseline fanout {fanout} 超出 1..=8",
+                fanout > 0,
+                "{} {} baseline fanout 必须 > 0",
                 target.word(),
                 candidate.shortcut_code(),
             );
@@ -139,7 +138,6 @@ fn audit_arithmetic_is_complete() {
     for reason in [
         Reason::AlreadyZeroRegressionWord,
         Reason::NoCollidingCandidate,
-        Reason::FanoutAboveProductionCap,
         Reason::CurrentOccupancyMismatch,
         Reason::ZeroRegressionCodeConflict,
     ] {
@@ -181,10 +179,10 @@ fn selection_satisfies_hard_invariants() {
             "{} {shortcut} 与 ZR 码冲突",
             entry.word
         );
-        // baseline fanout 1..=8,期望名次 = fanout + 1。
+        // baseline fanout > 0(无上限),期望名次 = fanout + 1。
         let fanout = fixture.data.occupancy.fanout(&entry.shortcut_code);
         assert_eq!(fanout, entry.baseline_fanout);
-        assert!((1..=8).contains(&fanout));
+        assert!(fanout > 0);
         assert_eq!(entry.expected_rank, fanout + 1);
         // 形式不变量。
         assert!(shortcut.len() >= 3 && shortcut.len() < full.len());
@@ -381,18 +379,14 @@ fn zr_word_is_removed_before_optimization() {
 }
 
 #[test]
-fn fanout_cap_is_applied_before_optimization() {
-    // synthetic P0:fanout > 8 的深码候选必须在优化前移除,不得先参与
-    // greedy allocation 再在 production gate 后删除。
+fn deep_fanout_candidates_are_kept() {
+    // policy: candidate universe 为 baseline fanout > 0,不设上限。
+    // 深码候选(fanout > 8)必须保留在 universe 中参与优化,
+    // 由 30 次增量运行 + 4/5 整数门限决定是否入选,不做 pre-filter。
     let fixture = fixture();
     let deep = key("yi");
-    let shallow = key("uij");
     let deep_fanout = fixture.data.occupancy.fanout(&deep);
-    assert!(
-        deep_fanout > production_fixed_first::FIXED_FIRST_MAX_BASELINE_FANOUT,
-        "测试前提:yi baseline fanout {deep_fanout} 必须超过 cap"
-    );
-    assert_eq!(fixture.data.occupancy.fanout(&shallow), 2);
+    assert!(deep_fanout > 8, "测试前提:yi baseline fanout 必须 > 8");
     // 用真实词「时间」(uijm baseline 组 rank 1):optimizer 要求词真实
     // 占用其完整码组。
     let word = "时间";
@@ -406,29 +400,19 @@ fn fanout_cap_is_applied_before_optimization() {
             500_000,
             vec![
                 ShortcutCandidate::for_test(deep.clone()),
-                ShortcutCandidate::for_test(shallow.clone()),
+                ShortcutCandidate::for_test(key("uij")),
             ],
         )],
         enumeration: Default::default(),
         frequency: fixture.data.frequency.clone(),
     };
-    let (targets, stats) = production_fixed_first::build_fixed_first_universe(&data);
-    assert_eq!(stats.candidates_rejected_fanout_above_cap, 1);
+    let (targets, _) = production_fixed_first::build_fixed_first_universe(&data);
     let candidates = targets[0].candidates();
-    assert_eq!(candidates.len(), 1, "深码候选必须在优化前被移除");
-    assert_eq!(candidates[0].shortcut_code(), &shallow);
-    let outcome = optimize(
-        &targets,
-        &data.occupancy,
-        &data.frequency,
-        &production::reference_scale(),
-        &production::reference_cost(),
-        OptimizationProfile::FixedFirst,
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.shortcut_code() == &deep),
+        "深码候选(fanout={deep_fanout})必须保留在 universe 中"
     );
-    let assignment = outcome
-        .assignments
-        .iter()
-        .find(|assignment| assignment.word == word)
-        .expect("目标应获得浅码分配");
-    assert_eq!(assignment.evaluation.shortcut_code, shallow);
+    assert_eq!(candidates.len(), 2, "两个重码候选都应保留");
 }

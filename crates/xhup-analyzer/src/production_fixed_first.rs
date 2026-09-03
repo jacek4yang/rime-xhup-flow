@@ -9,8 +9,8 @@
 //!                      shortcut 追加到组尾,rank = baseline_fanout + 1)
 //! target universe    = 全部词目标 减去 已入库 ZERO_REGRESSION production 词
 //!                      (优化前排除,不是 assignment 后过滤)
-//! candidate universe = 1 <= baseline_fanout <= FIXED_FIRST_MAX_BASELINE_FANOUT
-//!                      (优化前移除空码与深码候选,不污染 greedy allocation)
+//! candidate universe = baseline_fanout > 0
+//!                      (优化前移除空码候选,不污染 greedy allocation)
 //! reference run      = OperatingPointId::Balanced × normalized(50:50,Conservative)
 //! robustness         = 30 次 normalized 增量运行的同码票数,
 //!                      整数交叉乘法 votes × 5 >= total_runs × 4
@@ -18,10 +18,8 @@
 //! 兼容门             = pre-FIXED_FIRST current production fanout == baseline fanout
 //! ```
 //!
-//! fanout 上限 8 的语义边界:当前 selection-cost 模型只对 rank ≤ 9 有明确
-//! 区分(rank ≥ 10 全部归入同一档);本 policy 只生产化模型语义明确的候选,
-//! 更深的候选延期到未来更细粒度 selection/page model。这不构成真实前端
-//! page-size 保证。
+//! selection-cost 模型对任意 depth 都有定义(rank 1 / 2..=9 / >=10 三档),
+//! 因此 candidate universe 不设 fanout 上限;深度分布只在 audit 中如实报告。
 //!
 //! 选择基于 [`CodeOccupancy::build_baseline_fixed`] + frozen ZERO_REGRESSION
 //! 词/码集合,绝不基于含本层结果的 current-production state(否则导出会
@@ -46,10 +44,6 @@ use crate::sweep::{OperatingPointId, WordRobustness, robustness_map, run_normali
 /// Production FIXED_FIRST selection policy 的稳定版本标识(写入 canonical TSV 头)。
 pub const FIXED_FIRST_PRODUCTION_POLICY_VERSION: &str = "fixed-first-high-v1";
 
-/// baseline fanout 的 production 上限:只生产化 rank ≤ 9 的候选
-/// (selection-cost 模型语义边界;见模块文档)。
-pub const FIXED_FIRST_MAX_BASELINE_FANOUT: usize = 8;
-
 /// incremental universe 统计(解释 universe shrinkage 的 audit)。
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FixedFirstUniverseStats {
@@ -59,11 +53,7 @@ pub struct FixedFirstUniverseStats {
     pub zr_words_excluded: usize,
     /// 剩余目标数。
     pub remaining_targets: usize,
-    /// 重码候选总数(baseline fanout > 0,fanout cap 之前)。
-    pub colliding_candidates_before_cap: usize,
-    /// 因 fanout 超过 production 上限而被移除的候选数(优化前)。
-    pub candidates_rejected_fanout_above_cap: usize,
-    /// 进入优化的重码候选数(1 <= baseline fanout <= 8)。
+    /// 进入优化的重码候选数(baseline fanout > 0;无上限)。
     pub colliding_candidates: usize,
     /// 过滤后不再有任何候选的目标数。
     pub targets_without_candidates: usize,
@@ -74,7 +64,7 @@ pub struct FixedFirstUniverseStats {
 /// 构造 incremental FIXED_FIRST target/candidate universe。
 ///
 /// 两个限制都发生在 optimizer 之前:先移除已有 ZERO_REGRESSION 简码的词,
-/// 再对剩余词只保留 `1 <= baseline fanout <= 8` 的重码候选。
+/// 再对剩余词只保留 `baseline fanout > 0` 的重码候选。
 /// `data.occupancy` 必须是 baseline fixed occupancy。
 pub fn build_fixed_first_universe(
     data: &AnalysisData,
@@ -94,23 +84,8 @@ pub fn build_fixed_first_universe(
     stats.zr_words_excluded = before - targets.len();
     stats.remaining_targets = targets.len();
 
-    // 第一遍统计(fanout cap 前的重码候选规模),第二遍过滤。
-    for target in &targets {
-        for candidate in target.candidates() {
-            let fanout = data.occupancy.fanout(candidate.shortcut_code());
-            if fanout > 0 {
-                stats.colliding_candidates_before_cap += 1;
-                if fanout > FIXED_FIRST_MAX_BASELINE_FANOUT {
-                    stats.candidates_rejected_fanout_above_cap += 1;
-                }
-            }
-        }
-    }
     for target in &mut targets {
-        target.retain_candidates(|candidate| {
-            let fanout = data.occupancy.fanout(candidate.shortcut_code());
-            (1..=FIXED_FIRST_MAX_BASELINE_FANOUT).contains(&fanout)
-        });
+        target.retain_candidates(|candidate| data.occupancy.fanout(candidate.shortcut_code()) > 0);
         stats.colliding_candidates += target.candidates().len();
         for candidate in target.candidates() {
             stats.candidate_lengths[candidate.shortcut_code().len()] += 1;
@@ -183,7 +158,7 @@ pub struct FixedFirstSelection {
     pub mode: String,
     /// 万象聚合频率分数(仅 audit,不入 TSV)。
     pub frequency_score: u64,
-    /// shortcut 码在 baseline fixed occupancy 中的 fanout(1..=8)。
+    /// shortcut 码在 baseline fixed occupancy 中的 fanout(>= 1,无上限)。
     pub baseline_fanout: usize,
     /// 期望名次 = baseline_fanout + 1。
     pub expected_rank: usize,
@@ -204,8 +179,6 @@ pub enum FixedFirstExclusionReason {
     AlreadyZeroRegressionWord,
     /// 候选不与 baseline fixed 冲突(优化前过滤;理论 0)。
     NoCollidingCandidate,
-    /// baseline fanout 超出 production 上限(优化前过滤;理论 0)。
-    FanoutAboveProductionCap,
     /// reference assignment 存在,但增量运行中无该词记录。
     NoRobustnessEvidence,
     /// robustness 最多票码与 reference assignment 码不一致。
@@ -314,8 +287,6 @@ pub fn select_fixed_first_production(
             Some(Reason::AlreadyZeroRegressionWord)
         } else if baseline_fanout == 0 {
             Some(Reason::NoCollidingCandidate)
-        } else if baseline_fanout > FIXED_FIRST_MAX_BASELINE_FANOUT {
-            Some(Reason::FanoutAboveProductionCap)
         } else if pre_fixed_first_current.fanout(shortcut_code) != baseline_fanout {
             Some(Reason::CurrentOccupancyMismatch)
         } else if zr_codes.contains(shortcut_code) {
@@ -448,7 +419,7 @@ pub fn serialize_fixed_first_tsv(selected: &[FixedFirstSelection]) -> String {
     out.push_str("# Source universe: data/words/wanxiang_base_words.tsv\n");
     out.push_str("# Existing production words excluded: data/shortcuts/word_zero_regression.tsv\n");
     out.push_str(
-        "# Selection: FIXED_FIRST / colliding-only (fanout 1..=8) / balanced / normalized 50:50 conservative\n",
+        "# Selection: FIXED_FIRST / colliding-only (baseline fanout > 0) / balanced / normalized 50:50 conservative\n",
     );
     out.push_str(
         "# Robustness gate: same-code stability >= 4/5 over 30 normalized sensitivity runs\n",

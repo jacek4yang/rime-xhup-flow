@@ -155,7 +155,7 @@ fn main() -> ExitCode {
     }
 
     // production FIXED_FIRST 导出快速路径:incremental universe(排除 ZR 词、
-    // 只留 1..=8 fanout 重码候选)上的 30 次 normalized 主网格运行,
+    // 只留 baseline fanout > 0 重码候选)上的 30 次 normalized 主网格运行,
     // reference 与 robustness 同源;TSV 与 runtime 审计 manifest 共享一次证据。
     if dump_fixed_first_path.is_some() || dump_fixed_first_manifest_path.is_some() {
         let start = Instant::now();
@@ -592,21 +592,7 @@ fn render_fixed_first_audit(
     .unwrap();
     writeln!(
         out,
-        "  colliding candidates(fanout cap 前):    {}",
-        universe.colliding_candidates_before_cap
-    )
-    .unwrap();
-    writeln!(
-        out,
-        "  candidates rejected(fanout > {}):        {}",
-        xhup_analyzer::FIXED_FIRST_MAX_BASELINE_FANOUT,
-        universe.candidates_rejected_fanout_above_cap
-    )
-    .unwrap();
-    writeln!(
-        out,
-        "  colliding candidates(1..={} 进入优化):   {}",
-        xhup_analyzer::FIXED_FIRST_MAX_BASELINE_FANOUT,
+        "  colliding candidates(baseline fanout > 0,进入优化): {}",
         universe.colliding_candidates
     )
     .unwrap();
@@ -649,10 +635,9 @@ fn render_fixed_first_audit(
     .unwrap();
     writeln!(
         out,
-        "  structural(理论 0): ALREADY_ZR_WORD={} NO_COLLIDING={} FANOUT_ABOVE_CAP={} OCCUPANCY_MISMATCH={} ZR_CODE_CONFLICT={}",
+        "  structural(理论 0): ALREADY_ZR_WORD={} NO_COLLIDING={} OCCUPANCY_MISMATCH={} ZR_CODE_CONFLICT={}",
         audit.excluded_by(Reason::AlreadyZeroRegressionWord),
         audit.excluded_by(Reason::NoCollidingCandidate),
-        audit.excluded_by(Reason::FanoutAboveProductionCap),
         audit.excluded_by(Reason::CurrentOccupancyMismatch),
         audit.excluded_by(Reason::ZeroRegressionCodeConflict),
     )
@@ -738,6 +723,7 @@ fn render_fixed_first_audit(
     writeln!(out).unwrap();
 
     // fanout / expected rank 分布(逐值计数 + nearest-rank 分位数)。
+    // 无 fanout 上限:按真实出现值统计,并单独报告深 rank 规模。
     let mut fanouts: Vec<usize> = selection
         .selected
         .iter()
@@ -746,11 +732,15 @@ fn render_fixed_first_audit(
     fanouts.sort_unstable();
     let mut ranks: Vec<usize> = selection.selected.iter().map(|e| e.expected_rank).collect();
     ranks.sort_unstable();
+    let max_fanout = fanouts.last().copied().unwrap_or(0);
+    let max_rank = ranks.last().copied().unwrap_or(0);
     writeln!(out, "baseline fanout distribution(selected):").unwrap();
     write!(out, "  fanout:").unwrap();
-    for fanout in 1..=xhup_analyzer::FIXED_FIRST_MAX_BASELINE_FANOUT {
+    for fanout in 1..=max_fanout {
         let count = fanouts.iter().filter(|&&f| f == fanout).count();
-        write!(out, " {fanout}→{count}").unwrap();
+        if count > 0 {
+            write!(out, " {fanout}→{count}").unwrap();
+        }
     }
     writeln!(out).unwrap();
     writeln!(
@@ -760,7 +750,7 @@ fn render_fixed_first_audit(
         percentile_nearest_rank(&fanouts, 90),
         percentile_nearest_rank(&fanouts, 95),
         percentile_nearest_rank(&fanouts, 99),
-        fanouts.last().copied().unwrap_or(0),
+        max_fanout,
     )
     .unwrap();
     writeln!(
@@ -770,7 +760,14 @@ fn render_fixed_first_audit(
         percentile_nearest_rank(&ranks, 90),
         percentile_nearest_rank(&ranks, 95),
         percentile_nearest_rank(&ranks, 99),
-        ranks.last().copied().unwrap_or(0),
+        max_rank,
+    )
+    .unwrap();
+    let rank_ge_10 = ranks.iter().filter(|&&r| r >= 10).count();
+    let rank_ge_16 = ranks.iter().filter(|&&r| r >= 16).count();
+    writeln!(
+        out,
+        "  deep-rank selected: rank>=10 有 {rank_ge_10} 条,rank>=16 有 {rank_ge_16} 条,max rank={max_rank}"
     )
     .unwrap();
     writeln!(out).unwrap();
@@ -830,7 +827,7 @@ fn render_fixed_first_audit(
     }
     writeln!(out).unwrap();
 
-    // top 30 highest-fanout selected(深候选异常审计)。
+    // top 30 deepest selected(deep-rank 审计;fanout 无上限,如实报告深度)。
     let mut by_fanout = selection.selected.iter().collect::<Vec<_>>();
     by_fanout.sort_by(|a, b| {
         b.baseline_fanout
@@ -838,7 +835,7 @@ fn render_fixed_first_audit(
             .then(b.frequency_score.cmp(&a.frequency_score))
             .then(a.word.cmp(&b.word))
     });
-    writeln!(out, "top 30 highest-fanout selected(模型语义边界审计):").unwrap();
+    writeln!(out, "top 30 deepest selected(deep-rank 审计):").unwrap();
     for (index, entry) in by_fanout.iter().take(30).enumerate() {
         writeln!(
             out,

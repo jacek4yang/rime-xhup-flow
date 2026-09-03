@@ -44,12 +44,11 @@ pub use production::{
     serialize_canonical_tsv,
 };
 pub use production_fixed_first::{
-    FIXED_FIRST_MAX_BASELINE_FANOUT, FIXED_FIRST_PRODUCTION_POLICY_VERSION, FixedFirstBenefitAudit,
-    FixedFirstEvidence, FixedFirstExclusion, FixedFirstExclusionReason,
-    FixedFirstProductionSelection, FixedFirstSelection, FixedFirstSelectionAudit,
-    FixedFirstUniverseStats, build_fixed_first_universe, collect_fixed_first_evidence,
-    fixed_first_audit_manifest, fixed_first_benefit_audit, select_fixed_first_production,
-    serialize_fixed_first_tsv,
+    FIXED_FIRST_PRODUCTION_POLICY_VERSION, FixedFirstBenefitAudit, FixedFirstEvidence,
+    FixedFirstExclusion, FixedFirstExclusionReason, FixedFirstProductionSelection,
+    FixedFirstSelection, FixedFirstSelectionAudit, FixedFirstUniverseStats,
+    build_fixed_first_universe, collect_fixed_first_evidence, fixed_first_audit_manifest,
+    fixed_first_benefit_audit, select_fixed_first_production, serialize_fixed_first_tsv,
 };
 pub use report::{Timings, render_report};
 pub use sweep::{

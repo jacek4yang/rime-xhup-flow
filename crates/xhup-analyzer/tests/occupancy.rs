@@ -205,8 +205,8 @@ fn current_production_layer_audit_counts_shortcuts() {
 }
 
 /// 全量硬不变量:每条 FIXED_FIRST 简码在 baseline fixed 中 fanout 为
-/// N(1..=8)且组内无 FIXED_FIRST source;在 pre-FIXED_FIRST production 中
-/// fanout 不变;在 current production 中 fanout 为 N+1、前 N 个候选保持
+/// N(>= 1,无上限)且组内无 FIXED_FIRST source;在 pre-FIXED_FIRST production
+/// 中 fanout 不变;在 current production 中 fanout 为 N+1、前 N 个候选保持
 /// baseline 次序、第 N+1 个恰为该 FIXED_FIRST 候选、碰撞分类为 MULTIPLE、
 /// 携带真实词频证据。
 #[test]
@@ -221,8 +221,8 @@ fn fixed_first_layer_appends_after_baseline_candidates() {
         let baseline_group = baseline.group(shortcut).expect("FF 码在 baseline 有组");
         let fanout = baseline_group.len();
         assert!(
-            (1..=8).contains(&fanout),
-            "{} {} baseline fanout {fanout} 应在 1..=8",
+            fanout > 0,
+            "{} {} baseline fanout 应 > 0",
             entry.word(),
             shortcut
         );

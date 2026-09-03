@@ -90,9 +90,10 @@ policy(`fixed-first-high-v1`)**确定性导出**,与零冲突层的差别在于
   相对次序绝对不变);
 - target universe:全部词目标**先移除**已持有零冲突简码的词(优化前
   排除,不是分配后过滤);
-- candidate universe:只保留 baseline 候选数在 1..=8 的重码候选(更深的
-  候选超出当前 selection-cost 模型的语义边界,延期到未来更细粒度的
-  selection/page model);
+- candidate universe:只保留与 baseline fixed exact code 重码
+  (baseline 候选数 > 0)的候选,**不设上限**;selection-cost 模型对任意
+  深度都有定义(rank 1 / 2..=9 / >=10 三档),深度分布只在 analyzer
+  audit 中如实报告;
 - reference run 与 robustness gate 与零冲突层相同(balanced ×
   normalized 50:50 conservative,30 次运行同码票数 ≥ 4/5)。
 
