@@ -5,11 +5,20 @@
 //!
 //! ```text
 //! profile            = ZERO_REGRESSION(baseline fixed exact code 必须空闲)
+//! candidate grammar  = LegacyAnyFiV1(任意含 I 的 F/I 组合;冻结语法,
+//!                      枚举期同时应用 len >= 3 过滤 —— 见
+//!                      CandidateEnumerationSpec::LEGACY_V1_FROZEN)
 //! reference run      = balanced × normalized(char_share 0.50, Conservative)
 //! robustness         = 30 次 normalized sensitivity 运行中的同码票数
 //! gate               = 整数交叉乘法 votes × 5 >= total_runs × 4(即 ≥ 4/5)
 //!                      且 robustness 最多票码 == reference assignment 码
 //! ```
+//!
+//! candidate grammar 与枚举规格由 [`collect_evidence`] 硬断言为冻结
+//! legacy-v1 规格:canonical TSV 中因此存在新 policy(monotone-suffix-
+//! initials-v2)不再生成的非单调模式(如 `IF`/`IFI`/`IIF`),这些是
+//! legacy-v1 冻结映射,不是无效数据;语法与生产策略的分层见
+//! `data/shortcuts/README.md`。
 //!
 //! 选择永远基于 [`CodeOccupancy::build_baseline_fixed`],绝不基于
 //! current-production occupancy(否则导出会自引用消失)。robustness 阈值用
@@ -164,8 +173,15 @@ pub struct ProductionEvidence {
 
 /// 收集 production 选择证据:只跑 ZERO_REGRESSION 的 normalized 主网格。
 ///
-/// `occupancy` 必须是 baseline fixed occupancy。
+/// `occupancy` 必须是 baseline fixed occupancy。`data` 的候选枚举规格必须
+/// 是冻结的 legacy-v1 规格(PR #21/#22 canonical 复现的语法绑定,硬断言)。
 pub fn collect_evidence(data: &AnalysisData) -> ProductionEvidence {
+    assert_eq!(
+        data.enumeration_spec,
+        crate::candidates::CandidateEnumerationSpec::LEGACY_V1_FROZEN,
+        "ZERO_REGRESSION production evidence 必须绑定冻结的 legacy-v1 枚举规格 \
+         (candidate grammar: legacy-any-fi-v1)"
+    );
     let runs = run_normalized_grid(
         &data.targets,
         &data.occupancy,

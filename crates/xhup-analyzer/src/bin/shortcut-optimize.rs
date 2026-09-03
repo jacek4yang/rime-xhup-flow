@@ -6,7 +6,7 @@
 use std::process::ExitCode;
 use std::time::Instant;
 
-use xhup_analyzer::candidates::enumerate_targets;
+use xhup_analyzer::candidates::CandidateEnumerationSpec;
 use xhup_analyzer::frequency::FrequencyModel;
 use xhup_analyzer::occupancy::CodeOccupancy;
 use xhup_analyzer::optimize::{OptimizationProfile, optimize};
@@ -23,16 +23,23 @@ fn usage() -> ! {
          选项:\n\
          \x20 --profile <zero-regression|fixed-first|optimized|empty-length-only>\n\
          \x20                     只运行指定 profile(默认:全部)\n\
+         \x20 --grammar <legacy-any-fi-v1|monotone-suffix-initials-v2>\n\
+         \x20                     候选枚举语法(仅影响通用报告/转储路径;\n\
+         \x20                     默认 legacy-any-fi-v1,保持历史输出可比)。\n\
+         \x20                     production 导出命令固定语法,不受本选项影响:\n\
+         \x20                     --dump-production-zero-regression 恒为 legacy,\n\
+         \x20                     --dump-production-fixed-first 恒为 monotone。\n\
          \x20 --format <text|tsv>   stdout 输出格式(默认 text 报告;tsv = 推荐表)\n\
          \x20 --dump-candidates <path>     转储全部候选 TSV(balanced 模型)\n\
          \x20 --dump-recommendations <path> 转储推荐结果 TSV(含稳健性)\n\
          \x20 --dump-production-zero-regression <path>\n\
          \x20                     导出 production ZERO_REGRESSION 简码 canonical TSV\n\
-         \x20                     (policy zero-regression-high-v1;只跑 ZR 主网格,\n\
-         \x20                     导出后退出,不输出完整报告)\n\
+         \x20                     (policy zero-regression-high-v1;grammar 固定\n\
+         \x20                     legacy-any-fi-v1;只跑 ZR 主网格,导出后退出)\n\
          \x20 --dump-production-fixed-first <path>\n\
          \x20                     导出 production FIXED_FIRST 简码 canonical TSV\n\
-         \x20                     (policy fixed-first-high-v1;incremental universe\n\
+         \x20                     (policy fixed-first-high-v1;grammar 固定\n\
+         \x20                     monotone-suffix-initials-v2;incremental universe\n\
          \x20                     上跑 30 次 normalized 主网格,导出后退出)\n\
          \x20 --dump-fixed-first-audit-manifest <path>\n\
          \x20                     导出 FIXED_FIRST runtime A/B 审计 manifest\n\
@@ -56,8 +63,17 @@ fn parse_profile(name: &str) -> OptimizationProfile {
     }
 }
 
+fn parse_grammar(name: &str) -> CandidateEnumerationSpec {
+    match name {
+        "legacy-any-fi-v1" => CandidateEnumerationSpec::LEGACY_V1_FROZEN,
+        "monotone-suffix-initials-v2" => CandidateEnumerationSpec::MONOTONE_V2_THEORETICAL,
+        _ => usage(),
+    }
+}
+
 fn main() -> ExitCode {
     let mut profile_filter: Option<OptimizationProfile> = None;
+    let mut spec: Option<CandidateEnumerationSpec> = None;
     let mut format_tsv = false;
     let mut dump_candidates_path: Option<String> = None;
     let mut dump_recommendations_path: Option<String> = None;
@@ -72,6 +88,10 @@ fn main() -> ExitCode {
             "--profile" => {
                 let value = args.next().unwrap_or_else(|| usage());
                 profile_filter = Some(parse_profile(&value));
+            }
+            "--grammar" => {
+                let value = args.next().unwrap_or_else(|| usage());
+                spec = Some(parse_grammar(&value));
             }
             "--format" => match args.next().unwrap_or_else(|| usage()).as_str() {
                 "text" => format_tsv = false,
@@ -99,6 +119,38 @@ fn main() -> ExitCode {
         }
     }
 
+    // production 导出快速路径的语法固定:ZR 恒为 legacy-v1,FF 恒为
+    // monotone-v2;显式 --grammar 与之冲突时报错,未指定时静默采用固定值。
+    let production_spec = if dump_production_path.is_some()
+        && dump_fixed_first_path.is_none()
+        && dump_fixed_first_manifest_path.is_none()
+    {
+        Some(CandidateEnumerationSpec::LEGACY_V1_FROZEN)
+    } else if dump_production_path.is_none()
+        && (dump_fixed_first_path.is_some() || dump_fixed_first_manifest_path.is_some())
+    {
+        Some(CandidateEnumerationSpec::MONOTONE_V2_THEORETICAL)
+    } else if dump_production_path.is_some() {
+        usage();
+    } else {
+        None
+    };
+    if let Some(production_spec) = production_spec {
+        if let Some(spec) = spec
+            && spec != production_spec
+        {
+            eprintln!(
+                "错误:production 导出命令固定 candidate grammar {},与 --grammar {} 冲突",
+                production_spec.grammar.label(),
+                spec.grammar.label()
+            );
+            return ExitCode::FAILURE;
+        }
+        spec = Some(production_spec);
+    }
+    // 通用路径默认 legacy-v1,保持历史报告输出可比。
+    let spec = spec.unwrap_or(CandidateEnumerationSpec::LEGACY_V1_FROZEN);
+
     // 分阶段计时构建不可变分析输入(全部 sweep 运行复用)。
     let start = Instant::now();
     let chars = xhup_generator::char_code_analysis_entries();
@@ -117,7 +169,8 @@ fn main() -> ExitCode {
     }
 
     let start = Instant::now();
-    let (targets, enumeration) = enumerate_targets(&words);
+    let (targets, enumeration) =
+        xhup_analyzer::candidates::enumerate_targets_with_spec(&words, spec);
     let enumeration_elapsed = start.elapsed();
 
     let frequency = FrequencyModel::build(&chars, &words);
@@ -127,12 +180,14 @@ fn main() -> ExitCode {
         occupancy,
         targets,
         enumeration,
+        enumeration_spec: spec,
         frequency,
     };
     eprintln!(
-        "分析输入:{} targets / {} candidates",
+        "分析输入:{} targets / {} candidates(candidate grammar: {})",
         data.targets.len(),
-        data.enumeration.actual
+        data.enumeration.actual,
+        spec.grammar.label()
     );
 
     // production 导出快速路径:只跑 ZERO_REGRESSION 的 30 次 normalized
@@ -569,6 +624,19 @@ fn render_fixed_first_audit(
         evidence.reference_point
     )
     .unwrap();
+    writeln!(
+        out,
+        "candidate grammar: {} (theoretical;production min length {})",
+        evidence.candidate_grammar.label(),
+        xhup_analyzer::PRODUCTION_MIN_SHORTCUT_LENGTH
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "below-min-length theoretical candidates excluded(优化前): {}",
+        universe.below_min_length_candidates
+    )
+    .unwrap();
     writeln!(out).unwrap();
 
     writeln!(out, "incremental universe audit:").unwrap();
@@ -928,14 +996,39 @@ fn render_fixed_first_audit(
     writeln!(out).unwrap();
 
     // 「时间」哨兵(full uijm):本 PR 的核心 regression anchor。
-    // 若 incremental policy 没有重新得出 时间 -> uij,这是 STOP 条件,
-    // 绝不允许人工 whitelist。
+    // Monotone V2 语法理论候选恰为 uij(FI)与 uj(II);ujm(IF)结构性
+    // 非法;uj 由 production min-length policy 排除。若 incremental policy
+    // 没有重新得出 时间 -> uij,这是 STOP 条件,绝不允许人工 whitelist。
     writeln!(out, "「时间」哨兵(full uijm):").unwrap();
     let Some(time_target) = data.targets.iter().find(|t| t.word() == "时间") else {
         writeln!(out, "  STOP: 词目标中不存在「时间」").unwrap();
         return out;
     };
     writeln!(out, "  frequency score: {}", time_target.frequency_score()).unwrap();
+    // 语法理论候选(Monotone V2):必须恰为 uij/FI 与 uj/II。
+    let theoretical: Vec<(String, String)> = time_target
+        .candidates()
+        .iter()
+        .map(|c| (c.shortcut_code().to_string(), c.mode().pattern()))
+        .collect();
+    assert_eq!(
+        theoretical,
+        vec![
+            ("uij".to_string(), "FI".to_string()),
+            ("uj".to_string(), "II".to_string())
+        ],
+        "STOP:Monotone V2 理论候选必须恰为 uij/FI 与 uj/II"
+    );
+    writeln!(out, "  Monotone theoretical candidates:").unwrap();
+    for (code, mode) in &theoretical {
+        writeln!(out, "    {code} / {mode}").unwrap();
+    }
+    writeln!(
+        out,
+        "    ujm: ILLEGAL under {}(I 后不得再 F)",
+        evidence.candidate_grammar.label()
+    )
+    .unwrap();
     if let Some(full_group) = data.occupancy.group(time_target.full_code()) {
         let menu: Vec<&str> = full_group.iter().map(|c| c.text()).collect();
         let rank = full_group
@@ -961,60 +1054,68 @@ fn render_fixed_first_audit(
         OptimizationProfile::FixedFirst,
     );
     let robustness = evidence.robustness.get("时间");
-    for code in ["uij", "ujm"] {
-        let key: KeySequence = code.parse().expect("哨兵码合法");
-        let menu: Vec<&str> = data
-            .occupancy
-            .group(&key)
-            .map(|group| group.iter().map(|c| c.text()).collect())
-            .unwrap_or_default();
-        let evaluation = evaluations.iter().find(|e| e.shortcut_code == key);
-        let votes = robustness
-            .and_then(|r| r.code_votes.get(code))
-            .copied()
-            .unwrap_or(0);
-        let total_runs = robustness.map_or(0, |r| r.total_runs);
-        let selected = selection
-            .selected
-            .iter()
-            .find(|e| e.word == "时间" && e.shortcut_code == key);
-        writeln!(out, "  {code}:").unwrap();
-        writeln!(out, "    baseline fanout: {}", menu.len()).unwrap();
-        writeln!(out, "    baseline menu:   {}", menu.join(", ")).unwrap();
-        if let Some(evaluation) = evaluation {
-            writeln!(out, "    mode:            {}", evaluation.mode).unwrap();
-            writeln!(
-                out,
-                "    expected rank:   {}",
-                evaluation.existing_fanout + 1
-            )
-            .unwrap();
-            writeln!(
-                out,
-                "    reference net utility: {:.4}",
-                evaluation.breakdown.net_utility
-            )
-            .unwrap();
-            writeln!(
-                out,
-                "    eligible: {}{}",
-                evaluation.eligible,
-                evaluation
-                    .gate_reason
-                    .map_or(String::new(), |r| format!("(gate: {r})"))
-            )
-            .unwrap();
-        }
-        writeln!(out, "    same-code votes: {votes}/{total_runs}").unwrap();
-        match selected {
-            Some(entry) => writeln!(
-                out,
-                "    production:      SELECTED({} {} {} {})",
-                entry.word, entry.full_code, entry.shortcut_code, entry.mode
-            )
-            .unwrap(),
-            None => writeln!(out, "    production:      not selected").unwrap(),
-        }
+    // uj / II:语法合法,production min-length policy 排除(audit-only)。
+    writeln!(out, "  uj:").unwrap();
+    writeln!(
+        out,
+        "    excluded by production min-length policy(< {} 键保留给一级简码与单字)",
+        xhup_analyzer::PRODUCTION_MIN_SHORTCUT_LENGTH
+    )
+    .unwrap();
+    // uij / FI:唯一 production eligible 候选,完整 audit。
+    let code = "uij";
+    let key: KeySequence = code.parse().expect("哨兵码合法");
+    let menu: Vec<&str> = data
+        .occupancy
+        .group(&key)
+        .map(|group| group.iter().map(|c| c.text()).collect())
+        .unwrap_or_default();
+    let evaluation = evaluations.iter().find(|e| e.shortcut_code == key);
+    let votes = robustness
+        .and_then(|r| r.code_votes.get(code))
+        .copied()
+        .unwrap_or(0);
+    let total_runs = robustness.map_or(0, |r| r.total_runs);
+    let selected = selection
+        .selected
+        .iter()
+        .find(|e| e.word == "时间" && e.shortcut_code == key);
+    writeln!(out, "  {code}:").unwrap();
+    writeln!(out, "    baseline fanout: {}", menu.len()).unwrap();
+    writeln!(out, "    baseline menu:   {}", menu.join(", ")).unwrap();
+    if let Some(evaluation) = evaluation {
+        writeln!(out, "    mode:            {}", evaluation.mode).unwrap();
+        writeln!(
+            out,
+            "    expected rank:   {}",
+            evaluation.existing_fanout + 1
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "    reference net utility: {:.4}",
+            evaluation.breakdown.net_utility
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "    eligible: {}{}",
+            evaluation.eligible,
+            evaluation
+                .gate_reason
+                .map_or(String::new(), |r| format!("(gate: {r})"))
+        )
+        .unwrap();
+    }
+    writeln!(out, "    same-code votes: {votes}/{total_runs}").unwrap();
+    match selected {
+        Some(entry) => writeln!(
+            out,
+            "    production:      SELECTED({} {} {} {})",
+            entry.word, entry.full_code, entry.shortcut_code, entry.mode
+        )
+        .unwrap(),
+        None => writeln!(out, "    production:      not selected").unwrap(),
     }
     let time_selected = selection
         .selected

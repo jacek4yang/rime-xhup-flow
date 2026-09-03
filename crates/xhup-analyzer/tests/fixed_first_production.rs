@@ -14,11 +14,17 @@ use xhup_analyzer::production_fixed_first::{
     self, FixedFirstEvidence, FixedFirstExclusionReason, FixedFirstProductionSelection,
 };
 use xhup_analyzer::sweep::OperatingPointId;
-use xhup_analyzer::{AnalysisData, ShortcutCandidate, WordTarget, build_analysis, production};
+use xhup_analyzer::{
+    AnalysisData, CandidateEnumerationSpec, CandidateGrammar, ShortcutCandidate, WordTarget,
+    build_analysis_with_spec, production,
+};
 use xhup_core::KeySequence;
 use xhup_generator::{canonical_word_code_entries, canonical_word_shortcut_entries};
 
 /// 共享 fixture:分析输入 + 增量证据 + 选择结果。
+///
+/// PR #23 FIXED_FIRST 证据绑定 Monotone V2 理论全集枚举规格(production
+/// min-length 由 policy 在 universe 构造时过滤)。
 struct Fixture {
     data: AnalysisData,
     evidence: FixedFirstEvidence,
@@ -28,7 +34,7 @@ struct Fixture {
 fn fixture() -> &'static Fixture {
     static FIXTURE: OnceLock<Fixture> = OnceLock::new();
     FIXTURE.get_or_init(|| {
-        let data = build_analysis();
+        let data = build_analysis_with_spec(CandidateEnumerationSpec::MONOTONE_V2_THEORETICAL);
         let evidence = production_fixed_first::collect_fixed_first_evidence(&data);
         // 兼容性参考系:baseline + ZERO_REGRESSION 层(不含 FF 层自身)。
         let pre_fixed_first_current = CodeOccupancy::build_pre_fixed_first_production();
@@ -73,6 +79,12 @@ fn reference_policy_is_typed_and_frozen() {
         fixture().evidence.reference_point,
         OperatingPointId::Balanced
     );
+    // production evidence 显式暴露候选语法身份(不允许隐式)。
+    assert_eq!(
+        fixture().evidence.candidate_grammar,
+        CandidateGrammar::MonotoneSuffixInitialsV2,
+        "FIXED_FIRST reference 必须绑定 MonotoneSuffixInitialsV2"
+    );
     assert!(matches!(
         production::reference_scale(),
         FrequencyScale::Normalized { char_share, usage }
@@ -82,6 +94,8 @@ fn reference_policy_is_typed_and_frozen() {
         production_fixed_first::FIXED_FIRST_PRODUCTION_POLICY_VERSION,
         "fixed-first-high-v1"
     );
+    // production 最短长度是 policy 层(1/2 键保留),不是语法层。
+    assert_eq!(production_fixed_first::PRODUCTION_MIN_SHORTCUT_LENGTH, 3);
     // 整数阈值 4/5 对应 30 次运行 ≥ 24 票。
     assert_eq!(
         production::ROBUSTNESS_NUMERATOR * 30,
@@ -106,7 +120,8 @@ fn universe_is_incremental_and_colliding_only() {
             .all(|target| !zr_words.contains(target.word())),
         "incremental universe 不得包含任何 ZR production 词"
     );
-    // 候选在优化前已被限制为 baseline fanout > 0 的重码候选(无上限)。
+    // 候选在优化前已被限制为长度 >= 3 且 baseline fanout > 0 的重码候选
+    //(无上限);production min-length 是 policy 过滤,不是语法语义。
     for target in &targets {
         for candidate in target.candidates() {
             let fanout = fixture.data.occupancy.fanout(candidate.shortcut_code());
@@ -116,12 +131,115 @@ fn universe_is_incremental_and_colliding_only() {
                 target.word(),
                 candidate.shortcut_code(),
             );
+            assert!(
+                candidate.shortcut_code().len()
+                    >= production_fixed_first::PRODUCTION_MIN_SHORTCUT_LENGTH,
+                "{} {} 长度低于 production 最短长度",
+                target.word(),
+                candidate.shortcut_code()
+            );
         }
     }
     assert_eq!(
         stats.original_targets,
         stats.zr_words_excluded + stats.remaining_targets
     );
+    assert!(
+        stats.below_min_length_candidates > 0,
+        "2-key 理论候选(如 时间 uj/II)应被 policy 过滤计数"
+    );
+}
+
+/// 语法合法性 vs production 资格的架构回归:「时间 → uj/II」在 Monotone
+/// V2 语法层结构性合法(存在于理论候选),但被 production min-length
+/// policy 排除,不得进入 candidate universe 与 canonical TSV。
+#[test]
+fn two_key_candidate_is_legal_grammar_but_not_production_eligible() {
+    let fixture = fixture();
+    // 语法层:理论候选恰为 uij/FI 与 uj/II。
+    let time_target = fixture
+        .data
+        .targets
+        .iter()
+        .find(|t| t.word() == "时间")
+        .expect("时间必然在词表中");
+    let candidates: Vec<(String, String)> = time_target
+        .candidates()
+        .iter()
+        .map(|c| (c.shortcut_code().to_string(), c.mode().pattern()))
+        .collect();
+    assert_eq!(
+        candidates,
+        vec![
+            ("uij".to_string(), "FI".to_string()),
+            ("uj".to_string(), "II".to_string())
+        ]
+    );
+    // production universe 层:uj 被排除,ujm 结构性不存在。
+    let (targets, _) = production_fixed_first::build_fixed_first_universe(&fixture.data);
+    let time_universe = targets
+        .iter()
+        .find(|t| t.word() == "时间")
+        .expect("时间不在 ZR 词表中,必然保留");
+    let codes: Vec<String> = time_universe
+        .candidates()
+        .iter()
+        .map(|c| c.shortcut_code().to_string())
+        .collect();
+    assert!(
+        !codes.contains(&"uj".to_string()),
+        "uj 不得进入 production universe"
+    );
+    assert!(
+        !codes.contains(&"ujm".to_string()),
+        "ujm 在 Monotone V2 下结构性非法"
+    );
+    // canonical TSV 层:uj 不得入库。
+    assert!(
+        !fixture
+            .selection
+            .selected
+            .iter()
+            .any(|e| e.word == "时间" && e.shortcut_code.len() < 3),
+        "production 选择不得含长度 < 3 的码"
+    );
+}
+
+/// production 选择集模式审计:全部选中模式必须属于 Monotone V2(2 字 FI;
+/// 3 字 FFI/FII/III;4 字 FFFI/FFII/FIII/IIII)。任何含 I…F 的模式是硬失败。
+#[test]
+fn production_patterns_are_exhaustively_monotone() {
+    let fixture = fixture();
+    let legal: [&str; 9] = [
+        "FI", "II", "FFI", "FII", "III", "FFFI", "FFII", "FIII", "IIII",
+    ];
+    for entry in &fixture.selection.selected {
+        assert!(
+            legal.contains(&entry.mode.as_str()),
+            "{} 的模式 {} 不属于 Monotone V2 合法集",
+            entry.word,
+            entry.mode
+        );
+        assert!(
+            entry.mode.chars().all(|c| matches!(c, 'F' | 'I')),
+            "{} 的模式 {} 含非法字符",
+            entry.word,
+            entry.mode
+        );
+        // 结构性重验:一旦 I 出现,后续不得再 F。
+        let mut seen_initial = false;
+        for c in entry.mode.chars() {
+            match c {
+                'I' => seen_initial = true,
+                'F' => assert!(
+                    !seen_initial,
+                    "{} 的模式 {} 含 I…F(非单调)",
+                    entry.word, entry.mode
+                ),
+                _ => unreachable!(),
+            }
+        }
+    }
 }
 
 #[test]
@@ -268,7 +386,8 @@ fn time_word_sentinel() {
         entry.top_code_votes * production::ROBUSTNESS_DENOMINATOR
             >= entry.total_runs * production::ROBUSTNESS_NUMERATOR
     );
-    // ujm 行不存在。
+    // ujm 行不存在(一词最多一码);且 ujm/IF 在 Monotone V2 candidate
+    // universe 中结构性不存在(不是"票数不够",是非法模式)。
     assert!(
         !fixture
             .selection
@@ -277,6 +396,7 @@ fn time_word_sentinel() {
             .any(|e| e.word == "时间" && e.shortcut_code == key("ujm")),
         "「时间」不得同时持有 ujm 简码"
     );
+    assert_ne!(entry.mode, "IF", "IF 不是 Monotone V2 合法模式");
 }
 
 #[test]
@@ -288,6 +408,14 @@ fn serialization_is_deterministic_and_canonical() {
     assert!(!first.contains('\r'), "canonical TSV 仅允许 LF");
     assert!(first.ends_with('\n') && !first.ends_with("\n\n"));
     assert!(first.contains(production_fixed_first::FIXED_FIRST_PRODUCTION_POLICY_VERSION));
+    assert!(
+        first.contains("# candidate grammar: monotone-suffix-initials-v2"),
+        "canonical TSV 头必须显式记录候选语法"
+    );
+    assert!(
+        first.contains("# production min shortcut length: 3"),
+        "canonical TSV 头必须显式记录 production 最短长度"
+    );
     let rows: Vec<&str> = first
         .lines()
         .filter(|line| !line.starts_with('#'))
@@ -357,6 +485,7 @@ fn zr_word_is_removed_before_optimization() {
             ),
         ],
         enumeration: Default::default(),
+        enumeration_spec: CandidateEnumerationSpec::MONOTONE_V2_THEORETICAL,
         frequency: fixture.data.frequency.clone(),
     };
     let (targets, _) = production_fixed_first::build_fixed_first_universe(&data);
@@ -383,10 +512,12 @@ fn deep_fanout_candidates_are_kept() {
     // policy: candidate universe 为 baseline fanout > 0,不设上限。
     // 深码候选(fanout > 8)必须保留在 universe 中参与优化,
     // 由 30 次增量运行 + 4/5 整数门限决定是否入选,不做 pre-filter。
+    // 注:深码示例必须满足 production min-length(>= 3);2-key 深码
+    //(如 yi)由 min-length policy 排除,那是另一条测试的职责。
     let fixture = fixture();
-    let deep = key("yi");
+    let deep = key("uia");
     let deep_fanout = fixture.data.occupancy.fanout(&deep);
-    assert!(deep_fanout > 8, "测试前提:yi baseline fanout 必须 > 8");
+    assert!(deep_fanout > 8, "测试前提:uia baseline fanout 必须 > 8");
     // 用真实词「时间」(uijm baseline 组 rank 1):optimizer 要求词真实
     // 占用其完整码组。
     let word = "时间";
@@ -404,6 +535,7 @@ fn deep_fanout_candidates_are_kept() {
             ],
         )],
         enumeration: Default::default(),
+        enumeration_spec: CandidateEnumerationSpec::MONOTONE_V2_THEORETICAL,
         frequency: fixture.data.frequency.clone(),
     };
     let (targets, _) = production_fixed_first::build_fixed_first_universe(&data);

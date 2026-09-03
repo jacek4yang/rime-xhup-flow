@@ -24,8 +24,13 @@ fn ambiguity_cost_is_zero_for_single_candidate() {
 
 #[test]
 fn mode_complexity_counts_transitions() {
+    // 历史模式复杂度语义基于冻结 legacy-any-fi-v1 语法(含 FIF 等
+    // 多切换模式),显式选择冻结枚举规格。
     let words = xhup_generator::word_code_analysis_entries();
-    let (targets, _) = xhup_analyzer::candidates::enumerate_targets(&words);
+    let (targets, _) = xhup_analyzer::candidates::enumerate_targets_with_spec(
+        &words,
+        xhup_analyzer::candidates::CandidateEnumerationSpec::LEGACY_V1_FROZEN,
+    );
     let find = |pattern: &str| {
         targets
             .iter()

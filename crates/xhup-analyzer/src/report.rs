@@ -120,6 +120,18 @@ fn section_overview(out: &mut String, data: &AnalysisData, timings: &Timings) {
     writeln!(out, "shortcut candidates:").unwrap();
     writeln!(
         out,
+        "  candidate grammar:      {}",
+        data.enumeration_spec.grammar.label()
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "  enumeration min length: {}",
+        data.enumeration_spec.min_length
+    )
+    .unwrap();
+    writeln!(
+        out,
         "  theoretical(pre-dedup): {}",
         data.enumeration.theoretical
     )
@@ -132,7 +144,7 @@ fn section_overview(out: &mut String, data: &AnalysisData, timings: &Timings) {
     )
     .unwrap();
     writeln!(out, "  by length:").unwrap();
-    for length in 3..=7 {
+    for length in 2..=7 {
         writeln!(
             out,
             "    {length}: {}",

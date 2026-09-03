@@ -47,6 +47,9 @@ canonical 顺序序列化(LF、无 BOM、恰好一个末尾换行)。
 的 production selection policy(`zero-regression-high-v1`)**确定性导出**
 的选择集:
 
+- candidate grammar:**legacy-any-fi-v1(冻结)**——任意含 I 的 F/I
+  组合。枚举期同时应用 `最短 3 键` 过滤(该过滤是冻结枚举规格的一
+  部分,不属于语法本身);
 - profile:ZERO_REGRESSION(简码在 baseline fixed exact-code 空间中完全
   空闲,不与一级简码、单字 2/3/4 码、固定词 4/6/8 键冲突);
 - reference run:balanced operating point × normalized(char:word = 50:50,
@@ -64,6 +67,20 @@ canonical 顺序序列化(LF、无 BOM、恰好一个末尾换行)。
 analyzer export + diff review + policy version review;analyzer 算法的演进
 不得自动删除或更换已发布的 `词 → 简码` 关系——修改已发布关系视为
 breaking scheme change,与一级简码的肌肉记忆保护原则一致。
+
+## Legacy 冻结映射(候选语法技术债)
+
+本层 44,448 条映射由冻结的 legacy-any-fi-v1 语法生成,其中包含大量
+**非单调**模式(44,448 条中 13,281 条:`IIF` 4,632、`IFI` 3,625、
+`IF` 2,981、`IFF` 1,538、`IIIF` 446、`FIF` 40、`IFII` 14、`IIFI` 5)。
+
+这些是 **legacy-v1 冻结映射,不是无效数据**:它们是已发布的用户肌肉
+记忆,无限期保持支持,不删除、不「清理」、不由新语法重算。新的
+production policy(candidate grammar
+monotone-suffix-initials-v2,见 FIXED_FIRST 层)**不再生成**这些形式的
+新映射;两类映射的分层由
+`xhup-generator/tests/word_shortcut_grammar_audit.rs` 全量审计锁定。
+未来如需迁移,必须经由显式 breaking scheme version,绝不静默进行。
 
 ## 许可证
 
@@ -83,8 +100,14 @@ breaking scheme change,与一级简码的肌肉记忆保护原则一致。
 
 本文件由同一万象词语/频率证据经 `xhup-analyzer` 的 production selection
 policy(`fixed-first-high-v1`)**确定性导出**,与零冲突层的差别在于
-候选语义与增量宇宙:
+候选语法、候选语义与增量宇宙:
 
+- candidate grammar:**monotone-suffix-initials-v2**——单调后缀缩写
+  `F* I*`(至少一个 I;一旦某字缩写,其后所有字都缩写)。语法理论
+  全集允许 2-key 候选(如 `时间 → uj/II`,audit-only);非单调模式
+  (如 `IF`/`IFI`,首字缩写、末字全码)**结构性非法**,不再生成;
+- production 最短长度:**3 键**(policy 过滤,不是语法语义;1/2 键
+  空间保留给一级简码与单字双拼);
 - profile:FIXED_FIRST(简码与 baseline fixed exact code **重码**,新候选
   严格追加到全部既有固定候选之后,名次 = baseline 候选数 + 1,既有候选
   相对次序绝对不变);

@@ -16,7 +16,11 @@
 //! - `(词, 完整码)` 必须存在于 canonical 固定词层(alias,不替换完整码);
 //! - shortcut 为纯小写 a-z,长度 ≥ 3 且小于完整码;
 //! - 模式只含 F/I,字符数等于字数,且 `完整码 + 模式` 机械投影必须恰好
-//!   等于 shortcut 码(F = 完整两键,I = 双拼首键,无其它编码规则);
+//!   等于 shortcut 码(F = 完整两键,I = 双拼首键,无其它编码规则),
+//!   且模式必须是单调后缀缩写 `F* I*`(candidate grammar
+//!   monotone-suffix-initials-v2;一旦 I 出现,后续不得再 F —— 与
+//!   analyzer 的 `CandidateGrammar::MonotoneSuffixInitialsV2` 是同一
+//!   不变式的独立实现,generator 不依赖 analyzer);
 //! - 词不得持有 ZERO_REGRESSION production 简码(一词最多一条简码);
 //! - shortcut 码不得与 ZERO_REGRESSION production 码冲突(与 ZR 层全量
 //!   不相交);
@@ -96,6 +100,28 @@ fn project_shortcut(full_code: &KeySequence, mode: &str) -> Option<KeySequence> 
         }
     }
     KeySequence::from_keys(&shortcut).ok()
+}
+
+/// 模式是否为单调后缀缩写 `F* I*`(candidate grammar
+/// monotone-suffix-initials-v2):只含 F/I,一旦 I 出现后续不得再 F。
+///
+/// 与 analyzer 侧 `CandidateGrammar::MonotoneSuffixInitialsV2::accepts` 是
+/// 同一小不变式的独立实现(generator 不依赖 analyzer);本层 TSV 中的
+/// 全部模式必须满足它。
+fn is_monotone_suffix_mode(mode: &str) -> bool {
+    let mut seen_initial = false;
+    for c in mode.chars() {
+        match c {
+            'F' => {
+                if seen_initial {
+                    return false;
+                }
+            }
+            'I' => seen_initial = true,
+            _ => return false,
+        }
+    }
+    seen_initial
 }
 
 /// baseline fixed exact-code 候选组:码 → 候选文本集合。FIXED_FIRST
@@ -215,10 +241,15 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalFixedFirstShortcutE
             "{name} 第 {row_number} 行 (词, shortcut) 已是 baseline exact 关系: {line:?}"
         );
 
-        // 模式:只含 F/I,字数匹配,机械投影必须等于 shortcut。
+        // 模式:只含 F/I,字数匹配,机械投影必须等于 shortcut,
+        // 且必须是单调后缀缩写 F* I*(monotone-suffix-initials-v2)。
         assert!(
             mode.chars().count() == char_count && mode.chars().all(|c| matches!(c, 'F' | 'I')),
             "{name} 第 {row_number} 行模式应为恰等于字数的 F/I 串: {line:?}"
+        );
+        assert!(
+            is_monotone_suffix_mode(mode),
+            "{name} 第 {row_number} 行模式 {mode} 非单调后缀缩写(F* I*): {line:?}"
         );
         let projected = project_shortcut(&full_code, mode)
             .unwrap_or_else(|| panic!("{name} 第 {row_number} 行模式无法投影: {line:?}"));
@@ -275,6 +306,23 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalFixedFirstShortcutE
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 单调后缀缩写不变量(candidates 语法 monotone-suffix-initials-v2)。
+    #[test]
+    fn monotone_suffix_mode_vectors() {
+        for valid in [
+            "FI", "II", "FFI", "FII", "III", "FFFI", "FFII", "FIII", "IIII",
+        ] {
+            assert!(is_monotone_suffix_mode(valid), "应接受 {valid}");
+        }
+        // all-F 等于完整码,不是 shortcut;I 后再 F 非单调;其它字符非法。
+        for invalid in [
+            "", "F", "FF", "FFF", "FFFF", "IF", "IFI", "IFF", "IIF", "FIF", "IIIF", "IFII", "IIFI",
+            "FX", "IFX",
+        ] {
+            assert!(!is_monotone_suffix_mode(invalid), "应拒绝 {invalid:?}");
+        }
+    }
 
     #[test]
     fn entries_are_parsed_and_nonempty() {

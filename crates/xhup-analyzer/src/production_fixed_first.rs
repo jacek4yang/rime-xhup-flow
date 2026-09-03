@@ -7,16 +7,28 @@
 //! ```text
 //! profile            = FIXED_FIRST(existing fixed 候选次序绝对不变,
 //!                      shortcut 追加到组尾,rank = baseline_fanout + 1)
+//! candidate grammar  = MonotoneSuffixInitialsV2(单调后缀缩写 F* I*,
+//!                      至少一个 I;理论全集允许 2-key 候选 —— 见
+//!                      CandidateEnumerationSpec::MONOTONE_V2_THEORETICAL)
 //! target universe    = 全部词目标 减去 已入库 ZERO_REGRESSION production 词
 //!                      (优化前排除,不是 assignment 后过滤)
+//! production filter  = shortcut 长度 >= PRODUCTION_MIN_SHORTCUT_LENGTH(3)
+//!                      且 baseline_fanout > 0(均为优化前 policy 过滤;
+//!                      1/2 键空间保留给一级简码与单字)
 //! candidate universe = baseline_fanout > 0
 //!                      (优化前移除空码候选,不污染 greedy allocation)
+//! fanout 上限        = 无(selection-cost 模型对任意 depth 都有定义)
 //! reference run      = OperatingPointId::Balanced × normalized(50:50,Conservative)
 //! robustness         = 30 次 normalized 增量运行的同码票数,
 //!                      整数交叉乘法 votes × 5 >= total_runs × 4
 //! net utility        = reference assignment eligible(净收益 > 0)
 //! 兼容门             = pre-FIXED_FIRST current production fanout == baseline fanout
 //! ```
+//!
+//! candidate grammar(结构合法性)与 production filter(长度/重码策略)
+//! 严格分层:语法层 `时间 → uij/FI` 与 `uj/II` 都是理论候选,`ujm/IF`
+//! 结构性非法;production 最短长度过滤在优化前移除 `uj`,不改变语法
+//! 语义。grammar 与枚举规格由 [`collect_fixed_first_evidence`] 硬断言。
 //!
 //! selection-cost 模型对任意 depth 都有定义(rank 1 / 2..=9 / >=10 三档),
 //! 因此 candidate universe 不设 fanout 上限;深度分布只在 audit 中如实报告。
@@ -32,7 +44,7 @@ use xhup_core::KeySequence;
 use xhup_generator::canonical_word_shortcut_entries;
 
 use crate::AnalysisData;
-use crate::candidates::WordTarget;
+use crate::candidates::{CandidateEnumerationSpec, CandidateGrammar, WordTarget};
 use crate::frequency::{CharCodeUsage, FrequencyScale};
 use crate::occupancy::{CodeOccupancy, CollisionClass};
 use crate::optimize::{OptimizationProfile, ShortcutAssignment};
@@ -44,6 +56,14 @@ use crate::sweep::{OperatingPointId, WordRobustness, robustness_map, run_normali
 /// Production FIXED_FIRST selection policy 的稳定版本标识(写入 canonical TSV 头)。
 pub const FIXED_FIRST_PRODUCTION_POLICY_VERSION: &str = "fixed-first-high-v1";
 
+/// PR #23 production 最短 shortcut 长度(1/2 键空间保留给一级简码与单字)。
+///
+/// 这是 production policy,不属于候选语法:Monotone V2 语法理论全集允许
+/// 2-key 候选(如 `时间 → uj/II`),它们可被分析/审计,但不出现在
+/// production candidate universe 中。未来如研究 2-key 词语简码,只改本
+/// policy,不改语法。
+pub const PRODUCTION_MIN_SHORTCUT_LENGTH: usize = 3;
+
 /// incremental universe 统计(解释 universe shrinkage 的 audit)。
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FixedFirstUniverseStats {
@@ -53,6 +73,9 @@ pub struct FixedFirstUniverseStats {
     pub zr_words_excluded: usize,
     /// 剩余目标数。
     pub remaining_targets: usize,
+    /// 因短于 production 最短长度被过滤的候选数(如 2-key `uj/II`;
+    /// 语法理论候选,production policy 排除)。
+    pub below_min_length_candidates: usize,
     /// 进入优化的重码候选数(baseline fanout > 0;无上限)。
     pub colliding_candidates: usize,
     /// 过滤后不再有任何候选的目标数。
@@ -63,9 +86,11 @@ pub struct FixedFirstUniverseStats {
 
 /// 构造 incremental FIXED_FIRST target/candidate universe。
 ///
-/// 两个限制都发生在 optimizer 之前:先移除已有 ZERO_REGRESSION 简码的词,
-/// 再对剩余词只保留 `baseline fanout > 0` 的重码候选。
-/// `data.occupancy` 必须是 baseline fixed occupancy。
+/// 三个限制都发生在 optimizer 之前:先移除已有 ZERO_REGRESSION 简码的词,
+/// 再对剩余词移除短于 production 最短长度的候选(2-key 语法理论候选,
+/// 如 `时间 → uj/II`),最后只保留 `baseline fanout > 0` 的重码候选。
+/// `data` 的候选枚举规格必须是 Monotone V2 理论全集(production 最短
+/// 长度是本函数的 policy 过滤,不由语法表达)。
 pub fn build_fixed_first_universe(
     data: &AnalysisData,
 ) -> (Vec<WordTarget>, FixedFirstUniverseStats) {
@@ -85,7 +110,13 @@ pub fn build_fixed_first_universe(
     stats.remaining_targets = targets.len();
 
     for target in &mut targets {
-        target.retain_candidates(|candidate| data.occupancy.fanout(candidate.shortcut_code()) > 0);
+        target.retain_candidates(|candidate| {
+            let length_ok = candidate.shortcut_code().len() >= PRODUCTION_MIN_SHORTCUT_LENGTH;
+            if !length_ok {
+                stats.below_min_length_candidates += 1;
+            }
+            length_ok && data.occupancy.fanout(candidate.shortcut_code()) > 0
+        });
         stats.colliding_candidates += target.candidates().len();
         for candidate in target.candidates() {
             stats.candidate_lengths[candidate.shortcut_code().len()] += 1;
@@ -102,6 +133,9 @@ pub fn build_fixed_first_universe(
 pub struct FixedFirstEvidence {
     /// reference 运行的 typed operating-point identity(恒为 Balanced)。
     pub reference_point: OperatingPointId,
+    /// 候选语法身份(恒为 MonotoneSuffixInitialsV2;production 证据显式
+    /// 暴露所用语法,不允许隐式)。
+    pub candidate_grammar: CandidateGrammar,
     /// reference run 的 assignments(typed 选取)。
     pub reference_assignments: Vec<ShortcutAssignment>,
     /// 30 次 normalized 增量运行的逐词稳健性。
@@ -112,7 +146,16 @@ pub struct FixedFirstEvidence {
 
 /// 收集 production FIXED_FIRST 选择证据:30 次 normalized 增量主网格
 /// (grid 中的 Balanced/50:50/Conservative 运行同时即 reference run)。
+///
+/// `data` 的候选枚举规格必须是 Monotone V2 理论全集(grammar 绑定硬断言;
+/// production 最短长度过滤发生在 [`build_fixed_first_universe`])。
 pub fn collect_fixed_first_evidence(data: &AnalysisData) -> FixedFirstEvidence {
+    assert_eq!(
+        data.enumeration_spec,
+        CandidateEnumerationSpec::MONOTONE_V2_THEORETICAL,
+        "FIXED_FIRST production evidence 必须绑定 monotone-suffix-initials-v2 \
+         理论全集枚举规格"
+    );
     let (targets, universe) = build_fixed_first_universe(data);
     let runs = run_normalized_grid(
         &targets,
@@ -139,6 +182,7 @@ pub fn collect_fixed_first_evidence(data: &AnalysisData) -> FixedFirstEvidence {
     let robustness = robustness_map(&runs, OptimizationProfile::FixedFirst);
     FixedFirstEvidence {
         reference_point: reference.point,
+        candidate_grammar: CandidateGrammar::MonotoneSuffixInitialsV2,
         reference_assignments: reference.outcome.assignments.clone(),
         robustness,
         universe,
@@ -421,6 +465,12 @@ pub fn serialize_fixed_first_tsv(selected: &[FixedFirstSelection]) -> String {
     out.push_str(
         "# Selection: FIXED_FIRST / colliding-only (baseline fanout > 0) / balanced / normalized 50:50 conservative\n",
     );
+    out.push_str("# candidate grammar: ");
+    out.push_str(CandidateGrammar::MonotoneSuffixInitialsV2.label());
+    out.push('\n');
+    out.push_str("# production min shortcut length: ");
+    out.push_str(&PRODUCTION_MIN_SHORTCUT_LENGTH.to_string());
+    out.push('\n');
     out.push_str(
         "# Robustness gate: same-code stability >= 4/5 over 30 normalized sensitivity runs\n",
     );
