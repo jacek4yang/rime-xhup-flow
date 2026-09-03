@@ -93,10 +93,11 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
             "xhup_flow_chars.dict.yaml",
             "xhup_flow_fixed_first_shortcuts.dict.yaml",
             "xhup_flow_shortcuts.dict.yaml",
+            "xhup_flow_two_key_shortcuts.dict.yaml",
             "xhup_flow_word_shortcuts.dict.yaml",
             "xhup_flow_words.dict.yaml",
         ],
-        "输出应为且仅为 7 个 Rime 源文件"
+        "输出应为且仅为 8 个 Rime 源文件"
     );
     for filename in &filenames {
         assert!(
@@ -116,6 +117,10 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
     assert!(
         top.contains("  - xhup_flow_word_shortcuts"),
         "顶层词典应导入词语简码词典"
+    );
+    assert!(
+        top.contains("  - xhup_flow_two_key_shortcuts"),
+        "顶层词典应导入二码零冲突简码词典"
     );
     assert!(
         top.contains("  - xhup_flow_words"),

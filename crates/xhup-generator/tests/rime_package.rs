@@ -4,7 +4,8 @@
 use xhup_generator::{
     generate_rime_artifacts, generate_rime_char_dictionary,
     generate_rime_fixed_first_shortcut_dictionary, generate_rime_shortcut_dictionary,
-    generate_rime_word_dictionary, generate_rime_word_shortcut_dictionary,
+    generate_rime_two_key_shortcut_dictionary, generate_rime_word_dictionary,
+    generate_rime_word_shortcut_dictionary,
 };
 
 /// 按文件名取产物内容。
@@ -26,12 +27,13 @@ fn artifact_set_is_exact_and_ordered() {
             "xhup_flow_shortcuts.dict.yaml",
             "xhup_flow_chars.dict.yaml",
             "xhup_flow_word_shortcuts.dict.yaml",
+            "xhup_flow_two_key_shortcuts.dict.yaml",
             "xhup_flow_words.dict.yaml",
             "xhup_flow.dict.yaml",
             "xhup_flow_fixed_first_shortcuts.dict.yaml",
             "xhup_flow.schema.yaml",
         ],
-        "产物集合与顺序固定:简码词典 → 单字词典 → 词语简码词典 → 词语词典 → 顶层词典 → FIXED_FIRST 简码词典 → 方案"
+        "产物集合与顺序固定:简码词典 → 单字词典 → 词语简码词典 → 二码简码词典 → 词语词典 → 顶层词典 → FIXED_FIRST 简码词典 → 方案"
     );
 }
 
@@ -62,6 +64,16 @@ fn word_shortcut_dictionary_reuses_existing_generator() {
         contents_of(&artifacts, "xhup_flow_word_shortcuts.dict.yaml"),
         generate_rime_word_shortcut_dictionary(),
         "词语简码词典产物与既有生成器字节一致"
+    );
+}
+
+#[test]
+fn two_key_shortcut_dictionary_reuses_existing_generator() {
+    let artifacts = generate_rime_artifacts();
+    assert_eq!(
+        contents_of(&artifacts, "xhup_flow_two_key_shortcuts.dict.yaml"),
+        generate_rime_two_key_shortcut_dictionary(),
+        "二码零冲突简码词典产物与既有生成器字节一致"
     );
 }
 
@@ -99,6 +111,7 @@ fn top_dictionary_imports_all_layer_dictionaries() {
         "  - xhup_flow_shortcuts",
         "  - xhup_flow_chars",
         "  - xhup_flow_word_shortcuts",
+        "  - xhup_flow_two_key_shortcuts",
         "  - xhup_flow_words",
     ] {
         assert!(dict.contains(line), "顶层词典缺少 `{line}`");

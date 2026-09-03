@@ -19,11 +19,14 @@ pub mod cost;
 pub mod frequency;
 pub mod occupancy;
 pub mod optimize;
+pub mod policy;
 pub mod prefix;
 pub mod production;
 pub mod production_fixed_first;
+pub mod production_two_key;
 pub mod report;
 pub mod sweep;
+pub mod two_key_study;
 
 pub use candidates::{
     CandidateEnumerationSpec, CandidateGrammar, EnumerationStats, Mode, ShortcutCandidate,

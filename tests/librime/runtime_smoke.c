@@ -351,6 +351,36 @@ int main(int argc, char **argv) {
     report(has_active_composition(), "aib → 组合仍活动(reverse 未截断)", NULL);
     reset_composition();
 
+    /* ---- 二码零冲突层哨兵(two-key-zero-regression-v1) ---- */
+    /* 选定映射是 2 键空码上的唯一 exact 候选:输入 2 键即 rank 1。
+     * jd/uq/yx 是分析选择的真实空码(非手工挑选;时间→uj 是占用码,
+     * 结构性不在本层)。 */
+    expect_menu("jd", "记得", 1);
+    reset_composition();
+    expect_menu("uq", "事情", 1);
+    reset_composition();
+    expect_menu("yx", "有些", 1);
+    reset_composition();
+
+    /* 二码组合不被截断:jd 后组合保持活动(II 别名一般不是完整码的
+     * prefix —— 完整码 jide = ji+de,而 II 码 jd 是两字声码首键,
+     * 结构上不同于 ZR/FF 的 prefix 形态);完整码 jide 仍独立可用。 */
+    type_keys("jd");
+    check_only("jd → 菜单含 记得(继续前)", "记得", 1);
+    report(!has_commit() && has_active_composition(), "jd → 继续前无 auto commit", NULL);
+    report(has_active_composition(), "jd → 组合仍活动(未截断)", NULL);
+    reset_composition();
+    expect_menu("jide", "记得", 0); /* 完整码独立可用 */
+    reset_composition();
+
+    /* 占用码反向哨兵:uj(sh 声母 2 键单字层)不含任何词语候选 ——
+     * 二码零冲突层只使用空码,时间 → uj 不得出现;既有 top1(山)不变。 */
+    expect_absent("uj", "时间");
+    reset_composition();
+    type_keys("uj");
+    check_only("uj → 菜单含 山(既有 top1 不变)", "山", 1);
+    reset_composition();
+
     rime->destroy_session(session);
     rime->finalize();
 

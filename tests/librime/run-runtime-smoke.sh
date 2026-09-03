@@ -1,23 +1,28 @@
 #!/usr/bin/env bash
 # XHUP Flow librime runtime 测试驱动脚本。
 #
-# 用法: tests/librime/run-runtime-smoke.sh <生成包目录> <FF 审计 manifest>
+# 用法: tests/librime/run-runtime-smoke.sh <生成包目录> <FF 审计 manifest> \
+#        [二码审计 manifest]
 #
-# 生成包目录必须含 7 个 xhup_flow yaml(xhup-cli generate rime 的输出);
-# manifest 由 xhup-analyzer 的 --dump-fixed-first-audit-manifest 生成
+# 生成包目录必须含 8 个 xhup_flow yaml(xhup-cli generate rime 的输出);
+# FF manifest 由 xhup-analyzer 的 --dump-fixed-first-audit-manifest 生成
 # (每条 FIXED_FIRST 简码:码、词、baseline fanout、期望名次、碰撞类型、
-# baseline 菜单)。
+# baseline 菜单);二码 manifest 由 static-shortcut-audit 的
+# --dump-two-key-audit-manifest 生成(全部占用 2 键码既有菜单 + 全部
+# 选定二码映射),提供时执行第 4 阶段。
 #
 # 脚本在临时目录搭建隔离的 Rime user 目录(绝不触碰真实用户 Rime 配置),
 # 依次运行:
 #
 #   1. priority preflight:最小双 translator fixture,验证 initial_quality
 #      栅栏让 secondary 候选严格排在全部 primary 候选之后;
-#   2. production 冒烟:固定层回归 + ZR 简码 + FIXED_FIRST 精确序与
-#      prefix continuation 哨兵;
+#   2. production 冒烟:固定层回归 + ZR 简码 + FIXED_FIRST 精确序 +
+#      二码简码哨兵 + prefix continuation 哨兵;
 #   3. FIXED_FIRST 全量 A/B 审计:CONTROL(派生 control schema,仅 primary
 #      translator)与 PRODUCTION(真实方案)逐码对照 —— PRODUCTION 菜单
-#      必须是 CONTROL 菜单末尾严格追加一个目标词。
+#      必须是 CONTROL 菜单末尾严格追加一个目标词;
+#   4. 二码零冲突审计(提供二码 manifest 时):全部占用 2 键码菜单
+#      逐项不变(P0)+ 全部选定映射 rank1 且唯一。
 #
 # CONTROL schema 由 production schema 在临时目录派生(去掉 fixed_first
 # translator 与命名空间),不作为包产物。menu/page_size: 500 只存在于本
@@ -30,8 +35,9 @@
 
 set -euo pipefail
 
-PACKAGE_DIR=${1:?"用法: run-runtime-smoke.sh <生成包目录> <FF 审计 manifest>"}
-MANIFEST=${2:?"用法: run-runtime-smoke.sh <生成包目录> <FF 审计 manifest>"}
+PACKAGE_DIR=${1:?"用法: run-runtime-smoke.sh <生成包目录> <FF 审计 manifest> [二码 manifest]"}
+MANIFEST=${2:?"用法: run-runtime-smoke.sh <生成包目录> <FF 审计 manifest> [二码 manifest]"}
+TWO_KEY_MANIFEST=${3:-}
 SHARED_DATA_DIR=${RIME_SHARED_DATA_DIR:-/usr/share/rime-data}
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
@@ -166,3 +172,13 @@ echo "== FIXED_FIRST 全量 A/B 审计(CONTROL vs PRODUCTION) =="
   "$MANIFEST" "$work/ff-control.capture"
 "$work/runtime_fixed_first_audit" production "$SHARED_DATA_DIR" \
   "$production_dir" "$MANIFEST" "$work/ff-control.capture"
+
+# ---------- 4. 二码零冲突审计(可选,提供二码 manifest 时) ----------
+if [ -n "$TWO_KEY_MANIFEST" ]; then
+  cc $CFLAGS -o "$work/runtime_two_key_audit" \
+    "$SCRIPT_DIR/runtime_two_key_audit.c" \
+    $(pkg-config --cflags --libs rime)
+  echo "== 二码零冲突全量审计(占用码菜单不变 + 选定映射 rank1) =="
+  "$work/runtime_two_key_audit" "$SHARED_DATA_DIR" "$production_dir" \
+    "$TWO_KEY_MANIFEST"
+fi

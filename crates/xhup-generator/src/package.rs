@@ -21,6 +21,9 @@ use crate::rime_fixed_first_shortcuts::{
     RIME_FIXED_FIRST_SHORTCUT_DICTIONARY_FILENAME, generate_rime_fixed_first_shortcut_dictionary,
 };
 use crate::rime_shortcuts::{RIME_SHORTCUT_DICTIONARY_FILENAME, generate_rime_shortcut_dictionary};
+use crate::rime_two_key_shortcuts::{
+    RIME_TWO_KEY_SHORTCUT_DICTIONARY_FILENAME, generate_rime_two_key_shortcut_dictionary,
+};
 use crate::rime_word_shortcuts::{
     RIME_WORD_SHORTCUT_DICTIONARY_FILENAME, generate_rime_word_shortcut_dictionary,
 };
@@ -81,11 +84,12 @@ fn render_template(template: &str, name: &str) -> String {
 /// 生成完整的便携 Rime 源包产物集合。
 ///
 /// 产物顺序固定且面向输入层级:一级简码词典(1 键)→ 单字全码词典
-/// (2/3/4 码)→ 词语简码词典(高稳健零冲突别名,3~7 键)→ 固定层词语
-/// 词典(4/6/8 键)→ 顶层词典(导入前四者)→ FIXED_FIRST 词语简码词典
-/// (高稳健重码别名,3/4/6 键,由方案中独立的第二 table_translator 加载,
-/// 不被顶层词典导入)→ 方案(使用前者)。同一规范数据、生成器源码与模板
-/// 产生同一顺序、字节级一致的产物集合。
+/// (2/3/4 码)→ 词语简码词典(高稳健零冲突别名,3~7 键)→ 二码零冲突
+/// 词语简码词典(2 键空码别名)→ 固定层词语词典(4/6/8 键)→ 顶层词典
+/// (导入前五者)→ FIXED_FIRST 词语简码词典(高稳健重码别名,3/4/6 键,
+/// 由方案中独立的第二 table_translator 加载,不被顶层词典导入)→ 方案
+/// (使用前者)。同一规范数据、生成器源码与模板产生同一顺序、字节级一致
+/// 的产物集合。
 pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
     vec![
         RimeArtifact {
@@ -99,6 +103,10 @@ pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
         RimeArtifact {
             filename: RIME_WORD_SHORTCUT_DICTIONARY_FILENAME,
             contents: generate_rime_word_shortcut_dictionary(),
+        },
+        RimeArtifact {
+            filename: RIME_TWO_KEY_SHORTCUT_DICTIONARY_FILENAME,
+            contents: generate_rime_two_key_shortcut_dictionary(),
         },
         RimeArtifact {
             filename: RIME_WORD_DICTIONARY_FILENAME,
