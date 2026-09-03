@@ -31,9 +31,12 @@ fn artifact_set_is_exact_and_ordered() {
             "xhup_flow_words.dict.yaml",
             "xhup_flow.dict.yaml",
             "xhup_flow_fixed_first_shortcuts.dict.yaml",
+            "xhup_flow_flow.dict.yaml",
+            "xhup_flow_learn.dict.yaml",
             "xhup_flow.schema.yaml",
+            "xhup_flow_static.schema.yaml",
         ],
-        "产物集合与顺序固定:简码词典 → 单字词典 → 词语简码词典 → 二码简码词典 → 词语词典 → 顶层词典 → FIXED_FIRST 简码词典 → 方案"
+        "产物集合与顺序固定:简码词典 → 单字词典 → 词语简码词典 → 二码简码词典 → 词语词典 → 顶层词典 → FIXED_FIRST 简码词典 → Flow 组句词典 → Flow 学习词典 → 方案 → 静态兼容方案"
     );
 }
 
@@ -163,6 +166,55 @@ fn schema_semantics() {
         ),
         "fixed_first translator 配置不符合冻结语义"
     );
+    // Flow translator:连续组句 + 共享用户词典,initial_quality 0 严格靠后;
+    // 无自动提交、无 completion。
+    assert!(
+        schema.contains(
+            "flow:\n  dictionary: xhup_flow_flow\n  user_dict: xhup_flow_user\n  enable_completion: false\n  enable_sentence: true\n  sentence_over_completion: true\n  enable_user_dict: true\n  initial_quality: 0"
+        ),
+        "flow translator 配置不符合组句语义"
+    );
+    // learn translator:学习短语编码(encoder),关闭组句,共享用户词典。
+    assert!(
+        schema.contains(
+            "learn:\n  dictionary: xhup_flow_learn\n  user_dict: xhup_flow_user\n  enable_completion: false\n  enable_sentence: false\n  enable_user_dict: true\n  enable_encoder: true\n  encode_commit_history: true\n  max_phrase_length: 20\n  max_homographs: 1\n  initial_quality: 0"
+        ),
+        "learn translator 配置不符合学习语义"
+    );
+    // uniquifier:同一词在静态与动态层重合时去重,动态候选只追加在后。
+    assert!(
+        schema.contains("filters:\n    - uniquifier"),
+        "方案应含 uniquifier 过滤器"
+    );
+}
+
+#[test]
+fn static_fallback_schema_semantics() {
+    let artifacts = generate_rime_artifacts();
+    let schema = contents_of(&artifacts, "xhup_flow_static.schema.yaml");
+    assert!(
+        schema.contains("  schema_id: xhup_flow_static"),
+        "静态兼容方案 schema_id 应为 xhup_flow_static"
+    );
+    // 与主方案相同的静态 translator 链,不含任何 Flow/学习 translator。
+    assert!(
+        schema.contains(
+            "  translators:\n    - punct_translator\n    - table_translator\n    - table_translator@fixed_first"
+        ),
+        "静态兼容方案 translator 链应与主方案静态部分一致"
+    );
+    for forbidden in ["@flow", "@learn", "xhup_flow_user", "uniquifier", "filters:"] {
+        assert!(
+            !schema.contains(forbidden),
+            "静态兼容方案不应包含 `{forbidden}`"
+        );
+    }
+    // 复用同一组静态词典,不重复数据。
+    assert!(
+        schema.contains("  dictionary: xhup_flow\n")
+            && schema.contains("  dictionary: xhup_flow_fixed_first_shortcuts"),
+        "静态兼容方案应复用主方案词典"
+    );
 }
 
 #[test]
@@ -180,17 +232,19 @@ fn schema_excludes_non_portable_or_deferred_features() {
         "predict",
         "octagram",
         "simplifier",
-        "uniquifier",
-        "enable_encoder",
         "auto_select",
         "auto_commit",
         "enable_completion: true",
-        "enable_sentence: true",
-        "enable_user_dict: true",
-        "filters:",
-        "/",
     ] {
         assert!(!schema.contains(forbidden), "方案不应包含 `{forbidden}`");
+    }
+    // 行内斜杠只允许出现在注释中(引擎配置值不含 `/`)。
+    for line in schema.lines() {
+        let code = line.split('#').next().unwrap_or(line);
+        assert!(
+            !code.contains('/'),
+            "方案非注释配置不应包含 `/`: {line}"
+        );
     }
 }
 

@@ -5,7 +5,7 @@
 //! 导出(`--dump-production-two-key-zero-regression`)输出 canonical TSV,
 //! 入库需 diff review 与 policy review。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::process::ExitCode;
 use std::time::Instant;
 
@@ -44,6 +44,7 @@ fn main() -> ExitCode {
     let mut dump_candidates_path: Option<String> = None;
     let mut dump_production_two_key_path: Option<String> = None;
     let mut dump_two_key_manifest_path: Option<String> = None;
+    let mut dump_static_menu_manifest_path: Option<String> = None;
     let mut static_report = false;
 
     let mut args = std::env::args().skip(1);
@@ -59,6 +60,9 @@ fn main() -> ExitCode {
             "--dump-two-key-audit-manifest" => {
                 dump_two_key_manifest_path = Some(args.next().unwrap_or_else(|| usage()));
             }
+            "--dump-static-menu-manifest" => {
+                dump_static_menu_manifest_path = Some(args.next().unwrap_or_else(|| usage()));
+            }
             "--static-report" => static_report = true,
             "--help" | "-h" => usage(),
             _ => usage(),
@@ -68,9 +72,24 @@ fn main() -> ExitCode {
         && dump_candidates_path.is_none()
         && dump_production_two_key_path.is_none()
         && dump_two_key_manifest_path.is_none()
+        && dump_static_menu_manifest_path.is_none()
         && !static_report
     {
         usage();
+    }
+
+    // ── 全静态菜单 manifest(Flow 引擎等值审计用) ──
+    // 全部 distinct 静态 exact code 及其完整有序菜单(current production
+    // 占用:baseline + ZR + FF + 二码零冲突)。独立快速路径。
+    if let Some(path) = dump_static_menu_manifest_path {
+        let occupancy = xhup_analyzer::occupancy::CodeOccupancy::build_current_production();
+        let manifest = static_menu_manifest(&occupancy);
+        if let Err(error) = std::fs::write(&path, manifest) {
+            eprintln!("写入 {path} 失败:{error}");
+            return ExitCode::FAILURE;
+        }
+        eprintln!("全静态菜单 manifest → {path}");
+        return ExitCode::SUCCESS;
     }
 
     if static_report {
@@ -776,6 +795,55 @@ fn dump_candidates_tsv(
     for row in rows {
         out.push_str(&row);
         out.push('\n');
+    }
+    out
+}
+
+/// 全静态菜单 manifest:`码<TAB>候选1|候选2|...`(名次序)。
+///
+/// 覆盖 current production 占用的全部 distinct exact code;供 Flow 引擎
+/// runtime 等值审计使用(FLOW schema 干净 userdb 菜单必须与这里记录的
+/// 静态菜单逐项同序完全相等)。使用 `|` 分隔(C 审计端转换为内部
+/// SEP 格式);码内候选文本不含 `|`(全部是汉字/规范词)。
+fn static_menu_manifest(occupancy: &xhup_analyzer::occupancy::CodeOccupancy) -> String {
+    use std::fmt::Write as _;
+    // CodeOccupancy 没有公开全码迭代器;通过各 canonical 层枚举全部
+    // distinct 码再查组。层 = 一级简码 + 单字 + 固定词 + ZR + FF + 二码。
+    let mut codes: BTreeSet<String> = BTreeSet::new();
+    for entry in xhup_generator::canonical_level1_shortcuts() {
+        codes.insert(entry.key().as_char().to_string());
+    }
+    for entry in xhup_generator::canonical_char_code_entries() {
+        codes.insert(entry.code().to_string());
+    }
+    for entry in xhup_generator::canonical_word_code_entries() {
+        codes.insert(entry.code().to_string());
+    }
+    for entry in xhup_generator::canonical_word_shortcut_entries() {
+        codes.insert(entry.shortcut_code().to_string());
+    }
+    for entry in xhup_generator::canonical_fixed_first_shortcut_entries() {
+        codes.insert(entry.shortcut_code().to_string());
+    }
+    for entry in xhup_generator::canonical_two_key_shortcut_entries() {
+        codes.insert(entry.shortcut_code().to_string());
+    }
+    let mut out = String::new();
+    writeln!(out, "# XHUP Flow full static exact-code menu manifest.").unwrap();
+    writeln!(
+        out,
+        "# layers: level1 + chars + fixed words + ZR + FIXED_FIRST + two-key-ZR"
+    )
+    .unwrap();
+    for code in &codes {
+        let seq: xhup_core::KeySequence = code.parse().expect("码合法");
+        if let Some(group) = occupancy.group(&seq) {
+            let menu: Vec<&str> = group.iter().map(|c| c.text()).collect();
+            if menu.is_empty() {
+                continue;
+            }
+            writeln!(out, "{code}\t{}", menu.join("|")).unwrap();
+        }
     }
     out
 }
