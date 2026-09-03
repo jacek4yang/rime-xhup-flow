@@ -203,7 +203,13 @@ fn static_fallback_schema_semantics() {
         ),
         "静态兼容方案 translator 链应与主方案静态部分一致"
     );
-    for forbidden in ["@flow", "@learn", "xhup_flow_user", "uniquifier", "filters:"] {
+    for forbidden in [
+        "@flow",
+        "@learn",
+        "xhup_flow_user",
+        "uniquifier",
+        "filters:",
+    ] {
         assert!(
             !schema.contains(forbidden),
             "静态兼容方案不应包含 `{forbidden}`"
@@ -241,10 +247,7 @@ fn schema_excludes_non_portable_or_deferred_features() {
     // 行内斜杠只允许出现在注释中(引擎配置值不含 `/`)。
     for line in schema.lines() {
         let code = line.split('#').next().unwrap_or(line);
-        assert!(
-            !code.contains('/'),
-            "方案非注释配置不应包含 `/`: {line}"
-        );
+        assert!(!code.contains('/'), "方案非注释配置不应包含 `/`: {line}");
     }
 }
 
