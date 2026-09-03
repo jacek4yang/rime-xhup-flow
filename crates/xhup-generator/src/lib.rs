@@ -19,9 +19,11 @@
 
 mod analysis;
 mod char_codes;
+mod fixed_first_shortcuts;
 mod frequency;
 mod package;
 mod rime;
+mod rime_fixed_first_shortcuts;
 mod rime_shortcuts;
 mod rime_word_shortcuts;
 mod rime_words;
@@ -36,10 +38,16 @@ pub use analysis::{
     word_code_analysis_entries,
 };
 pub use char_codes::{RimeCharCodeEntry, canonical_char_code_entries};
+pub use fixed_first_shortcuts::{
+    CanonicalFixedFirstShortcutEntry, canonical_fixed_first_shortcut_entries,
+};
 pub use package::{RimeArtifact, generate_rime_artifacts};
 pub use rime::{
     RIME_CHAR_DICTIONARY_FILENAME, RimeCharEntry, canonical_char_entries,
     generate_rime_char_dictionary,
+};
+pub use rime_fixed_first_shortcuts::{
+    RIME_FIXED_FIRST_SHORTCUT_DICTIONARY_FILENAME, generate_rime_fixed_first_shortcut_dictionary,
 };
 pub use rime_shortcuts::{RIME_SHORTCUT_DICTIONARY_FILENAME, generate_rime_shortcut_dictionary};
 pub use rime_word_shortcuts::{

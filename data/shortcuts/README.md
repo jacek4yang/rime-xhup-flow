@@ -72,3 +72,47 @@ breaking scheme change,与一级简码的肌肉记忆保护原则一致。
 [`../words/LICENSE.wanxiang`](../words/LICENSE.wanxiang);再分发(包括由它
 生成的 `xhup_flow_word_shortcuts.dict.yaml` 等数据产物)须保留该署名与
 许可信息。该数据不因入库而改授 LGPL。
+
+# 词语简码(高稳健 FIXED_FIRST 层)
+
+`word_fixed_first.tsv` 是 XHUP Flow **第二层词语简码的唯一事实来源**:
+格式与 canonical 顺序同 `word_zero_regression.tsv`(每行
+`词<TAB>完整码<TAB>简码<TAB>模式`)。
+
+## 数据性质
+
+本文件由同一万象词语/频率证据经 `xhup-analyzer` 的 production selection
+policy(`fixed-first-high-v1`)**确定性导出**,与零冲突层的差别在于
+候选语义与增量宇宙:
+
+- profile:FIXED_FIRST(简码与 baseline fixed exact code **重码**,新候选
+  严格追加到全部既有固定候选之后,名次 = baseline 候选数 + 1,既有候选
+  相对次序绝对不变);
+- target universe:全部词目标**先移除**已持有零冲突简码的词(优化前
+  排除,不是分配后过滤);
+- candidate universe:只保留 baseline 候选数在 1..=8 的重码候选(更深的
+  候选超出当前 selection-cost 模型的语义边界,延期到未来更细粒度的
+  selection/page model);
+- reference run 与 robustness gate 与零冲突层相同(balanced ×
+  normalized 50:50 conservative,30 次运行同码票数 ≥ 4/5)。
+
+运行时本层由方案中独立的第二 `table_translator`(词典
+`xhup_flow_fixed_first_shortcuts`,`initial_quality: 0`)加载;
+primary translator 的 `initial_quality: 1000000` 只是 translator 间
+优先级栅栏(常数同时加到全部 primary 候选,其内部相对次序不变),
+不是候选词频。
+
+## 兼容策略
+
+与零冲突层相同:一旦发布即属于**稳定的用户肌肉记忆兼容接口**。
+更新必须经由显式 analyzer export + diff review + policy version review;
+analyzer 算法演进不得自动删除或更换已发布的 `词 → 简码` 关系,修改已
+发布关系视为 breaking scheme change。
+
+## 许可证
+
+与 `word_zero_regression.tsv` 相同:派生自万象词库证据,适用 CC BY 4.0
+署名要求,许可证全文见
+[`../words/LICENSE.wanxiang`](../words/LICENSE.wanxiang)(包括由它生成的
+`xhup_flow_fixed_first_shortcuts.dict.yaml` 等数据产物);不因入库而改授
+LGPL。

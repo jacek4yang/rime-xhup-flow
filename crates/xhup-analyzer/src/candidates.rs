@@ -55,7 +55,16 @@ impl ShortcutMode {
     }
 }
 
+impl ShortcutMode {
+    /// 测试构造:单 F 模式(仅供 synthetic 测试;对集成测试可见)。
+    #[doc(hidden)]
+    pub fn for_test() -> Self {
+        ShortcutMode(Box::new([Mode::Full]))
+    }
+}
+
 /// 一条词语简码候选。
+#[derive(Clone)]
 pub struct ShortcutCandidate {
     shortcut_code: KeySequence,
     mode: ShortcutMode,
@@ -74,6 +83,7 @@ impl ShortcutCandidate {
 }
 
 /// 一个分析目标:identity 为 `(词, 完整码)`,支持未来多音词。
+#[derive(Clone)]
 pub struct WordTarget {
     word: String,
     full_code: KeySequence,
@@ -106,6 +116,12 @@ impl WordTarget {
     pub fn keys_saved(&self, candidate: &ShortcutCandidate) -> usize {
         self.full_code.len() - candidate.shortcut_code().len()
     }
+
+    /// 按谓词保留候选(用于 incremental production 优化前的 candidate
+    /// universe 收缩;被移除的候选不参与 greedy assignment)。
+    pub fn retain_candidates(&mut self, keep: impl Fn(&ShortcutCandidate) -> bool) {
+        self.candidates.retain(|candidate| keep(candidate));
+    }
 }
 
 #[cfg(test)]
@@ -117,6 +133,36 @@ impl WordTarget {
             full_code,
             frequency_score,
             candidates: Vec::new(),
+        }
+    }
+}
+
+impl WordTarget {
+    /// 测试构造:带候选的 target(候选码/模式不要求与完整码投影一致,
+    /// 仅用于 optimizer/universe 机制的 synthetic 测试;对集成测试可见)。
+    #[doc(hidden)]
+    pub fn with_candidates_for_test(
+        word: &str,
+        full_code: KeySequence,
+        frequency_score: u64,
+        candidates: Vec<ShortcutCandidate>,
+    ) -> Self {
+        WordTarget {
+            word: word.to_string(),
+            full_code,
+            frequency_score,
+            candidates,
+        }
+    }
+}
+
+impl ShortcutCandidate {
+    /// 测试构造:任意码 + 单 F 模式(仅供 synthetic 测试;对集成测试可见)。
+    #[doc(hidden)]
+    pub fn for_test(shortcut_code: KeySequence) -> Self {
+        ShortcutCandidate {
+            shortcut_code,
+            mode: ShortcutMode::for_test(),
         }
     }
 }

@@ -13,6 +13,8 @@ schema:
     词语简码(别名,不替换完整码)与高频固定词语(二至四字)输入;
     一级简码只提供一键精确候选,不会自动上屏;
     词语按逐字双拼两码拼接,二字词仅收录不与规范四码单字冲突者;
+    高稳健 FIXED_FIRST 词语简码由独立的第二 translator 提供,严格排在
+    既有固定候选之后,不改变任何已有候选的相对次序;
     自动组句与用户词学习仍未开启,长短语与更多简码将在后续数据层加入。
 
 switches:
@@ -41,15 +43,30 @@ engine:
   translators:
     - punct_translator
     - table_translator
+    - table_translator@fixed_first
 
 speller:
   alphabet: zyxwvutsrqponmlkjihgfedcba
 
+# primary translator:全部既有固定层与零冲突简码层。initial_quality
+# 1000000 仅作为 translator 间优先级栅栏(常数同时加到全部 primary
+# 候选,其内部相对次序完全不变),保证 FIXED_FIRST 候选严格排在既有
+# 固定候选之后;它不是候选词频,也不参与 primary 内部排序。
 translator:
   dictionary: xhup_flow
   enable_completion: false
   enable_sentence: false
   enable_user_dict: false
+  initial_quality: 1000000
+
+# FIXED_FIRST translator:高稳健重码词语简码(与既有固定码重码的高频词
+# 别名),独立静态词典,initial_quality 0 使其候选永远位于 primary 之后。
+fixed_first:
+  dictionary: xhup_flow_fixed_first_shortcuts
+  enable_completion: false
+  enable_sentence: false
+  enable_user_dict: false
+  initial_quality: 0
 
 punctuator:
   import_preset: default

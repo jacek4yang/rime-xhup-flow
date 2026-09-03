@@ -17,6 +17,7 @@ pub mod occupancy;
 pub mod optimize;
 pub mod prefix;
 pub mod production;
+pub mod production_fixed_first;
 pub mod report;
 pub mod sweep;
 
@@ -32,12 +33,23 @@ pub use optimize::{
     CandidateEvaluation, DisruptionRecord, OptimizationOutcome, OptimizationProfile, ProfileStats,
     ShortcutAssignment, UtilityBreakdown, evaluate_candidate, evaluate_target, optimize,
 };
-pub use prefix::{LengthSentinels, PrefixAudit, PrefixSentinel, audit_prefix_topology};
+pub use prefix::{
+    FixedFirstLengthSentinel, FixedFirstPrefixAudit, FixedFirstPrefixSentinel, LengthSentinels,
+    PrefixAudit, PrefixSentinel, audit_fixed_first_prefix_topology, audit_prefix_topology,
+};
 pub use production::{
     BenefitAudit, ExclusionReason, PRODUCTION_SHORTCUT_POLICY_VERSION, ProductionEvidence,
     ProductionExclusion, ProductionSelection, ProductionShortcutSelection, SelectionAudit,
     benefit_audit, collect_evidence, reference_scale, select_production_shortcuts,
     serialize_canonical_tsv,
+};
+pub use production_fixed_first::{
+    FIXED_FIRST_MAX_BASELINE_FANOUT, FIXED_FIRST_PRODUCTION_POLICY_VERSION, FixedFirstBenefitAudit,
+    FixedFirstEvidence, FixedFirstExclusion, FixedFirstExclusionReason,
+    FixedFirstProductionSelection, FixedFirstSelection, FixedFirstSelectionAudit,
+    FixedFirstUniverseStats, build_fixed_first_universe, collect_fixed_first_evidence,
+    fixed_first_audit_manifest, fixed_first_benefit_audit, select_fixed_first_production,
+    serialize_fixed_first_tsv,
 };
 pub use report::{Timings, render_report};
 pub use sweep::{
