@@ -95,6 +95,38 @@ describe("PracticeSetupView", () => {
     expect(await screen.findByLabelText("编码输入区")).toBeInTheDocument();
     expect(screen.getByText("行")).toBeInTheDocument();
   });
+
+  it("模式选择覆盖全部 12 种模式并按分组展示", () => {
+    render(
+      <TrainerIndexProvider index={fixtureIndex()}>
+        <PracticeSetupView
+          presetMode={null}
+          reviewEntries={null}
+          onPresetConsumed={noop}
+          onExitToToday={noop}
+        />
+      </TrainerIndexProvider>,
+    );
+    for (const label of [
+      "双拼",
+      "音形",
+      "全码",
+      "单字综合",
+      "一级简码",
+      "二码词简码",
+      "零冲突词简码",
+      "固定首码词简码",
+      "固定词",
+      "组句",
+      "简码综合",
+      "全模式综合",
+    ]) {
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    }
+    for (const group of ["单字", "词语简码", "固定词", "组句", "综合"]) {
+      expect(screen.getByRole("region", { name: group })).toBeInTheDocument();
+    }
+  });
 });
 
 describe("PracticeView", () => {

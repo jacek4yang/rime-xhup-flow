@@ -1,3 +1,5 @@
+import { useMemo, useState } from "react";
+import { Search } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -6,6 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { OnScreenKeyboard, buildKeyLabels } from "@/components/OnScreenKeyboard";
+import { useI18n } from "@/lib/use-i18n";
 import { useTrainerIndex } from "@/lib/trainer-context";
 
 /**
@@ -14,6 +17,8 @@ import { useTrainerIndex } from "@/lib/trainer-context";
  */
 export function ReferenceView() {
   const index = useTrainerIndex();
+  const { t, language } = useI18n();
+  const [query, setQuery] = useState("");
   const { doublePinyin } = index.dataset;
   const keyLabels = buildKeyLabels(doublePinyin);
   const keys = [..."qwertyuiop", ..."asdfghjkl", ..."zxcvbnm"].sort();
@@ -21,9 +26,11 @@ export function ReferenceView() {
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <h1 className="text-xl font-semibold">键位</h1>
+        <h1 className="text-xl font-semibold">{t("nav.reference")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          小鹤双拼的声母、韵母键位分布,数据来自规范码表。
+          {language === "zh"
+            ? "双拼键位、一级简码与编码速查;数据来自规范码表。"
+            : "Double-pinyin keys, level-1 shortcuts and code lookup."}
         </p>
       </header>
 
@@ -38,7 +45,31 @@ export function ReferenceView() {
 
       <Card>
         <CardHeader>
-          <CardTitle>映射表</CardTitle>
+          <CardTitle>{t("reference.search")}</CardTitle>
+          <CardDescription>
+            {language === "zh"
+              ? "读规范数据:单字全码 / 词全码 / 生产简码(只读)。"
+              : "Read-only lookup over canonical chars, words and shortcuts."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <label className="flex items-center gap-2 rounded-md border border-border px-3 focus-within:outline-2 focus-within:outline-ring">
+            <Search className="size-4 text-muted-foreground" aria-hidden />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("reference.search")}
+              aria-label={t("reference.search")}
+              className="h-11 w-full bg-transparent text-sm outline-none"
+            />
+          </label>
+          <SearchResults query={query} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{language === "zh" ? "映射表" : "Mapping"}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -110,5 +141,61 @@ export function ReferenceView() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/** 规范数据速查:汉字/词/码前缀匹配,最多 24 条(只读)。 */
+function SearchResults({ query }: { query: string }) {
+  const index = useTrainerIndex();
+  const { t } = useI18n();
+  const results = useMemo(() => {
+    const q = query.trim();
+    if (q.length === 0) return [];
+    const matches: { target: string; code: string; kind: string }[] = [];
+    for (const item of index.byId.values()) {
+      if (
+        item.target.includes(q) ||
+        item.primaryCode.startsWith(q.toLowerCase())
+      ) {
+        matches.push({
+          target: item.target,
+          code: item.primaryCode,
+          kind: item.kind,
+        });
+        if (matches.length >= 24) break;
+      }
+    }
+    return matches;
+  }, [index, query]);
+
+  const KIND_LABELS: Record<string, string> = {
+    char: "字",
+    level1: "一级",
+    word: "词",
+    shortcut: "简码",
+    sentence: "句",
+  };
+
+  if (query.trim().length === 0) return null;
+  if (results.length === 0) {
+    return <p className="text-sm text-muted-foreground">{t("reference.noResult")}</p>;
+  }
+  return (
+    <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {results.map((result) => (
+        <li
+          key={`${result.kind}:${result.target}:${result.code}`}
+          className="flex items-baseline gap-2 rounded-lg border border-border px-3 py-2"
+        >
+          <span className="text-lg font-medium">{result.target}</span>
+          <span className="font-mono text-sm text-muted-foreground">
+            {result.code}
+          </span>
+          <span className="ml-auto text-xs text-muted-foreground">
+            {KIND_LABELS[result.kind] ?? result.kind}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }

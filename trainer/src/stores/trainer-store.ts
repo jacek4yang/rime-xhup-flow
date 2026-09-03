@@ -18,9 +18,10 @@ import {
   type ItemProgress,
 } from "@/lib/progress";
 import { localDateKey } from "@/lib/stats";
+import { LANGUAGES, type Language } from "@/lib/i18n";
 import { DEFAULT_THEME, type ThemePreference } from "@/lib/theme";
 import type { Difficulty } from "@/lib/trainer-index";
-import type { TrainerBackup } from "@/lib/backup";
+import type { BackupSettings } from "@/lib/backup";
 import {
   DEFAULT_DIFFICULTY,
   DEFAULT_HINT_MODE,
@@ -60,6 +61,7 @@ export function emptyDailyStats(): DailyStats {
 }
 
 export type TrainerData = {
+  language: Language;
   theme: ThemePreference;
   hintMode: HintMode;
   difficulty: Difficulty;
@@ -91,6 +93,7 @@ export type QuestionResultPayload = {
 };
 
 export type TrainerActions = {
+  setLanguage: (language: Language) => void;
   setTheme: (theme: ThemePreference) => void;
   setHintMode: (hintMode: HintMode) => void;
   setDifficulty: (difficulty: Difficulty) => void;
@@ -100,8 +103,15 @@ export type TrainerActions = {
   recordQuestionResult: (payload: QuestionResultPayload) => void;
   /** 暂停/结束时结清的纯练习时长。 */
   addPracticeTime: (practiceMs: number, now: number) => void;
-  /** 导入备份:整体替换进度/统计/偏好(主题保留本地值)。 */
-  applyBackup: (backup: TrainerBackup) => void;
+  /** 导入备份:整体替换进度/统计/偏好(主题与语言保留本地值)。 */
+  applyBackup: (backup: {
+    settings: BackupSettings;
+    progress: Record<string, ItemProgress>;
+    daily: Record<string, DailyStats>;
+    keyErrors: Record<string, number>;
+  }) => void;
+  /** 重置指定条目的掌握度(弱点中心操作;保留偏好)。 */
+  resetItemProgress: (ids: readonly string[]) => void;
   /** 重置学习进度与练习偏好;保留主题。 */
   resetProgress: () => void;
 };
@@ -113,6 +123,7 @@ export const STORAGE_VERSION = 2;
 
 function defaultData(): TrainerData {
   return {
+    language: "zh",
     theme: DEFAULT_THEME,
     hintMode: DEFAULT_HINT_MODE,
     difficulty: DEFAULT_DIFFICULTY,
@@ -267,6 +278,7 @@ export function sanitizePersisted(value: unknown): TrainerData {
     ? (value.sessionLength as SessionLength)
     : defaults.sessionLength;
   return {
+    language: pickEnum(value.language, LANGUAGES, defaults.language),
     theme: pickEnum(value.theme, THEMES, defaults.theme),
     hintMode: pickEnum(value.hintMode, HINT_MODES, defaults.hintMode),
     difficulty: pickEnum(value.difficulty, DIFFICULTIES, defaults.difficulty),
@@ -290,6 +302,7 @@ export function migratePersisted(persisted: unknown, version: number): TrainerDa
   if (version < 2 && isRecord(persisted)) {
     const migrated: TrainerData = {
       ...defaultData(),
+      language: pickEnum(persisted.language, LANGUAGES, "zh"),
       theme: pickEnum(persisted.theme, THEMES, DEFAULT_THEME),
       hintMode: pickEnum(persisted.hintMode, HINT_MODES, DEFAULT_HINT_MODE),
       difficulty: pickEnum(persisted.difficulty, DIFFICULTIES, DEFAULT_DIFFICULTY),
@@ -313,6 +326,7 @@ export const useTrainerStore = create<TrainerStore>()(
     (set) => ({
       ...defaultData(),
 
+      setLanguage: (language) => set({ language }),
       setTheme: (theme) => set({ theme }),
       setHintMode: (hintMode) => set({ hintMode }),
       setDifficulty: (difficulty) => set({ difficulty }),
@@ -357,6 +371,7 @@ export const useTrainerStore = create<TrainerStore>()(
 
       applyBackup: (backup) =>
         set((state) => ({
+          language: state.language,
           theme: state.theme,
           hintMode: backup.settings.hintMode,
           difficulty: backup.settings.difficulty,
@@ -367,13 +382,25 @@ export const useTrainerStore = create<TrainerStore>()(
           keyErrors: backup.keyErrors,
         })),
 
+      resetItemProgress: (ids) =>
+        set((state) => {
+          const progress = { ...state.progress };
+          for (const id of ids) delete progress[id];
+          return { ...state, progress };
+        }),
+
       resetProgress: () =>
-        set((state) => ({ ...defaultData(), theme: state.theme })),
+        set((state) => ({
+          ...defaultData(),
+          language: state.language,
+          theme: state.theme,
+        })),
     }),
     {
       name: STORAGE_KEY,
       version: STORAGE_VERSION,
       partialize: (state): TrainerData => ({
+        language: state.language,
         theme: state.theme,
         hintMode: state.hintMode,
         difficulty: state.difficulty,
