@@ -15,13 +15,14 @@ import { Progress } from "@/components/ui/progress";
 import { StatChip } from "@/components/StatChip";
 import { PracticeCode } from "@/components/PracticeCode";
 import { OnScreenKeyboard } from "@/components/OnScreenKeyboard";
-import { itemId, type TrainerEntry } from "@/lib/trainer-data";
+import type { TrainingItem } from "@/lib/trainer-index";
 import { selectPool } from "@/lib/trainer-index";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import { accuracy, formatDuration, formatPercent, kpm } from "@/lib/stats";
 import { listWeakItems } from "@/lib/review";
 import { useTrainerStore } from "@/stores/trainer-store";
 import {
+  activeCode,
   advance,
   backspace,
   createSession,
@@ -40,7 +41,7 @@ import type { PracticeConfig } from "./PracticeSetupView";
 import {
   DIFFICULTY_LABELS,
   MODE_LABELS,
-  MODE_LENGTHS,
+  MODE_POOL_ROTATION,
 } from "./types";
 
 const FEEDBACK_MS = 150;
@@ -49,10 +50,14 @@ function dispatchEvents(events: SessionEvent[]): void {
   for (const event of events) {
     if (event.type === "question-completed") {
       useTrainerStore.getState().recordQuestionResult({
-        id: itemId(event.entry),
+        id: event.item.id,
         outcome: event.outcome,
+        routeUsed: event.routeUsed,
         keystrokes: event.keystrokes,
         wrongKeyEvents: event.wrongKeyEvents,
+        wrongKeys: event.wrongKeys,
+        chars: event.item.charCount,
+        corrections: event.corrections,
         practiceMs: event.practiceMs,
         bestStreak: event.bestStreak,
         now: Date.now(),
@@ -73,7 +78,7 @@ export function PracticeView({
   config: PracticeConfig;
   onExit: () => void;
   onRestart: () => void;
-  onPracticeEntries: (entries: TrainerEntry[]) => void;
+  onPracticeEntries: (entries: TrainingItem[]) => void;
   onExitToToday: () => void;
 }) {
   const index = useTrainerIndex();
@@ -84,26 +89,25 @@ export function PracticeView({
   // 题池只在会话开始时构建一次;出题不再全量 filter/sort。
   const pools = useMemo<QuestionPool[]>(() => {
     if (config.entries) {
-      const byLength = new Map<number, TrainerEntry[]>();
-      for (const entry of config.entries) {
-        const list = byLength.get(entry.length) ?? [];
-        list.push(entry);
-        byLength.set(entry.length, list);
+      const byLength = new Map<number, TrainingItem[]>();
+      for (const item of config.entries) {
+        const list = byLength.get(item.codeLength) ?? [];
+        list.push(item);
+        byLength.set(item.codeLength, list);
       }
-      return [...byLength.entries()].map(([length, entries]) =>
-        buildPool(length as 2 | 3 | 4, entries),
+      return [...byLength.entries()].map(([length, items]) =>
+        buildPool(`char-${length}`, items),
       );
     }
-    return MODE_LENGTHS[config.mode].map((length) =>
-      buildPool(length, selectPool(index, length, config.difficulty)),
-    );
+    return MODE_POOL_ROTATION[config.mode]
+      .map((poolId) => buildPool(poolId, selectPool(index, poolId, config.difficulty)))
+      .filter((pool) => pool.items.length > 0);
   }, [config, index]);
 
   const [session, setSession] = useState<SessionState | null>(() =>
     createSession(
       {
         mode: config.entries ? "mixed" : config.mode,
-        difficulty: config.difficulty,
         targetLength: config.targetLength,
         pools,
       },
@@ -171,7 +175,7 @@ export function PracticeView({
         weakItems={weakItems}
         onRestart={onRestart}
         onPracticeWeak={() =>
-          onPracticeEntries(weakItems.map((item) => item.entry))
+          onPracticeEntries(weakItems.map((weak) => weak.item))
         }
         onExitToToday={onExitToToday}
       />
@@ -229,9 +233,7 @@ export function PracticeView({
         <Badge variant="secondary">
           {config.entries ? "复习" : MODE_LABELS[session.config.mode]}
         </Badge>
-        <Badge variant="outline">
-          {DIFFICULTY_LABELS[session.config.difficulty]}
-        </Badge>
+        <Badge variant="outline">{DIFFICULTY_LABELS[config.difficulty]}</Badge>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-sm tabular-nums text-muted-foreground">
             {targetLength > 0
@@ -270,7 +272,7 @@ export function PracticeView({
         />
         <AnimatePresence mode="wait">
           <motion.div
-            key={itemId(session.current)}
+            key={session.current.id}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
@@ -278,7 +280,7 @@ export function PracticeView({
             className="flex flex-col items-center gap-3 sm:gap-4"
           >
             <div className="text-7xl font-medium leading-none tracking-tight sm:text-8xl">
-              {session.current.char}
+              {session.current.target}
             </div>
             <div className="font-mono text-sm text-muted-foreground sm:text-base">
               {session.current.readings.join(" / ")}
@@ -287,10 +289,10 @@ export function PracticeView({
               aria-live="polite"
               className="flex h-6 items-center font-mono text-base tracking-[0.3em] text-primary"
             >
-              {codeHintVisible ? session.current.code : ""}
+              {codeHintVisible ? session.current.primaryCode : ""}
             </div>
             <PracticeCode
-              code={session.current.code}
+              code={activeCode(session)}
               typed={session.typed}
               lastWrongKey={session.lastWrongKey}
               outcome={session.phase === "feedback" ? session.lastOutcome : null}

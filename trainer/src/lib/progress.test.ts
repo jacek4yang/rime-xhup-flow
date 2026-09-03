@@ -3,6 +3,7 @@ import {
   applyImperfect,
   applyPerfect,
   emptyProgress,
+  nextAvgLatency,
 } from "./progress";
 
 describe("mastery 更新规则", () => {
@@ -59,5 +60,31 @@ describe("mastery 更新规则", () => {
   it("掌握度不低于 0", () => {
     const base = { ...emptyProgress(), mastery: 10 };
     expect(applyImperfect(base, 0).mastery).toBe(0);
+  });
+});
+
+describe("avgLatencyMs(V2)", () => {
+  it("首个有效样本直接成为均值", () => {
+    expect(nextAvgLatency(null, 1200)).toBe(1200);
+    const after = applyPerfect(emptyProgress(), 0, 1200);
+    expect(after.avgLatencyMs).toBe(1200);
+  });
+
+  it("后续样本按 0.3 权重指数滑动", () => {
+    let progress = emptyProgress();
+    progress = applyPerfect(progress, 0, 1000);
+    progress = applyPerfect(progress, 1, 2000);
+    expect(progress.avgLatencyMs).toBeCloseTo(1000 * 0.7 + 2000 * 0.3);
+  });
+
+  it("无效样本(负值)不改变均值", () => {
+    const base = applyPerfect(emptyProgress(), 0, 500);
+    expect(applyImperfect(base, 1, -5).avgLatencyMs).toBe(500);
+    expect(applyImperfect(base, 1, null).avgLatencyMs).toBe(500);
+  });
+
+  it("imperfect 同样记录延迟", () => {
+    const after = applyImperfect(emptyProgress(), 0, 3000);
+    expect(after.avgLatencyMs).toBe(3000);
   });
 });

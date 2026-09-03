@@ -20,7 +20,7 @@ import {
 } from "@/features/practice/types";
 
 const MODE_ORDER: PracticeMode[] = ["double", "sound-shape", "full", "mixed"];
-const MODE_KEYS: Record<PracticeMode, string> = {
+const MODE_KEYS: Partial<Record<PracticeMode, string>> = {
   double: "2 键",
   "sound-shape": "3 键",
   full: "4 键",
@@ -118,20 +118,20 @@ export function DashboardView({
             </Button>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
-            {weakItems.map(({ entry, progress: item }) => (
+            {weakItems.map(({ item, progress }) => (
               <div
-                key={`${entry.char}:${entry.code}`}
+                key={item.id}
                 className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
               >
-                <span className="text-2xl font-medium">{entry.char}</span>
+                <span className="text-2xl font-medium">{item.target}</span>
                 <span className="font-mono text-sm text-muted-foreground">
-                  {entry.code}
+                  {item.primaryCode}
                 </span>
                 <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-                  <Badge variant={item.mastery < 40 ? "destructive" : "outline"}>
-                    掌握 {item.mastery}
+                  <Badge variant={progress.mastery < 40 ? "destructive" : "outline"}>
+                    掌握 {progress.mastery}
                   </Badge>
-                  错 {item.wrong}
+                  错 {progress.wrong}
                 </span>
               </div>
             ))}

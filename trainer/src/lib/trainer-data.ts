@@ -1,12 +1,18 @@
 /**
- * 训练器规范数据(V1)的类型、运行时校验与加载。
+ * 训练器规范数据(V2)的类型、运行时校验与加载。
  *
  * 唯一事实来源是 Rust 生成的 `xhup_flow_trainer.json`;前端不维护任何
- * 双拼映射、汉字编码、拼音转换或频率表。加载时完整校验一次,
+ * 双拼映射、汉字编码、词码、简码策略或频率表。加载时完整校验一次,
  * 校验失败抛出带用户可读原因的 {@link TrainerDataError}。
+ *
+ * V2 相对 V1 新增:`words`(固定词全码,按权重截断)、
+ * `level1Shortcuts`、三个生产简码层(`wordShortcuts` = ZERO_REGRESSION、
+ * `fixedFirstShortcuts`、`twoKeyShortcuts`)与 `sentences`(组件语义
+ * 列表,输入码由 Rust 从 canonical 全码机械拼接)。单字段 `entries`
+ * (2/3/4 码单字)与 V1 兼容。
  */
 
-/** 一条训练条目:一个最终化的 `(汉字, 静态码)` 关系。 */
+/** 一条单字训练条目:一个最终化的 `(汉字, 静态码)` 关系。 */
 export type TrainerEntry = {
   char: string;
   code: string;
@@ -16,6 +22,45 @@ export type TrainerEntry = {
   rimeWeight: number;
 };
 
+/** 一条固定词训练条目(全码,逐字双拼拼接)。 */
+export type TrainerWord = {
+  word: string;
+  code: string;
+  /** 全码键数(4/6/8)。 */
+  length: number;
+  /** 汉字数。 */
+  charCount: number;
+  rimeWeight: number;
+};
+
+/** 一条一级简码关系。 */
+export type TrainerLevel1Shortcut = {
+  key: string;
+  char: string;
+};
+
+/** 生产简码层身份(与 analyzer 的 ShortcutPolicyId 对应)。 */
+export type TrainerShortcutLayer =
+  | "zero-regression"
+  | "fixed-first"
+  | "two-key-zero-regression";
+
+/** 一条词语简码关系(shortcut 与 fullCode 都保留可用)。 */
+export type TrainerShortcut = {
+  word: string;
+  fullCode: string;
+  shortcutCode: string;
+  /** F/I 投影模式(如 `FI` / `II`)。 */
+  mode: string;
+};
+
+/** 一条组句练习 fixture(码由 Rust 机械拼接,前端不推导)。 */
+export type TrainerSentence = {
+  text: string;
+  code: string;
+  components: string[];
+};
+
 /** 规范小鹤双拼键盘布局参考。 */
 export type DoublePinyinReference = {
   initials: { initial: string; key: string }[];
@@ -23,11 +68,17 @@ export type DoublePinyinReference = {
   zeroInitials: { syllable: string; code: string }[];
 };
 
-/** 校验后的 V1 数据集。 */
+/** 校验后的 V2 数据集。 */
 export type TrainerDataset = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   packageVersion: string;
   entries: TrainerEntry[];
+  words: TrainerWord[];
+  level1Shortcuts: TrainerLevel1Shortcut[];
+  wordShortcuts: TrainerShortcut[];
+  fixedFirstShortcuts: TrainerShortcut[];
+  twoKeyShortcuts: TrainerShortcut[];
+  sentences: TrainerSentence[];
   doublePinyin: DoublePinyinReference;
 };
 
@@ -44,6 +95,21 @@ export function itemId(entry: Pick<TrainerEntry, "char" | "code">): string {
   return `${entry.char}:${entry.code}`;
 }
 
+/** 固定词条目的稳定 ID。 */
+export function wordId(word: Pick<TrainerWord, "word" | "code">): string {
+  return `word:${word.word}:${word.code}`;
+}
+
+/** 简码条目的稳定 ID(以主练码 = 简码为准)。 */
+export function shortcutId(shortcut: Pick<TrainerShortcut, "word" | "shortcutCode">): string {
+  return `shortcut:${shortcut.word}:${shortcut.shortcutCode}`;
+}
+
+/** 组句条目的稳定 ID。 */
+export function sentenceId(sentence: Pick<TrainerSentence, "text">): string {
+  return `sentence:${sentence.text}`;
+}
+
 function fail(reason: string): never {
   throw new TrainerDataError(reason);
 }
@@ -54,6 +120,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isLowerAlpha(value: unknown): value is string {
   return typeof value === "string" && /^[a-z]+$/.test(value);
+}
+
+function isHanziString(value: unknown, at: string): string {
+  if (typeof value !== "string" || !/^[\u4e00-\u9fff]+$/.test(value)) {
+    fail(`${at} 应为汉字串`);
+  }
+  return value;
 }
 
 function validateEntry(value: unknown, index: number): TrainerEntry {
@@ -78,11 +151,10 @@ function validateEntry(value: unknown, index: number): TrainerEntry {
     !Array.isArray(readings) ||
     readings.length === 0 ||
     !readings.every(isLowerAlpha) ||
-    new Set(readings).size !== readings.length
+    readings.some((reading) => reading.length < 1 || reading.length > 6)
   ) {
-    fail(`${at} 的 readings 应为非空且不重复的规范读音`);
+    fail(`${at} 的 readings 应为非空小写字母数组`);
   }
-  // Rust 端是 u64:必须显式拒绝超出 JS 安全整数的数据,不允许静默舍入。
   if (
     typeof frequencyScore !== "number" ||
     !Number.isSafeInteger(frequencyScore) ||
@@ -90,119 +162,261 @@ function validateEntry(value: unknown, index: number): TrainerEntry {
   ) {
     fail(`${at} 的 frequencyScore 应为非负安全整数`);
   }
-  if (
-    typeof rimeWeight !== "number" ||
-    !Number.isSafeInteger(rimeWeight) ||
-    rimeWeight < 1
-  ) {
+  if (typeof rimeWeight !== "number" || !Number.isInteger(rimeWeight) || rimeWeight <= 0) {
     fail(`${at} 的 rimeWeight 应为正整数`);
   }
-
-  return { char, code, length, readings, frequencyScore, rimeWeight };
-}
-
-function validateKeyMappings<T extends "initial" | "final">(
-  rows: unknown[],
-  field: T,
-  label: string,
-): ({ [K in T]: string } & { key: string })[] {
-  return rows.map((row, index) => {
-    const at = `双拼参考 ${label} 第 ${index + 1} 行`;
-    if (!isRecord(row)) fail(`${at} 结构无效`);
-    const name = row[field];
-    if (!isLowerAlpha(name)) fail(`${at} 名称无效`);
-    if (typeof row.key !== "string" || !/^[a-z]$/.test(row.key)) {
-      fail(`${at} 键位无效`);
-    }
-    return { [field]: name, key: row.key } as { [K in T]: string } & {
-      key: string;
-    };
-  });
-}
-
-function validateZeroInitials(
-  rows: unknown[],
-  label: string,
-): { syllable: string; code: string }[] {
-  return rows.map((row, index) => {
-    const at = `双拼参考 ${label} 第 ${index + 1} 行`;
-    if (!isRecord(row)) fail(`${at} 结构无效`);
-    if (!isLowerAlpha(row.syllable)) fail(`${at} 音节无效`);
-    if (typeof row.code !== "string" || !/^[a-z]{2}$/.test(row.code)) {
-      fail(`${at} 编码无效`);
-    }
-    return { syllable: row.syllable, code: row.code };
-  });
-}
-
-/** 完整校验 V1 数据集;失败抛出 {@link TrainerDataError}。 */
-export function validateTrainerDataset(raw: unknown): TrainerDataset {
-  if (!isRecord(raw)) fail("训练数据不是有效的 JSON 对象");
-  if (raw.schemaVersion !== 1) {
-    fail(
-      `不支持的训练数据版本: ${String(raw.schemaVersion)}(需要 schemaVersion 1)`,
-    );
+  if (new Set(readings).size !== readings.length) {
+    fail(`${at} 的 readings 存在重复读音`);
   }
-  if (
-    typeof raw.packageVersion !== "string" ||
-    raw.packageVersion.length === 0
-  ) {
-    fail("训练数据缺少 packageVersion");
-  }
-  if (!Array.isArray(raw.entries)) fail("训练数据缺少 entries 数组");
-
-  const entries = raw.entries.map(validateEntry);
-
-  const seen = new Set<string>();
-  for (const entry of entries) {
-    const id = itemId(entry);
-    if (seen.has(id)) fail(`训练数据存在重复条目: ${id}`);
-    seen.add(id);
-  }
-
-  if (!isRecord(raw.doublePinyin)) fail("训练数据缺少 doublePinyin 参考");
-  const { initials, finals, zeroInitials } = raw.doublePinyin;
-  if (!Array.isArray(initials) || initials.length !== 23) {
-    fail("双拼参考 initials 应为 23 条");
-  }
-  if (!Array.isArray(finals) || finals.length !== 33) {
-    fail("双拼参考 finals 应为 33 条");
-  }
-  if (!Array.isArray(zeroInitials) || zeroInitials.length !== 12) {
-    fail("双拼参考 zeroInitials 应为 12 条");
-  }
-
   return {
-    schemaVersion: 1,
-    packageVersion: raw.packageVersion,
-    entries,
-    doublePinyin: {
-      initials: validateKeyMappings(initials, "initial", "initials"),
-      finals: validateKeyMappings(finals, "final", "finals"),
-      zeroInitials: validateZeroInitials(zeroInitials, "zeroInitials"),
-    },
+    char,
+    code,
+    length,
+    readings,
+    frequencyScore,
+    rimeWeight,
   };
 }
 
-/** 生成的规范数据在本地的静态路径(跟随 Vite base,兼容 Tauri WebView)。 */
+function validateWord(value: unknown, index: number): TrainerWord {
+  const at = `第 ${index + 1} 条词条数据`;
+  if (!isRecord(value)) fail(`${at} 结构无效`);
+  const { word, code, length, charCount, rimeWeight } = value;
+  const text = isHanziString(word, `${at} 的 word`);
+  const charCountValue = text.length;
+  if (charCountValue < 2 || charCountValue > 4) {
+    fail(`${at} 的 word 应为 2-4 字词`);
+  }
+  if (typeof code !== "string" || !/^[a-z]{4,8}$/.test(code)) {
+    fail(`${at} 的 code 应为 4-8 位小写字母`);
+  }
+  if (code.length !== charCountValue * 2) {
+    fail(`${at} 的 code 长度应等于字数 × 2`);
+  }
+  if (typeof length !== "number" || length !== code.length) {
+    fail(`${at} 的 length 与 code 长度不一致`);
+  }
+  if (typeof charCount !== "number" || charCount !== charCountValue) {
+    fail(`${at} 的 charCount 与 word 字数不一致`);
+  }
+  if (typeof rimeWeight !== "number" || !Number.isInteger(rimeWeight) || rimeWeight <= 0) {
+    fail(`${at} 的 rimeWeight 应为正整数`);
+  }
+  return { word: text, code, length, charCount: charCountValue, rimeWeight };
+}
+
+function validateLevel1(value: unknown, index: number): TrainerLevel1Shortcut {
+  const at = `第 ${index + 1} 条一级简码`;
+  if (!isRecord(value)) fail(`${at} 结构无效`);
+  const { key, char } = value;
+  if (typeof key !== "string" || !/^[a-z]$/.test(key)) {
+    fail(`${at} 的 key 应为单个小写字母`);
+  }
+  return { key, char: isHanziString(char, `${at} 的 char`) };
+}
+
+function validateShortcut(value: unknown, index: number): TrainerShortcut {
+  const at = `第 ${index + 1} 条简码数据`;
+  if (!isRecord(value)) fail(`${at} 结构无效`);
+  const { word, fullCode, shortcutCode, mode } = value;
+  const text = isHanziString(word, `${at} 的 word`);
+  if (text.length < 2 || text.length > 4) {
+    fail(`${at} 的 word 应为 2-4 字词`);
+  }
+  if (typeof fullCode !== "string" || !/^[a-z]{4,8}$/.test(fullCode)) {
+    fail(`${at} 的 fullCode 应为 4-8 位小写字母`);
+  }
+  if (typeof shortcutCode !== "string" || !/^[a-z]{2,7}$/.test(shortcutCode)) {
+    fail(`${at} 的 shortcutCode 应为 2-7 位小写字母`);
+  }
+  if (shortcutCode.length >= fullCode.length) {
+    fail(`${at} 的 shortcutCode 应短于 fullCode`);
+  }
+  if (typeof mode !== "string" || !/^[FI]+$/.test(mode)) {
+    fail(`${at} 的 mode 应为 F/I 投影串`);
+  }
+  return { word: text, fullCode, shortcutCode, mode };
+}
+
+function validateSentence(value: unknown, index: number): TrainerSentence {
+  const at = `第 ${index + 1} 条组句数据`;
+  if (!isRecord(value)) fail(`${at} 结构无效`);
+  const { text, code, components } = value;
+  const textValue = isHanziString(text, `${at} 的 text`);
+  if (typeof code !== "string" || !/^[a-z]+$/.test(code)) {
+    fail(`${at} 的 code 应为小写字母串`);
+  }
+  if (!Array.isArray(components) || components.length < 2) {
+    fail(`${at} 的 components 应为至少 2 个词`);
+  }
+  const resolved = components.map((component, componentIndex) =>
+    isHanziString(component, `${at} 的 components[${componentIndex}]`),
+  );
+  if (resolved.join("") !== textValue) {
+    fail(`${at} 的 components 拼接应与 text 一致`);
+  }
+  if (code.length !== textValue.length * 2) {
+    fail(`${at} 的 code 长度应等于字数 × 2`);
+  }
+  return { text: textValue, code, components: resolved };
+}
+
+function validateArray<T>(
+  value: unknown,
+  atLeast: number,
+  label: string,
+  validateItem: (item: unknown, index: number) => T,
+): T[] {
+  if (!Array.isArray(value) || value.length < atLeast) {
+    fail(`${label} 应为至少 ${atLeast} 条的数组`);
+  }
+  return value.map(validateItem);
+}
+
+function ensureUnique(keys: string[], label: string): void {
+  const seen = new Set<string>();
+  for (const key of keys) {
+    if (seen.has(key)) {
+      fail(`${label} 存在重复条目:${key}`);
+    }
+    seen.add(key);
+  }
+}
+
+function validateDoublePinyin(value: unknown): DoublePinyinReference {
+  if (!isRecord(value)) fail("doublePinyin 结构无效");
+  const { initials, finals, zeroInitials } = value;
+  if (!Array.isArray(initials) || initials.length === 0) {
+    fail("doublePinyin.initials 应为非空数组");
+  }
+  for (const mapping of initials) {
+    if (
+      !isRecord(mapping) ||
+      typeof mapping.initial !== "string" ||
+      typeof mapping.key !== "string" ||
+      !/^[a-z]$/.test(mapping.key)
+    ) {
+      fail("doublePinyin.initials 条目结构无效");
+    }
+  }
+  if (!Array.isArray(finals) || finals.length === 0) {
+    fail("doublePinyin.finals 应为非空数组");
+  }
+  for (const mapping of finals) {
+    if (
+      !isRecord(mapping) ||
+      typeof mapping.final !== "string" ||
+      typeof mapping.key !== "string" ||
+      !/^[a-z]$/.test(mapping.key)
+    ) {
+      fail("doublePinyin.finals 条目结构无效");
+    }
+  }
+  if (!Array.isArray(zeroInitials) || zeroInitials.length === 0) {
+    fail("doublePinyin.zeroInitials 应为非空数组");
+  }
+  for (const mapping of zeroInitials) {
+    if (
+      !isRecord(mapping) ||
+      typeof mapping.syllable !== "string" ||
+      typeof mapping.code !== "string" ||
+      !/^[a-z]{2}$/.test(mapping.code)
+    ) {
+      fail("doublePinyin.zeroInitials 条目结构无效");
+    }
+  }
+  return { initials, finals, zeroInitials } as DoublePinyinReference;
+}
+
+/**
+ * 校验并返回 V2 数据集。
+ *
+ * 版本边界:schemaVersion 必须恰为 2——旧版本数据由 `pnpm build` 的
+ * `generate:data` 重新生成,不做前端兼容解析。
+ */
+export function validateTrainerDataset(value: unknown): TrainerDataset {
+  if (!isRecord(value)) fail("训练数据结构无效");
+  if (value.schemaVersion !== 2) {
+    fail(
+      `训练数据版本应为 2(实际 ${String(value.schemaVersion)});请重新构建以生成 V2 数据`,
+    );
+  }
+  if (typeof value.packageVersion !== "string" || value.packageVersion === "") {
+    fail("训练数据缺少 packageVersion");
+  }
+  const entries = validateArray(value.entries, 1, "entries", validateEntry);
+  ensureUnique(entries.map((entry) => `${entry.char}:${entry.code}`), "entries");
+  const words = validateArray(value.words, 1, "words", validateWord);
+  ensureUnique(words.map((word) => `${word.word}:${word.code}`), "words");
+  const level1Shortcuts = validateArray(
+    value.level1Shortcuts,
+    26,
+    "level1Shortcuts",
+    validateLevel1,
+  );
+  ensureUnique(level1Shortcuts.map((shortcut) => shortcut.key), "level1Shortcuts");
+  const wordShortcuts = validateArray(value.wordShortcuts, 1, "wordShortcuts", validateShortcut);
+  ensureUnique(
+    wordShortcuts.map((shortcut) => `${shortcut.word}:${shortcut.shortcutCode}`),
+    "wordShortcuts",
+  );
+  const fixedFirstShortcuts = validateArray(
+    value.fixedFirstShortcuts,
+    1,
+    "fixedFirstShortcuts",
+    validateShortcut,
+  );
+  ensureUnique(
+    fixedFirstShortcuts.map((shortcut) => `${shortcut.word}:${shortcut.shortcutCode}`),
+    "fixedFirstShortcuts",
+  );
+  const twoKeyShortcuts = validateArray(
+    value.twoKeyShortcuts,
+    1,
+    "twoKeyShortcuts",
+    validateShortcut,
+  );
+  ensureUnique(
+    twoKeyShortcuts.map((shortcut) => `${shortcut.word}:${shortcut.shortcutCode}`),
+    "twoKeyShortcuts",
+  );
+  const sentences = validateArray(value.sentences, 1, "sentences", validateSentence);
+  ensureUnique(sentences.map((sentence) => sentence.text), "sentences");
+  return {
+    schemaVersion: 2,
+    packageVersion: value.packageVersion,
+    entries,
+    words,
+    level1Shortcuts,
+    wordShortcuts,
+    fixedFirstShortcuts,
+    twoKeyShortcuts,
+    sentences,
+    doublePinyin: validateDoublePinyin(value.doublePinyin),
+  };
+}
+
+/** 生成数据的默认加载地址(构建管线把数据集产物放到 public/generated)。 */
 export const TRAINER_DATA_URL = `${import.meta.env.BASE_URL}generated/xhup_flow_trainer.json`;
 
-/** 加载并校验训练数据集;网络/解析/契约失败均抛出可读错误。 */
-export async function loadTrainerDataset(): Promise<TrainerDataset> {
+/** 加载并校验训练数据集(fetch 失败或校验失败都会抛 {@link TrainerDataError})。 */
+export async function loadTrainerDataset(
+  url: string = TRAINER_DATA_URL,
+): Promise<TrainerDataset> {
   let response: Response;
   try {
-    response = await fetch(TRAINER_DATA_URL, { cache: "no-cache" });
-  } catch {
-    throw new TrainerDataError("无法读取训练数据文件");
+    response = await fetch(url);
+  } catch (cause) {
+    throw new TrainerDataError(`无法加载训练数据:${String(cause)}`);
   }
   if (!response.ok) {
-    throw new TrainerDataError(`训练数据请求失败(HTTP ${response.status})`);
+    throw new TrainerDataError(`无法加载训练数据(HTTP ${response.status})`);
   }
-  let raw: unknown;
+  let parsed: unknown;
   try {
-    raw = await response.json();
-  } catch {
-    throw new TrainerDataError("训练数据不是合法的 JSON");
+    parsed = await response.json();
+  } catch (cause) {
+    throw new TrainerDataError(`训练数据不是合法 JSON:${String(cause)}`);
   }
-  return validateTrainerDataset(raw);
+  return validateTrainerDataset(parsed);
 }
