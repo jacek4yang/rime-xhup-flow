@@ -91,6 +91,44 @@ pub struct TwoKeySelectionAudit {
     pub contested_codes: usize,
 }
 
+/// 同码竞争的确定性偏序:「A 优于 B」的判定(供 `max_by` 使用,
+/// 返回 `Ordering::Greater` 表示 A 更优)。
+///
+/// 文档顺序:净收益 DESC → 频率 DESC → 词 ASC → 完整码 ASC。
+/// 逐级展开为显式比较,避免 `.reverse()` 链,便于 review:
+///
+/// - 净收益:A > B → A 优(gain 主序,任何平局落到下一级);
+/// - 频率:A > B → A 优(高频优先);
+/// - 词:A < B → A 优(字典序小者优先);
+/// - 完整码:A < B → A 优(字典序小者优先)。
+fn compare_candidates(
+    gain_a: f64,
+    candidate_a: &crate::two_key_study::TwoKeyCandidate,
+    gain_b: f64,
+    candidate_b: &crate::two_key_study::TwoKeyCandidate,
+) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    // 净收益 DESC:A 更大 → A 更优(Greater)。
+    let gain = gain_a.partial_cmp(&gain_b).expect("净收益非 NaN");
+    if gain != Ordering::Equal {
+        return gain;
+    }
+    // 频率 DESC:A 更大 → A 更优(Greater)。
+    let frequency = candidate_a
+        .frequency_score
+        .cmp(&candidate_b.frequency_score);
+    if frequency != Ordering::Equal {
+        return frequency;
+    }
+    // 词 ASC:A 更小 → A 更优(Greater)。
+    let word = candidate_a.word.cmp(&candidate_b.word);
+    if word != Ordering::Equal {
+        return word.reverse();
+    }
+    // 完整码 ASC:A 更小 → A 更优(Greater)。
+    candidate_a.full_code.cmp(&candidate_b.full_code).reverse()
+}
+
 /// 从研究证据中选择 production 二码零冲突集。
 ///
 /// 硬不变量(违反即 STOP):
@@ -135,26 +173,18 @@ pub fn select_two_key_production(
     // 要求整数 4/5 稳定票。
     let mut selected = Vec::new();
     for indices in by_code.values() {
-        // 每次网格运行:该码的获胜词(reference 排序键)。
+        // 每次网格运行:该码的获胜词(`compare_candidates` 偏序的最大者;
+        // 文档顺序:净收益 DESC → 频率 DESC → 词 ASC → 完整码 ASC)。
         let winner_of_run = |run: &TwoKeyStudyRun| -> usize {
             *indices
                 .iter()
                 .max_by(|&&a, &&b| {
-                    let gain_a = run.safe[a].weighted_net_gain;
-                    let gain_b = run.safe[b].weighted_net_gain;
-                    let candidate_a = &universe.candidates[a];
-                    let candidate_b = &universe.candidates[b];
-                    // 确定性:净收益 DESC → 频率 DESC → 词 ASC → 完整码 ASC。
-                    gain_a
-                        .partial_cmp(&gain_b)
-                        .unwrap()
-                        .then(
-                            candidate_b
-                                .frequency_score
-                                .cmp(&candidate_a.frequency_score),
-                        )
-                        .then(candidate_a.word.cmp(&candidate_b.word))
-                        .then(candidate_a.full_code.cmp(&candidate_b.full_code))
+                    compare_candidates(
+                        run.safe[a].weighted_net_gain,
+                        &universe.candidates[a],
+                        run.safe[b].weighted_net_gain,
+                        &universe.candidates[b],
+                    )
                 })
                 .expect("码组非空")
         };
@@ -313,5 +343,131 @@ pub fn two_key_benefit_audit(
     TwoKeyBenefitAudit {
         raw_keys_saved: raw,
         effective_benefit: effective,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::two_key_study::{ExistingShortcutStatus, StaticRoute, TwoKeyCodeClass};
+    use xhup_core::KeySequence;
+
+    /// 合成候选(仅排序所需字段;winner 竞争只读 word/full_code/frequency)。
+    fn synthetic(
+        word: &str,
+        full_code: &str,
+        frequency_score: u64,
+    ) -> crate::two_key_study::TwoKeyCandidate {
+        let full_code: KeySequence = full_code.parse().expect("合成完整码合法");
+        let keys = full_code.as_slice();
+        let two_key_code = KeySequence::from_keys(&[keys[0], keys[2]]).expect("II 码合法");
+        crate::two_key_study::TwoKeyCandidate {
+            word: word.to_string(),
+            full_code: full_code.clone(),
+            two_key_code,
+            frequency_score,
+            existing_shortcut: ExistingShortcutStatus::None,
+            current_best: StaticRoute {
+                kind: crate::two_key_study::RouteKind::FullCode,
+                code: full_code,
+                rank: 1,
+                fanout: 1,
+                cost: crate::cost::CostBreakdown::default(),
+            },
+            code_class: TwoKeyCodeClass::Empty,
+            char_fanout: 0,
+        }
+    }
+
+    /// `compare_candidates` 偏序:P0 回归锁(review 修正前的实现曾把
+    /// 频率/词/完整码三个平局级方向全部接反)。
+    #[test]
+    fn comparator_implements_documented_ordering() {
+        use std::cmp::Ordering;
+
+        // Case 1 — 频率:同码同净收益,高频者胜。
+        let a = synthetic("甲词", "abcd", 100);
+        let b = synthetic("乙词", "abce", 50);
+        assert_eq!(
+            compare_candidates(1.0, &a, 1.0, &b),
+            Ordering::Greater,
+            "同净收益:频率 100 应胜 50"
+        );
+        assert_eq!(
+            compare_candidates(1.0, &b, 1.0, &a),
+            Ordering::Less,
+            "反方向:频率 50 应输 100"
+        );
+
+        // Case 2 — 词字典序:同码同净收益同频率,字典序小者胜。
+        // (乙 U+4E59 < 甲 U+7532,真实 Unicode 标量序。)
+        let a = synthetic("乙词", "abcd", 100);
+        let b = synthetic("甲词", "abce", 100);
+        assert_eq!(
+            compare_candidates(1.0, &a, 1.0, &b),
+            Ordering::Greater,
+            "同净收益同频率:词「乙词」应胜「甲词」(字典序小者优先)"
+        );
+        assert_eq!(
+            compare_candidates(1.0, &b, 1.0, &a),
+            Ordering::Less,
+            "反方向:「甲词」应输「乙词」"
+        );
+
+        // Case 3 — 完整码字典序:同净收益同频率同词(多音词语境;
+        // 当前 production universe 中一词一候选,故直接测比较器),
+        // 完整码字典序小者胜。
+        let a = synthetic("同词", "abcd", 100);
+        let b = synthetic("同词", "abce", 100);
+        assert_eq!(
+            compare_candidates(1.0, &a, 1.0, &b),
+            Ordering::Greater,
+            "同词同净收益同频率:完整码 abcd 应胜 abce"
+        );
+        assert_eq!(
+            compare_candidates(1.0, &b, 1.0, &a),
+            Ordering::Less,
+            "反方向:完整码 abce 应输 abcd"
+        );
+
+        // Case 4 — 净收益主序:低频候选只要净收益严格更大仍然胜出,
+        // 证明频率不会覆盖净收益。
+        let low_freq_high_gain = synthetic("低频", "abcd", 50);
+        let high_freq_low_gain = synthetic("高频", "abce", 100);
+        assert_eq!(
+            compare_candidates(2.0, &low_freq_high_gain, 1.0, &high_freq_low_gain),
+            Ordering::Greater,
+            "净收益 2.0(频率 50)必须胜 净收益 1.0(频率 100)"
+        );
+        assert_eq!(
+            compare_candidates(1.0, &high_freq_low_gain, 2.0, &low_freq_high_gain),
+            Ordering::Less,
+            "反方向:净收益 1.0 必须输 净收益 2.0"
+        );
+
+        // 全平:等价(不偏向任一方;max_by 语义下取先出现者,确定性)。
+        let a = synthetic("同词", "abcd", 100);
+        let b = synthetic("同词", "abcd", 100);
+        assert_eq!(compare_candidates(1.0, &a, 1.0, &b), Ordering::Equal);
+    }
+
+    /// `max_by` 与比较器的组合语义:同码组中按文档顺序取出唯一胜者。
+    /// 用 3 个合成候选验证「频率 DESC」在 max_by 下方向正确
+    ///(review 前的实现在此方向上是反的,可能选中低频词)。
+    #[test]
+    fn max_by_picks_higher_frequency_on_equal_gain() {
+        let low_freq = synthetic("高频词占位", "abcd", 50);
+        let high_freq = synthetic("另一词", "abce", 100);
+        let group = [low_freq, high_freq];
+        let winner = group
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| compare_candidates(1.0, a, 1.0, b))
+            .map(|(i, _)| i)
+            .expect("组非空");
+        assert_eq!(
+            group[winner].frequency_score, 100,
+            "max_by 必须选中频率 100 的候选(频率 DESC)"
+        );
     }
 }
