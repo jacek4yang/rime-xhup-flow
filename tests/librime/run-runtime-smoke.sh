@@ -160,5 +160,9 @@ cc $CFLAGS -o "$work/runtime_fixed_first_audit" \
   "$SCRIPT_DIR/runtime_fixed_first_audit.c" \
   $(pkg-config --cflags --libs rime)
 echo "== FIXED_FIRST 全量 A/B 审计(CONTROL vs PRODUCTION) =="
-"$work/runtime_fixed_first_audit" "$SHARED_DATA_DIR" "$control_dir" \
-  "$production_dir" "$MANIFEST"
+# 两趟独立进程(glog 不允许同进程二次 initialize),CONTROL 菜单经
+# capture 文件传给 PRODUCTION 趟。
+"$work/runtime_fixed_first_audit" control "$SHARED_DATA_DIR" "$control_dir" \
+  "$MANIFEST" "$work/ff-control.capture"
+"$work/runtime_fixed_first_audit" production "$SHARED_DATA_DIR" \
+  "$production_dir" "$MANIFEST" "$work/ff-control.capture"
