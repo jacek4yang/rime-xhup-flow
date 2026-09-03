@@ -12,6 +12,7 @@ import { OptionButton, OptionRow } from "@/components/OptionGroup";
 import { cn } from "@/lib/utils";
 import type { TrainingItem } from "@/lib/trainer-index";
 import type { Difficulty } from "@/lib/trainer-index";
+import { useI18n } from "@/lib/use-i18n";
 import { useTrainerStore } from "@/stores/trainer-store";
 import { PracticeView } from "./PracticeView";
 import {
@@ -30,8 +31,69 @@ export type PracticeConfig = {
   entries?: TrainingItem[];
 };
 
-const MODES: PracticeMode[] = ["double", "sound-shape", "full", "mixed"];
+const MODES: PracticeMode[] = [
+  "double",
+  "sound-shape",
+  "full",
+  "mixed",
+  "level1",
+  "two-key-word",
+  "zero-regression",
+  "fixed-first",
+  "fixed-word",
+  "sentence",
+  "mixed-shortcut",
+  "mixed-all",
+];
 const DIFFICULTIES: Difficulty[] = ["beginner", "daily", "full"];
+
+/** 模式 → 设置分组(组句/综合不需要难度截断语境,仍复用统一设置)。 */
+function modeGroupKey(mode: PracticeMode): "chars" | "shortcuts" | "words" | "sentences" | "mixed" {
+  switch (mode) {
+    case "double":
+    case "sound-shape":
+    case "full":
+    case "mixed":
+      return "chars";
+    case "level1":
+    case "two-key-word":
+    case "zero-regression":
+    case "fixed-first":
+    case "mixed-shortcut":
+      return "shortcuts";
+    case "fixed-word":
+      return "words";
+    case "sentence":
+      return "sentences";
+    default:
+      return "mixed";
+  }
+}
+
+/** 各分组的展示顺序。 */
+const GROUP_ORDER = ["chars", "shortcuts", "words", "sentences", "mixed"] as const;
+
+/** 模式右上角键数徽标。 */
+function modeKeyBadge(mode: PracticeMode): string {
+  switch (mode) {
+    case "double":
+      return "2";
+    case "sound-shape":
+      return "3";
+    case "full":
+      return "4";
+    case "level1":
+      return "1";
+    case "two-key-word":
+      return "2";
+    case "fixed-word":
+      return "4/6/8";
+    case "sentence":
+      return "≥16";
+    default:
+      return "—";
+  }
+}
 
 export function PracticeSetupView({
   presetMode,
@@ -44,6 +106,7 @@ export function PracticeSetupView({
   onPresetConsumed: () => void;
   onExitToToday: () => void;
 }) {
+  const { t, language } = useI18n();
   const lastMode = useTrainerStore((state) => state.lastMode);
   const difficulty = useTrainerStore((state) => state.difficulty);
   const sessionLength = useTrainerStore((state) => state.sessionLength);
@@ -104,53 +167,72 @@ export function PracticeSetupView({
     });
   };
 
+  const grouped = new Map<string, PracticeMode[]>();
+  for (const candidate of MODES) {
+    const group = modeGroupKey(candidate);
+    grouped.set(group, [...(grouped.get(group) ?? []), candidate]);
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <h1 className="text-xl font-semibold">开始练习</h1>
+        <h1 className="text-xl font-semibold">{t("practice.start")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          选择模式后直接开始连续打字,全程无需鼠标。
+          {language === "zh"
+            ? "选择模式后直接开始连续打字,全程无需鼠标。"
+            : "Pick a mode and type continuously — no mouse needed."}
         </p>
       </header>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {MODES.map((candidate) => (
-          <Card
-            key={candidate}
-            role="button"
-            tabIndex={0}
-            aria-pressed={mode === candidate}
-            onClick={() => setMode(candidate)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                setMode(candidate);
-              }
-            }}
-            className={cn(
-              "cursor-pointer transition-colors hover:border-primary/50 focus-visible:outline-2 focus-visible:outline-ring",
-              mode === candidate && "border-primary bg-primary/5",
-            )}
-          >
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                {MODE_LABELS[candidate]}
-                <span className="text-xs font-normal text-muted-foreground">
-                  {candidate === "mixed" ? "2/3/4 键" : `${candidate === "double" ? 2 : candidate === "sound-shape" ? 3 : 4} 键`}
-                </span>
-              </CardTitle>
-              <CardDescription>{MODE_DESCRIPTIONS[candidate]}</CardDescription>
-            </CardHeader>
-          </Card>
-        ))}
-      </div>
+      {GROUP_ORDER.map((group) => {
+        const candidates = grouped.get(group) ?? [];
+        if (candidates.length === 0) return null;
+        return (
+          <section key={group} aria-label={t(`practice.group.${group}`)}>
+            <h2 className="mb-2 px-1 text-sm font-medium text-muted-foreground">
+              {t(`practice.group.${group}`)}
+            </h2>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {candidates.map((candidate) => (
+                <Card
+                  key={candidate}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={mode === candidate}
+                  onClick={() => setMode(candidate)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setMode(candidate);
+                    }
+                  }}
+                  className={cn(
+                    "cursor-pointer transition-colors hover:border-primary/50 focus-visible:outline-2 focus-visible:outline-ring",
+                    mode === candidate && "border-primary bg-primary/5",
+                  )}
+                >
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      {MODE_LABELS[candidate]}
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {modeKeyBadge(candidate)}
+                      </span>
+                    </CardTitle>
+                    <CardDescription>{MODE_DESCRIPTIONS[candidate]}</CardDescription>
+                  </CardHeader>
+                </Card>
+              ))}
+            </div>
+          </section>
+        );
+      })}
 
       <Card>
         <CardHeader>
-          <CardTitle>练习设置</CardTitle>
+          <CardTitle>{t("practice.mode")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <OptionRow label="难度">
+          <OptionRow label={t("practice.difficulty")}>
             {DIFFICULTIES.map((candidate) => (
               <OptionButton
                 key={candidate}
@@ -161,20 +243,24 @@ export function PracticeSetupView({
               </OptionButton>
             ))}
           </OptionRow>
-          <OptionRow label="题数">
+          <OptionRow label={t("practice.length")}>
             {SESSION_LENGTH_OPTIONS.map((candidate) => (
               <OptionButton
                 key={candidate}
                 selected={sessionLength === candidate}
                 onClick={() => setSessionLength(candidate)}
               >
-                {candidate === 0 ? "无限" : candidate}
+                {candidate === 0
+                  ? language === "zh"
+                    ? "无限"
+                    : "∞"
+                  : candidate}
               </OptionButton>
             ))}
           </OptionRow>
           <Button size="lg" className="mt-2 w-full sm:w-auto" onClick={start}>
             <Play aria-hidden />
-            开始练习
+            {t("practice.start")}
           </Button>
         </CardContent>
       </Card>

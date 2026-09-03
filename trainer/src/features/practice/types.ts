@@ -32,8 +32,11 @@ export type PracticeMode =
   /** 全模式综合(全部池轮换)。 */
   | "mixed-all";
 
-/** 提示方式。 */
-export type HintMode = "always" | "on-error" | "hidden";
+/** 提示方式。on-delay:出题后迟疑一段时间自动显示(见 HINT_DELAY_MS)。 */
+export type HintMode = "always" | "on-delay" | "on-error" | "hidden";
+
+/** on-delay 提示的迟疑时长(活跃练习毫秒)。 */
+export const HINT_DELAY_MS = 2000;
 
 /** 会话目标题数;0 表示无限。 */
 export type SessionLength = 20 | 30 | 50 | 100 | 0;
@@ -152,6 +155,7 @@ export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
 
 export const HINT_MODE_LABELS: Record<HintMode, string> = {
   always: "始终显示",
+  "on-delay": "迟疑后显示",
   "on-error": "错误后显示",
   hidden: "隐藏",
 };

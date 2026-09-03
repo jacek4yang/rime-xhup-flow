@@ -9,7 +9,8 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatChip } from "@/components/StatChip";
-import { accuracy, formatDuration, formatPercent, kpm } from "@/lib/stats";
+import { accuracy, cpm, formatDuration, formatPercent, kpm } from "@/lib/stats";
+import { useI18n } from "@/lib/use-i18n";
 import type { WeakItem } from "@/lib/review";
 import type { SessionState } from "./engine";
 
@@ -27,35 +28,45 @@ export function SessionSummary({
   onPracticeWeak: () => void;
   onExitToToday: () => void;
 }) {
+  const { t, language } = useI18n();
   const sessionKpm = kpm(session.keystrokes, session.activeMs);
+  const sessionCpm = cpm(session.charsCompleted, session.activeMs);
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>本次练习</CardTitle>
+          <CardTitle>{t("common.summaryTitle")}</CardTitle>
           <CardDescription>
-            完成 {session.questionsCompleted} 题 ·{" "}
-            {session.config.targetLength > 0 ? "已达目标" : "手动结束"}
+            {t("practice.progressUnlimited", { n: session.questionsCompleted })} ·{" "}
+            {session.config.targetLength > 0
+              ? language === "zh"
+                ? "已达目标"
+                : "Target reached"
+              : language === "zh"
+                ? "手动结束"
+                : "Ended manually"}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <StatChip
-              label="准确率"
+              label={t("common.accuracy")}
               value={formatPercent(
                 accuracy(session.keystrokes, session.wrongKeyEvents),
               )}
             />
             <StatChip
-              label="KPM"
+              label={t("common.kpm")}
               value={sessionKpm === null ? "—" : Math.round(sessionKpm)}
             />
-            <StatChip label="用时" value={formatDuration(session.activeMs)} />
-            <StatChip label="完成题数" value={session.questionsCompleted} />
-            <StatChip label="完美" value={session.perfect} />
-            <StatChip label="有误" value={session.imperfect} />
-            <StatChip label="最佳连对" value={session.bestStreak} />
-            <StatChip label="按键" value={session.keystrokes} />
+            <StatChip label={t("common.elapsed")} value={formatDuration(session.activeMs)} />
+            <StatChip label={t("common.chars")} value={session.charsCompleted} />
+            {sessionCpm !== null && (
+              <StatChip label={t("common.cpm")} value={Math.round(sessionCpm)} />
+            )}
+            <StatChip label={t("common.streak")} value={session.bestStreak} />
+            <StatChip label={session.perfect >= session.imperfect ? "✓" : "✗"} value={`${session.perfect} / ${session.imperfect}`} />
+            <StatChip label={t("common.keysPerChar")} value={session.charsCompleted === 0 ? "—" : (session.keystrokes / session.charsCompleted).toFixed(1)} />
           </div>
         </CardContent>
       </Card>
