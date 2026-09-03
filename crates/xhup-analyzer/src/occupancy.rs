@@ -1,13 +1,18 @@
 //! 生产码位占用:从 generator 的公共/分析投影重建 exact-code 空间。
 //!
-//! 本模块是 optimizer 的全部"现状"事实来源,显式区分两种语义:
+//! 本模块是 optimizer 的全部"现状"事实来源,显式区分三种语义:
 //!
 //! - [`CodeOccupancy::build_baseline_fixed`]:一级简码(1 键)+ 静态单字
 //!   (2/3/4 码)+ 静态词语(4/6/8 键),即 optimizer 的历史/优化 baseline,
 //!   **不包含**已入库的词语简码层。production selection 永远基于它。
-//! - [`CodeOccupancy::build_current_production`]:baseline + 已入库的
+//! - [`CodeOccupancy::build_pre_fixed_first_production`]:baseline + 已入库的
 //!   高稳健零冲突词语简码层(`data/shortcuts/word_zero_regression.tsv`),
-//!   即当前真实生产占用。审计与后续优化必须能看到这些已占用码位。
+//!   即 PR #22 后的真实生产占用;FIXED_FIRST production 导出的兼容性
+//!   参考系(每个 FF 码在此占用中的 fanout 必须等于 baseline fanout)。
+//! - [`CodeOccupancy::build_current_production`] 再叠加已入库的高稳健
+//!   FIXED_FIRST 词语简码层(`data/shortcuts/word_fixed_first.tsv`,
+//!   显式权重 0,严格追加到 baseline 候选之后),即当前真实生产占用。
+//!   审计与后续优化必须能看到这些已占用码位。
 //!
 //! 候选顺序由显式 Rime 权重降序表达。所有统计都从真实 canonical data 现算,
 //! 不硬编码行数。
@@ -16,8 +21,8 @@ use std::collections::BTreeMap;
 
 use xhup_core::KeySequence;
 use xhup_generator::{
-    canonical_level1_shortcuts, canonical_word_shortcut_entries, char_code_analysis_entries,
-    word_code_analysis_entries,
+    canonical_fixed_first_shortcut_entries, canonical_level1_shortcuts,
+    canonical_word_shortcut_entries, char_code_analysis_entries, word_code_analysis_entries,
 };
 
 /// 现有候选的来源层。
@@ -31,6 +36,9 @@ pub enum CandidateSource {
     FixedWord,
     /// 已入库的高稳健零冲突词语简码层(3~7 键 alias)。
     WordShortcut,
+    /// 已入库的高稳健 FIXED_FIRST 词语简码层(3/4/6 键 alias;
+    /// 与 baseline fixed 码重码,追加到既有固定候选之后)。
+    FixedFirstWordShortcut,
 }
 
 impl CandidateSource {
@@ -41,6 +49,7 @@ impl CandidateSource {
             CandidateSource::CharCode => "char_code",
             CandidateSource::FixedWord => "fixed_word",
             CandidateSource::WordShortcut => "word_shortcut",
+            CandidateSource::FixedFirstWordShortcut => "fixed_first_word_shortcut",
         }
     }
 }
@@ -64,6 +73,10 @@ pub enum CollisionClass {
     FixedWord,
     /// 命中已入库的词语简码(3~7 键)。
     WordShortcut,
+    /// 仅含 FIXED_FIRST 词语简码(类型完整性;正常 production 中
+    /// FIXED_FIRST 码必然与 baseline source 混合,即 `Multiple`,
+    /// 单源 FIXED_FIRST 不可达)。
+    FixedFirstWordShortcut,
     /// 同时命中多个来源层。
     Multiple,
 }
@@ -79,6 +92,7 @@ impl CollisionClass {
             CollisionClass::FullCodeChar => "FULLCODE_CHAR",
             CollisionClass::FixedWord => "FIXED_WORD",
             CollisionClass::WordShortcut => "WORD_SHORTCUT",
+            CollisionClass::FixedFirstWordShortcut => "FIXED_FIRST_WORD_SHORTCUT",
             CollisionClass::Multiple => "MULTIPLE",
         }
     }
@@ -87,6 +101,7 @@ impl CollisionClass {
 /// 一个码位上的一条现有候选。
 ///
 /// `rank` 为组内 1 起始名次(显式权重降序,权重同码唯一,故名次确定)。
+#[derive(Clone, Debug)]
 pub struct ExistingCandidate {
     text: String,
     source: CandidateSource,
@@ -125,25 +140,46 @@ impl ExistingCandidate {
 
 /// 固定层 exact-code 占用表(baseline 或含词语简码层的当前生产占用,
 /// 由构建入口决定)。
+#[derive(Clone)]
 pub struct CodeOccupancy {
     /// 码 → 候选组(组内按权重降序,rank 已回填)。
     groups: BTreeMap<KeySequence, Vec<ExistingCandidate>>,
+}
+
+/// 占用表包含哪些层(构建入口)。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Layers {
+    /// 仅 baseline fixed:一级简码 + 静态单字 + 静态词语。
+    Baseline,
+    /// baseline + ZERO_REGRESSION 词语简码层(PR #22 后、PR #23 前的
+    /// 真实生产占用;FIXED_FIRST production 导出的兼容性参考系)。
+    PreFixedFirstProduction,
+    /// baseline + ZERO_REGRESSION + FIXED_FIRST(当前真实生产占用)。
+    CurrentProduction,
 }
 
 impl CodeOccupancy {
     /// 重建优化 baseline 固定层占用:一级简码 + 静态单字 + 静态词语,
     /// **不包含**已入库的词语简码层。production selection 永远基于它。
     pub fn build_baseline_fixed() -> Self {
-        Self::build_impl(false)
+        Self::build_impl(Layers::Baseline)
+    }
+
+    /// 重建 PR #22 后、FIXED_FIRST 层前的生产占用:baseline fixed +
+    /// 已入库的高稳健零冲突词语简码层。这是 FIXED_FIRST production
+    /// 导出的兼容性参考系(每个 FF 码:此占用 fanout == baseline fanout)。
+    pub fn build_pre_fixed_first_production() -> Self {
+        Self::build_impl(Layers::PreFixedFirstProduction)
     }
 
     /// 重建当前真实生产占用:baseline fixed + 已入库的高稳健零冲突词语
-    /// 简码层。词语简码候选携带其 `(词, 完整码)` 对应的真实词频证据。
+    /// 简码层 + 高稳健 FIXED_FIRST 词语简码层。词语简码候选携带其
+    /// `(词, 完整码)` 对应的真实词频证据。
     pub fn build_current_production() -> Self {
-        Self::build_impl(true)
+        Self::build_impl(Layers::CurrentProduction)
     }
 
-    fn build_impl(with_word_shortcuts: bool) -> Self {
+    fn build_impl(layers: Layers) -> Self {
         let mut groups: BTreeMap<KeySequence, Vec<ExistingCandidate>> = BTreeMap::new();
         let mut push = |code: &KeySequence,
                         text: String,
@@ -190,7 +226,7 @@ impl CodeOccupancy {
                 entry.frequency_score(),
             );
         }
-        if with_word_shortcuts {
+        if layers != Layers::Baseline {
             // (词, 完整码) → 真实词频分数;TSV 解析已保证每个 (词, 完整码)
             // 在固定词层存在,查不到即数据损坏,直接 panic。
             let word_entries = word_code_analysis_entries();
@@ -209,6 +245,24 @@ impl CodeOccupancy {
                     1,
                     frequency_score,
                 );
+            }
+            if layers == Layers::CurrentProduction {
+                // FIXED_FIRST 层:与 baseline 码重码。显式权重 0 严格低于
+                // 全部 baseline 候选(权重 ≥ 1),表达「追加到组尾、既有
+                // 次序绝对不变」的语义;它不是 baseline 历史参照,也不参与
+                // FIXED_FIRST 导出器的参考系。
+                for entry in canonical_fixed_first_shortcut_entries() {
+                    let frequency_score = *word_scores
+                        .get(&(entry.word(), entry.full_code()))
+                        .expect("FIXED_FIRST 简码的 (词, 完整码) 必须存在于固定词层");
+                    push(
+                        entry.shortcut_code(),
+                        entry.word().to_string(),
+                        CandidateSource::FixedFirstWordShortcut,
+                        0,
+                        frequency_score,
+                    );
+                }
             }
         }
 
@@ -250,6 +304,7 @@ impl CodeOccupancy {
             (CandidateSource::CharCode, _) => CollisionClass::FullCodeChar,
             (CandidateSource::FixedWord, _) => CollisionClass::FixedWord,
             (CandidateSource::WordShortcut, _) => CollisionClass::WordShortcut,
+            (CandidateSource::FixedFirstWordShortcut, _) => CollisionClass::FixedFirstWordShortcut,
         }
     }
 
@@ -288,6 +343,13 @@ impl CodeOccupancy {
                         5 => audit.word_shortcut_5key_rows += 1,
                         6 => audit.word_shortcut_6key_rows += 1,
                         _ => audit.word_shortcut_7key_rows += 1,
+                    },
+                    CandidateSource::FixedFirstWordShortcut => match code.len() {
+                        3 => audit.fixed_first_3key_rows += 1,
+                        4 => audit.fixed_first_4key_rows += 1,
+                        5 => audit.fixed_first_5key_rows += 1,
+                        6 => audit.fixed_first_6key_rows += 1,
+                        _ => audit.fixed_first_7key_rows += 1,
                     },
                 }
             }
@@ -418,6 +480,16 @@ pub struct LayerAudit {
     pub word_shortcut_6key_rows: usize,
     /// 7 键词语简码行数。
     pub word_shortcut_7key_rows: usize,
+    /// 3 键 FIXED_FIRST 词语简码行数。
+    pub fixed_first_3key_rows: usize,
+    /// 4 键 FIXED_FIRST 词语简码行数。
+    pub fixed_first_4key_rows: usize,
+    /// 5 键 FIXED_FIRST 词语简码行数。
+    pub fixed_first_5key_rows: usize,
+    /// 6 键 FIXED_FIRST 词语简码行数。
+    pub fixed_first_6key_rows: usize,
+    /// 7 键 FIXED_FIRST 词语简码行数。
+    pub fixed_first_7key_rows: usize,
 }
 
 impl LayerAudit {
@@ -430,6 +502,15 @@ impl LayerAudit {
             + self.word_shortcut_7key_rows
     }
 
+    /// FIXED_FIRST 词语简码层全部行数(3~7 键合计)。
+    pub fn fixed_first_rows(&self) -> usize {
+        self.fixed_first_3key_rows
+            + self.fixed_first_4key_rows
+            + self.fixed_first_5key_rows
+            + self.fixed_first_6key_rows
+            + self.fixed_first_7key_rows
+    }
+
     /// 全部行数合计。
     pub fn total_rows(&self) -> usize {
         self.level1_shortcut_rows
@@ -440,5 +521,6 @@ impl LayerAudit {
             + self.word_6key_rows
             + self.word_8key_rows
             + self.word_shortcut_rows()
+            + self.fixed_first_rows()
     }
 }

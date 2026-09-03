@@ -1,0 +1,13 @@
+# Rime dictionary
+# encoding: utf-8
+# 优先级栅栏预检 fixture 的 primary 词典:同一码 abc 三个显式权重候选,
+# 验证 primary 内部相对次序在 fence 下完全不变。
+---
+name: preflight_primary
+version: "1"
+sort: by_weight
+use_preset_vocabulary: false
+...
+甲	abc	3
+乙	abc	2
+丙	abc	1

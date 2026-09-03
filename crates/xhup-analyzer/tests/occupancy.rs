@@ -3,7 +3,7 @@
 
 use xhup_analyzer::occupancy::{CandidateSource, CodeOccupancy, CollisionClass};
 use xhup_core::KeySequence;
-use xhup_generator::canonical_word_shortcut_entries;
+use xhup_generator::{canonical_fixed_first_shortcut_entries, canonical_word_shortcut_entries};
 
 fn code(text: &str) -> KeySequence {
     text.parse().expect("合法码")
@@ -161,12 +161,14 @@ fn word_shortcut_layer_separates_baseline_from_current_production() {
 }
 
 /// current production 分层审计:简码层行数等于 canonical TSV 条数,
-/// total = baseline 126779 + 简码行数;固定层行数与 baseline 完全一致。
+/// total = baseline 126779 + ZR 简码行数 + FIXED_FIRST 简码行数;
+/// 固定层行数与 baseline 完全一致。
 #[test]
 fn current_production_layer_audit_counts_shortcuts() {
     let baseline = CodeOccupancy::build_baseline_fixed().layer_audit();
     let production = CodeOccupancy::build_current_production().layer_audit();
     let shortcut_count = canonical_word_shortcut_entries().len();
+    let fixed_first_count = canonical_fixed_first_shortcut_entries().len();
     assert_eq!(production.word_shortcut_rows(), shortcut_count);
     assert_eq!(
         production.word_shortcut_3key_rows
@@ -176,9 +178,18 @@ fn current_production_layer_audit_counts_shortcuts() {
             + production.word_shortcut_7key_rows,
         shortcut_count
     );
+    assert_eq!(production.fixed_first_rows(), fixed_first_count);
+    assert_eq!(
+        production.fixed_first_3key_rows
+            + production.fixed_first_4key_rows
+            + production.fixed_first_5key_rows
+            + production.fixed_first_6key_rows
+            + production.fixed_first_7key_rows,
+        fixed_first_count
+    );
     assert_eq!(
         production.total_rows(),
-        baseline.total_rows() + shortcut_count
+        baseline.total_rows() + shortcut_count + fixed_first_count
     );
     // 固定层行数不受简码层影响
     assert_eq!(
@@ -191,4 +202,74 @@ fn current_production_layer_audit_counts_shortcuts() {
     assert_eq!(production.word_4key_rows, baseline.word_4key_rows);
     assert_eq!(production.word_6key_rows, baseline.word_6key_rows);
     assert_eq!(production.word_8key_rows, baseline.word_8key_rows);
+}
+
+/// 全量硬不变量:每条 FIXED_FIRST 简码在 baseline fixed 中 fanout 为
+/// N(>= 1,无上限)且组内无 FIXED_FIRST source;在 pre-FIXED_FIRST production
+/// 中 fanout 不变;在 current production 中 fanout 为 N+1、前 N 个候选保持
+/// baseline 次序、第 N+1 个恰为该 FIXED_FIRST 候选、碰撞分类为 MULTIPLE、
+/// 携带真实词频证据。
+#[test]
+fn fixed_first_layer_appends_after_baseline_candidates() {
+    let baseline = CodeOccupancy::build_baseline_fixed();
+    let pre_fixed_first = CodeOccupancy::build_pre_fixed_first_production();
+    let production = CodeOccupancy::build_current_production();
+    let entries = canonical_fixed_first_shortcut_entries();
+    assert!(!entries.is_empty(), "FIXED_FIRST 简码层应非空");
+    for entry in entries {
+        let shortcut = entry.shortcut_code();
+        let baseline_group = baseline.group(shortcut).expect("FF 码在 baseline 有组");
+        let fanout = baseline_group.len();
+        assert!(
+            fanout > 0,
+            "{} {} baseline fanout 应 > 0",
+            entry.word(),
+            shortcut
+        );
+        assert!(
+            baseline_group
+                .iter()
+                .all(|c| c.source() != CandidateSource::FixedFirstWordShortcut),
+            "{shortcut} baseline 组不得含 FIXED_FIRST source"
+        );
+        // PR #22 ZR 码与本层码不重叠:pre-FF production fanout 不变。
+        assert_eq!(
+            pre_fixed_first.fanout(shortcut),
+            fanout,
+            "{shortcut} pre-FIXED_FIRST production fanout 应与 baseline 相同"
+        );
+        // current production:严格追加到组尾。
+        let group = production.group(shortcut).expect("FF 码在 current 有组");
+        assert_eq!(
+            group.len(),
+            fanout + 1,
+            "{shortcut} current fanout 应为 N+1"
+        );
+        for (index, candidate) in baseline_group.iter().enumerate() {
+            assert_eq!(
+                group[index].text(),
+                candidate.text(),
+                "{shortcut} 第 {} 个候选应保持 baseline 次序",
+                index + 1
+            );
+            assert_ne!(
+                group[index].source(),
+                CandidateSource::FixedFirstWordShortcut
+            );
+        }
+        let appended = &group[fanout];
+        assert_eq!(appended.text(), entry.word());
+        assert_eq!(appended.source(), CandidateSource::FixedFirstWordShortcut);
+        assert_eq!(appended.rank(), u32::try_from(fanout + 1).unwrap());
+        assert!(
+            appended.frequency_score() > 0,
+            "{} FF 候选必须携带真实词频证据",
+            entry.word()
+        );
+        assert_eq!(
+            production.collision_class(shortcut),
+            CollisionClass::Multiple,
+            "{shortcut} current 碰撞分类应为 MULTIPLE(baseline + FIXED_FIRST)"
+        );
+    }
 }

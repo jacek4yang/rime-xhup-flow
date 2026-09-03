@@ -64,6 +64,7 @@ impl FrequencyScale {
 }
 
 /// 频率证据的 domain 归一化状态(构建一次,各 sweep 复用)。
+#[derive(Clone)]
 pub struct FrequencyModel {
     word_total: u64,
     /// 3 码单字关系的 Conservative 频率总和(归一化分母)。
@@ -199,7 +200,9 @@ impl FrequencyModel {
                     let hanzi = text.chars().next().expect("单字候选恰为一字");
                     char_share * self.three_key_probability(hanzi, (keys[0], keys[1]), score, usage)
                 }
-                CandidateSource::FixedWord | CandidateSource::WordShortcut => {
+                CandidateSource::FixedWord
+                | CandidateSource::WordShortcut
+                | CandidateSource::FixedFirstWordShortcut => {
                     (1.0 - char_share) * self.word_probability(score)
                 }
             },

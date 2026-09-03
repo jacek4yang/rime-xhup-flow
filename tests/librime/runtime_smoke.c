@@ -1,18 +1,20 @@
 /* XHUP Flow librime runtime 冒烟测试。
  *
  * 真实 session 级验收:通过 librime C API 创建会话、逐键输入、读取候选菜单,
- * 验证高稳健零冲突词语简码层的运行时行为:
+ * 验证词语简码层(ZERO_REGRESSION 与 FIXED_FIRST)的运行时行为:
  *
  * - 既有固定层回归(一级简码 / 2 码单字 / 3 码单字 / 4 码规范全码 / 固定词);
- * - 新简码 exact 输入可见,且不自动上屏(enable_completion=false 且单候选
+ * - ZR 简码 exact 输入可见,且不自动上屏(enable_completion=false 且单候选
  *   也不允许 auto commit);
- * - prefix continuation:shortcut 是更长合法码的 strict prefix 时,继续输入
+ * - ZR prefix continuation:shortcut 是更长合法码的 strict prefix 时,继续输入
  *   必须能抵达完整码目标;
  * - 非 prefix 模式的 alias 与完整码共存;
- * - 「时间」仍只在完整码 uijm 出现,不得因本层出现在 uij / ujm。
+ * - 「时间」:完整码 uijm 行为不变;FIXED_FIRST 使 uij 精确序为
+ *   铈 → 鼫 → 时间(既有候选严格在前),ujm 不加入时间;
+ * - FIXED_FIRST prefix continuation(3/4/6 键哨兵)与 reverse prefix 哨兵。
  *
  * 用法: runtime_smoke <shared_data_dir> <user_data_dir>
- * user_data_dir 必须已含生成包(6 个 yaml)并完成 rime_deployer --compile。
+ * user_data_dir 必须已含生成包(7 个 yaml)并完成 rime_deployer --compile。
  *
  * 只使用稳定 C API;无第三方测试框架;不访问用户真实 Rime 目录。
  */
@@ -140,6 +142,53 @@ static void expect_commit_first(const char *label, const char *target) {
     report(ok, name, NULL);
 }
 
+/* 断言:输入 keys 后菜单与期望文本序列逐项、逐顺序完全一致,
+ * 且无 auto commit、组合活动。 */
+static void expect_exact_order(const char *keys, const char *const *expected,
+                               int expected_len) {
+    char name[128];
+    char detail[512];
+    snprintf(name, sizeof(name), "%s → 精确候选序", keys);
+    type_keys(keys);
+    char actual[512];
+    actual[0] = '\0';
+    int n = 0;
+    int active = 0;
+    RIME_STRUCT(RimeContext, context);
+    if (rime->get_context(session, &context)) {
+        active = context.composition.length > 0;
+        n = context.menu.num_candidates;
+        for (int i = 0; i < n; ++i) {
+            strncat(actual, i ? "," : "", sizeof(actual) - strlen(actual) - 1);
+            strncat(actual, context.menu.candidates[i].text,
+                    sizeof(actual) - strlen(actual) - 1);
+        }
+        rime->free_context(&context);
+    }
+    int ok = n == expected_len;
+    for (int i = 0; ok && i < expected_len; ++i) {
+        /* 从 actual 中取第 i 项逐字比较(逗号分隔)。 */
+        const char *p = actual;
+        for (int j = 0; j < i; ++j) {
+            p = strchr(p, ',');
+            if (!p) {
+                ok = 0;
+                break;
+            }
+            p++;
+        }
+        if (!ok) break;
+        const char *end = strchr(p, ',');
+        size_t item_len = end ? (size_t)(end - p) : strlen(p);
+        ok = item_len == strlen(expected[i]) &&
+             strncmp(p, expected[i], item_len) == 0;
+    }
+    snprintf(detail, sizeof(detail), "actual=[%s]", actual);
+    report(ok, name, detail);
+    snprintf(name, sizeof(name), "%s → 无 auto commit", keys);
+    report(!has_commit() && active, name, NULL);
+}
+
 int main(int argc, char **argv) {
     if (argc != 3) {
         fprintf(stderr, "用法: %s <shared_data_dir> <user_data_dir>\n", argv[0]);
@@ -247,12 +296,59 @@ int main(int argc, char **argv) {
     expect_menu("anbc", "安保", 0);
     reset_composition();
 
-    /* ---- 「时间」回归:只在完整码出现,本层不得加入 uij/ujm ---- */
+    /* ---- 「时间」回归与 FIXED_FIRST 哨兵 ---- */
+    /* 完整码不变:uijm 仍以时间为首。 */
     expect_menu("uijm", "时间", 1);
     reset_composition();
-    expect_absent("uij", "时间");
+    /* FIXED_FIRST 核心哨兵:uij 精确序为 铈 → 鼫 → 时间
+     * (全部既有固定候选在前,时间严格追加为 rank 3)。 */
+    {
+        const char *const expected[] = {"铈", "鼫", "时间"};
+        expect_exact_order("uij", expected, 3);
+    }
     reset_composition();
+    /* ujm(闪 杉 栅 骟)不加入时间(一词最多一条简码:uij)。 */
     expect_absent("ujm", "时间");
+    reset_composition();
+    /* FIXED_FIRST exact 输入:高频代表(与 3 码单字重码,追加在组尾)。 */
+    expect_menu("yeu", "也是", 0); /* yeu:baseline 1 候选,也是 rank 2 */
+    reset_composition();
+
+    /* ---- FIXED_FIRST prefix continuation 哨兵(静态审计 deterministic 选择) ---- */
+    /* 3 键:aib(爱比)是 4 码规范全码 aibe(癌)的 strict prefix。 */
+    type_keys("aib");
+    check_only("aib → 菜单含 爱比(继续前)", "爱比", 0);
+    report(!has_commit() && has_active_composition(), "aib → 继续前无 auto commit", NULL);
+    type_keys("e");
+    check_only("aibe → 菜单含 癌(继续后)", "癌", 1);
+    report(has_active_composition(), "aibe → 组合仍活动(未截断)", NULL);
+    reset_composition();
+
+    /* 4 键:bcjy(本次交易)是 5 键 ZR 简码 bcjyu(不参与)的 strict prefix。 */
+    type_keys("bcjy");
+    check_only("bcjy → 菜单含 本次交易(继续前)", "本次交易", 0);
+    report(!has_commit() && has_active_composition(), "bcjy → 继续前无 auto commit", NULL);
+    type_keys("u");
+    check_only("bcjyu → 菜单含 不参与(继续后)", "不参与", 1);
+    report(has_active_composition(), "bcjyu → 组合仍活动(未截断)", NULL);
+    reset_composition();
+
+    /* 6 键:mwyzng(没有哪个)是 8 键固定词码 mwyznggz(没有能够)的 strict prefix。 */
+    type_keys("mwyzng");
+    check_only("mwyzng → 菜单含 没有哪个(继续前)", "没有哪个", 0);
+    report(!has_commit() && has_active_composition(), "mwyzng → 继续前无 auto commit", NULL);
+    type_keys("gz");
+    check_only("mwyznggz → 菜单含 没有能够(继续后)", "没有能够", 1);
+    report(has_active_composition(), "mwyznggz → 组合仍活动(未截断)", NULL);
+    reset_composition();
+
+    /* reverse prefix:一级简码 a 是 FF 简码 aib(爱比)的 strict prefix,
+     * 继续输入不被更短既有候选截断。 */
+    type_keys("a");
+    report(!has_commit() && has_active_composition(), "a → 无 auto commit", NULL);
+    type_keys("ib");
+    check_only("aib → 菜单含 爱比(reverse 继续后)", "爱比", 0);
+    report(has_active_composition(), "aib → 组合仍活动(reverse 未截断)", NULL);
     reset_composition();
 
     rime->destroy_session(session);

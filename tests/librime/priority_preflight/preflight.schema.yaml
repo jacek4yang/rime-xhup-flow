@@ -1,0 +1,62 @@
+# Rime schema
+# encoding: utf-8
+---
+# librime inter-translator 优先级栅栏(initial_quality)预检 fixture 的
+# PRODUCTION 变体:primary translator(initial_quality 1000000)+
+# secondary translator(initial_quality 0)。两个词典在同一码 abc 上各有
+# 候选,真实 session 必须输出 甲 乙 丙 目标 的严格次序。
+# 仅用于 tests/librime 的 runtime 预检,不是 production 方案。
+schema:
+  schema_id: preflight
+  name: 优先级栅栏预检
+  version: "1"
+  author:
+    - XHUP Flow
+  description: |
+    initial_quality 优先级栅栏的 runtime 机制预检。
+
+switches:
+  - name: ascii_mode
+    reset: 0
+    states: [中文, 西文]
+
+engine:
+  processors:
+    - ascii_composer
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - ascii_segmentor
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - table_translator
+    - table_translator@fixed_first
+
+speller:
+  alphabet: zyxwvutsrqponmlkjihgfedcba
+
+translator:
+  dictionary: preflight_primary
+  enable_completion: false
+  enable_sentence: false
+  enable_user_dict: false
+  initial_quality: 1000000
+
+fixed_first:
+  dictionary: preflight_secondary
+  enable_completion: false
+  enable_sentence: false
+  enable_user_dict: false
+  initial_quality: 0
+
+punctuator:
+  import_preset: default
+
+key_binder:
+  import_preset: default

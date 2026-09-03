@@ -145,5 +145,10 @@ jobs:
       - name: 生成 Rime 包
         run: cargo run -p xhup-cli --locked -- generate rime --output /tmp/xhup-flow-package
 
-      - name: librime session 冒烟测试
-        run: tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
+      - name: 导出 FIXED_FIRST 审计 manifest
+        run: >
+          cargo run -p xhup-analyzer --locked --bin shortcut-optimize --
+          --dump-fixed-first-audit-manifest /tmp/fixed-first.manifest
+
+      - name: librime session 冒烟测试(priority preflight + 冒烟 + 全量 A/B 审计)
+        run: tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package /tmp/fixed-first.manifest

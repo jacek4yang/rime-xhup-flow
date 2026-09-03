@@ -11,7 +11,10 @@
 use std::collections::BTreeMap;
 
 use xhup_core::KeySequence;
-use xhup_generator::{canonical_word_shortcut_entries, word_code_analysis_entries};
+use xhup_generator::{
+    canonical_fixed_first_shortcut_entries, canonical_word_shortcut_entries,
+    word_code_analysis_entries,
+};
 
 use crate::occupancy::CodeOccupancy;
 
@@ -165,6 +168,155 @@ pub fn audit_prefix_topology(baseline: &CodeOccupancy) -> PrefixAudit {
         shortcuts_prefixing_baseline: prefixing_shortcuts.len(),
         baseline_prefix_of_shortcut_pairs,
         shortcut_to_shortcut_pairs,
+        lengths,
+    }
+}
+
+/// 一个 FIXED_FIRST runtime continuation 哨兵:FF shortcut 是某更长合法码
+/// 的 strict prefix,继续输入剩余键必须能抵达更长码目标。
+pub struct FixedFirstPrefixSentinel {
+    /// 词语。
+    pub word: String,
+    /// 完整码(保留可用)。
+    pub full_code: KeySequence,
+    /// FF shortcut 码。
+    pub shortcut_code: KeySequence,
+    /// F/I 投影模式。
+    pub mode: String,
+    /// 要继续输入到的更长合法码(字典序最小者)。
+    pub longer_code: KeySequence,
+    /// 更长码的期望目标:若更长码恰为自身完整码则是词本身,否则为
+    /// current production 组内首候选。
+    pub longer_target: String,
+}
+
+/// 单个 FIXED_FIRST 码长层(3~7 键)的 continuation 哨兵选择。
+pub struct FixedFirstLengthSentinel {
+    /// 码长。
+    pub length: usize,
+    /// 该层条数(0 时 continuation 为 None)。
+    pub rows: usize,
+    /// 字典序首条「FF shortcut 是某更长合法码 strict prefix」(runtime
+    /// prefix continuation 哨兵)。
+    pub continuation: Option<FixedFirstPrefixSentinel>,
+}
+
+/// FIXED_FIRST 简码层的 prefix 拓扑全量静态审计结果。
+pub struct FixedFirstPrefixAudit {
+    /// production FIXED_FIRST 简码总数。
+    pub shortcut_count: usize,
+    /// A:FF shortcut 是某更长合法码(baseline / ZR / FF)strict prefix 的
+    /// (shortcut, 更长码) 对数。
+    pub shortcut_prefix_of_longer_pairs: usize,
+    /// A 中涉及的 distinct FF shortcut 数。
+    pub shortcuts_prefixing_longer: usize,
+    /// B:更短合法码(baseline / ZR / FF)是某 FF shortcut strict prefix 的对数。
+    pub shorter_prefix_of_shortcut_pairs: usize,
+    /// C/D:FF shortcut 互为 strict prefix 的对数(方向唯一:短者 → 长者)。
+    pub shortcut_to_shortcut_pairs: usize,
+    /// reverse prefix runtime 代表案例:(更短合法码, FF shortcut, 词)。
+    pub reverse_example: Option<(KeySequence, KeySequence, String)>,
+    /// 3~7 键各层 continuation 哨兵。
+    pub lengths: Vec<FixedFirstLengthSentinel>,
+}
+
+/// 对全部 production FIXED_FIRST 简码做 prefix 拓扑审计,并按层导出
+/// deterministic runtime continuation 哨兵。
+///
+/// `current` 必须是 current production occupancy(baseline + ZR + FF,
+/// 即「更长/更短合法码」的全集)。
+pub fn audit_fixed_first_prefix_topology(current: &CodeOccupancy) -> FixedFirstPrefixAudit {
+    let entries = canonical_fixed_first_shortcut_entries();
+    let ff_set: std::collections::BTreeSet<&KeySequence> =
+        entries.iter().map(|e| e.shortcut_code()).collect();
+    let current_set: std::collections::BTreeSet<&KeySequence> = current.occupied_codes().collect();
+
+    // A:枚举每个更长合法码的 strict prefix(≥3 键才可能命中 FF 层),
+    // 查 FF 集合;同时记录每个 FF 码的更长扩展(字典序由集合序保证)。
+    let mut shortcut_prefix_of_longer_pairs = 0usize;
+    let mut extensions: BTreeMap<&KeySequence, Vec<&KeySequence>> = BTreeMap::new();
+    for code in &current_set {
+        let keys = code.as_slice();
+        for k in 3..keys.len() {
+            let prefix = KeySequence::from_keys(&keys[..k]).expect("prefix 非空");
+            if let Some(&shortcut) = ff_set.get(&prefix) {
+                shortcut_prefix_of_longer_pairs += 1;
+                extensions.entry(shortcut).or_default().push(code);
+            }
+        }
+    }
+
+    // B 与 C/D:枚举每个 FF shortcut 的全部 strict prefix。
+    let mut shorter_prefix_of_shortcut_pairs = 0usize;
+    let mut shortcut_to_shortcut_pairs = 0usize;
+    let mut reverse_example: Option<(KeySequence, KeySequence, String)> = None;
+    for entry in entries {
+        let keys = entry.shortcut_code().as_slice();
+        for k in 1..keys.len() {
+            let prefix = KeySequence::from_keys(&keys[..k]).expect("prefix 非空");
+            if current_set.contains(&prefix) {
+                shorter_prefix_of_shortcut_pairs += 1;
+                if reverse_example.is_none() {
+                    reverse_example = Some((
+                        prefix.clone(),
+                        entry.shortcut_code().clone(),
+                        entry.word().to_string(),
+                    ));
+                }
+            }
+            if ff_set.contains(&prefix) {
+                shortcut_to_shortcut_pairs += 1;
+            }
+        }
+    }
+
+    // 每层 continuation 哨兵:canonical 顺序遍历,首个有更长扩展的条目,
+    // 更长码取字典序最小者。
+    let mut lengths: Vec<FixedFirstLengthSentinel> = (3..=7)
+        .map(|length| FixedFirstLengthSentinel {
+            length,
+            rows: 0,
+            continuation: None,
+        })
+        .collect();
+    for entry in entries {
+        let length = entry.shortcut_code().len();
+        let slot = &mut lengths[length - 3];
+        slot.rows += 1;
+        if slot.continuation.is_some() {
+            continue;
+        }
+        let Some(longer_codes) = extensions.get(entry.shortcut_code()) else {
+            continue;
+        };
+        let longer_code = (*longer_codes.first().expect("扩展非空")).clone();
+        let longer_target = if longer_code == *entry.full_code() {
+            entry.word().to_string()
+        } else {
+            current
+                .group(&longer_code)
+                .and_then(|group| group.first())
+                .expect("更长码组必然存在")
+                .text()
+                .to_string()
+        };
+        slot.continuation = Some(FixedFirstPrefixSentinel {
+            word: entry.word().to_string(),
+            full_code: entry.full_code().clone(),
+            shortcut_code: entry.shortcut_code().clone(),
+            mode: entry.mode().to_string(),
+            longer_code,
+            longer_target,
+        });
+    }
+
+    FixedFirstPrefixAudit {
+        shortcut_count: entries.len(),
+        shortcut_prefix_of_longer_pairs,
+        shortcuts_prefixing_longer: extensions.len(),
+        shorter_prefix_of_shortcut_pairs,
+        shortcut_to_shortcut_pairs,
+        reverse_example,
         lengths,
     }
 }

@@ -1,0 +1,16 @@
+# Rime dictionary
+# encoding: utf-8
+# 优先级栅栏预检 fixture 的 secondary 词典:同一码 abc 一个候选,
+# 验证它严格排在全部 primary 候选之后(initial_quality 0 vs 1000000)。
+# 注:abd 行不参与任何断言;librime 1.16.1 的 MappedFile 扩容路径
+# (mapped_file.h Allocate -> OpenReadWrite 重置 size_)会损坏临界
+# 大小的单音节 table.bin,单行词典会恰好触发,故保留一个未使用码
+# 使 table 尺寸避开该边界。
+---
+name: preflight_secondary
+version: "0.1.0"
+sort: by_weight
+use_preset_vocabulary: false
+...
+目标	abc	1
+备用	abd	1

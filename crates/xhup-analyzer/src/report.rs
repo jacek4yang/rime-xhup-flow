@@ -120,6 +120,18 @@ fn section_overview(out: &mut String, data: &AnalysisData, timings: &Timings) {
     writeln!(out, "shortcut candidates:").unwrap();
     writeln!(
         out,
+        "  candidate grammar:      {}",
+        data.enumeration_spec.grammar.label()
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "  enumeration min length: {}",
+        data.enumeration_spec.min_length
+    )
+    .unwrap();
+    writeln!(
+        out,
         "  theoretical(pre-dedup): {}",
         data.enumeration.theoretical
     )
@@ -132,7 +144,7 @@ fn section_overview(out: &mut String, data: &AnalysisData, timings: &Timings) {
     )
     .unwrap();
     writeln!(out, "  by length:").unwrap();
-    for length in 3..=7 {
+    for length in 2..=7 {
         writeln!(
             out,
             "    {length}: {}",
@@ -227,11 +239,16 @@ fn section_occupancy(out: &mut String, data: &AnalysisData) {
     }
     writeln!(out).unwrap();
 
-    // 当前真实生产占用:baseline + 已入库词语简码层。后续优化与碰撞审计
-    // 必须能看到这些已占用码位,不能假装它们仍为空。
+    // 当前真实生产占用:baseline + 已入库词语简码层(ZERO_REGRESSION 与
+    // FIXED_FIRST)。后续优化与碰撞审计必须能看到这些已占用码位,
+    // 不能假装它们仍为空。
     let production = CodeOccupancy::build_current_production();
     let production_audit = production.layer_audit();
-    writeln!(out, "## 当前生产 code-space 占用(baseline + 词语简码层)").unwrap();
+    writeln!(
+        out,
+        "## 当前生产 code-space 占用(baseline + ZERO_REGRESSION + FIXED_FIRST 简码层)"
+    )
+    .unwrap();
     writeln!(out).unwrap();
     render_layer_audit_lines(out, &production_audit);
     writeln!(out).unwrap();
@@ -260,6 +277,17 @@ fn render_layer_audit_lines(out: &mut String, audit: &LayerAudit) {
         audit.word_shortcut_5key_rows,
         audit.word_shortcut_6key_rows,
         audit.word_shortcut_7key_rows,
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "  FIXED_FIRST shortcuts:  {} (3-key {} / 4-key {} / 5-key {} / 6-key {} / 7-key {})",
+        audit.fixed_first_rows(),
+        audit.fixed_first_3key_rows,
+        audit.fixed_first_4key_rows,
+        audit.fixed_first_5key_rows,
+        audit.fixed_first_6key_rows,
+        audit.fixed_first_7key_rows,
     )
     .unwrap();
     writeln!(out, "  total rows:             {}", audit.total_rows()).unwrap();

@@ -2,7 +2,8 @@
 //! 不使用 YAML 解析器,也不读取任何既有 Rime 词典。
 
 use xhup_generator::{
-    generate_rime_artifacts, generate_rime_char_dictionary, generate_rime_shortcut_dictionary,
+    generate_rime_artifacts, generate_rime_char_dictionary,
+    generate_rime_fixed_first_shortcut_dictionary, generate_rime_shortcut_dictionary,
     generate_rime_word_dictionary, generate_rime_word_shortcut_dictionary,
 };
 
@@ -27,9 +28,10 @@ fn artifact_set_is_exact_and_ordered() {
             "xhup_flow_word_shortcuts.dict.yaml",
             "xhup_flow_words.dict.yaml",
             "xhup_flow.dict.yaml",
+            "xhup_flow_fixed_first_shortcuts.dict.yaml",
             "xhup_flow.schema.yaml",
         ],
-        "产物集合与顺序固定:简码词典 → 单字词典 → 词语简码词典 → 词语词典 → 顶层词典 → 方案"
+        "产物集合与顺序固定:简码词典 → 单字词典 → 词语简码词典 → 词语词典 → 顶层词典 → FIXED_FIRST 简码词典 → 方案"
     );
 }
 
@@ -74,6 +76,16 @@ fn word_dictionary_reuses_existing_generator() {
 }
 
 #[test]
+fn fixed_first_shortcut_dictionary_reuses_existing_generator() {
+    let artifacts = generate_rime_artifacts();
+    assert_eq!(
+        contents_of(&artifacts, "xhup_flow_fixed_first_shortcuts.dict.yaml"),
+        generate_rime_fixed_first_shortcut_dictionary(),
+        "FIXED_FIRST 词语简码词典产物与既有生成器字节一致"
+    );
+}
+
+#[test]
 fn top_dictionary_imports_all_layer_dictionaries() {
     let artifacts = generate_rime_artifacts();
     let dict = contents_of(&artifacts, "xhup_flow.dict.yaml");
@@ -91,6 +103,12 @@ fn top_dictionary_imports_all_layer_dictionaries() {
     ] {
         assert!(dict.contains(line), "顶层词典缺少 `{line}`");
     }
+    // FIXED_FIRST 简码词典由方案中独立的第二 table_translator 加载,
+    // 绝不导入顶层词典(否则无法保证既有固定候选次序不变)。
+    assert!(
+        !dict.contains("xhup_flow_fixed_first_shortcuts"),
+        "顶层词典不得导入 FIXED_FIRST 简码词典"
+    );
     assert!(!dict.contains("{{"), "顶层词典存在未解析占位符");
 }
 
@@ -103,17 +121,35 @@ fn schema_semantics() {
         "  schema_id: xhup_flow",
         "  name: 小鹤音形",
         expected_version.as_str(),
-        "    - table_translator",
         "    - navigator",
         "  alphabet: zyxwvutsrqponmlkjihgfedcba",
-        "  dictionary: xhup_flow",
-        "  enable_completion: false",
-        "  enable_sentence: false",
-        "  enable_user_dict: false",
         "  import_preset: default",
     ] {
         assert!(schema.contains(line), "方案缺少 `{line}`");
     }
+    // translator 链:punct + primary table + 独立 FIXED_FIRST table,
+    // 顺序与命名空间精确锁定。
+    assert!(
+        schema.contains(
+            "  translators:\n    - punct_translator\n    - table_translator\n    - table_translator@fixed_first"
+        ),
+        "translator 链应为 punct_translator → table_translator → table_translator@fixed_first"
+    );
+    // primary translator:全部既有固定层;initial_quality 1000000 只是
+    // translator 间优先级栅栏,不改变其内部相对次序。
+    assert!(
+        schema.contains(
+            "translator:\n  dictionary: xhup_flow\n  enable_completion: false\n  enable_sentence: false\n  enable_user_dict: false\n  initial_quality: 1000000"
+        ),
+        "primary translator 配置不符合冻结语义"
+    );
+    // FIXED_FIRST translator:独立静态词典,initial_quality 0 严格靠后。
+    assert!(
+        schema.contains(
+            "fixed_first:\n  dictionary: xhup_flow_fixed_first_shortcuts\n  enable_completion: false\n  enable_sentence: false\n  enable_user_dict: false\n  initial_quality: 0"
+        ),
+        "fixed_first translator 配置不符合冻结语义"
+    );
 }
 
 #[test]
@@ -131,9 +167,13 @@ fn schema_excludes_non_portable_or_deferred_features() {
         "predict",
         "octagram",
         "simplifier",
+        "uniquifier",
         "enable_encoder",
         "auto_select",
         "auto_commit",
+        "enable_completion: true",
+        "enable_sentence: true",
+        "enable_user_dict: true",
         "filters:",
         "/",
     ] {

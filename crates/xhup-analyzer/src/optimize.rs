@@ -276,6 +276,13 @@ pub fn evaluate_candidate(
             projected_rank = u32::try_from(existing_fanout + 1).expect("名次超出 u32");
         }
         OptimizationProfile::Optimized => {
+            // 2 键空间保留给单字双拼:monotone-suffix-initials-v2 语法理论
+            // 全集包含 2-key 候选,但 OPTIMIZED 重排分析不覆盖该层
+            //(Normalized 单字扰动权重只对 3 码关系定义),gate 排除。
+            if length < 3 {
+                evaluation.gate_reason = Some("码长 < 3(1/2 键保留层)");
+                return evaluation;
+            }
             let group = group.unwrap_or(&[]);
             let has_fullcode_char = length == 4
                 && group
