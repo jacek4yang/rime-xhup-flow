@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   TrainerDataError,
   itemId,
+  sentenceId,
+  shortcutId,
   validateTrainerDataset,
+  wordId,
+  type TrainerDataset,
   type TrainerEntry,
 } from "./trainer-data";
 
@@ -18,44 +22,47 @@ function makeEntry(overrides: Partial<TrainerEntry> = {}): TrainerEntry {
   };
 }
 
-function makeDoublePinyin() {
-  const letters = "abcdefghijklmnopqrstuvwxyz";
-  const initials = Array.from({ length: 23 }, (_, i) => ({
-    initial: `x${letters[i % 26] ?? "a"}`,
-    key: letters[i] ?? "a",
-  }));
-  const finals = Array.from({ length: 33 }, (_, i) => ({
-    final: `y${letters[i % 26] ?? "a"}`,
-    key: letters[i % 26] ?? "a",
-  }));
-  const zeroInitials = Array.from({ length: 12 }, (_, i) => ({
-    syllable: `z${letters[i % 26] ?? "a"}`,
-    code: `${letters[i % 26] ?? "a"}${letters[(i + 1) % 26] ?? "a"}`,
-  }));
-  return { initials, finals, zeroInitials };
-}
-
-function makeDataset(entries: TrainerEntry[] = [makeEntry()]) {
+function makeDataset(overrides: Partial<TrainerDataset> = {}): TrainerDataset {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     packageVersion: "0.1.0",
-    entries,
-    doublePinyin: makeDoublePinyin(),
+    entries: [makeEntry()],
+    words: [{ word: "我们", code: "womf", length: 4, charCount: 2, rimeWeight: 9 }],
+    level1Shortcuts: Array.from({ length: 26 }, (_, index) => ({
+      key: "abcdefghijklmnopqrstuvwxyz"[index] ?? "a",
+      char: `甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥甲乙丙丁戊`[index] ?? "甲",
+    })),
+    wordShortcuts: [{ word: "时间", fullCode: "uijm", shortcutCode: "uij", mode: "FF" }],
+    fixedFirstShortcuts: [
+      { word: "发展", fullCode: "favj", shortcutCode: "faj", mode: "FFI" },
+    ],
+    twoKeyShortcuts: [{ word: "记得", fullCode: "jide", shortcutCode: "jd", mode: "II" }],
+    sentences: [{ text: "我们时间", code: "womfuijm", components: ["我们", "时间"] }],
+    doublePinyin: {
+      initials: [{ initial: "sh", key: "u" }],
+      finals: [{ final: "ong", key: "s" }],
+      zeroInitials: [{ syllable: "a", code: "aa" }],
+    },
+    ...overrides,
   };
 }
 
 describe("validateTrainerDataset", () => {
-  it("接受合法的 V1 数据集", () => {
+  it("接受合法的 V2 数据集", () => {
     const dataset = validateTrainerDataset(makeDataset());
-    expect(dataset.schemaVersion).toBe(1);
+    expect(dataset.schemaVersion).toBe(2);
     expect(dataset.entries).toHaveLength(1);
-    expect(dataset.doublePinyin.initials).toHaveLength(23);
+    expect(dataset.words).toHaveLength(1);
+    expect(dataset.level1Shortcuts).toHaveLength(26);
+    expect(dataset.sentences).toHaveLength(1);
   });
 
-  it("拒绝不支持的 schemaVersion", () => {
-    expect(() => validateTrainerDataset(makeDataset())).not.toThrow();
+  it("拒绝 V1 与未知 schemaVersion", () => {
     expect(() =>
-      validateTrainerDataset({ ...makeDataset(), schemaVersion: 2 }),
+      validateTrainerDataset({ ...makeDataset(), schemaVersion: 1 }),
+    ).toThrow(/版本应为 2/);
+    expect(() =>
+      validateTrainerDataset({ ...makeDataset(), schemaVersion: 3 }),
     ).toThrow(TrainerDataError);
   });
 
@@ -71,73 +78,110 @@ describe("validateTrainerDataset", () => {
 
   it("拒绝非法 code", () => {
     expect(() =>
-      validateTrainerDataset(makeDataset([makeEntry({ code: "Xk" })])),
+      validateTrainerDataset(makeDataset({ entries: [makeEntry({ code: "Xk" })] })),
     ).toThrow(/code/);
     expect(() =>
-      validateTrainerDataset(makeDataset([makeEntry({ code: "aaaaa" })])),
+      validateTrainerDataset(makeDataset({ entries: [makeEntry({ code: "aaaaa" })] })),
     ).toThrow(/code/);
   });
 
   it("拒绝 length 与 code 不一致", () => {
     expect(() =>
-      validateTrainerDataset(makeDataset([makeEntry({ length: 3 })])),
+      validateTrainerDataset(makeDataset({ entries: [makeEntry({ length: 3 })] })),
     ).toThrow(/length/);
   });
 
   it("拒绝重复的 (char, code)", () => {
     expect(() =>
       validateTrainerDataset(
-        makeDataset([makeEntry(), makeEntry({ readings: ["hang"] })]),
+        makeDataset({ entries: [makeEntry(), makeEntry({ readings: ["hang"] })] }),
       ),
     ).toThrow(/重复/);
   });
 
-  it("拒绝负数 frequencyScore", () => {
-    expect(() =>
-      validateTrainerDataset(makeDataset([makeEntry({ frequencyScore: -1 })])),
-    ).toThrow(/frequencyScore/);
-  });
-
-  it("拒绝非整数 frequencyScore", () => {
-    expect(() =>
-      validateTrainerDataset(makeDataset([makeEntry({ frequencyScore: 1.5 })])),
-    ).toThrow(/frequencyScore/);
-  });
-
-  it("拒绝超出安全整数的 frequencyScore", () => {
-    expect(() =>
-      validateTrainerDataset(
-        makeDataset([makeEntry({ frequencyScore: Number.MAX_SAFE_INTEGER + 1 })]),
-      ),
-    ).toThrow(/frequencyScore/);
+  it("拒绝负数、非整数与超出安全整数的 frequencyScore", () => {
+    for (const score of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() =>
+        validateTrainerDataset(
+          makeDataset({ entries: [makeEntry({ frequencyScore: score })] }),
+        ),
+      ).toThrow(/frequencyScore/);
+    }
   });
 
   it("拒绝 rimeWeight <= 0", () => {
     expect(() =>
-      validateTrainerDataset(makeDataset([makeEntry({ rimeWeight: 0 })])),
+      validateTrainerDataset(makeDataset({ entries: [makeEntry({ rimeWeight: 0 })] })),
     ).toThrow(/rimeWeight/);
   });
 
-  it("拒绝非法双拼键位", () => {
+  it("拒绝非法双拼键位(大写)", () => {
     const raw = makeDataset();
-    raw.doublePinyin.initials[0] = { initial: "b", key: "Z" };
-    expect(() => validateTrainerDataset(raw)).toThrow(/键位/);
+    raw.doublePinyin.initials = [{ initial: "b", key: "Z" }];
+    expect(() => validateTrainerDataset(raw)).toThrow(TrainerDataError);
   });
 
   it("拒绝多字符 char 与重复读音", () => {
     expect(() =>
-      validateTrainerDataset(makeDataset([makeEntry({ char: "汉字" })])),
+      validateTrainerDataset(makeDataset({ entries: [makeEntry({ char: "汉字" })] })),
     ).toThrow(/char/);
     expect(() =>
       validateTrainerDataset(
-        makeDataset([makeEntry({ readings: ["xing", "xing"] })]),
+        makeDataset({ entries: [makeEntry({ readings: ["xing", "xing"] })] }),
       ),
     ).toThrow(/readings/);
   });
+
+  it("拒绝 word 与 code 形状不符的词条", () => {
+    // 三字词给 4 键码 → 应拒绝(逐字双拼 = 字数 × 2)。
+    expect(() =>
+      validateTrainerDataset(
+        makeDataset({
+          words: [{ word: "我们爱", code: "womf", length: 4, charCount: 2, rimeWeight: 1 }],
+        }),
+      ),
+    ).toThrow(TrainerDataError);
+  });
+
+  it("拒绝 shortcutCode 不短于 fullCode 的简码", () => {
+    expect(() =>
+      validateTrainerDataset(
+        makeDataset({
+          wordShortcuts: [
+            { word: "时间", fullCode: "uijm", shortcutCode: "uijm", mode: "FF" },
+          ],
+        }),
+      ),
+    ).toThrow(/短于/);
+  });
+
+  it("拒绝 components 与 text 不一致的组句", () => {
+    expect(() =>
+      validateTrainerDataset(
+        makeDataset({
+          sentences: [{ text: "我们时间", code: "womfuijm", components: ["我们"] }],
+        }),
+      ),
+    ).toThrow(/components/);
+  });
+
+  it("拒绝重复的一级简码键", () => {
+    const level1 = makeDataset().level1Shortcuts.slice();
+    level1[1] = { ...level1[0]! };
+    expect(() =>
+      validateTrainerDataset(makeDataset({ level1Shortcuts: level1 })),
+    ).toThrow(/重复/);
+  });
 });
 
-describe("itemId", () => {
-  it("是稳定的 char:code 形式", () => {
-    expect(itemId(makeEntry())).toBe("行:xk");
+describe("稳定 ID", () => {
+  it("itemId 是稳定的 char:code 形式", () => {
+    expect(itemId({ char: "行", code: "xk" })).toBe("行:xk");
+  });
+
+  it("wordId / shortcutId / sentenceId 带种类前缀", () => {
+    expect(wordId({ word: "我们", code: "womf" })).toBe("word:我们:womf");
+    expect(shortcutId({ word: "时间", shortcutCode: "uij" })).toBe("shortcut:时间:uij");
+    expect(sentenceId({ text: "我们时间" })).toBe("sentence:我们时间");
   });
 });

@@ -14,7 +14,7 @@ import { itemAccuracy, listWeakItems } from "@/lib/review";
 import { formatPercent } from "@/lib/stats";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import { useTrainerStore } from "@/stores/trainer-store";
-import type { TrainerEntry } from "@/lib/trainer-data";
+import type { TrainingItem } from "@/lib/trainer-index";
 
 type ModeFilter = "all" | 2 | 3 | 4;
 
@@ -34,7 +34,7 @@ const LENGTH_LABELS: Record<number, string> = {
 export function ReviewView({
   onPracticeEntries,
 }: {
-  onPracticeEntries: (entries: TrainerEntry[]) => void;
+  onPracticeEntries: (entries: TrainingItem[]) => void;
 }) {
   const index = useTrainerIndex();
   const progress = useTrainerStore((state) => state.progress);
@@ -44,7 +44,7 @@ export function ReviewView({
   const filtered =
     filter === "all"
       ? weakItems
-      : weakItems.filter((item) => item.entry.length === filter);
+      : weakItems.filter((item) => item.item.codeLength === filter);
 
   return (
     <div className="flex flex-col gap-4">
@@ -58,7 +58,7 @@ export function ReviewView({
         {filtered.length > 0 && (
           <Button
             className="ml-auto"
-            onClick={() => onPracticeEntries(filtered.map((item) => item.entry))}
+            onClick={() => onPracticeEntries(filtered.map((item) => item.item))}
           >
             <Play aria-hidden />
             练这些({filtered.length})
@@ -98,25 +98,25 @@ export function ReviewView({
         </Card>
       ) : (
         <div className="flex flex-col gap-2">
-          {filtered.map(({ entry, progress: item }) => (
-            <Card key={`${entry.char}:${entry.code}`} className="px-4 py-3">
+          {filtered.map(({ item, progress: itemProgress }) => (
+            <Card key={item.id} className="px-4 py-3">
               <div className="flex items-center gap-3">
-                <span className="text-3xl font-medium">{entry.char}</span>
+                <span className="text-3xl font-medium">{item.target}</span>
                 <div className="flex flex-col">
-                  <span className="font-mono text-sm">{entry.code}</span>
+                  <span className="font-mono text-sm">{item.primaryCode}</span>
                   <span className="text-xs text-muted-foreground">
-                    {LENGTH_LABELS[entry.length]} · 练 {item.attempts} 次 · 错{" "}
-                    {item.wrong} 次
+                    {LENGTH_LABELS[item.codeLength] ?? `${item.codeLength} 键`} · 练{" "}
+                    {itemProgress.attempts} 次 · 错 {itemProgress.wrong} 次
                   </span>
                 </div>
                 <div className="ml-auto flex w-28 flex-col items-end gap-1 sm:w-36">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Badge variant={item.mastery < 40 ? "destructive" : "outline"}>
-                      掌握 {item.mastery}
+                    <Badge variant={itemProgress.mastery < 40 ? "destructive" : "outline"}>
+                      掌握 {itemProgress.mastery}
                     </Badge>
-                    <span>{formatPercent(itemAccuracy(item))}</span>
+                    <span>{formatPercent(itemAccuracy(itemProgress))}</span>
                   </div>
-                  <Progress value={item.mastery / 100} className="h-1.5" />
+                  <Progress value={itemProgress.mastery / 100} className="h-1.5" />
                 </div>
               </div>
             </Card>

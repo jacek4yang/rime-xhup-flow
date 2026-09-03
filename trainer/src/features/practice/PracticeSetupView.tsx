@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { OptionButton, OptionRow } from "@/components/OptionGroup";
 import { cn } from "@/lib/utils";
-import type { TrainerEntry } from "@/lib/trainer-data";
+import type { TrainingItem } from "@/lib/trainer-index";
 import type { Difficulty } from "@/lib/trainer-index";
 import { useTrainerStore } from "@/stores/trainer-store";
 import { PracticeView } from "./PracticeView";
@@ -27,7 +27,7 @@ export type PracticeConfig = {
   difficulty: Difficulty;
   targetLength: number;
   /** 复习会话的指定条目;为空则按模式+难度选题。 */
-  entries?: TrainerEntry[];
+  entries?: TrainingItem[];
 };
 
 const MODES: PracticeMode[] = ["double", "sound-shape", "full", "mixed"];
@@ -40,7 +40,7 @@ export function PracticeSetupView({
   onExitToToday,
 }: {
   presetMode: PracticeMode | null;
-  reviewEntries: TrainerEntry[] | null;
+  reviewEntries: TrainingItem[] | null;
   onPresetConsumed: () => void;
   onExitToToday: () => void;
 }) {

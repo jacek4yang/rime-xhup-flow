@@ -46,3 +46,7 @@ Thumbs.db
 .aider.llm.history
 .aider.tags.cache.*
 .claude/settings.local.json
+
+# Node/Vite/TypeScript 本地产物(根目录测试缓存等)
+node_modules/
+*.tsbuildinfo
