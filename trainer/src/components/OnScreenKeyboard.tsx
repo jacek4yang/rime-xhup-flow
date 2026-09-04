@@ -5,6 +5,9 @@ import type { DoublePinyinReference } from "@/lib/trainer-data";
 
 const KEY_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"] as const;
 
+/** 经典 QWERTY 错位排布:中间行与底行向内缩进。 */
+const ROW_INDENTS = ["px-0", "px-[4.5%]", "px-[9%]"] as const;
+
 type KeyLabels = {
   initials: string[];
   finals: string[];
@@ -52,9 +55,12 @@ export function OnScreenKeyboard({
   const labels = useMemo(() => buildKeyLabels(reference), [reference]);
 
   return (
-    <div className="flex flex-col items-center gap-1.5" aria-label={t("common.keyboard")}>
-      {KEY_ROWS.map((row) => (
-        <div key={row} className="flex w-full justify-center gap-1 sm:gap-1.5">
+    <div className="flex flex-col items-center gap-1.5 sm:gap-2" aria-label={t("common.keyboard")}>
+      {KEY_ROWS.map((row, rowIndex) => (
+        <div
+          key={row}
+          className={cn("flex w-full justify-center gap-1 sm:gap-1.5", ROW_INDENTS[rowIndex])}
+        >
           {[...row].map((key) => {
             const label = labels.get(key);
             const hint = [label?.initials.join(" "), label?.finals.join(" ")]
@@ -63,15 +69,15 @@ export function OnScreenKeyboard({
             const isNext = nextKey === key;
             const isWrong = wrongKey === key;
             const className = cn(
-              "flex min-h-11 min-w-0 flex-1 select-none flex-col items-center justify-center rounded-md border font-mono transition-colors sm:max-w-14",
+              "flex min-h-11 min-w-0 max-w-12 flex-1 select-none flex-col items-center justify-center rounded-lg border font-mono shadow-sm transition-all sm:max-w-14",
               compact ? "h-11 sm:h-12" : "h-14 sm:h-16",
               isNext
-                ? "border-primary bg-primary/15 text-primary shadow-sm"
+                ? "border-primary bg-primary/15 text-primary ring-2 ring-primary/40"
                 : isWrong
                   ? "border-destructive bg-destructive/15 text-destructive"
                   : "border-border bg-card text-foreground",
               onKeyPress &&
-                "cursor-pointer hover:bg-accent active:bg-accent/80 focus-visible:outline-2 focus-visible:outline-ring",
+                "cursor-pointer hover:bg-accent active:scale-[0.96] active:bg-accent/80 focus-visible:outline-2 focus-visible:outline-ring",
             );
             const content = (
               <>
@@ -101,6 +107,8 @@ export function OnScreenKeyboard({
                 key={key}
                 type="button"
                 tabIndex={-1}
+                // 下一期待键标记:供测试与调试观测(不改变视觉语义)。
+                data-next={isNext ? "" : undefined}
                 aria-label={
                   hint
                     ? t("practice.keyAria", { key, hint })
