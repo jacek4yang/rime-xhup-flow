@@ -29,6 +29,30 @@ on:
       - "Cargo.lock"
       - "rust-toolchain.toml"
   workflow_dispatch:
+  # 供 RC 发布工作流复用(ci/xhup-flow-rc-release.yml);不接收 secrets,
+  # Android 签名仅在 sign_android=true 且调用方传入 secrets 时发生。
+  workflow_call:
+    inputs:
+      version:
+        description: "发布版本覆盖(semver,如 0.1.0-rc.1;空 = tauri.conf.json 版本)"
+        type: string
+        required: false
+        default: ""
+      android_version_code:
+        description: "Android versionCode(version 覆盖时必填,单调递增)"
+        type: string
+        required: false
+        default: "1"
+      sign_android:
+        description: "Android 使用发布签名(需 secrets)"
+        type: boolean
+        required: false
+        default: false
+      build_state:
+        description: "BUILD-INFO 构建状态标注(PR-REVIEW / RC-REHEARSAL / RC-PUBLISH)"
+        type: string
+        required: false
+        default: "PR-REVIEW"
 
 permissions:
   contents: read
@@ -167,13 +191,31 @@ jobs:
       - name: 检出仓库
         uses: actions/checkout@v7
 
-      - name: 读取应用版本
+      - name: 解析应用版本(含 RC 覆盖与 MSI 兼容派生)
         id: meta
         shell: bash
         run: |
           set -euo pipefail
-          ver="$(node -p "JSON.parse(require('fs').readFileSync('$APP_VERSION_CONF','utf8')).version")"
-          echo "app_version=$ver" >> "$GITHUB_OUTPUT"
+          conf="$(node -p "JSON.parse(require('fs').readFileSync('$APP_VERSION_CONF','utf8')).version")"
+          ver="${{ inputs.version }}"
+          if [[ -z "$ver" ]]; then ver="$conf"; fi
+          win_version="$ver"
+          # MSI/WiX 不接受 semver prerelease 字符串:0.1.0-rc.1 → 0.1.0-10001
+          # (rc 序号 + 10000;与 trainer-alpha 的 0.1.0-<N> 命名空间永不相交)。
+          if [[ "$ver" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-rc\.([0-9]+)$ ]]; then
+            win_version="${BASH_REMATCH[1]}-$((10#${BASH_REMATCH[2]} + 10000))"
+          elif [[ "$ver" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-[^0-9] ]]; then
+            echo "::error::version '$ver' 的 prerelease 无法派生 MSI 兼容版本"
+            exit 1
+          fi
+          cfg="$RUNNER_TEMP/packaging-config.json"
+          printf '{"version":"%s"}' "$ver" > "$cfg"
+          {
+            echo "app_version=$ver"
+            echo "win_version=$win_version"
+            echo "config=$cfg"
+          } >> "$GITHUB_OUTPUT"
+          cat "$cfg"
 
       - name: 准备 Rust 工具链
         run: rustup show
@@ -203,8 +245,8 @@ jobs:
       - name: 安装依赖
         run: pnpm -C trainer install --frozen-lockfile
 
-      - name: Tauri 构建(NSIS + MSI)
-        run: pnpm -C trainer tauri build --bundles nsis,msi
+      - name: Tauri 构建(NSIS + MSI,MSI 内部版本 ${{ steps.meta.outputs.win_version }})
+        run: pnpm -C trainer tauri build --bundles nsis,msi --config "${{ steps.meta.outputs.config }}"
 
       - name: 校验并重命名产物
         shell: bash
@@ -238,12 +280,17 @@ jobs:
       - name: 检出仓库
         uses: actions/checkout@v7
 
-      - name: 读取应用版本
+      - name: 解析应用版本(含 RC 覆盖)
         id: meta
         run: |
           set -euo pipefail
-          ver="$(node -p "JSON.parse(require('fs').readFileSync('$APP_VERSION_CONF','utf8')).version")"
+          conf="$(node -p "JSON.parse(require('fs').readFileSync('$APP_VERSION_CONF','utf8')).version")"
+          ver="${{ inputs.version }}"
+          if [[ -z "$ver" ]]; then ver="$conf"; fi
+          cfg="$RUNNER_TEMP/packaging-config.json"
+          printf '{"version":"%s"}' "$ver" > "$cfg"
           echo "app_version=$ver" >> "$GITHUB_OUTPUT"
+          echo "config=$cfg" >> "$GITHUB_OUTPUT"
 
       - name: 准备 Rust 工具链与 universal 目标
         run: |
@@ -276,7 +323,7 @@ jobs:
         run: pnpm -C trainer install --frozen-lockfile
 
       - name: Tauri 构建(universal DMG)
-        run: pnpm -C trainer tauri build --target universal-apple-darwin --bundles dmg
+        run: pnpm -C trainer tauri build --target universal-apple-darwin --bundles dmg --config "${{ steps.meta.outputs.config }}"
 
       - name: 校验并重命名产物
         run: |
@@ -307,12 +354,17 @@ jobs:
       - name: 检出仓库
         uses: actions/checkout@v7
 
-      - name: 读取应用版本
+      - name: 解析应用版本(含 RC 覆盖)
         id: meta
         run: |
           set -euo pipefail
-          ver="$(node -p "JSON.parse(require('fs').readFileSync('$APP_VERSION_CONF','utf8')).version")"
+          conf="$(node -p "JSON.parse(require('fs').readFileSync('$APP_VERSION_CONF','utf8')).version")"
+          ver="${{ inputs.version }}"
+          if [[ -z "$ver" ]]; then ver="$conf"; fi
+          cfg="$RUNNER_TEMP/packaging-config.json"
+          printf '{"version":"%s"}' "$ver" > "$cfg"
           echo "app_version=$ver" >> "$GITHUB_OUTPUT"
+          echo "config=$cfg" >> "$GITHUB_OUTPUT"
 
       - name: 准备 Rust 工具链
         run: rustup show
@@ -350,7 +402,7 @@ jobs:
         run: pnpm -C trainer install --frozen-lockfile
 
       - name: Tauri 构建(deb + rpm)
-        run: pnpm -C trainer tauri build --bundles deb,rpm
+        run: pnpm -C trainer tauri build --bundles deb,rpm --config "${{ steps.meta.outputs.config }}"
 
       - name: 校验并重命名产物
         run: |
@@ -386,12 +438,43 @@ jobs:
       - name: 检出仓库
         uses: actions/checkout@v7
 
-      - name: 读取应用版本
+      - name: 解析应用版本(含 RC 覆盖与 versionCode)
         id: meta
         run: |
           set -euo pipefail
-          ver="$(node -p "JSON.parse(require('fs').readFileSync('$APP_VERSION_CONF','utf8')).version")"
+          conf="$(node -p "JSON.parse(require('fs').readFileSync('$APP_VERSION_CONF','utf8')).version")"
+          ver="${{ inputs.version }}"
+          if [[ -z "$ver" ]]; then ver="$conf"; fi
+          vcode="${{ inputs.android_version_code }}"
+          if [[ -z "$vcode" ]]; then
+            # PR/演练模式无显式 versionCode:从版本确定性派生,保证单调递增。
+            # core = MAJOR*10000 + MINOR*100 + PATCH;终版 → core*100;
+            # rc.N → (core-1)*100 + N(严格小于同 core 终版,随 N 递增)。
+            if [[ "$ver" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-rc\.([0-9]+)$ ]]; then
+              core=$(( 10#${BASH_REMATCH[1]} * 10000 + 10#${BASH_REMATCH[2]} * 100 + 10#${BASH_REMATCH[3]} ))
+              rcn=$(( 10#${BASH_REMATCH[4]} ))
+            elif [[ "$ver" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              core=$(( 10#${BASH_REMATCH[1]} * 10000 + 10#${BASH_REMATCH[2]} * 100 + 10#${BASH_REMATCH[3]} ))
+              rcn=""
+            else
+              echo "::error::版本 '$ver' 无法派生 Android versionCode(请显式传入 android_version_code)"
+              exit 1
+            fi
+            [[ "$core" -ge 1 ]] || { echo "::error::版本 '$ver' 过小,无法派生 versionCode"; exit 1; }
+            if [[ -n "$rcn" ]]; then
+              [[ "$rcn" -ge 1 && "$rcn" -le 99 ]] || { echo "::error::rc 序号 $rcn 超出 versionCode 派生范围(1..99)"; exit 1; }
+              vcode=$(( (core - 1) * 100 + rcn ))
+            else
+              vcode=$(( core * 100 ))
+            fi
+          fi
+          [[ "$vcode" =~ ^[1-9][0-9]*$ ]] || { echo "::error::versionCode 非法: $vcode"; exit 1; }
+          [[ "$vcode" -le 2100000000 ]] || { echo "::error::versionCode 超出 Android 上限: $vcode"; exit 1; }
+          cfg="$RUNNER_TEMP/packaging-config.json"
+          printf '{"version":"%s","bundle":{"android":{"versionCode":%s}}}' "$ver" "$vcode" > "$cfg"
           echo "app_version=$ver" >> "$GITHUB_OUTPUT"
+          echo "android_version_code=$vcode" >> "$GITHUB_OUTPUT"
+          echo "config=$cfg" >> "$GITHUB_OUTPUT"
 
       - name: 准备 Rust 工具链与 Android 目标
         run: |
@@ -444,19 +527,53 @@ jobs:
       - name: 安装依赖
         run: pnpm -C trainer install --frozen-lockfile
 
-      - name: Tauri Android 构建(universal APK,未签名)
+      - name: 配置 Android 发布签名(仅 sign_android=true)
+        if: ${{ inputs.sign_android == true }}
+        env:
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEY_BASE64 ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ANDROID_STORE_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::sign_android=true 缺少必需的签名 Secret: $name"
+              exit 1
+            fi
+          done
+          keyfile="$RUNNER_TEMP/xhup-flow-android.jks"
+          echo "$ANDROID_KEY_BASE64" | base64 -d > "$keyfile"
+          chmod 600 "$keyfile"
+          props="trainer/src-tauri/gen/android/keystore.properties"
+          {
+            echo "storeFile=$keyfile"
+            echo "storePassword=$ANDROID_STORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+          } > "$props"
+          chmod 600 "$props"
+
+      - name: Tauri Android 构建(universal APK)
         run: |
           export NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
-          pnpm -C trainer tauri android build --apk
+          pnpm -C trainer tauri android build --apk --config "${{ steps.meta.outputs.config }}"
 
       - name: 校验并重命名产物
         run: |
           set -euo pipefail
           ver="${{ steps.meta.outputs.app_version }}"
-          apk="trainer/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
-          [[ -s "$apk" ]] || { echo "::error::未签名 APK 不存在或为 0 字节: $apk"; exit 1; }
+          apk_dir="trainer/src-tauri/gen/android/app/build/outputs/apk/universal/release"
+          suffix=""
+          if [[ "${{ inputs.sign_android }}" == "true" ]]; then
+            apk="$apk_dir/app-universal-release.apk"
+          else
+            apk="$apk_dir/app-universal-release-unsigned.apk"
+            suffix="-UNSIGNED"
+          fi
+          [[ -s "$apk" ]] || { echo "::error::APK 不存在或为 0 字节: $apk"; exit 1; }
           mkdir -p artifacts/android
-          cp "$apk" "artifacts/android/xhup-flow-trainer-v$ver-android-universal-UNSIGNED.apk"
+          cp "$apk" "artifacts/android/xhup-flow-trainer-v$ver-android-universal${suffix}.apk"
           ls -l artifacts/android/
 
       - name: 上传 Android 产物
@@ -475,6 +592,8 @@ jobs:
     env:
       RIME_VERSION: ${{ needs.rime-package.outputs.rime_version }}
       APP_VERSION: ${{ needs.windows.outputs.app_version }}
+      BUILD_STATE: ${{ inputs.build_state || 'PR-REVIEW' }}
+      ANDROID_SIGNED: ${{ inputs.sign_android == true }}
 
     steps:
       - name: 检出仓库
@@ -514,6 +633,10 @@ jobs:
         run: |
           set -euo pipefail
           cd artifacts
+          apk="xhup-flow-trainer-v$APP_VERSION-android-universal-UNSIGNED.apk"
+          if [[ "$ANDROID_SIGNED" == "true" ]]; then
+            apk="xhup-flow-trainer-v$APP_VERSION-android-universal.apk"
+          fi
           expected=(
             "xhup-flow-rime-v$RIME_VERSION.zip"
             "xhup-flow-trainer-v$APP_VERSION-windows-x64-setup.exe"
@@ -521,29 +644,38 @@ jobs:
             "xhup-flow-trainer-v$APP_VERSION-macos-universal.dmg"
             "xhup-flow-trainer-v$APP_VERSION-linux-amd64.deb"
             "xhup-flow-trainer-v$APP_VERSION-linux-x86_64.rpm"
-            "xhup-flow-trainer-v$APP_VERSION-android-universal-UNSIGNED.apk"
+            "$apk"
           )
           for f in "${expected[@]}"; do
             [[ -s "$f" ]] || { echo "::error::缺少产物或为 0 字节: $f"; exit 1; }
           done
           sha256sum -- *.zip *.exe *.msi *.dmg *.deb *.rpm *.apk | LC_ALL=C sort -k2 > SHA256SUMS.txt
+          android_state="UNSIGNED"
+          if [[ "$ANDROID_SIGNED" == "true" ]]; then android_state="SIGNED"; fi
           {
-            echo "XHUP Flow v$APP_VERSION 发布清单(PR 审阅产物,未发布)"
+            echo "XHUP Flow v$APP_VERSION 发布清单(构建状态: $BUILD_STATE)"
             echo ""
             echo "Git commit: $GITHUB_SHA"
             echo "Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo ""
-            echo "应用版本(tauri.conf.json): $APP_VERSION"
+            echo "应用版本: $APP_VERSION"
             echo "Rime 源包版本(xhup_flow.schema.yaml): $RIME_VERSION"
             echo ""
-            echo "平台产物: Windows(NSIS+MSI,未签名) / macOS(universal DMG,未签名) /"
-            echo "  Linux(deb+rpm;AppImage 暂不构建) / Android(universal APK,未签名)"
+            echo "签名状态(逐产物,如实标注):"
+            echo "  Windows NSIS/MSI: UNSIGNED(未签名)"
+            echo "  macOS DMG: UNSIGNED + UNNOTARIZED(未签名且未公证)"
+            echo "  Linux deb/rpm: N/A(格式本身不携带发布签名)"
+            echo "  Android universal APK: $android_state"
+            echo "  Rime 源包: N/A(以 SHA256 校验为准)"
+            echo ""
+            echo "平台产物: Windows(NSIS+MSI) / macOS(universal DMG) /"
+            echo "  Linux(deb+rpm;AppImage 暂不构建) / Android(universal APK)"
             echo "平台中立包: xhup-flow-rime-v$RIME_VERSION.zip(含 INSTALL.md 安装说明)"
             echo ""
             echo "规范数据与 Rime 源文件哈希: 见 CANONICAL-SHA256SUMS.txt"
             echo "  (同一 Cargo.lock 与源码下字节级确定性生成)"
             echo ""
-            echo "隐私: 全部产物本地运行,无遥测、无账号;PR 模式不创建 tag / Release。"
+            echo "隐私: 全部产物本地运行,无遥测、无账号。"
           } > BUILD-INFO.txt
           cat SHA256SUMS.txt
           cat BUILD-INFO.txt
