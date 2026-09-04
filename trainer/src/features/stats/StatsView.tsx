@@ -240,7 +240,7 @@ export function StatsView() {
             {codeLengths.map(([length, stat]) => (
               <div key={length} className="flex items-center gap-3 text-sm">
                 <span className="w-16 font-mono text-muted-foreground">
-                  {length} 键
+                  {t("stats.keyCount", { n: length })}
                 </span>
                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                   <div

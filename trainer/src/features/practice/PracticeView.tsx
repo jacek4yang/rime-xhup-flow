@@ -165,7 +165,7 @@ export function PracticeView({
           {t("practice.emptyPool")}
         </p>
         <Button className="mt-4" onClick={onExit}>
-          返回
+          {t("common.back")}
         </Button>
       </Card>
     );
@@ -240,14 +240,19 @@ export function PracticeView({
           {t("common.exit")}
         </Button>
         <Badge variant="secondary">
-          {config.entries ? t("practice.reviewBadge") : MODE_LABELS[session.config.mode]}
+          {config.entries
+            ? t("practice.reviewBadge")
+            : t(MODE_LABELS[session.config.mode])}
         </Badge>
-        <Badge variant="outline">{DIFFICULTY_LABELS[config.difficulty]}</Badge>
+        <Badge variant="outline">{t(DIFFICULTY_LABELS[config.difficulty])}</Badge>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-sm tabular-nums text-muted-foreground">
             {targetLength > 0
-              ? `${session.questionsCompleted} / ${targetLength}`
-              : `已练 ${session.questionsCompleted} 题`}
+              ? t("practice.progressOf", {
+                  done: session.questionsCompleted,
+                  total: targetLength,
+                })
+              : t("practice.progressUnlimited", { n: session.questionsCompleted })}
           </span>
           <Button
             variant="ghost"
@@ -276,7 +281,7 @@ export function PracticeView({
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
-          aria-label="编码输入区"
+          aria-label={t("practice.inputArea")}
           className="absolute inset-0 h-full w-full cursor-text opacity-0"
         />
         <AnimatePresence mode="wait">

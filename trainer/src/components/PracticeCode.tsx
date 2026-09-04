@@ -1,8 +1,15 @@
 import { motion } from "motion/react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/use-i18n";
+import type { I18nKey } from "@/lib/i18n";
 import type { QuestionOutcome } from "@/features/practice/types";
 
-const SLOT_LABELS = ["音", "音", "形", "形"] as const;
+const SLOT_LABELS = [
+  "practice.slotInitial",
+  "practice.slotInitial",
+  "practice.slotShape",
+  "practice.slotShape",
+] as const satisfies readonly I18nKey[];
 
 /**
  * 编码槽位:2 码 [音][音],3 码 [音][音][形],4 码全码。
@@ -19,10 +26,14 @@ export function PracticeCode({
   lastWrongKey: string | null;
   outcome: QuestionOutcome | null;
 }) {
+  const { t } = useI18n();
   return (
     <div
       className="flex items-start justify-center gap-2 sm:gap-3"
-      aria-label={`编码 ${code.length} 键,已输入 ${typed.length} 键`}
+      aria-label={t("practice.codeSlotsAria", {
+        total: code.length,
+        typed: typed.length,
+      })}
     >
       {[...code].map((_, index) => {
         const filled = index < typed.length;
@@ -55,7 +66,7 @@ export function PracticeCode({
               {filled ? typed[index] : ""}
             </motion.div>
             <span className="text-xs text-muted-foreground">
-              {SLOT_LABELS[index]}
+              {t(SLOT_LABELS[index])}
             </span>
           </div>
         );
