@@ -55,6 +55,10 @@ pub enum RimeClient {
 
 impl RimeClient {
     /// 该客户端默认的用户数据目录(存在性由调用方检查)。
+    ///
+    /// 路径来源均为各客户端源码/官方文档(fcitx5-rime 为
+    /// `$XDG_DATA_HOME/fcitx5/rime`,即默认 `~/.local/share/fcitx5/rime`;
+    /// `.config` 是 fcitx4 时代约定,作回退)。
     pub fn default_user_data_dir(&self) -> Option<PathBuf> {
         match self {
             Self::Weasel => {
@@ -63,11 +67,20 @@ impl RimeClient {
             Self::Squirrel => {
                 std::env::var_os("HOME").map(|base| PathBuf::from(base).join("Library/Rime"))
             }
-            Self::Fcitx5 => std::env::var_os("XDG_CONFIG_HOME")
+            Self::Fcitx5 => std::env::var_os("XDG_DATA_HOME")
                 .map(|base| PathBuf::from(base).join("fcitx5/rime"))
                 .or_else(|| {
                     std::env::var_os("HOME")
-                        .map(|base| PathBuf::from(base).join(".config/fcitx5/rime"))
+                        .map(|base| PathBuf::from(base).join(".local/share/fcitx5/rime"))
+                })
+                .or_else(|| {
+                    // fcitx4 时代遗留路径回退。
+                    std::env::var_os("XDG_CONFIG_HOME")
+                        .map(|base| PathBuf::from(base).join("fcitx5/rime"))
+                        .or_else(|| {
+                            std::env::var_os("HOME")
+                                .map(|base| PathBuf::from(base).join(".config/fcitx5/rime"))
+                        })
                 }),
             Self::Ibus => std::env::var_os("XDG_DATA_HOME")
                 .map(|base| PathBuf::from(base).join("ibus/rime"))
@@ -78,7 +91,77 @@ impl RimeClient {
         }
     }
 
-    /// 重新部署的操作指引(各平台机制不同,不做自动部署;不发明命令)。
+    /// 该客户端自动部署机制的官方参数(与程序无关,纯常量,便于测试)。
+    /// 来源为各客户端源码(见 `redeploy_candidates` 文档)。
+    pub fn redeploy_arguments(&self) -> &'static [&'static str] {
+        match self {
+            Self::Weasel => &["/deploy"],
+            Self::Squirrel => &["--reload"],
+            Self::Fcitx5 => &[
+                "--session",
+                "--print-reply",
+                "--dest=org.fcitx.Fcitx5",
+                "/controller",
+                "org.fcitx.Fcitx.Controller1.SetConfig",
+                "string:fcitx://config/addon/rime/deploy",
+                "variant:string:",
+            ],
+            Self::Ibus => &["restart"],
+        }
+    }
+
+    /// 官方重新部署机制的候选(按优先级;来源为各客户端源码,存在性
+    /// 由调用方探测):
+    ///
+    /// - Weasel:`WeaselDeployer.exe /deploy`(与官方托盘菜单同一机制,
+    ///   参数必须恰好为 `/deploy`);
+    /// - Squirrel:`Squirrel --reload`(向运行中的进程投递部署通知,
+    ///   进程内完整部署,不退出应用);
+    /// - Fcitx5:经 `dbus-send` 调用 Fcitx5 官方 D-Bus 接口
+    ///   `SetConfig fcitx://config/addon/rime/deploy`(进程内完整部署);
+    /// - Ibus:`ibus restart`(官方 CLI,重启 ibus-daemon,所有引擎
+    ///   重新部署;不杀任意进程)。
+    pub fn redeploy_candidates(&self) -> Vec<(PathBuf, Vec<String>)> {
+        let args: Vec<String> = self
+            .redeploy_arguments()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match self {
+            Self::Weasel => {
+                let mut candidates = Vec::new();
+                for base in ["ProgramFiles", "ProgramFiles(x86)"] {
+                    if let Some(dir) = std::env::var_os(base) {
+                        candidates.push((
+                            PathBuf::from(dir).join("Rime").join("WeaselDeployer.exe"),
+                            args.clone(),
+                        ));
+                    }
+                }
+                candidates
+            }
+            Self::Squirrel => vec![(
+                PathBuf::from("/Library/Input Methods/Squirrel.app/Contents/MacOS/Squirrel"),
+                args,
+            )],
+            Self::Fcitx5 => find_in_path("dbus-send")
+                .map(|program| vec![(program, args)])
+                .unwrap_or_default(),
+            Self::Ibus => find_in_path("ibus")
+                .map(|program| vec![(program, args)])
+                .unwrap_or_default(),
+        }
+    }
+
+    /// 能力声明:探测候选可执行文件,返回 [`RedeploySupport`]。
+    ///
+    /// 生产探测 = 文件存在(`Path::is_file`);测试可用
+    /// [`resolve_redeploy`] 注入假候选。
+    pub fn redeploy_support(&self) -> RedeploySupport {
+        resolve_redeploy(&self.redeploy_candidates(), &|path| path.is_file())
+    }
+
+    /// 手动重新部署的操作指引(无自动机制时的兜底;不发明命令)。
     pub fn redeploy_guidance(&self) -> &'static str {
         match self {
             Self::Weasel => "在系统托盘的「小狼毫」菜单中执行「重新部署」。",
@@ -87,6 +170,43 @@ impl RimeClient {
             Self::Ibus => "运行 ibus restart,或在 IBus 设置中重新部署 Rime。",
         }
     }
+}
+
+/// 重新部署能力(能力型 UI 依据;自动执行仅使用上面列出的官方机制)。
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum RedeploySupport {
+    /// 检测到官方部署机制,可自动执行(结构化参数,无 shell)。
+    Automatic {
+        program: PathBuf,
+        args: Vec<std::ffi::OsString>,
+    },
+    /// 无可靠自动机制,按 [`RimeClient::redeploy_guidance`] 手动执行。
+    Manual,
+}
+
+/// 在候选列表中探测第一个存在的可执行文件(纯函数,测试可注入)。
+pub fn resolve_redeploy(
+    candidates: &[(PathBuf, Vec<String>)],
+    probe: &dyn Fn(&Path) -> bool,
+) -> RedeploySupport {
+    for (program, args) in candidates {
+        if probe(program) {
+            return RedeploySupport::Automatic {
+                program: program.clone(),
+                args: args.iter().map(std::ffi::OsString::from).collect(),
+            };
+        }
+    }
+    RedeploySupport::Manual
+}
+
+/// 在 PATH 中查找可执行文件(仅在 PATH 目录内,不扫描任意磁盘)。
+fn find_in_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
 }
 
 /// 管理错误。
@@ -1309,5 +1429,103 @@ mod tests {
         assert!(!leaked.exists() || fs::read_to_string(&leaked).unwrap() != "机密");
         let _ = fs::remove_dir_all(&user);
         let _ = fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn redeploy_support_is_capability_based_with_injected_probe() {
+        // 官方机制的参数构造(源码级验证,与环境无关):
+        // - Fcitx5:dbus-send 调用官方 D-Bus 接口
+        //   SetConfig fcitx://config/addon/rime/deploy(进程内部署);
+        let fcitx_args = RimeClient::Fcitx5.redeploy_arguments();
+        assert!(
+            fcitx_args
+                .iter()
+                .any(|arg| arg.contains("fcitx://config/addon/rime/deploy"))
+        );
+        assert!(fcitx_args.contains(&"org.fcitx.Fcitx.Controller1.SetConfig"));
+        // - Ibus:`ibus restart`(官方 CLI,不杀任意进程);
+        assert_eq!(RimeClient::Ibus.redeploy_arguments(), &["restart"]);
+        // - Squirrel:`--reload`(向运行中进程投递部署通知);
+        assert_eq!(RimeClient::Squirrel.redeploy_arguments(), &["--reload"]);
+        // - Weasel:参数必须恰好为 /deploy(源码 wcscmp 全行匹配)。
+        assert_eq!(RimeClient::Weasel.redeploy_arguments(), &["/deploy"]);
+
+        // 注入假候选 → Automatic,程序与参数按候选原样传递。
+        let fake_dir = temp_dir("redeploy-fake");
+        let fake = fake_dir.join("dbus-send");
+        fs::write(&fake, "#!/bin/sh\nexit 0\n").unwrap();
+        let candidates = vec![(fake.clone(), vec!["--session".to_string()])];
+        match resolve_redeploy(&candidates, &|path| *path == fake) {
+            RedeploySupport::Automatic { program, args } => {
+                assert_eq!(program, fake);
+                assert_eq!(args, vec![std::ffi::OsString::from("--session")]);
+            }
+            RedeploySupport::Manual => panic!("假可执行文件应被探测为 Automatic"),
+        }
+        // 全部候选缺失 → Manual(能力型 UI 显示手动指引)。
+        assert!(matches!(
+            resolve_redeploy(&candidates, &|_| false),
+            RedeploySupport::Manual
+        ));
+        let _ = fs::remove_dir_all(&fake_dir);
+    }
+
+    #[test]
+    fn fcitx5_user_data_dir_prefers_xdg_data_home() {
+        // 源码级修正:fcitx5-rime 用户目录是 $XDG_DATA_HOME/fcitx5/rime。
+        // 安全性:仅本测试读写这两个变量,其余测试不读 XDG_*。
+        let dir = temp_dir("xdg-probe");
+        // SAFETY:测试进程内独占环境变量(其余测试不读 XDG_*)。
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", &dir);
+            std::env::remove_var("XDG_CONFIG_HOME");
+        }
+        let candidate = RimeClient::Fcitx5.default_user_data_dir().unwrap();
+        assert_eq!(candidate, dir.join("fcitx5/rime"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn e2e_lifecycle_install_to_uninstall_preserves_user_data() {
+        // 全生命周期:全新安装 → Healthy → 改动 → Modified → 修复 →
+        // 升级 → 学习数据保留 → 卸载 → 无关文件与 userdb 保留。
+        let user = fake_user_dir("e2e");
+        let v1 = fake_package("1.0.0");
+
+        // 全新安装 → Healthy。
+        execute(&plan_install(&user, &v1).unwrap(), &user, Some(&v1)).unwrap();
+        let status = install_status(&user, RimeClient::Fcitx5, Some(&v1));
+        assert_eq!(status.health(&v1.version), InstallHealth::Healthy);
+
+        // 外部改动 → Modified。
+        fs::write(user.join(OWNED_FILES[2]), "改动").unwrap();
+        let status = install_status(&user, RimeClient::Fcitx5, Some(&v1));
+        assert_eq!(status.health(&v1.version), InstallHealth::Modified);
+
+        // 修复 → 回到 Healthy(内容恢复)。
+        execute(&plan_install(&user, &v1).unwrap(), &user, Some(&v1)).unwrap();
+        assert_eq!(
+            install_status(&user, RimeClient::Fcitx5, Some(&v1)).health(&v1.version),
+            InstallHealth::Healthy
+        );
+
+        // 升级 → 新版本 Healthy;userdb 仍在。
+        let v2 = fake_package("1.1.0");
+        execute(&plan_install(&user, &v2).unwrap(), &user, Some(&v2)).unwrap();
+        assert_eq!(
+            install_status(&user, RimeClient::Fcitx5, Some(&v2)).health(&v2.version),
+            InstallHealth::Healthy
+        );
+        assert!(user.join("xhup_flow_user.userdb").is_dir());
+
+        // 卸载 → 拥有文件全删,无关文件与 userdb 保留,幂等。
+        execute(&plan_uninstall(&user).unwrap(), &user, None).unwrap();
+        for file in OWNED_FILES {
+            assert!(!user.join(file).exists());
+        }
+        assert!(user.join("default.custom.yaml").is_file());
+        assert!(user.join("xhup_flow_user.userdb").is_dir());
+        assert!(plan_uninstall(&user).unwrap().is_empty());
+        let _ = fs::remove_dir_all(&user);
     }
 }

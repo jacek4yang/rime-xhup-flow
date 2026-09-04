@@ -80,6 +80,11 @@ export interface ExecuteResultDto {
 /** 维护类型:install 覆盖安装/升级/修复;uninstall 只删拥有文件。 */
 export type MaintenanceKind = "install" | "uninstall";
 
+/** 重新部署能力(Rust `RedeploySupport`;自动 = 官方机制,manual = 指引)。 */
+export type RedeploySupportDto =
+  | { mode: "automatic"; program: string; args: string[] }
+  | { mode: "manual" };
+
 /** 学习用户词典身份(破坏性操作的类型化确认值;Rust 侧二次校验)。 */
 export const FLOW_USER_DICT_NAME = "xhup_flow_user";
 
@@ -120,6 +125,11 @@ export const productApi = {
     invokeDesktop("product_execute", { kind }),
   /** 生成脱敏诊断报告。 */
   diagnostics: (): Promise<string> => invokeDesktop("product_diagnostics"),
+  /** 重新部署输入法(仅官方机制;manual 能力时抛 redeploy_unavailable)。 */
+  redeploy: (): Promise<string> => invokeDesktop("product_redeploy"),
+  /** 导出 Android 兼容 Rime 包(目录形式),返回导出目录。 */
+  exportPackage: (destination: string): Promise<string> =>
+    invokeDesktop("product_export_package", { destination }),
   /** 导出学习数据快照,返回快照文件路径。 */
   learningExport: (): Promise<string> => invokeDesktop("learning_export"),
   /** 从快照恢复学习数据。 */

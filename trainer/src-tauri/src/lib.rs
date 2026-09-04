@@ -9,6 +9,8 @@ pub fn run() {
             commands::product_plan,
             commands::product_execute,
             commands::product_diagnostics,
+            commands::product_redeploy,
+            commands::product_export_package,
             commands::learning_export,
             commands::learning_import,
             commands::learning_reset,
