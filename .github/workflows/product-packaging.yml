@@ -446,10 +446,34 @@ jobs:
           ver="${{ inputs.version }}"
           if [[ -z "$ver" ]]; then ver="$conf"; fi
           vcode="${{ inputs.android_version_code }}"
+          if [[ -z "$vcode" ]]; then
+            # PR/演练模式无显式 versionCode:从版本确定性派生,保证单调递增。
+            # core = MAJOR*10000 + MINOR*100 + PATCH;终版 → core*100;
+            # rc.N → (core-1)*100 + N(严格小于同 core 终版,随 N 递增)。
+            if [[ "$ver" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-rc\.([0-9]+)$ ]]; then
+              core=$(( 10#${BASH_REMATCH[1]} * 10000 + 10#${BASH_REMATCH[2]} * 100 + 10#${BASH_REMATCH[3]} ))
+              rcn=$(( 10#${BASH_REMATCH[4]} ))
+            elif [[ "$ver" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              core=$(( 10#${BASH_REMATCH[1]} * 10000 + 10#${BASH_REMATCH[2]} * 100 + 10#${BASH_REMATCH[3]} ))
+              rcn=""
+            else
+              echo "::error::版本 '$ver' 无法派生 Android versionCode(请显式传入 android_version_code)"
+              exit 1
+            fi
+            [[ "$core" -ge 1 ]] || { echo "::error::版本 '$ver' 过小,无法派生 versionCode"; exit 1; }
+            if [[ -n "$rcn" ]]; then
+              [[ "$rcn" -ge 1 && "$rcn" -le 99 ]] || { echo "::error::rc 序号 $rcn 超出 versionCode 派生范围(1..99)"; exit 1; }
+              vcode=$(( (core - 1) * 100 + rcn ))
+            else
+              vcode=$(( core * 100 ))
+            fi
+          fi
           [[ "$vcode" =~ ^[1-9][0-9]*$ ]] || { echo "::error::versionCode 非法: $vcode"; exit 1; }
+          [[ "$vcode" -le 2100000000 ]] || { echo "::error::versionCode 超出 Android 上限: $vcode"; exit 1; }
           cfg="$RUNNER_TEMP/packaging-config.json"
           printf '{"version":"%s","bundle":{"android":{"versionCode":%s}}}' "$ver" "$vcode" > "$cfg"
           echo "app_version=$ver" >> "$GITHUB_OUTPUT"
+          echo "android_version_code=$vcode" >> "$GITHUB_OUTPUT"
           echo "config=$cfg" >> "$GITHUB_OUTPUT"
 
       - name: 准备 Rust 工具链与 Android 目标

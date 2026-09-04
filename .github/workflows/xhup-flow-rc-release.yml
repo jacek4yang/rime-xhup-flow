@@ -31,9 +31,9 @@ on:
         type: boolean
         default: false
       android_version_code:
-        description: "Android versionCode(单调递增)"
-        required: true
-        default: "1"
+        description: "Android versionCode 覆盖(空 = 从版本确定性派生,单调递增)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -74,8 +74,9 @@ jobs:
             exit 1
           fi
           core="${BASH_REMATCH[1]}"
-          if ! [[ "$INPUT_VCODE" =~ ^[1-9][0-9]*$ ]]; then
-            echo "::error::android_version_code '$INPUT_VCODE' 必须是 >= 1 的正整数"
+          # 空 = 由打包工作流从版本确定性派生(单一事实来源);显式传入时须为正整数。
+          if [[ -n "$INPUT_VCODE" ]] && ! [[ "$INPUT_VCODE" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::android_version_code '$INPUT_VCODE' 必须是 >= 1 的正整数,或留空自动派生"
             exit 1
           fi
           # 版本一致性:RC core 必须同时等于 workspace 版本与桌面应用版本
@@ -115,11 +116,16 @@ jobs:
             echo "version=$version"
             echo "core=$core"
             echo "publish=$publish"
+            echo "android_version_code=$INPUT_VCODE"
           } >> "$GITHUB_OUTPUT"
           {
             echo "### RC 发布元数据"
             echo "- 版本: \`$version\`(core \`$core\`,workspace/app 一致)"
-            echo "- Android versionCode: \`$INPUT_VCODE\`"
+            if [[ -n "$INPUT_VCODE" ]]; then
+              echo "- Android versionCode: \`$INPUT_VCODE\`(显式覆盖)"
+            else
+              echo "- Android versionCode: 从版本确定性派生(单调递增)"
+            fi
             echo "- 发布: \`$publish\`(true = 草稿 Pre-release,人工复核后发布)"
             echo "- 桌面签名状态: UNSIGNED / UNNOTARIZED(仓库无相应凭据,如实标注)"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -133,7 +139,7 @@ jobs:
     secrets: inherit
     with:
       version: ${{ needs.validate.outputs.version }}
-      android_version_code: "1"
+      android_version_code: ${{ needs.validate.outputs.android_version_code }}
       sign_android: ${{ needs.validate.outputs.publish == 'true' }}
       build_state: ${{ needs.validate.outputs.publish == 'true' && 'RC-PUBLISH' || 'RC-REHEARSAL' }}
 
