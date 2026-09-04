@@ -1,0 +1,258 @@
+name: XHUP Flow RC Release
+
+# XHUP Flow 产品 RC 发布管线(人工触发)。
+#
+# 标签命名空间(与既有管线严格分离,勿混用):
+# - `v<semver>`              → 经典方案 xhup_fullcode(release.yml,VERSION 文件)
+# - `trainer-v<...>-alpha.N` → Trainer Alpha(trainer-alpha.yml)
+# - `xhup-flow-v<version>`   → XHUP Flow 产品(本工作流;RC 与正式)
+#
+# 行为:
+# - publish=false(演练):完整构建 + 校验 + 上传 workflow 产物;
+#   不打 tag、不建 Release;
+# - publish=true(发布):必须满足全部门禁(main 分支、版本一致、
+#   tag/Release 不存在),构建后创建 **草稿 Pre-release**(人工复核
+#   发布说明与各平台验收状态后手动发布)。
+#
+# 签名如实标注:桌面产物未签名/未公证(仓库无相应凭据);Android 仅在
+# publish=true 时经既有密钥链路签名(密钥仅运行时注入,不入库)。
+# 本工作流绝不读写根目录 VERSION 文件(属经典方案管线)。
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "RC 版本,例如 0.1.0-rc.1(core 必须与 workspace/tauri.conf 版本一致)"
+        required: true
+        default: "0.1.0-rc.1"
+      publish:
+        description: "发布(创建草稿 Pre-release;必须 main 分支)"
+        required: true
+        type: boolean
+        default: false
+      android_version_code:
+        description: "Android versionCode(单调递增)"
+        required: true
+        default: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xhup-flow-rc-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: 版本一致性与发布门禁
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      core: ${{ steps.meta.outputs.core }}
+      publish: ${{ steps.meta.outputs.publish }}
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7
+
+      - name: 校验发布元数据
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
+          INPUT_VCODE: ${{ inputs.android_version_code }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version="$INPUT_VERSION"
+          if ! [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-rc\.([1-9][0-9]*)$ ]]; then
+            echo "::error::版本 '$version' 不合法,必须形如 0.1.0-rc.1,且不得复用 alpha/正式命名空间"
+            exit 1
+          fi
+          core="${BASH_REMATCH[1]}"
+          if ! [[ "$INPUT_VCODE" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::android_version_code '$INPUT_VCODE' 必须是 >= 1 的正整数"
+            exit 1
+          fi
+          # 版本一致性:RC core 必须同时等于 workspace 版本与桌面应用版本
+          # (Rime 源包版本 = workspace 版本,由生成器内嵌)。
+          ws="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          app="$(node -p "JSON.parse(require('fs').readFileSync('trainer/src-tauri/tauri.conf.json','utf8')).version")"
+          if [[ "$core" != "$ws" ]]; then
+            echo "::error::RC core '$core' != workspace 版本 '$ws'(先统一升版,不得静默跳版)"
+            exit 1
+          fi
+          if [[ "$core" != "$app" ]]; then
+            echo "::error::RC core '$core' != tauri.conf.json 版本 '$app'"
+            exit 1
+          fi
+          # 绝不读写 VERSION 文件(经典方案管线);校验它未被本流程改动。
+          git diff --exit-code -- VERSION || {
+            echo "::error::VERSION 文件属经典方案管线,RC 发布不得改动"
+            exit 1
+          }
+          publish="$INPUT_PUBLISH"
+          if [[ "$publish" == "true" ]]; then
+            if [[ "$REF" != "refs/heads/main" ]]; then
+              echo "::error::publish=true 只允许在 main 分支运行(当前 ref: $REF)"
+              exit 1
+            fi
+            tag="xhup-flow-v$version"
+            if gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
+              echo "::error::tag 已存在: $tag(RC 版本不可变,请递增 rc 序号)"
+              exit 1
+            fi
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "::error::Release 已存在: $tag"
+              exit 1
+            fi
+          fi
+          {
+            echo "version=$version"
+            echo "core=$core"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### RC 发布元数据"
+            echo "- 版本: \`$version\`(core \`$core\`,workspace/app 一致)"
+            echo "- Android versionCode: \`$INPUT_VCODE\`"
+            echo "- 发布: \`$publish\`(true = 草稿 Pre-release,人工复核后发布)"
+            echo "- 桌面签名状态: UNSIGNED / UNNOTARIZED(仓库无相应凭据,如实标注)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: 构建全部产物
+    needs: validate
+    uses: ./.github/workflows/product-packaging.yml
+    # secrets: inherit 仅用于 publish=true 时的 Android 发布签名;
+    # PR/演练路径不读取任何 secret(打包工作流内按 sign_android 门控)。
+    secrets: inherit
+    with:
+      version: ${{ needs.validate.outputs.version }}
+      android_version_code: "1"
+      sign_android: ${{ needs.validate.outputs.publish == 'true' }}
+      build_state: ${{ needs.validate.outputs.publish == 'true' && 'RC-PUBLISH' || 'RC-REHEARSAL' }}
+
+  publish:
+    name: 创建草稿 Pre-release
+    needs: [validate, build]
+    if: needs.validate.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.validate.outputs.version }}
+      CORE: ${{ needs.validate.outputs.core }}
+
+    steps:
+      - name: 下载全部产物
+        uses: actions/download-artifact@v8
+        with:
+          pattern: product-packaging-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: 发布前校验
+        run: |
+          set -euo pipefail
+          cd artifacts
+          for f in \
+            "xhup-flow-rime-v$CORE.zip" \
+            "xhup-flow-trainer-v$VERSION-windows-x64-setup.exe" \
+            "xhup-flow-trainer-v$VERSION-windows-x64.msi" \
+            "xhup-flow-trainer-v$VERSION-macos-universal.dmg" \
+            "xhup-flow-trainer-v$VERSION-linux-amd64.deb" \
+            "xhup-flow-trainer-v$VERSION-linux-x86_64.rpm" \
+            "xhup-flow-trainer-v$VERSION-android-universal.apk" \
+            SHA256SUMS.txt BUILD-INFO.txt; do
+            [[ -s "$f" ]] || { echo "::error::缺少发布资产或为 0 字节: $f"; exit 1; }
+          done
+          # 完整性自检:SHA256SUMS 与现盘产物一致。
+          sha256sum --check SHA256SUMS.txt
+          echo "发布前校验通过:资产齐备、校验和一致"
+
+      - name: 组装发布说明(草稿,人工复核)
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/RELEASE-NOTES.md"
+          cat > "$notes" <<EOF
+          # XHUP Flow v$VERSION(Release Candidate)
+
+          > **草稿 Pre-release**:各平台人工验收状态均为 UNVERIFIED,
+          > 人工复核本说明并更新验收状态后手动发布。
+
+          ## 这是什么
+
+          XHUP Flow:冻结静态层(一级简码 / 单字全码 / 词语简码 / 固定词)
+          之上的连续组句与本地学习输入方案,配套训练器(12 种练习模式、
+          错题中心、统计)与输入法控制中心(安装 / 升级 / 修复 / 卸载 /
+          重新部署 / 学习管理 / 诊断)。
+
+          ## 产物与签名状态
+
+          | 文件 | 平台 | 签名状态 |
+          | ---- | ---- | ---- |
+          | \`xhup-flow-rime-v$CORE.zip\` | 平台中立 Rime 源包 | N/A(SHA256 校验) |
+          | \`xhup-flow-trainer-v$VERSION-windows-x64-setup.exe\` | Windows(NSIS) | UNSIGNED |
+          | \`xhup-flow-trainer-v$VERSION-windows-x64.msi\` | Windows(MSI) | UNSIGNED |
+          | \`xhup-flow-trainer-v$VERSION-macos-universal.dmg\` | macOS(aarch64+x86_64) | UNSIGNED + UNNOTARIZED |
+          | \`xhup-flow-trainer-v$VERSION-linux-amd64.deb\` | Linux(deb) | N/A |
+          | \`xhup-flow-trainer-v$VERSION-linux-x86_64.rpm\` | Linux(rpm) | N/A |
+          | \`xhup-flow-trainer-v$VERSION-android-universal.apk\` | Android(通用) | SIGNED |
+
+          - 完整性:安装前比对 \`SHA256SUMS.txt\`。
+          - 构建元数据:\`BUILD-INFO.txt\`;规范数据确定性哈希:
+            \`CANONICAL-SHA256SUMS.txt\`。
+          - Windows 未签名:SmartScreen 可能提示「未知发布者」,属预期,
+            请勿为此关闭系统安全防护。
+          - macOS 未公证:首次打开需右键 → 打开,或在系统设置中放行。
+
+          ## 人工验收状态
+
+          - Windows: **UNVERIFIED**
+          - macOS: **UNVERIFIED**
+          - Linux: **UNVERIFIED**
+          - Android: **UNVERIFIED**
+
+          ## 已知限制
+
+          - 学习导出/导入依赖 librime 官方 \`rime_dict_manager\`(librime-bin)。
+          - librime 内置短语编码器的学习码为内部派生(不读作小鹤语义);
+            动态候选恒排在全部静态候选之后。
+          - AppImage 暂不构建(外部 linuxdeploy 网络约束)。
+
+          ## 隐私
+
+          本地运行:无账号、无遥测、无云端同步;学习数据仅存本机
+          \`xhup_flow_user.userdb\`,可通过控制中心或 \`xhup-cli learning\`
+          导出 / 恢复 / 重置。
+          EOF
+          echo "notes=$notes" >> "$GITHUB_ENV"
+
+      - name: 创建草稿 Pre-release(人工复核后发布)
+        run: |
+          set -euo pipefail
+          cd artifacts
+          gh release create "xhup-flow-v$VERSION" \
+            --title "XHUP Flow v$VERSION" \
+            --notes-file "$RUNNER_TEMP/RELEASE-NOTES.md" \
+            --prerelease --draft \
+            --target "$GITHUB_SHA" \
+            "xhup-flow-rime-v$CORE.zip" \
+            "xhup-flow-trainer-v$VERSION-windows-x64-setup.exe" \
+            "xhup-flow-trainer-v$VERSION-windows-x64.msi" \
+            "xhup-flow-trainer-v$VERSION-macos-universal.dmg" \
+            "xhup-flow-trainer-v$VERSION-linux-amd64.deb" \
+            "xhup-flow-trainer-v$VERSION-linux-x86_64.rpm" \
+            "xhup-flow-trainer-v$VERSION-android-universal.apk" \
+            SHA256SUMS.txt CANONICAL-SHA256SUMS.txt BUILD-INFO.txt
+          url="$(gh release view "xhup-flow-v$VERSION" --json url -q .url)"
+          echo "### 草稿 Pre-release 已创建" >> "$GITHUB_STEP_SUMMARY"
+          echo "- $url(人工复核发布说明与验收状态后手动发布)" >> "$GITHUB_STEP_SUMMARY"
