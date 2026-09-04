@@ -88,9 +88,7 @@ export function SettingsView() {
       const reason =
         error instanceof BackupError
           ? error.message
-          : language === "zh"
-            ? "未知错误"
-            : "Unknown error";
+          : t("common.unknownError");
       setNotice(t("settings.importFailed", { reason }));
     }
   };
@@ -124,7 +122,7 @@ export function SettingsView() {
                 selected={theme === candidate}
                 onClick={() => setTheme(candidate)}
               >
-                {THEME_LABELS[candidate]}
+                {t(THEME_LABELS[candidate])}
               </OptionButton>
             ))}
           </OptionRow>
@@ -135,7 +133,7 @@ export function SettingsView() {
                 selected={hintMode === candidate}
                 onClick={() => setHintMode(candidate)}
               >
-                {HINT_MODE_LABELS[candidate]}
+                {t(HINT_MODE_LABELS[candidate])}
               </OptionButton>
             ))}
           </OptionRow>
@@ -146,7 +144,7 @@ export function SettingsView() {
                 selected={difficulty === candidate}
                 onClick={() => setDifficulty(candidate)}
               >
-                {DIFFICULTY_LABELS[candidate]}
+                {t(DIFFICULTY_LABELS[candidate])}
               </OptionButton>
             ))}
           </OptionRow>
@@ -157,11 +155,7 @@ export function SettingsView() {
                 selected={sessionLength === candidate}
                 onClick={() => setSessionLength(candidate)}
               >
-                {candidate === 0
-                  ? language === "zh"
-                    ? "无限"
-                    : "∞"
-                  : candidate}
+                {candidate === 0 ? t("practice.lengthUnlimited") : candidate}
               </OptionButton>
             ))}
           </OptionRow>
@@ -170,31 +164,29 @@ export function SettingsView() {
 
       <Card>
         <CardHeader>
-          <CardTitle>训练数据</CardTitle>
-          <CardDescription>
-            码表与词频由 Rust 生成器统一产出,前端只读取,不维护副本。
-          </CardDescription>
+          <CardTitle>{t("settings.data")}</CardTitle>
+          <CardDescription>{t("settings.dataHint")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">数据版本</span>
+            <span className="text-muted-foreground">{t("settings.dataVersion")}</span>
             <span className="font-mono">{index.dataset.packageVersion}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">数据协议</span>
+            <span className="text-muted-foreground">{t("settings.dataSchema")}</span>
             <span className="font-mono">
               schemaVersion {index.dataset.schemaVersion}
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">条目数</span>
+            <span className="text-muted-foreground">{t("settings.dataEntries")}</span>
             <span className="font-mono tabular-nums">
               {index.dataset.entries.length}
             </span>
           </div>
           <Separator className="my-2" />
           <p className="text-sm text-muted-foreground">
-            练习记录仅保存在本机浏览器 / 应用本地存储中,不会上传。
+            {t("settings.privacyHint")}
           </p>
         </CardContent>
       </Card>
@@ -202,11 +194,7 @@ export function SettingsView() {
       <Card>
         <CardHeader>
           <CardTitle>{t("settings.backup")}</CardTitle>
-          <CardDescription>
-            {language === "zh"
-              ? "导出/导入本地练习进度与偏好(JSON);规范数据不进备份。"
-              : "Export/import local progress and preferences (JSON); canonical data is never included."}
-          </CardDescription>
+          <CardDescription>{t("settings.backupHint")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           <div className="flex flex-wrap gap-2">
@@ -251,9 +239,7 @@ export function SettingsView() {
         <CardHeader>
           <CardTitle>{t("settings.reset")}</CardTitle>
           <CardDescription>
-            {language === "zh"
-              ? "清空全部练习进度与按日统计,并恢复练习偏好默认值;主题与语言偏好保留。"
-              : "Clears all progress and daily stats, restores defaults; theme and language are kept."}
+            {t("settings.resetHint")}
           </CardDescription>
         </CardHeader>
         <CardContent>

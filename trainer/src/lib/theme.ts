@@ -5,15 +5,17 @@
  * "system" 时监听 prefers-color-scheme 变化并跟随。
  */
 
+import type { I18nKey } from "@/lib/i18n";
+
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
 
 export const DEFAULT_THEME: ThemePreference = "system";
 
-export const THEME_LABELS: Record<ThemePreference, string> = {
-  system: "跟随系统",
-  light: "浅色",
-  dark: "深色",
+export const THEME_LABELS: Record<ThemePreference, I18nKey> = {
+  system: "settings.themeSystem",
+  light: "settings.themeLight",
+  dark: "settings.themeDark",
 };
 
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";

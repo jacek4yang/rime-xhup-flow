@@ -121,6 +121,19 @@ impl fmt::Display for ManagerError {
     }
 }
 
+impl ManagerError {
+    /// 稳定的机器可读错误码(跨前端/后端契约,不做字符串匹配)。
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::UserDataDirMissing { .. } => "user_data_dir_missing",
+            Self::PackageInvalid { .. } => "package_invalid",
+            Self::PackageMissing => "package_missing",
+            Self::SourceMissing { .. } => "source_missing",
+            Self::Io { .. } => "io",
+        }
+    }
+}
+
 impl std::error::Error for ManagerError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -144,7 +157,10 @@ pub struct RimePackage {
 
 impl RimePackage {
     /// 从当前生成器产物构建源包(`xhup-generator` 是唯一语义来源)。
-    pub fn bundled() -> Self {
+    ///
+    /// 生成器产物缺少主方案或其内嵌版本属源码级缺陷:返回
+    /// [`ManagerError::PackageInvalid`] 而不是 panic(命令路径不得崩溃)。
+    pub fn bundled() -> Result<Self, ManagerError> {
         let files: Vec<(String, String)> = xhup_generator::generate_rime_artifacts()
             .into_iter()
             .map(|artifact| {
@@ -159,8 +175,10 @@ impl RimePackage {
             .iter()
             .find(|(name, _)| name == &schema_file)
             .and_then(|(_, contents)| parse_schema_version(contents))
-            .expect("bundled package must embed a schema version");
-        Self { version, files }
+            .ok_or_else(|| ManagerError::PackageInvalid {
+                missing: format!("{schema_file}#version"),
+            })?;
+        Ok(Self { version, files })
     }
 
     /// 按文件名取产物内容。
@@ -248,6 +266,55 @@ impl Plan {
     }
 }
 
+/// 单个拥有文件的安装完整性(与随附源包逐字节比对;不标记用户自有
+/// Rime 文件)。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileIntegrity {
+    /// 拥有清单中的文件不存在。
+    Missing,
+    /// 存在且与随附包字节一致。
+    Match,
+    /// 存在但与随附包不同(旧版本或被外部改动)。
+    Different,
+}
+
+/// 安装健康分类(由调用方结合随附包版本推导;见
+/// `commands::product_status`)。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InstallHealth {
+    NotInstalled,
+    Healthy,
+    UpdateAvailable,
+    Modified,
+    Incomplete,
+}
+
+impl InstallStatus {
+    /// 由安装状态推导健康分类(需要随附包版本比较)。
+    ///
+    /// `Modified` 仅指「已安装版本与随附版本一致但内容被外部改动」;
+    /// 旧版本文件与随附包天然不同,归入 `UpdateAvailable`。
+    pub fn health(&self, bundled_version: &str) -> InstallHealth {
+        if self.installed_files == 0 {
+            return InstallHealth::NotInstalled;
+        }
+        if !self.missing_files.is_empty() {
+            return InstallHealth::Incomplete;
+        }
+        let same_version = self.installed_version.as_deref() == Some(bundled_version);
+        let has_difference = self.integrity.contains(&FileIntegrity::Different);
+        if same_version && has_difference {
+            return InstallHealth::Modified;
+        }
+        if !same_version {
+            return InstallHealth::UpdateAvailable;
+        }
+        InstallHealth::Healthy
+    }
+}
+
 /// 用户数据目录内的 XHUP 安装状态。
 #[derive(Clone, Debug, Serialize)]
 pub struct InstallStatus {
@@ -263,17 +330,37 @@ pub struct InstallStatus {
     pub schemas: Vec<String>,
     /// 已安装包的版本(解析自已安装的主方案文件头;未安装时 `None`)。
     pub installed_version: Option<String>,
+    /// 每个拥有文件相对随附包的完整性(与 OWNED_FILES 同序)。
+    pub integrity: Vec<FileIntegrity>,
 }
 
 /// 检查用户数据目录内的安装状态。
-pub fn install_status(user_data_dir: &Path, client: RimeClient) -> InstallStatus {
+///
+/// `package` 提供时逐文件做完整性比对(字节相等);`None` 时所有
+/// 已存在文件记为 Match(不比对,仅存在性)。
+pub fn install_status(
+    user_data_dir: &Path,
+    client: RimeClient,
+    package: Option<&RimePackage>,
+) -> InstallStatus {
     let mut installed_files = 0;
     let mut missing_files = Vec::new();
+    let mut integrity = Vec::new();
     for file in OWNED_FILES {
-        if user_data_dir.join(file).is_file() {
+        let target = user_data_dir.join(file);
+        if target.is_file() {
             installed_files += 1;
+            let state = match package.and_then(|package| package.contents_of(file)) {
+                Some(expected) => match fs::read(&target) {
+                    Ok(actual) if actual.as_slice() == expected.as_bytes() => FileIntegrity::Match,
+                    Ok(_) | Err(_) => FileIntegrity::Different,
+                },
+                None => FileIntegrity::Match,
+            };
+            integrity.push(state);
         } else {
             missing_files.push((*file).to_string());
+            integrity.push(FileIntegrity::Missing);
         }
     }
     let mut schemas = Vec::new();
@@ -298,6 +385,7 @@ pub fn install_status(user_data_dir: &Path, client: RimeClient) -> InstallStatus
         missing_files,
         schemas,
         installed_version,
+        integrity,
     }
 }
 
@@ -365,28 +453,25 @@ pub fn plan_uninstall(user_data_dir: &Path) -> Result<Plan, ManagerError> {
     })
 }
 
-/// 备份路径:用户数据目录下 `xhup_backup/<文件名>`。备份已存在时跳过
-/// (保留最早版本内容可回滚)。
+/// 备份路径:用户数据目录下 `xhup_backup/<文件名>`。
+///
+/// 保留策略(确定性、有界):每次 install/repair 都把将被覆盖的文件
+/// 的**紧邻前一版本**写入备份(覆盖旧备份)。因此 `xhup_backup/` 至多
+/// 含 OWNED_FILES 数量个文件,内容始终是「最近一次更新前的状态」,
+/// 可直接手动回滚;不会无限累积历史备份目录。备份只含 XHUP 拥有
+/// 文件,绝不触碰用户数据。
 fn backup_path(user_data_dir: &Path, file: &str) -> PathBuf {
     user_data_dir.join("xhup_backup").join(file)
 }
 
-/// 原子写入:先写同目录隐藏临时文件,再替换最终产物。失败时不破坏
-/// 既有目标文件。
-fn write_atomically(user_data_dir: &Path, file: &str, contents: &str) -> Result<(), ManagerError> {
-    let target = user_data_dir.join(file);
+/// 把目标文件写入同目录隐藏临时文件(staging,不触碰最终产物)。
+fn stage_file(user_data_dir: &Path, file: &str, contents: &str) -> Result<PathBuf, ManagerError> {
     let temporary = user_data_dir.join(format!(".{file}.xhup-tmp"));
     fs::write(&temporary, contents).map_err(|source| ManagerError::Io {
         path: temporary.clone(),
         source,
     })?;
-    fs::rename(&temporary, &target).map_err(|source| {
-        let _ = fs::remove_file(&temporary);
-        ManagerError::Io {
-            path: target.clone(),
-            source,
-        }
-    })
+    Ok(temporary)
 }
 
 /// 取计划动作所需的源包内容(缺包或缺文件都返回可操作错误)。
@@ -404,50 +489,205 @@ fn package_contents<'a>(
     }
 }
 
+/// 已提交动作的回滚记录(Write 提交后删除目标;Overwrite 提交后从
+/// 备份恢复)。
+#[derive(Debug)]
+struct Committed {
+    file: String,
+    had_backup: bool,
+}
+
+/// 校验计划只涉及 XHUP 拥有文件(execute 的唯一信任边界)。
+///
+/// - `file` 必须逐字出现在 [`OWNED_FILES`] 中(拒绝路径分隔符、绝对
+///   路径与 `..` 逃逸;`Path::join` 遇绝对路径会替换基目录,必须在此
+///   堵死);
+/// - Overwrite 的 `backup` 必须与本目录推导的 [`backup_path`] 一致
+///   (不信任计划携带的任意目录);
+/// - 违规返回 [`ManagerError::PackageInvalid`]。
+fn validate_plan_actions(plan: &Plan, user_data_dir: &Path) -> Result<(), ManagerError> {
+    for action in &plan.actions {
+        let file = action.file();
+        if !OWNED_FILES.contains(&file) {
+            return Err(ManagerError::PackageInvalid {
+                missing: format!("非法计划目标:{file}"),
+            });
+        }
+        if let PlanAction::Overwrite { backup, .. } = action
+            && backup.as_path() != backup_path(user_data_dir, file)
+        {
+            return Err(ManagerError::PackageInvalid {
+                missing: format!("非法备份路径:{}", backup.display()),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// 要求路径是普通文件(拒绝符号链接,防止备份阶段把链接目标读入
+/// xhup_backup 造成任意文件读取)。
+fn require_regular_file(path: &Path) -> Result<(), ManagerError> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_file() => Ok(()),
+        Ok(_) => Err(ManagerError::Io {
+            path: path.to_path_buf(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "路径不是普通文件(可能是符号链接)",
+            ),
+        }),
+        Err(source) => Err(ManagerError::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+/// 回滚已提交动作(仅限拥有文件;尽力而为,返回第一个失败)。
+fn rollback(committed: &[Committed], user_data_dir: &Path) -> Result<(), ManagerError> {
+    for entry in committed {
+        let target = user_data_dir.join(&entry.file);
+        let result = if entry.had_backup {
+            fs::copy(backup_path(user_data_dir, &entry.file), &target)
+                .map(|_| ())
+                .map_err(|source| ManagerError::Io {
+                    path: target.clone(),
+                    source,
+                })
+        } else {
+            fs::remove_file(&target).map_err(|source| ManagerError::Io {
+                path: target.clone(),
+                source,
+            })
+        };
+        result?;
+    }
+    Ok(())
+}
+
 /// 执行计划(把 dry-run 变成真实改动)。
 ///
-/// - Write / Overwrite 需要 `package` 提供文件内容;
-/// - Overwrite 先把旧文件复制到备份路径(已存在则跳过);
-/// - Delete 只删拥有文件;
-/// - 返回完成的动作数。
+/// install/repair(Write/Overwrite)按**事务性三阶段**执行,范围严格
+/// 限于 XHUP 拥有文件:
+///
+/// 1. **staging**:全部新内容写入同目录 `.{file}.xhup-tmp` 临时文件;
+///    任何一处失败则清理临时文件、不触碰任何最终产物;
+/// 2. **backup**:每个 Overwrite 目标先复制到 `xhup_backup/`(内容为
+///    紧邻前一版本,见 [`backup_path`] 保留策略);
+/// 3. **commit**:逐个 rename 临时文件到最终位置;若中途失败,对已
+///    提交动作执行回滚(Overwrite 从备份恢复,Write 删除),再返回
+///    原始错误。
+///
+/// Delete(卸载)逐文件删除且幂等:文件已不存在视为成功;部分卸载
+/// 可安全重跑,不做事务。
+///
+/// 返回完成的动作数。
 pub fn execute(
     plan: &Plan,
     user_data_dir: &Path,
     package: Option<&RimePackage>,
 ) -> Result<usize, ManagerError> {
+    // 信任边界:计划只能涉及拥有文件、备份只能在 xhup_backup/ 内。
+    validate_plan_actions(plan, user_data_dir)?;
     let mut done = 0;
-    for action in &plan.actions {
-        match action {
-            PlanAction::Write { file } => {
-                let contents = package_contents(package, file)?;
-                write_atomically(user_data_dir, file, contents)?;
+    // 卸载:逐文件删除(幂等)。
+    let deletes: Vec<&PlanAction> = plan
+        .actions
+        .iter()
+        .filter(|action| matches!(action, PlanAction::Delete { .. }))
+        .collect();
+    if !deletes.is_empty() {
+        for action in &deletes {
+            if let PlanAction::Delete { file } = action {
+                let target = user_data_dir.join(file);
+                if target.exists() {
+                    fs::remove_file(&target).map_err(|source| ManagerError::Io {
+                        path: target.clone(),
+                        source,
+                    })?;
+                }
+                done += 1;
             }
-            PlanAction::Overwrite { file, backup } => {
-                let contents = package_contents(package, file)?;
+        }
+        return Ok(done);
+    }
+
+    // 1. staging:全部写临时文件;失败则清理,不留任何最终产物改动。
+    let mut staged: Vec<(String, PathBuf)> = Vec::new();
+    let staging_result = (|| -> Result<(), ManagerError> {
+        for action in &plan.actions {
+            match action {
+                PlanAction::Write { file } | PlanAction::Overwrite { file, .. } => {
+                    let contents = package_contents(package, file)?;
+                    let temporary = stage_file(user_data_dir, file, contents)?;
+                    staged.push((file.clone(), temporary));
+                }
+                PlanAction::Delete { .. } => {}
+            }
+        }
+        Ok(())
+    })();
+    if let Err(error) = staging_result {
+        for (_, temporary) in &staged {
+            let _ = fs::remove_file(temporary);
+        }
+        return Err(error);
+    }
+
+    // 2. backup:Overwrite 目标复制到 xhup_backup/(紧邻前一版本)。
+    //    复制前要求普通文件(拒绝符号链接)。
+    let backup_result = (|| -> Result<(), ManagerError> {
+        for action in &plan.actions {
+            if let PlanAction::Overwrite { file, backup } = action {
+                let target = user_data_dir.join(file);
+                require_regular_file(&target)?;
                 if let Some(parent) = backup.parent() {
                     fs::create_dir_all(parent).map_err(|source| ManagerError::Io {
                         path: parent.to_path_buf(),
                         source,
                     })?;
                 }
-                let target = user_data_dir.join(file);
-                if !backup.exists() {
-                    fs::copy(&target, backup).map_err(|source| ManagerError::Io {
-                        path: backup.clone(),
-                        source,
-                    })?;
-                }
-                write_atomically(user_data_dir, file, contents)?;
-            }
-            PlanAction::Delete { file } => {
-                let target = user_data_dir.join(file);
-                fs::remove_file(&target).map_err(|source| ManagerError::Io {
-                    path: target.clone(),
+                fs::copy(&target, backup).map_err(|source| ManagerError::Io {
+                    path: backup.clone(),
                     source,
                 })?;
             }
         }
-        done += 1;
+        Ok(())
+    })();
+    if let Err(error) = backup_result {
+        for (_, temporary) in &staged {
+            let _ = fs::remove_file(temporary);
+        }
+        return Err(error);
+    }
+
+    // 3. commit:逐个 rename;失败则回滚已提交动作。
+    let mut committed: Vec<Committed> = Vec::new();
+    for action in &plan.actions {
+        match action {
+            PlanAction::Write { file } | PlanAction::Overwrite { file, .. } => {
+                let temporary = user_data_dir.join(format!(".{file}.xhup-tmp"));
+                let target = user_data_dir.join(file);
+                let committed_result = fs::rename(&temporary, &target).map_err(|source| {
+                    let _ = fs::remove_file(&temporary);
+                    ManagerError::Io {
+                        path: target.clone(),
+                        source,
+                    }
+                });
+                if let Err(error) = committed_result {
+                    let _ = rollback(&committed, user_data_dir);
+                    return Err(error);
+                }
+                committed.push(Committed {
+                    file: file.clone(),
+                    had_backup: matches!(action, PlanAction::Overwrite { .. }),
+                });
+                done += 1;
+            }
+            PlanAction::Delete { .. } => {}
+        }
     }
     Ok(done)
 }
@@ -504,8 +744,9 @@ pub fn learning_summary(user_data_dir: &Path) -> LearningSummary {
     }
 }
 
-/// 生成脱敏诊断报告:版本/平台/文件计数/方案/学习数据存在性;
-/// 不包含学习词内容、用户其它文件与环境细节。
+/// 生成脱敏诊断报告:版本/平台/架构/客户端/文件计数与完整性/方案/
+/// 学习数据存在性/学习工具/重新部署能力;不包含学习词内容、用户
+/// 其它文件、环境变量与凭据。用户数据目录路径属必要信息予以保留。
 pub fn diagnostics_report(
     status: &InstallStatus,
     bundled_version: &str,
@@ -515,6 +756,11 @@ pub fn diagnostics_report(
     report.push_str("XHUP Flow 诊断报告\n");
     report.push_str("==================\n");
     report.push_str(&format!("桌面应用版本: {bundled_version}\n"));
+    report.push_str(&format!(
+        "平台: {} / {}\n",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    ));
     report.push_str(&format!("客户端: {status:?}\n"));
     report.push_str(&format!(
         "XHUP 文件: {}/{}\n",
@@ -530,6 +776,17 @@ pub fn diagnostics_report(
     } else {
         report.push_str(&format!("缺失文件: {}\n", status.missing_files.join(", ")));
     }
+    let matches = status
+        .integrity
+        .iter()
+        .filter(|s| **s == FileIntegrity::Match)
+        .count();
+    let different = status
+        .integrity
+        .iter()
+        .filter(|s| **s == FileIntegrity::Different)
+        .count();
+    report.push_str(&format!("完整性: 一致 {matches} / 不同 {different}\n"));
     report.push_str(&format!(
         "学习数据: {}\n",
         if learning.db_exists {
@@ -538,10 +795,19 @@ pub fn diagnostics_report(
             "尚无学习数据"
         }
     ));
-    if !learning.tool_available {
-        report.push_str("学习管理工具: 未找到 rime_dict_manager(导出/导入不可用)\n");
-    }
-    report.push_str("隐私: 学习数据仅存本机;本报告不含任何用户词内容。\n");
+    report.push_str(&format!(
+        "学习管理工具: {}\n",
+        if learning.tool_available {
+            "可用"
+        } else {
+            "未找到 rime_dict_manager(导出/导入不可用)"
+        }
+    ));
+    report.push_str(&format!(
+        "重新部署: 手动执行({})\n",
+        status.client.redeploy_guidance()
+    ));
+    report.push_str("隐私: 学习数据仅存本机;本报告不含任何用户词内容与环境变量。\n");
     report
 }
 
@@ -586,7 +852,7 @@ mod tests {
 
     #[test]
     fn bundled_package_matches_ownership_manifest() {
-        let package = RimePackage::bundled();
+        let package = RimePackage::bundled().unwrap();
         for file in OWNED_FILES {
             assert!(
                 package.contents_of(file).is_some(),
@@ -648,7 +914,7 @@ mod tests {
         assert!(user.join("default.custom.yaml").is_file());
         assert!(user.join("xhup_flow_user.userdb").is_dir());
         // 安装后状态含已安装版本。
-        let status = install_status(&user, RimeClient::Fcitx5);
+        let status = install_status(&user, RimeClient::Fcitx5, Some(&package));
         assert_eq!(status.installed_version.as_deref(), Some("1.0.0"));
         assert_eq!(status.schemas, vec![FLOW_SCHEMA_ID, STATIC_SCHEMA_ID]);
         let _ = fs::remove_dir_all(&user);
@@ -680,7 +946,7 @@ mod tests {
             "1.0.0"
         );
         assert_eq!(
-            install_status(&user, RimeClient::Fcitx5)
+            install_status(&user, RimeClient::Fcitx5, Some(&package_v2))
                 .installed_version
                 .as_deref(),
             Some("1.1.0")
@@ -693,11 +959,11 @@ mod tests {
             action,
             PlanAction::Write { file } if file == OWNED_FILES[3]
         )));
-        let status = install_status(&user, RimeClient::Fcitx5);
+        let status = install_status(&user, RimeClient::Fcitx5, Some(&package_v2));
         assert_eq!(status.missing_files.len(), 1);
         execute(&plan_repair, &user, Some(&package_v2)).unwrap();
         assert_eq!(
-            install_status(&user, RimeClient::Fcitx5)
+            install_status(&user, RimeClient::Fcitx5, Some(&package_v2))
                 .missing_files
                 .len(),
             0
@@ -815,16 +1081,233 @@ mod tests {
             Some(&package),
         )
         .unwrap();
-        let status = install_status(&user, RimeClient::Fcitx5);
+        let status = install_status(&user, RimeClient::Fcitx5, Some(&package));
         let learning = learning_summary(&user);
         let report = diagnostics_report(&status, "0.1.0", &learning);
         assert!(report.contains("XHUP 文件: 11/11"));
         assert!(report.contains("xhup_flow, xhup_flow_static"));
         assert!(report.contains("已安装版本: 1.0.0"));
+        assert!(report.contains("完整性: 一致 11 / 不同 0"));
+        assert!(report.contains("平台: "));
+        assert!(report.contains("重新部署: 手动执行("));
         assert!(
             !report.contains("default.custom.yaml"),
             "不包含用户文件内容"
         );
         let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
+    fn error_codes_are_stable() {
+        assert_eq!(
+            ManagerError::UserDataDirMissing {
+                path: PathBuf::from("/x")
+            }
+            .code(),
+            "user_data_dir_missing"
+        );
+        assert_eq!(ManagerError::PackageMissing.code(), "package_missing");
+        assert_eq!(
+            ManagerError::PackageInvalid {
+                missing: "a".to_string()
+            }
+            .code(),
+            "package_invalid"
+        );
+    }
+
+    #[test]
+    fn repeated_updates_refresh_backup_to_previous_version() {
+        // 备份保留策略:备份内容 = 紧邻本次更新前的版本(有界、确定性)。
+        let user = fake_user_dir("backup-retention");
+        let v1 = fake_package("1.0.0");
+        execute(&plan_install(&user, &v1).unwrap(), &user, Some(&v1)).unwrap();
+        let v2 = fake_package("1.1.0");
+        execute(&plan_install(&user, &v2).unwrap(), &user, Some(&v2)).unwrap();
+        let v3 = fake_package("1.2.0");
+        execute(&plan_install(&user, &v3).unwrap(), &user, Some(&v3)).unwrap();
+        // 第二次更新后,备份 = v2(紧邻前一版本),不是更早的 v1。
+        assert_eq!(
+            fs::read_to_string(backup_path(&user, OWNED_FILES[0])).unwrap(),
+            "1.1.0"
+        );
+        // 备份目录文件数有界(恰好拥有文件数)。
+        let count = fs::read_dir(user.join("xhup_backup")).unwrap().count();
+        assert_eq!(count, OWNED_FILES.len());
+        let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
+    fn staging_failure_aborts_without_touching_any_target() {
+        // 失败注入:一个目标是目录 → staging 之前的备份阶段失败...
+        let user = fake_user_dir("stage-abort");
+        let v1 = fake_package("1.0.0");
+        execute(&plan_install(&user, &v1).unwrap(), &user, Some(&v1)).unwrap();
+        // 把一个已安装文件替换成目录,使其备份(copy)失败。
+        let victim = user.join(OWNED_FILES[5]);
+        fs::remove_file(&victim).unwrap();
+        fs::create_dir(&victim).unwrap();
+        let v2 = fake_package("1.1.0");
+        let result = execute(&plan_install(&user, &v2).unwrap(), &user, Some(&v2));
+        assert!(result.is_err());
+        // 其它拥有文件必须保持 v1 原样(任何最终产物都未被改动)。
+        assert_eq!(
+            fs::read_to_string(user.join(OWNED_FILES[0])).unwrap(),
+            "1.0.0"
+        );
+        assert_eq!(
+            fs::read_to_string(user.join(OWNED_FILES[2])).unwrap(),
+            "1.0.0"
+        );
+        // 不残留 staging 临时文件。
+        for file in OWNED_FILES {
+            assert!(!user.join(format!(".{file}.xhup-tmp")).exists());
+        }
+        let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
+    fn rollback_restores_previous_state_from_commit_log() {
+        // 直接验证回滚:一半 Write、一半 Overwrite 的已提交记录。
+        let user = fake_user_dir("rollback");
+        let v1 = fake_package("1.0.0");
+        execute(&plan_install(&user, &v1).unwrap(), &user, Some(&v1)).unwrap();
+        // 前 6 个文件视为 Overwrite 提交(应从备份恢复),后 5 个视为
+        // Write 提交(应被删除)。构造备份与「新版本」内容。
+        for file in &OWNED_FILES[..6] {
+            let backup = backup_path(&user, file);
+            fs::create_dir_all(backup.parent().unwrap()).unwrap();
+            fs::copy(user.join(file), &backup).unwrap();
+            fs::write(user.join(file), "v2").unwrap();
+        }
+        for file in &OWNED_FILES[6..] {
+            fs::write(user.join(file), "v2").unwrap();
+        }
+        let committed: Vec<Committed> = OWNED_FILES
+            .iter()
+            .enumerate()
+            .map(|(index, file)| Committed {
+                file: (*file).to_string(),
+                had_backup: index < 6,
+            })
+            .collect();
+        rollback(&committed, &user).unwrap();
+        // Overwrite → 恢复为 v1;Write → 删除。
+        assert_eq!(
+            fs::read_to_string(user.join(OWNED_FILES[0])).unwrap(),
+            "1.0.0"
+        );
+        assert!(!user.join(OWNED_FILES[8]).exists());
+        let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
+    fn integrity_and_health_classification() {
+        let user = fake_user_dir("integrity");
+        let v1 = fake_package("1.0.0");
+        execute(&plan_install(&user, &v1).unwrap(), &user, Some(&v1)).unwrap();
+
+        // 与同版本包比对 → 全部 Match → Healthy。
+        let status = install_status(&user, RimeClient::Fcitx5, Some(&v1));
+        assert!(status.integrity.iter().all(|s| *s == FileIntegrity::Match));
+        assert_eq!(status.health(&v1.version), InstallHealth::Healthy);
+
+        // 修改一个文件内容(不换版本号)→ Different → Modified。
+        fs::write(user.join(OWNED_FILES[2]), "被外部改动").unwrap();
+        let status = install_status(&user, RimeClient::Fcitx5, Some(&v1));
+        assert!(status.integrity.contains(&FileIntegrity::Different));
+        assert_eq!(status.health(&v1.version), InstallHealth::Modified);
+        fs::write(
+            user.join(OWNED_FILES[2]),
+            v1.contents_of(OWNED_FILES[2]).unwrap(),
+        )
+        .unwrap();
+
+        // 新版本包比对 → 版本不同 → UpdateAvailable(内容一致时)。
+        let v2 = fake_package("1.1.0");
+        let status = install_status(&user, RimeClient::Fcitx5, Some(&v2));
+        // v1 与 v2 除 schema 版本行外内容一致:主方案文件 Different,
+        // 但已安装版本 != 随附版本 → UpdateAvailable 优先于 Modified。
+        assert!(status.integrity.contains(&FileIntegrity::Different));
+        assert_eq!(status.health(&v2.version), InstallHealth::UpdateAvailable);
+
+        // 缺文件 → Incomplete 优先于其它分类。
+        fs::remove_file(user.join(OWNED_FILES[4])).unwrap();
+        let status = install_status(&user, RimeClient::Fcitx5, Some(&v1));
+        assert_eq!(status.health(&v1.version), InstallHealth::Incomplete);
+
+        // 空目录 → NotInstalled。
+        let empty = temp_dir("integrity-empty");
+        let status = install_status(&empty, RimeClient::Fcitx5, Some(&v1));
+        assert_eq!(status.health(&v1.version), InstallHealth::NotInstalled);
+        let _ = fs::remove_dir_all(&user);
+        let _ = fs::remove_dir_all(&empty);
+    }
+
+    #[test]
+    fn execute_rejects_plans_targeting_non_owned_files() {
+        // 信任边界:伪造计划(绝对路径/未知文件/非法备份目录)必须被
+        // 拒绝,不得触碰用户目录。
+        let user = fake_user_dir("plan-trust");
+        let package = fake_package("1.0.0");
+        let mut hostile = plan_install(&user, &package).unwrap();
+        hostile.actions[0] = PlanAction::Write {
+            file: "../evil.yaml".to_string(),
+        };
+        assert!(matches!(
+            execute(&hostile, &user, Some(&package)),
+            Err(ManagerError::PackageInvalid { .. })
+        ));
+        // 未知文件名。
+        hostile.actions[0] = PlanAction::Write {
+            file: "/etc/passwd".to_string(),
+        };
+        assert!(matches!(
+            execute(&hostile, &user, Some(&package)),
+            Err(ManagerError::PackageInvalid { .. })
+        ));
+        // 非法备份目录(不在 xhup_backup/ 内)。
+        let mut hostile_backup = plan_install(&user, &package).unwrap();
+        hostile_backup.actions[0] = PlanAction::Overwrite {
+            file: OWNED_FILES[0].to_string(),
+            backup: user.join("elsewhere").join(OWNED_FILES[0]),
+        };
+        assert!(matches!(
+            execute(&hostile_backup, &user, Some(&package)),
+            Err(ManagerError::PackageInvalid { .. })
+        ));
+        // 用户目录未被改动。
+        assert!(!user.join(OWNED_FILES[0]).exists());
+        let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
+    fn execute_rejects_symlink_targets_during_backup() {
+        // 符号链接防护:备份阶段拒绝链接目标,避免任意文件读入备份。
+        let user = fake_user_dir("symlink");
+        let package = fake_package("1.0.0");
+        execute(
+            &plan_install(&user, &package).unwrap(),
+            &user,
+            Some(&package),
+        )
+        .unwrap();
+        // 把一个拥有文件替换为指向外部文件的符号链接。
+        let outside = temp_dir("symlink-outside");
+        fs::write(outside.join("secret"), "机密").unwrap();
+        let victim = user.join(OWNED_FILES[0]);
+        fs::remove_file(&victim).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.join("secret"), &victim).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(outside.join("secret"), &victim).unwrap();
+        let v2 = fake_package("1.1.0");
+        let result = execute(&plan_install(&user, &v2).unwrap(), &user, Some(&v2));
+        assert!(result.is_err());
+        // 链接目标内容未被读入备份目录。
+        let leaked = user.join("xhup_backup").join(OWNED_FILES[0]);
+        assert!(!leaked.exists() || fs::read_to_string(&leaked).unwrap() != "机密");
+        let _ = fs::remove_dir_all(&user);
+        let _ = fs::remove_dir_all(&outside);
     }
 }
