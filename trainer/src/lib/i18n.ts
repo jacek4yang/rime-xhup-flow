@@ -58,6 +58,7 @@ const zh = {
   "dashboard.modeKeyFull": "4 键",
   "dashboard.modeKeyMixed": "2/3/4 键",
   "dashboard.practiceTime": "练习时间",
+  "dashboard.learnCta": "从入门到精通 →",
   "dashboard.completed": "完成题数",
   "dashboard.bestStreak": "最佳连对",
   "dashboard.todayEmpty": "今天还没有练习,从「双拼」开始第一组吧。",
@@ -451,6 +452,7 @@ const en: Record<I18nKey, string> = {
   "dashboard.modeKeyFull": "4 keys",
   "dashboard.modeKeyMixed": "2/3/4 keys",
   "dashboard.practiceTime": "Practice time",
+  "dashboard.learnCta": "Learn from zero to mastery →",
   "dashboard.completed": "Completed",
   "dashboard.bestStreak": "Best streak",
   "dashboard.todayEmpty":
