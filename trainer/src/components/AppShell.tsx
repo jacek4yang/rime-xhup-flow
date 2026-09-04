@@ -25,6 +25,7 @@ import { WeaknessCenter } from "@/features/review/ReviewView";
 import { StatsView } from "@/features/stats/StatsView";
 import { ReferenceView } from "@/features/reference/ReferenceView";
 import { ControlCenterView } from "@/features/product/ControlCenterView";
+import { FirstRunWizard } from "@/features/first-run/FirstRunWizard";
 import { SettingsView } from "@/features/settings/SettingsView";
 import type { PracticeMode } from "@/features/practice/types";
 
@@ -94,6 +95,15 @@ export function AppShell() {
         {view === "settings" && <SettingsView />}
       </main>
       <MobileBottomNav active={view} onNavigate={setView} />
+      {/* 首次启动向导:完成/跳过后不再出现;不影响常规导航。 */}
+      <FirstRunWizard
+        onStartTraining={(mode) => {
+          setPresetMode(mode);
+          setReviewEntries(null);
+          setView("practice");
+        }}
+        onOpenControlCenter={() => setView("product")}
+      />
     </div>
   );
 }

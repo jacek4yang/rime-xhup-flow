@@ -18,3 +18,29 @@ if (typeof window !== "undefined" && !window.matchMedia) {
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia;
 }
+
+// Node ≥ 26 把 Storage/localStorage 暴露为 globalThis 自有属性(未提供
+// --localstorage-file 时值为 undefined);vitest 的 populateGlobal 见
+// 「键已存在」即跳过 jsdom 的 localStorage,导致测试环境缺存储。
+// 这里补一个最小内存实现;jsdom 自带 localStorage 时此分支不生效。
+if (typeof window !== "undefined" && typeof window.localStorage === "undefined") {
+  const store = new Map<string, string>();
+  const storage = {
+    get length() {
+      return store.size;
+    },
+    clear: () => store.clear(),
+    getItem: (key: string) => (store.has(key) ? (store.get(key) as string) : null),
+    key: (index: number) => [...store.keys()][index] ?? null,
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      store.set(key, String(value));
+    },
+  };
+  Object.defineProperty(window, "localStorage", {
+    value: storage,
+    configurable: true,
+  });
+}
