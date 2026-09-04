@@ -3,13 +3,14 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { TrainerEntry } from "@/lib/trainer-data";
 import type { TrainingItem } from "@/lib/trainer-index";
 import { buildTrainerIndex, charItem, type TrainerIndex } from "@/lib/trainer-index";
 import { TrainerIndexProvider } from "@/lib/trainer-context";
 import { resetTrainerStore, useTrainerStore } from "@/stores/trainer-store";
+import { consumeBack } from "@/lib/back-handler";
 import { PracticeSetupView } from "./PracticeSetupView";
 import { PracticeView } from "./PracticeView";
 import type { PracticeConfig } from "./PracticeSetupView";
@@ -79,7 +80,7 @@ describe("PracticeSetupView", () => {
     resetTrainerStore();
   });
 
-  it("从设置页开始一场练习", async () => {
+  it("模式选择 → 参数设置两块独立屏幕,设置屏开始练习", async () => {
     const user = userEvent.setup();
     render(
       <TrainerIndexProvider index={fixtureIndex()}>
@@ -91,9 +92,35 @@ describe("PracticeSetupView", () => {
         />
       </TrainerIndexProvider>,
     );
+    // 主屏:选择模式 → 进入设置屏(独立屏幕,不再同页下滚)。
+    await user.click(screen.getByRole("button", { name: /^双拼/ }));
+    expect(await screen.findByText("键盘与参考")).toBeInTheDocument();
+    // 设置屏包含键帽参考与触感设置。
+    expect(screen.getByText("键帽参考")).toBeInTheDocument();
+    expect(screen.getByText("触感反馈")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /开始练习/ }));
     expect(await screen.findByLabelText("编码输入区")).toBeInTheDocument();
     expect(screen.getByText("行")).toBeInTheDocument();
+  });
+
+  it("设置屏的返回(拦截器)回到模式选择屏", () => {
+    render(
+      <TrainerIndexProvider index={fixtureIndex()}>
+        <PracticeSetupView
+          presetMode="full"
+          reviewEntries={null}
+          onPresetConsumed={noop}
+          onExitToToday={noop}
+        />
+      </TrainerIndexProvider>,
+    );
+    expect(screen.getByText("键盘与参考")).toBeInTheDocument();
+    act(() => {
+      expect(consumeBack()).toBe(true);
+    });
+    expect(screen.getByText("选择练习")).toBeInTheDocument();
+    // 主屏不认领返回:交还给导航栈。
+    expect(consumeBack()).toBe(false);
   });
 
   it("模式选择覆盖全部 12 种模式并按分组展示", () => {

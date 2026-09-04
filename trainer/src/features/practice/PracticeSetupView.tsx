@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Play } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronLeft, Play } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -12,14 +12,19 @@ import { OptionButton, OptionRow } from "@/components/OptionGroup";
 import { cn } from "@/lib/utils";
 import type { TrainingItem } from "@/lib/trainer-index";
 import type { Difficulty } from "@/lib/trainer-index";
+import { registerBackHandler } from "@/lib/back-handler";
 import { useI18n } from "@/lib/use-i18n";
 import { useTrainerStore } from "@/stores/trainer-store";
 import { PracticeView } from "./PracticeView";
 import {
   DIFFICULTY_LABELS,
+  HAPTICS_MODES,
+  KEY_REF_MODES,
   MODE_DESCRIPTIONS,
   MODE_LABELS,
   SESSION_LENGTH_OPTIONS,
+  type HapticsMode,
+  type KeyRefMode,
   type PracticeMode,
 } from "./types";
 
@@ -95,6 +100,10 @@ function modeKeyBadge(mode: PracticeMode): string {
   }
 }
 
+/**
+ * 练习入口:模式选择(PracticeHome)与参数设置(Setup)是两块独立屏幕;
+ * 会话(PracticeView)整屏替换,不再同页下滚。返回键由各屏自行认领。
+ */
 export function PracticeSetupView({
   presetMode,
   reviewEntries,
@@ -113,7 +122,13 @@ export function PracticeSetupView({
   const setLastMode = useTrainerStore((state) => state.setLastMode);
   const setDifficulty = useTrainerStore((state) => state.setDifficulty);
   const setSessionLength = useTrainerStore((state) => state.setSessionLength);
+  const keyRefMode = useTrainerStore((state) => state.keyRefMode);
+  const setKeyRefMode = useTrainerStore((state) => state.setKeyRefMode);
+  const keyHaptics = useTrainerStore((state) => state.keyHaptics);
+  const setKeyHaptics = useTrainerStore((state) => state.setKeyHaptics);
 
+  // 带预设模式(今日页模式卡/学习中心)直接进入设置屏;复习条目直接进入会话。
+  const [screen, setScreen] = useState<"home" | "setup">(presetMode ? "setup" : "home");
   const [mode, setMode] = useState<PracticeMode>(presetMode ?? lastMode);
   const [active, setActive] = useState<{ config: PracticeConfig; seed: number } | null>(
     () =>
@@ -129,6 +144,21 @@ export function PracticeSetupView({
           }
         : null,
   );
+
+  // 设置屏:返回键回到模式选择屏(会话屏由 PracticeView 自行认领;
+  // 激活时不得清除子组件的注册)。
+  useEffect(() => {
+    if (active) return;
+    if (screen !== "setup") {
+      registerBackHandler(null);
+      return;
+    }
+    registerBackHandler(() => {
+      setScreen("home");
+      return true;
+    });
+    return () => registerBackHandler(null);
+  }, [screen, active]);
 
   if (active) {
     return (
@@ -167,6 +197,97 @@ export function PracticeSetupView({
     });
   };
 
+  if (screen === "setup") {
+    return (
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+        <header className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t("common.back")}
+            onClick={() => setScreen("home")}
+          >
+            <ChevronLeft aria-hidden />
+          </Button>
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-semibold">
+              {t(MODE_LABELS[mode])}
+            </h1>
+            <p className="truncate text-sm text-muted-foreground">
+              {t(MODE_DESCRIPTIONS[mode])}
+            </p>
+          </div>
+        </header>
+
+        <Card>
+          <CardContent className="flex flex-col gap-4 pt-4">
+            <OptionRow label={t("practice.difficulty")}>
+              {DIFFICULTIES.map((candidate) => (
+                <OptionButton
+                  key={candidate}
+                  selected={difficulty === candidate}
+                  onClick={() => setDifficulty(candidate)}
+                >
+                  {t(DIFFICULTY_LABELS[candidate])}
+                </OptionButton>
+              ))}
+            </OptionRow>
+            <OptionRow label={t("practice.length")}>
+              {SESSION_LENGTH_OPTIONS.map((candidate) => (
+                <OptionButton
+                  key={candidate}
+                  selected={sessionLength === candidate}
+                  onClick={() => setSessionLength(candidate)}
+                >
+                  {candidate === 0 ? t("practice.lengthUnlimited") : candidate}
+                </OptionButton>
+              ))}
+            </OptionRow>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t("practice.keyboardTitle")}</CardTitle>
+            <CardDescription>{t("practice.keyboardHint")}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <OptionRow label={t("practice.keyRefMode")}>
+              {KEY_REF_MODES.map((candidate) => (
+                <OptionButton
+                  key={candidate}
+                  selected={keyRefMode === candidate}
+                  onClick={() => setKeyRefMode(candidate as KeyRefMode)}
+                >
+                  {t(`practice.keyRef.${candidate}`)}
+                </OptionButton>
+              ))}
+            </OptionRow>
+            <OptionRow label={t("practice.haptics")}>
+              {HAPTICS_MODES.map((candidate) => (
+                <OptionButton
+                  key={candidate}
+                  selected={keyHaptics === candidate}
+                  onClick={() => setKeyHaptics(candidate as HapticsMode)}
+                >
+                  {t(`practice.haptics.${candidate}`)}
+                </OptionButton>
+              ))}
+            </OptionRow>
+          </CardContent>
+        </Card>
+
+        {/* 吸底开始按钮:设置项再多也无需滚动寻找。 */}
+        <div className="sticky bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-10">
+          <Button size="lg" className="w-full shadow-lg" onClick={start}>
+            <Play aria-hidden />
+            {t("practice.start")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   const grouped = new Map<string, PracticeMode[]>();
   for (const candidate of MODES) {
     const group = modeGroupKey(candidate);
@@ -176,7 +297,7 @@ export function PracticeSetupView({
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <h1 className="text-xl font-semibold">{t("practice.start")}</h1>
+        <h1 className="text-xl font-semibold">{t("practice.chooseMode")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {t("practice.setupHint")}
         </p>
@@ -196,12 +317,15 @@ export function PracticeSetupView({
                   key={candidate}
                   role="button"
                   tabIndex={0}
-                  aria-pressed={mode === candidate}
-                  onClick={() => setMode(candidate)}
+                  onClick={() => {
+                    setMode(candidate);
+                    setScreen("setup");
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
                       setMode(candidate);
+                      setScreen("setup");
                     }
                   }}
                   className={cn(
@@ -224,40 +348,6 @@ export function PracticeSetupView({
           </section>
         );
       })}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("practice.mode")}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <OptionRow label={t("practice.difficulty")}>
-            {DIFFICULTIES.map((candidate) => (
-              <OptionButton
-                key={candidate}
-                selected={difficulty === candidate}
-                onClick={() => setDifficulty(candidate)}
-              >
-                {t(DIFFICULTY_LABELS[candidate])}
-              </OptionButton>
-            ))}
-          </OptionRow>
-          <OptionRow label={t("practice.length")}>
-            {SESSION_LENGTH_OPTIONS.map((candidate) => (
-              <OptionButton
-                key={candidate}
-                selected={sessionLength === candidate}
-                onClick={() => setSessionLength(candidate)}
-              >
-                {candidate === 0 ? t("practice.lengthUnlimited") : candidate}
-              </OptionButton>
-            ))}
-          </OptionRow>
-          <Button size="lg" className="mt-2 w-full sm:w-auto" onClick={start}>
-            <Play aria-hidden />
-            {t("practice.start")}
-          </Button>
-        </CardContent>
-      </Card>
     </div>
   );
 }
