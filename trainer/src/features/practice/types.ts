@@ -83,6 +83,21 @@ export const HAPTICS_MODES: readonly HapticsMode[] = ["off", "light", "medium"];
 export const DEFAULT_HAPTICS_MODE: HapticsMode = "light";
 
 /**
+ * 错误教学深度:答错后是否暂停讲解并重试同一题。
+ *
+ * quick:维持原节奏(显示正确编码,继续);adaptive(默认):答错即暂停,
+ * 展示读音/码结构/出错位置后重试;deep:在 adaptive 之上补充同形键
+ * 例字等更完整的讲解。见错误教学卡片。
+ */
+export type ErrorTeachingMode = "quick" | "adaptive" | "detailed";
+export const ERROR_TEACHING_MODES: readonly ErrorTeachingMode[] = [
+  "quick",
+  "adaptive",
+  "detailed",
+];
+export const DEFAULT_ERROR_TEACHING: ErrorTeachingMode = "adaptive";
+
+/**
  * 模式 → 池轮换(均衡轮换顺序)。单字四模式沿用 V1 的 MODE_LENGTHS
  * 语义;新模式的池 ID 见 trainer-index 的 PoolId。
  */

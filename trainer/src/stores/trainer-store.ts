@@ -27,10 +27,13 @@ import {
   DEFAULT_HINT_MODE,
   DEFAULT_HAPTICS_MODE,
   DEFAULT_KEY_REF_MODE,
+  DEFAULT_ERROR_TEACHING,
   DEFAULT_MODE,
   DEFAULT_SESSION_LENGTH,
+  ERROR_TEACHING_MODES,
   HAPTICS_MODES,
   KEY_REF_MODES,
+  type ErrorTeachingMode,
   type HapticsMode,
   type KeyRefMode,
   SESSION_LENGTH_OPTIONS,
@@ -74,6 +77,8 @@ export type TrainerData = {
   keyRefMode: KeyRefMode;
   /** 键位触感反馈(off/light/medium;桌面不支持时自动无效)。 */
   keyHaptics: HapticsMode;
+  /** 错误教学深度(quick/adaptive/detailed)。 */
+  errorTeaching: ErrorTeachingMode;
   difficulty: Difficulty;
   sessionLength: SessionLength;
   lastMode: PracticeMode;
@@ -108,6 +113,7 @@ export type TrainerActions = {
   setHintMode: (hintMode: HintMode) => void;
   setKeyRefMode: (keyRefMode: KeyRefMode) => void;
   setKeyHaptics: (keyHaptics: HapticsMode) => void;
+  setErrorTeaching: (errorTeaching: ErrorTeachingMode) => void;
   setDifficulty: (difficulty: Difficulty) => void;
   setSessionLength: (sessionLength: SessionLength) => void;
   setLastMode: (lastMode: PracticeMode) => void;
@@ -140,6 +146,7 @@ function defaultData(): TrainerData {
     hintMode: DEFAULT_HINT_MODE,
     keyRefMode: DEFAULT_KEY_REF_MODE,
     keyHaptics: DEFAULT_HAPTICS_MODE,
+    errorTeaching: DEFAULT_ERROR_TEACHING,
     difficulty: DEFAULT_DIFFICULTY,
     sessionLength: DEFAULT_SESSION_LENGTH,
     lastMode: DEFAULT_MODE,
@@ -297,6 +304,11 @@ export function sanitizePersisted(value: unknown): TrainerData {
     hintMode: pickEnum(value.hintMode, HINT_MODES, defaults.hintMode),
     keyRefMode: pickEnum(value.keyRefMode, KEY_REF_MODES, defaults.keyRefMode),
     keyHaptics: pickEnum(value.keyHaptics, HAPTICS_MODES, defaults.keyHaptics),
+    errorTeaching: pickEnum(
+      value.errorTeaching,
+      ERROR_TEACHING_MODES,
+      defaults.errorTeaching,
+    ),
     difficulty: pickEnum(value.difficulty, DIFFICULTIES, defaults.difficulty),
     sessionLength,
     lastMode: pickEnum(value.lastMode, MODES, defaults.lastMode),
@@ -347,6 +359,7 @@ export const useTrainerStore = create<TrainerStore>()(
       setHintMode: (hintMode) => set({ hintMode }),
       setKeyRefMode: (keyRefMode) => set({ keyRefMode }),
       setKeyHaptics: (keyHaptics) => set({ keyHaptics }),
+      setErrorTeaching: (errorTeaching) => set({ errorTeaching }),
       setDifficulty: (difficulty) => set({ difficulty }),
       setSessionLength: (sessionLength) => set({ sessionLength }),
       setLastMode: (lastMode) => set({ lastMode }),
@@ -423,6 +436,7 @@ export const useTrainerStore = create<TrainerStore>()(
         hintMode: state.hintMode,
         keyRefMode: state.keyRefMode,
         keyHaptics: state.keyHaptics,
+        errorTeaching: state.errorTeaching,
         difficulty: state.difficulty,
         sessionLength: state.sessionLength,
         lastMode: state.lastMode,

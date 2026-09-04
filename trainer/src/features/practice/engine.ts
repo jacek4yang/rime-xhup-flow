@@ -355,6 +355,23 @@ export function backspace(state: SessionState): SessionState {
   };
 }
 
+/**
+ * 重试当前题(错误教学路径):清空已输入与错键标记,保留同一题。
+ * 清过任何内容时计入一次修正;无可清内容时原样返回。
+ */
+export function retryCurrent(state: SessionState): SessionState {
+  if (state.phase !== "question") return state;
+  const hadContent = state.typed.length > 0 || state.lastWrongKey !== null;
+  if (!hadContent) return state;
+  return {
+    ...state,
+    typed: "",
+    corrections: state.corrections + 1,
+    correctionsThisQuestion: state.correctionsThisQuestion + 1,
+    lastWrongKey: null,
+  };
+}
+
 /** 暂停:结清活跃时间。只在出题阶段可暂停(反馈阶段转瞬即过,不可暂停)。 */
 export function pause(state: SessionState, now: number): StepResult {
   if (state.phase !== "question") {

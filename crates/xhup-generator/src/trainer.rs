@@ -72,6 +72,10 @@ struct TrainerEntry {
     code: String,
     length: usize,
     readings: Vec<&'static str>,
+    /// 规范默认读音(带调;来自 Unihan kMandarin 教育子集,见
+    /// data/education/README.md)。教育元数据,缺失时前端回退无调展示。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tone_reading: Option<&'static str>,
     frequency_score: u64,
     rime_weight: u32,
 }
@@ -185,8 +189,26 @@ const SENTENCE_FIXTURES: &[&[&str]] = &[
     ],
 ];
 
+/// 规范带调读音教育子集(数据来源与许可见 data/education/README.md;
+/// Unihan 17.0.0 kMandarin,8105 字全覆盖)。教育元数据,不属于编码契约。
+const EDUCATIONAL_TONE_TSV: &str = include_str!("../../../data/education/pinyin_tone.tsv");
+
+/// 字 → 规范默认带调读音(如 时 → shí)。
+fn educational_tone_readings() -> std::collections::HashMap<char, &'static str> {
+    EDUCATIONAL_TONE_TSV
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split('\t');
+            let ch = parts.next()?.chars().next()?;
+            let tone = parts.next()?;
+            Some((ch, tone))
+        })
+        .collect()
+}
+
 /// 生成训练器规范数据集 JSON(UTF-8、恰好一个末尾换行、字节级可复现)。
 pub fn generate_trainer_dataset() -> String {
+    let tone_readings = educational_tone_readings();
     let entries = finalized_char_code_entries()
         .iter()
         .map(|entry| TrainerEntry {
@@ -198,6 +220,7 @@ pub fn generate_trainer_dataset() -> String {
                 .iter()
                 .map(|reading| reading.as_str())
                 .collect(),
+            tone_reading: tone_readings.get(&entry.hanzi().as_char()).copied(),
             frequency_score: entry.frequency_score(),
             rime_weight: entry.rime_weight(),
         })
