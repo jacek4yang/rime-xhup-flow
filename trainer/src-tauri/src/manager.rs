@@ -1420,7 +1420,16 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink(outside.join("secret"), &victim).unwrap();
         #[cfg(windows)]
-        std::os::windows::fs::symlink_file(outside.join("secret"), &victim).unwrap();
+        if let Err(err) = std::os::windows::fs::symlink_file(outside.join("secret"), &victim) {
+            // ERROR_PRIVILEGE_NOT_HELD(1314):创建符号链接需要管理员或开发者模式;
+            // 无特权环境下跳过夹具,防护逻辑由 Unix CI 与特权 Windows 验证。
+            if err.raw_os_error() == Some(1314) {
+                let _ = fs::remove_dir_all(&user);
+                let _ = fs::remove_dir_all(&outside);
+                return;
+            }
+            panic!("创建符号链接夹具失败: {err}");
+        }
         let v2 = fake_package("1.1.0");
         let result = execute(&plan_install(&user, &v2).unwrap(), &user, Some(&v2));
         assert!(result.is_err());
