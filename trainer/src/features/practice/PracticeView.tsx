@@ -35,6 +35,7 @@ import {
   finish,
   pause,
   resume,
+  retryCurrent,
   typeKey,
   type SessionEvent,
   type SessionState,
@@ -42,6 +43,7 @@ import {
 } from "./engine";
 import { buildPool, type QuestionPool } from "./scheduler";
 import { SessionSummary } from "./SessionSummary";
+import { ErrorTeachingCard, findEntry } from "./ErrorTeachingCard";
 import type { PracticeConfig } from "./PracticeSetupView";
 import {
   DIFFICULTY_LABELS,
@@ -190,8 +192,7 @@ export function PracticeView({
   );
 
   // 键帽参考:情境模式按练习目标解析;其余模式由用户显式选择。
-  const resolvedRefMode = useMemo<KeyboardRefMode>(() => {
-    if (keyRefMode !== "contextual") return keyRefMode;
+  const resolvedRefMode = useMemo<KeyboardRefMode>(() => {    if (keyRefMode !== "contextual") return keyRefMode;
     switch (config.entries ? "mixed" : config.mode) {
       case "double":
       case "level1":
@@ -215,10 +216,14 @@ export function PracticeView({
     }
   }, [keyRefMode, config]);
 
-  // 形码参考(键 → 首形/次形代表字):规范数据聚合,只建一次。
+  // 形码参考与教学数据:规范数据聚合,只建一次。
+  const shapeStats = useMemo(
+    () => buildShapeKeyStats(index.dataset.entries),
+    [index.dataset.entries],
+  );
   const shapeRef = useMemo<ShapeKeyRef>(() => {
     const map: ShapeKeyRef = new Map();
-    for (const stat of buildShapeKeyStats(index.dataset.entries, 1)) {
+    for (const stat of shapeStats) {
       const first = stat.firstSamples[0]?.char;
       const second = stat.secondSamples[0]?.char;
       if (first ?? second) {
@@ -226,7 +231,7 @@ export function PracticeView({
       }
     }
     return map;
-  }, [index.dataset.entries]);
+  }, [shapeStats]);
 
   const commit = (result: StepResult) => {
     dispatchEvents(result.events);
@@ -239,6 +244,17 @@ export function PracticeView({
     } else {
       haptic(hapticsMode, "key");
     }
+  };
+
+  // 错误教学:答错即暂停讲解并重试同一题(quick 模式维持原节奏)。
+  const errorTeaching = useTrainerStore((state) => state.errorTeaching);
+  const teachingVisible =
+    errorTeaching !== "quick" &&
+    session?.phase === "question" &&
+    session.lastWrongKey !== null;
+  const retryQuestion = () => {
+    if (!session) return;
+    setSession(retryCurrent(session));
   };
 
   if (!session) {
@@ -426,6 +442,18 @@ export function PracticeView({
               </Button>
             </div>
           </div>
+        )}
+
+        {teachingVisible && session.lastWrongKey !== null && (
+          <ErrorTeachingCard
+            item={session.current}
+            entry={findEntry(index.chars, session.current.target)}
+            wrongKey={session.lastWrongKey}
+            position={session.typed.length}
+            mode={errorTeaching}
+            shapeStats={shapeStats}
+            onRetry={retryQuestion}
+          />
         )}
       </Card>
 
