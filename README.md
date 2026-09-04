@@ -1,296 +1,139 @@
-# Rime 小鹤音形·全码优先
+# XHUP Flow
 
-一个面向中文用户的 Rime 小鹤音形输入方案，采用**全码单字优先**策略，同时保留小鹤双拼连续组词、句子输入和形码辅助选字。
+**XHUP Flow** 是一套基于标准 librime 的小鹤音形增强输入方案,外加配套的
+训练与装机工具。它在**冻结的静态肌肉记忆层**之上,提供连续组句与
+**纯本机**的学习能力,并保证静态层的每一次击键行为与既有习惯完全一致。
 
-本项目由个人使用配置整理为通用公开版本，不包含设备名称、安装标识、同步 UUID、构建缓存、个人用户词典或输入历史，可直接用于 Windows、macOS 和 Linux 上的 Rime 前端。
+本仓库同时维护一个早期发布的经典方案「小鹤音形·全码优先」
+(`xhup_fullcode`,冻结维护),其用户文档见
+[docs/legacy-fullcode-scheme.md](docs/legacy-fullcode-scheme.md)。
 
-## 主要特点
+## XHUP Flow 是什么?与普通小鹤/Rime 配置有何不同?
 
-- 小鹤双拼 + 鹤形辅助码。
-- 四码单字使用高权重固定候选，适合全码盲打。
-- 连续双拼音节可以正常组词、组句。
-- 支持“两字母双拼 + 首形码”的三码输入。
-- 支持使用 `/` 显式追加一至两个形码辅助选字。
-- 默认每页显示 5 个候选项。
-- 启用 Rime 本地用户词典，可以学习个人词频，但个人数据不会进入本仓库。
-- 方案 ID 使用通用名称 `xhup_fullcode`，不与任何具体电脑或设备绑定。
+普通小鹤音形配置只提供固定的码表。XHUP Flow 在此之上做了三件事:
 
-## 下载
+1. **静态层(冻结)**:一级简码、单字全码(2/3/4 码)、词语简码、
+   固定词与 FIXED_FIRST 简码全部是**生成器按规范数据确定性产出**的
+   冻结层——发布后不改动任何既有映射,保证肌肉记忆零回归。
+2. **Flow 组句引擎**:连续键入多个词条的全码即可组成句子(例如
+   `womf`+`uijm` 组出「我们时间」),可稳定组到 20 字长句;组句保持
+   活动直到显式上屏,无自动提交。
+3. **本地学习**:上屏 Flow 组句会训练专用用户词典 `xhup_flow_user`,
+   参与后续组句排序。学习数据只存本机,无账号、无遥测、无云端。
 
-普通用户建议进入本仓库的 **Releases** 页面，下载最新版本：
-
-`rime-xhup-fullcode-vX.Y.Z.zip`
-
-不要下载或复制 `build/`、`*.userdb/`、`installation.yaml` 等 Rime 运行时文件。
-
-## 安装前准备
-
-你需要先安装一个 Rime 输入法前端：
-
-| 系统 | 推荐前端 | 常见用户目录 |
-| --- | --- | --- |
-| Windows | 小狼毫 Weasel | `%APPDATA%\\Rime` |
-| macOS | 鼠须管 Squirrel | `~/Library/Rime/` |
-| Linux + Fcitx5 | Fcitx5-Rime | `~/.local/share/fcitx5/rime/` |
-| Linux + IBus | IBus-Rime | `~/.config/ibus/rime/` |
-
-如果你的 Rime 用户目录与表中不同，以实际前端显示的“用户文件夹 / 用户目录”为准。
-
-## Windows：小狼毫 Weasel
-
-1. 安装并确认小狼毫能够正常输入。
-2. 从 Releases 下载最新的 `rime-xhup-fullcode-vX.Y.Z.zip` 并解压。
-3. 右键任务栏中的小狼毫图标，打开**用户文件夹**。
-4. 将压缩包中的以下文件复制到用户文件夹：
-
-   ```text
-   xhup_fullcode.schema.yaml
-   xhup_fullcode.dict.yaml
-   xhup_fullcode_fixed_chars.dict.yaml
-   flypy_chars.dict.yaml
-   flypy_base.dict.yaml
-   ```
-
-5. 按下文“启用输入方案”修改或创建 `default.custom.yaml`。
-6. 右键小狼毫图标，选择**重新部署**。
-7. 打开输入法方案选择界面，选择“**小鹤音形·全码优先**”。
-
-## macOS：鼠须管 Squirrel
-
-1. 安装并确认鼠须管能够正常使用。
-2. 下载并解压最新 Release。
-3. 打开终端：
-
-   ```bash
-   mkdir -p ~/Library/Rime
-   open ~/Library/Rime
-   ```
-
-4. 将以下文件复制到 `~/Library/Rime/`：
-
-   ```text
-   xhup_fullcode.schema.yaml
-   xhup_fullcode.dict.yaml
-   xhup_fullcode_fixed_chars.dict.yaml
-   flypy_chars.dict.yaml
-   flypy_base.dict.yaml
-   ```
-
-5. 按下文“启用输入方案”处理 `default.custom.yaml`。
-6. 从鼠须管菜单执行**重新部署**。
-7. 在方案菜单中选择“**小鹤音形·全码优先**”。
-
-## Linux：Fcitx5-Rime
-
-创建用户目录：
-
-```bash
-mkdir -p ~/.local/share/fcitx5/rime
-```
-
-将 Release 解压后的五个输入方案/词典文件复制进去。例如在解压目录执行：
-
-```bash
-cp xhup_fullcode.schema.yaml \
-   xhup_fullcode.dict.yaml \
-   xhup_fullcode_fixed_chars.dict.yaml \
-   flypy_chars.dict.yaml \
-   flypy_base.dict.yaml \
-   ~/.local/share/fcitx5/rime/
-```
-
-然后按下文修改 `default.custom.yaml`，重新部署 Rime。若前端没有提供明显的“重新部署”菜单，可以退出并重新启动 Fcitx5 后再部署/切换方案。
-
-## Linux：IBus-Rime
-
-创建用户目录：
-
-```bash
-mkdir -p ~/.config/ibus/rime
-```
-
-在 Release 解压目录执行：
-
-```bash
-cp xhup_fullcode.schema.yaml \
-   xhup_fullcode.dict.yaml \
-   xhup_fullcode_fixed_chars.dict.yaml \
-   flypy_chars.dict.yaml \
-   flypy_base.dict.yaml \
-   ~/.config/ibus/rime/
-```
-
-然后按下文修改 `default.custom.yaml`，并重新部署或重新启动 IBus-Rime。
-
-## 启用输入方案
-
-### 已经有 `default.custom.yaml`
-
-**不要覆盖原文件。** 在原有 `patch:` 节点中追加：
-
-```yaml
-patch:
-  schema_list/+:
-    - schema: xhup_fullcode
-```
-
-如果文件中已经存在 `patch:`，只需要合并 `schema_list/+` 部分，不要再写第二个 `patch:`。
-
-### 没有 `default.custom.yaml`
-
-可以直接复制本项目提供的 `default.custom.yaml`，或者手动创建：
-
-```yaml
-patch:
-  schema_list/+:
-    - schema: xhup_fullcode
-  menu/page_size: 5
-```
-
-保存后必须执行一次**重新部署**。
-
-## 输入方式
-
-本方案的核心编码逻辑是：
-
-- 两码：按小鹤双拼输入音节。
-- 三码：两码双拼后直接追加第一个形码，用于辅助缩小单字候选。
-- 四码：完整音形码，单字采用高权重固定候选，适合全码盲打。
-- 显式形码辅助：在双拼后输入 `/`，再追加一至两个形码。
-- 连续输入：连续双拼音节仍然可以组成词语和句子。
-
-示例的具体编码以小鹤音形规则及本项目词典为准。
-
-## Flow 引擎：连续组句与本地学习
-
-`xhup_flow` 方案在静态输入层之上提供 Flow 引擎（连续组句与本地用户词
-学习），优先级契约如下：
+候选优先级契约(由 runtime 审计逐码断言):
 
 ```text
-冻结静态层（一级简码 / 单字全码 / 词语简码 / 固定词）
-  > 动态候选（用户词典词条、学习词条）
+冻结静态层(一级简码 / 单字全码 / 词语简码 / 固定词)
+  > 动态候选(用户词典词条、学习词条)
     > 组句候选
 ```
 
-- **静态优先级契约**：Flow 引擎绝不改变任何静态候选的相对次序，也不改
-  变任何静态 top1。runtime 审计对全部 140,038 个静态 exact 码逐码断言
-  （干净 userdb 与学习后两种状态）：菜单逐项同序相等、无可见重复，动态
-  候选只允许追加在静态组之后。
-- **连续组句**：连续键入多个词条的全码即可组成句子（例如
-  `womf`+`uijm` 组出「我们时间」），实测可稳定组到 20 字长句；组句保持
-  活动直到显式上屏，无自动提交。
-- **本地学习**：上屏 Flow 组句句子会训练专用用户词典
-  `xhup_flow_user`（记录词条元素与用户权重，参与后续组句排序）。该词典
-  仅存本机，无网络、无遥测。注意：直接上屏静态层词组不会训练该词典
-  （librime 各 translator 的用户词典相互独立）。
-- **静态回退**：`xhup_flow_static` 方案是同一个静态输入层的无 Flow 回退
-  （无组句、无学习、无用户词典），适用于调试、性能基准与隐私敏感场景；
-  与主方案共用同一组词典文件，不重复数据。
-- **学习管理**：`xhup-cli learning` 提供 `status` / `export` /
-  `import` / `reset` 四个子命令，包装 librime 官方
-  `rime_dict_manager`（不解析 userdb 内部格式）：
-  - `learning status --user-data-dir <目录>`：用户词典与快照存在性；
-  - `learning export`：导出标准 `xhup_flow_user.userdb.txt` 快照；
-  - `learning import --snapshot <快照>`：合并恢复（跨安装迁移）；
-  - `learning reset --yes`：破坏性重置，只删除 `xhup_flow_user`。
-- **已知限制**：librime 内置短语编码器为提交历史生成的学习词条码是
-  librime 内部派生（对本项目词典内容确定，但不可读作小鹤语义，且可能
-  与既有静态码位重合；重合时动态候选恒排在静态候选之后）。基于编码
-  规则的确定性人读短语码（如「我们时间」→ 逐字声码首键 `wmuj`）暂未
-  达成，属后续工作。
+对全部 140,038 个静态 exact 码的审计(干净 userdb 与学习后两种状态)
+确认:菜单逐项同序相等、无可见重复,动态候选只允许追加在静态组之后。
+
+## 产品组成
+
+| 组件 | 说明 |
+| --- | --- |
+| `xhup_flow` 方案 | 主方案:静态层 + 组句 + 本地学习 |
+| `xhup_flow_static` 方案 | 静态回退:同一静态层,无组句、无学习(调试/隐私场景) |
+| Trainer 训练器 | 桌面/Web 应用:12 种练习模式、错题中心、统计、键位参考 |
+| 控制中心 | Trainer 内「输入法」页:安装/升级/修复/卸载、学习管理、诊断 |
+| `xhup-cli` | 命令行:方案生成与学习数据管理(status/export/import/reset) |
+
+## 支持平台
+
+| 系统 | 前端 | 用户数据目录 |
+| --- | --- | --- |
+| Windows | 小狼毫 Weasel | `%APPDATA%\Rime` |
+| macOS | 鼠须管 Squirrel | `~/Library/Rime` |
+| Linux | Fcitx5-Rime | `~/.config/fcitx5/rime` |
+| Linux | IBus-Rime | `~/.config/ibus/rime` |
+| Android | fcitx5-android | 平台中立包手动导入(桌面端不做自动安装) |
+
+## 安装
+
+### 方式一:Trainer 桌面应用(推荐)
+
+1. 安装对应平台的 Rime 前端(小狼毫 / 鼠须管 / Fcitx5 / IBus)。
+2. 启动 Trainer 桌面应用,进入「输入法」页。
+3. 点击**安装**:应用会先展示完整执行计划(逐文件新建/覆盖+备份),
+   确认后写入方案文件;随后按提示在输入法菜单执行**重新部署**。
+
+升级与修复走同一入口:应用自动对比已安装版本与随附版本;卸载只删除
+XHUP 拥有的文件,不影响学习数据与你的其它 Rime 配置。
+
+### 方式二:平台中立 Rime 源包(不装 Trainer)
+
+从 CI 产物获取 `xhup-flow-rime-vX.Y.Z.zip`(含 `INSTALL.md` 说明),
+把其中全部 `.yaml` 复制到上表的 Rime 用户目录,然后重新部署。
+
+### 启用方案(两套方案同时安装)
+
+Flow(组句学习)与 Static(纯静态)一起安装;在输入法的方案菜单中
+切换,不需要改写任何配置文件。
+
+## Flow 与 Static 模式怎么选?
+
+- **Flow**:日常使用。组句 + 本地学习,学习数据仅存本机。
+- **Static**:调试、性能基准或隐私敏感场景。与主方案共用同一组词典,
+  不重复数据,行为完全可预测。
+
+## 学习数据备份与恢复
+
+- 图形界面:控制中心「学习数据」卡(导出快照 / 导入快照 / 重置)。
+- 命令行:`xhup-cli learning status|export|import|reset`
+  (包装 librime 官方 `rime_dict_manager`,不解析 userdb 内部格式)。
+
+导出的快照是 Rime 标准文本格式,可跨安装、跨机器恢复。重置是破坏性
+操作,UI 与 CLI 均要求显式确认。
 
 ## 更新
 
-1. 下载新的 Release。
-2. 备份自己的 Rime 用户目录，尤其是个人自定义的 `*.custom.yaml`。
-3. 覆盖本项目提供的方案与词典文件。
-4. **不要删除自己的 `*.userdb/` 用户词典。**
-5. 重新部署。
-
-正常更新项目文件不会要求你提交或公开个人词频。
+- Trainer 控制中心:检测到新版本后点**升级**(覆盖前自动备份到用户
+  目录的 `xhup_backup/`,可手动回滚)。
+- 手动更新:用新包覆盖旧文件,**不要删除 `xhup_flow_user.userdb`**,
+  然后重新部署。
 
 ## 卸载
 
-从 Rime 用户目录删除：
+- Trainer 控制中心:**卸载**(明确列出将删除的文件;默认保留学习数据)。
+- 手动卸载:从 Rime 用户目录删除全部 `xhup_flow*.yaml` 方案/词典文件;
+  如确认不再需要学习数据,可自行删除 `xhup_flow_user.userdb`(普通卸载
+  无必要)。
 
-```text
-xhup_fullcode.schema.yaml
-xhup_fullcode.dict.yaml
-xhup_fullcode_fixed_chars.dict.yaml
-flypy_chars.dict.yaml
-flypy_base.dict.yaml
-```
+## 隐私
 
-然后从 `default.custom.yaml` 中删除：
+本地运行:无账号、无遥测、无云端同步、无网络依赖。
 
-```yaml
-- schema: xhup_fullcode
-```
+- 学习数据只存于本机 `xhup_flow_user.userdb`,绝不进入本仓库。
+- 控制中心的诊断报告已脱敏:不含学习词内容、个人文件与环境细节。
+- 仓库 `.gitignore` 显式排除 `installation.yaml`、`user.yaml`、`sync/`、
+  `*.userdb/` 等运行时状态。
 
-最后重新部署。
+## 已知限制
 
-如果你希望同时删除该方案学习到的个人词频，可以在确认不再需要后自行删除对应的 `xhup_fullcode_user.userdb` 数据；普通卸载没有必要删除它。
+- librime 内置短语编码器为提交历史生成的学习词条码是 librime 内部
+  派生(确定但不可读作小鹤语义;与静态码位重合时动态候选恒排在静态
+  候选之后)。基于编码规则的确定性人读短语码属后续研究,不是 v1 阻塞。
+- 学习导出/导入依赖 librime 官方 `rime_dict_manager`(发行包
+  `librime-bin`);未安装时控制中心会明确提示。
+- 桌面端不对 Android 做自动文件安装(fcitx5-android 使用平台中立包
+  手动导入,待安全集成后自动化)。
+- Windows/macOS 桌面安装物在 CI 中未签名(SmartScreen/Gatekeeper 会
+  提示;正式发布签名属人工发布决策)。
 
-## 常见问题
+## 面向开发者
 
-### 安装后找不到“小鹤音形·全码优先”
-
-优先检查：
-
-1. `xhup_fullcode.schema.yaml` 是否位于正确的 Rime 用户目录。
-2. `default.custom.yaml` 是否包含 `schema_list/+` 和 `xhup_fullcode`。
-3. YAML 缩进是否正确，只使用空格，不要使用 Tab。
-4. 修改后是否执行了“重新部署”。
-
-### 重新部署时报词典缺失
-
-确认以下三个被主词典引用的文件同时存在：
-
-```text
-xhup_fullcode_fixed_chars.dict.yaml
-flypy_chars.dict.yaml
-flypy_base.dict.yaml
-```
-
-### 会不会上传我的输入历史？
-
-不会。本仓库只是静态输入方案和词典。Rime 的用户词频由本机 `userdb` 管理；项目的 `.gitignore` 也显式排除了用户词典、同步目录和设备状态文件。
-
-### 可以和其他 Rime 输入方案共存吗？
-
-可以。使用 `schema_list/+` 是追加方案，不会替换 Rime 原有方案列表。不要直接覆盖已有的 `default.custom.yaml`。
-
-## 仓库文件说明
-
-| 文件 | 用途 |
-| --- | --- |
-| `xhup_fullcode.schema.yaml` | 输入方案核心配置 |
-| `xhup_fullcode.dict.yaml` | 主词典入口 |
-| `xhup_fullcode_fixed_chars.dict.yaml` | 四码单字高权重表 |
-| `flypy_chars.dict.yaml` | 小鹤音形单字数据 |
-| `flypy_base.dict.yaml` | 基础词库 |
-| `default.custom.yaml` | 新用户启用方案的参考配置 |
-| `NOTICE.md` | 上游来源与授权说明 |
-| `VERSION` | 当前发布版本 |
-
-## 隐私说明
-
-公开仓库不会包含以下内容：
-
-- `installation.yaml`：可能含设备安装 ID。
-- `user.yaml`：本机运行状态。
-- `sync/`：Rime 同步数据及设备标识。
-- `*.userdb/`、`*.userdb.txt`：个人词频、自造词及输入学习数据。
-- `build/`、`*.bin`：本地部署生成文件。
-
-不建议把整个 Rime 用户目录直接提交到公开 Git 仓库。
+- 架构与数据流水线:[docs/architecture.md](docs/architecture.md)。
+- 开发约束与验证命令:[AGENTS.md](AGENTS.md)、[CONTRIBUTING.md](CONTRIBUTING.md)。
+- 训练器说明:[trainer/README.md](trainer/README.md)。
+- 发布前的人工验收清单:[docs/release-readiness.md](docs/release-readiness.md)。
+- 性能基线与测量方法:[docs/performance-baseline.md](docs/performance-baseline.md)。
 
 ## 上游与授权
 
-本项目使用的小鹤相关词典数据来源及授权信息见 [NOTICE.md](NOTICE.md)。项目不是小鹤官方项目，也不代表小鹤官方立场。
-
-仓库按 [LGPL-3.0](LICENSE) 授权文件所述条款发布。第三方词典或数据仍遵循各自的来源与授权要求。
-
-## 版本发布
-
-仓库通过 GitHub Actions 自动校验配置、补齐固定来源的基础词典、生成 ZIP 与 SHA-256 校验文件，并发布对应版本的 GitHub Release。
+小鹤相关词典数据来源及授权信息见 [NOTICE.md](NOTICE.md)。项目不是
+小鹤官方项目,也不代表小鹤官方立场。仓库按 [LGPL-3.0](LICENSE) 授权
+条款发布;第三方词典或数据仍遵循各自的来源与授权要求。

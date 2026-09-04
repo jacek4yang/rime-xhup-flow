@@ -778,6 +778,33 @@ mod tests {
         let _ = fs::remove_dir_all(&user);
     }
 
+    /// 版本同步守卫:工作区版本与 Tauri 应用版本必须一致,防止发布
+    /// 版本漂移(tauri.conf.json 驱动桌面安装包,workspace 驱动
+    /// Rime 包内嵌版本,二者必须同步修改)。
+    #[test]
+    fn product_versions_are_synchronized() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace = fs::read_to_string(manifest_dir.join("../../Cargo.toml")).unwrap();
+        let workspace_version = workspace
+            .lines()
+            .find_map(|line| {
+                let trimmed = line.trim();
+                trimmed
+                    .strip_prefix("version = \"")
+                    .map(|rest| rest.trim_end_matches('"').to_string())
+            })
+            .expect("workspace Cargo.toml 应包含 workspace version");
+        let conf = fs::read_to_string(manifest_dir.join("tauri.conf.json")).unwrap();
+        let conf: serde_json::Value = serde_json::from_str(&conf).unwrap();
+        let app_version = conf["version"]
+            .as_str()
+            .expect("tauri.conf.json 应包含 version");
+        assert_eq!(
+            workspace_version, app_version,
+            "workspace 与 tauri.conf.json 版本漂移"
+        );
+    }
+
     #[test]
     fn diagnostics_report_is_sanitized() {
         let user = fake_user_dir("diag");

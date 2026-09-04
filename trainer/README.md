@@ -24,9 +24,10 @@ xhup-cli generate trainer  →  trainer/public/generated/xhup_flow_trainer.json
 JSON;生成失败则前端命令直接失败,不会回退到过期数据。生成的 JSON
 属于构建产物,已被 `.gitignore` 忽略,不进入版本库。
 
-前端加载时完整校验 `schemaVersion: 1` 契约(字段、码长一致性、
-`(char, code)` 唯一性、`frequencyScore` 安全整数等),校验失败会显示
-可读错误而不是白屏。
+前端加载时完整校验 `schemaVersion: 2` 契约(V2:条目 + 词语 + 各级
+简码 + 组句 fixtures + 双拼映射;字段、码长一致性、`(char, code)`
+唯一性、`frequencyScore` 安全整数等),校验失败会显示可读错误而不是
+白屏。V1 → V2 的本地进度迁移在 trainer store 内完成,旧备份可导入。
 
 ## 开发命令
 
@@ -41,6 +42,13 @@ pnpm preview          # 预览生产构建
 pnpm tauri dev        # Tauri 桌面开发
 pnpm tauri build      # Tauri 桌面打包
 ```
+
+## 控制中心(桌面版)
+
+桌面应用额外提供「输入法」控制中心页:Rime 环境检测、XHUP Flow
+方案安装/升级/修复/卸载(计划先行、覆盖前备份、只动 XHUP 拥有文件)、
+学习数据导出/导入/重置与脱敏诊断。业务逻辑在 Rust 侧
+(`src-tauri/src/manager.rs`),浏览器环境该页自动降级为提示。
 
 ## 练习模式
 

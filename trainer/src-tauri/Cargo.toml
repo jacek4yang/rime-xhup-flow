@@ -19,6 +19,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tauri = { version = "2", features = [] }
 xhup-cli = { path = "../../crates/xhup-cli" }
 xhup-generator = { path = "../../crates/xhup-generator" }
