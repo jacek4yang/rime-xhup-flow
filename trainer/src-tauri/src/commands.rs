@@ -239,3 +239,79 @@ pub fn learning_reset(confirmed: bool, dict_name: String) -> Result<(), CommandE
     }
     xhup_cli::learning::reset(&dir, confirmed).map_err(learning_error)
 }
+
+/// 重新部署输入法(仅使用官方机制;见 manager 的部署候选)。
+///
+/// 自动机制不可用时返回 `redeploy_unavailable` 错误码,消息即手动
+/// 指引;执行失败返回 `redeploy_failed` 并附 stderr。
+#[tauri::command]
+pub fn product_redeploy() -> Result<String, CommandError> {
+    let (client, _dir) = require_user_data_dir()?;
+    let support = client.redeploy_support();
+    match support {
+        manager::RedeploySupport::Automatic { program, args } => {
+            let output = std::process::Command::new(&program)
+                .args(&args)
+                .output()
+                .map_err(|source| {
+                    CommandError::new(
+                        "redeploy_failed",
+                        format!("无法启动 {}: {source}", program.display()),
+                    )
+                })?;
+            if !output.status.success() {
+                return Err(CommandError::new(
+                    "redeploy_failed",
+                    format!(
+                        "{} 执行失败:{}",
+                        program.display(),
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    ),
+                ));
+            }
+            Ok(client.redeploy_guidance().to_string())
+        }
+        manager::RedeploySupport::Manual => Err(CommandError::new(
+            "redeploy_unavailable",
+            client.redeploy_guidance().to_string(),
+        )),
+    }
+}
+
+/// 导出 Android 兼容 Rime 包(平台中立源文件目录,含安装说明)。
+///
+/// 在 `destination`(用户提供的已存在目录)下创建
+/// `xhup-flow-rime-v<版本>/`,写入全部方案/词典与 INSTALL.md。
+/// 不做 zip(零额外依赖);不触碰 Android 私有存储,由用户自行导入。
+#[tauri::command]
+pub fn product_export_package(destination: String) -> Result<String, CommandError> {
+    let dest_dir = std::path::PathBuf::from(&destination);
+    if !dest_dir.is_dir() {
+        return Err(CommandError::new(
+            "package_invalid",
+            format!("目标目录不存在:{}", dest_dir.display()),
+        ));
+    }
+    let package = RimePackage::bundled()?;
+    let target = dest_dir.join(format!("xhup-flow-rime-v{}", package.version));
+    std::fs::create_dir_all(&target).map_err(|source| {
+        CommandError::new(
+            "io",
+            format!("无法创建导出目录 {}: {source}", target.display()),
+        )
+    })?;
+    for (file, contents) in &package.files {
+        std::fs::write(target.join(file), contents).map_err(|source| {
+            CommandError::new(
+                "io",
+                format!("无法写入 {}: {source}", target.join(file).display()),
+            )
+        })?;
+    }
+    std::fs::write(
+        target.join("INSTALL.md"),
+        include_str!("../../../rime/package/INSTALL.md"),
+    )
+    .map_err(|source| CommandError::new("io", format!("无法写入 INSTALL.md: {source}")))?;
+    Ok(target.display().to_string())
+}
