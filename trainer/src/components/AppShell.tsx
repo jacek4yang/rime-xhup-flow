@@ -8,6 +8,7 @@
 import { useState } from "react";
 import {
   ChartColumn,
+  GraduationCap,
   Grid3x3,
   House,
   Keyboard,
@@ -27,6 +28,7 @@ import { ReferenceView } from "@/features/reference/ReferenceView";
 import { ControlCenterView } from "@/features/product/ControlCenterView";
 import { FirstRunWizard } from "@/features/first-run/FirstRunWizard";
 import { clearOnboarding } from "@/features/first-run/onboarding";
+import { LearnView } from "@/features/learn/LearnView";
 import { SettingsView } from "@/features/settings/SettingsView";
 import type { PracticeMode } from "@/features/practice/types";
 
@@ -36,6 +38,7 @@ export type ViewKey =
   | "review"
   | "stats"
   | "reference"
+  | "learn"
   | "product"
   | "settings";
 
@@ -45,6 +48,7 @@ const NAV_ITEMS: { key: ViewKey; label: I18nKey; icon: typeof House }[] = [
   { key: "review", label: "nav.review", icon: RotateCcw },
   { key: "stats", label: "nav.stats", icon: ChartColumn },
   { key: "reference", label: "nav.reference", icon: Grid3x3 },
+  { key: "learn", label: "nav.learn", icon: GraduationCap },
   { key: "product", label: "nav.product", icon: Package },
   { key: "settings", label: "nav.settings", icon: Settings },
 ];
@@ -94,6 +98,7 @@ export function AppShell() {
         {view === "review" && <WeaknessCenter onPracticeEntries={goReviewPractice} />}
         {view === "stats" && <StatsView />}
         {view === "reference" && <ReferenceView />}
+        {view === "learn" && <LearnView onStartPractice={goPractice} />}
         {view === "product" && <ControlCenterView />}
         {view === "settings" && (
           <SettingsView
