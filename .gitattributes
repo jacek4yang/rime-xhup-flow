@@ -1,0 +1,4 @@
+# 规范数据文件经 include_str! 字节级嵌入与字节复现校验,必须保持 LF;
+# Windows core.autocrlf=true 的 checkout 不得转换(否则本地字节复现测试失败)。
+*.tsv text eol=lf
+*.txt text eol=lf
