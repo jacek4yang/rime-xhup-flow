@@ -3,7 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readOnboarding, writeOnboarding } from "./onboarding";
+import { clearOnboarding, readOnboarding, writeOnboarding } from "./onboarding";
 
 const KEY = "xhup-flow.onboarding.v1";
 
@@ -22,6 +22,16 @@ describe("onboarding persistence", () => {
   it("skipped 状态同样往返", () => {
     writeOnboarding("skipped");
     expect(readOnboarding()?.status).toBe("skipped");
+  });
+
+  it("清除后回到未引导状态(设置页重新运行入口)", () => {
+    writeOnboarding("completed");
+    expect(readOnboarding()).not.toBeNull();
+    clearOnboarding();
+    expect(readOnboarding()).toBeNull();
+    // 幂等:再清一次不报错。
+    clearOnboarding();
+    expect(readOnboarding()).toBeNull();
   });
 
   it("无记录返回 null", () => {

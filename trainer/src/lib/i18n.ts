@@ -171,6 +171,8 @@ const zh = {
   "settings.dataVersion": "数据版本",
   "settings.dataSchema": "数据协议",
   "settings.dataEntries": "条目数",
+  "settings.onboarding": "首次启动引导",
+  "settings.rerunOnboarding": "重新运行",
   "settings.privacyHint":
     "练习记录仅保存在本机浏览器 / 应用本地存储中,不会上传。",
   "settings.backupHint":
@@ -559,6 +561,8 @@ const en: Record<I18nKey, string> = {
   "settings.dataVersion": "Data version",
   "settings.dataSchema": "Data schema",
   "settings.dataEntries": "Entries",
+  "settings.onboarding": "First-run onboarding",
+  "settings.rerunOnboarding": "Run again",
   "settings.privacyHint":
     "Practice records stay in local browser / app storage and are never uploaded.",
   "settings.backupHint":
