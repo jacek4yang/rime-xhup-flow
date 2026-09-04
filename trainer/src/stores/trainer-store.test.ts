@@ -167,6 +167,8 @@ describe("持久化", () => {
         "language",
         "theme",
         "hintMode",
+        "keyRefMode",
+        "keyHaptics",
         "difficulty",
         "sessionLength",
         "lastMode",
