@@ -46,7 +46,9 @@ export const DEFAULT_SESSION_LENGTH: SessionLength = 30;
 export const SESSION_LENGTH_OPTIONS: SessionLength[] = [20, 30, 50, 100, 0];
 
 export const DEFAULT_MODE: PracticeMode = "double";
-export const DEFAULT_HINT_MODE: HintMode = "always";
+// 默认「错误后显示」:练习时先自己回忆编码,答错才给出提示;
+// 想要对照练习的用户可在设置中选择「始终显示」。
+export const DEFAULT_HINT_MODE: HintMode = "on-error";
 export const DEFAULT_DIFFICULTY: Difficulty = "daily";
 
 /**
