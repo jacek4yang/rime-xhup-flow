@@ -1,0 +1,568 @@
+name: Product Packaging
+
+# XHUP Flow v1 跨平台发布流水线(产物构建/校验;不做发布)。
+#
+# 分工与既有架构(见 trainer-alpha.yml 与 release.yml):
+# - 本工作流负责「产品打包」:平台中立 Rime 源包 + Trainer 桌面/移动
+#   安装物,PR 即构建并校验产物;不创建 tag、不创建 GitHub Release;
+# - Trainer Alpha 发布(manual dispatch + 真实签名 + Pre-release)仍由
+#   trainer-alpha.yml 承担;正式 release 由 release.yml 承担;
+#   v1 发布路径合并前由人工决定(见 PR 说明)。
+#
+# 产物(PR 模式全部为未签名审阅产物):
+# - xhup-flow-rime-v<ver>.zip          平台中立 Rime 源包(必建)
+# - Windows:NSIS setup.exe + MSI
+# - macOS:universal DMG(aarch64 + x86_64)
+# - Linux:deb + rpm(AppImage 因外部 linuxdeploy 网络约束暂不构建,见 PR 说明)
+# - Android:universal APK(未签名)
+# - SHA256SUMS.txt + BUILD-INFO.txt(release-manifest 汇总)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/product-packaging.yml"
+      - "crates/**"
+      - "data/**"
+      - "rime/**"
+      - "trainer/**"
+      - "tests/**"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-packaging-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_VERSION_CONF: trainer/src-tauri/tauri.conf.json
+
+jobs:
+  # ---------- 平台中立 Rime 源包:生成 + 结构校验 + librime 编译校验 ----------
+  rime-package:
+    name: Rime 源包
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      rime_version: ${{ steps.meta.outputs.rime_version }}
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7
+
+      - name: 准备 Rust 工具链
+        run: rustup show
+
+      - name: 缓存 Cargo 下载
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rime-pkg-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '**/Cargo.toml') }}
+          restore-keys: |
+            rime-pkg-${{ runner.os }}-
+
+      - name: 生成 Rime 源包
+        id: meta
+        run: |
+          set -euo pipefail
+          cargo run -p xhup-cli --locked -- generate rime --output build/rime-package
+          # 结构校验:恰好 11 个拥有文件、全部非空、两套方案齐备、版本内嵌
+          files="$(ls build/rime-package)"
+          count="$(echo "$files" | wc -l)"
+          [[ "$count" -eq 11 ]] || { echo "::error::期望 11 个源文件,实际 $count:$files"; exit 1; }
+          for f in build/rime-package/*; do
+            [[ -s "$f" ]] || { echo "::error::产物为空: $f"; exit 1; }
+          done
+          grep -q 'schema_id: xhup_flow$' build/rime-package/xhup_flow.schema.yaml \
+            || { echo "::error::主方案 schema_id 不符"; exit 1; }
+          [[ -f build/rime-package/xhup_flow_static.schema.yaml ]] \
+            || { echo "::error::缺少静态回退方案"; exit 1; }
+          rime_version="$(grep -m1 'version:' build/rime-package/xhup_flow.schema.yaml | sed 's/.*version:[[:space:]]*"\([^"]*\)".*/\1/')"
+          [[ -n "$rime_version" ]] || { echo "::error::无法解析 Rime 包版本"; exit 1; }
+          echo "rime_version=$rime_version" >> "$GITHUB_OUTPUT"
+          echo "Rime 源包版本: $rime_version(11 个文件,结构校验通过)"
+
+      - name: 安装 librime 编译校验环境
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends librime-bin rime-prelude pkg-config
+
+      - name: librime 编译校验(临时目录部署两套方案)
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          shared="/usr/share/rime-data"
+          # 与 tests/librime 相同的 wrapper 技巧:把非默认 translator
+          # 命名空间引用的词典放到默认命名空间编译。
+          compile_dict_via_wrapper() {
+            local dir=$1 dict=$2
+            cat > "$dir/wrap_${dict}.schema.yaml" <<EOF
+          # Rime schema
+          # encoding: utf-8
+          ---
+          schema:
+            schema_id: wrap_${dict}
+            name: dict compile wrapper
+            version: "1"
+          engine:
+            translators:
+              - table_translator
+          translator:
+            dictionary: $dict
+          EOF
+            rime_deployer --compile "$dir/wrap_${dict}.schema.yaml" "$dir" "$shared" >/dev/null
+            rm "$dir/wrap_${dict}.schema.yaml"
+          }
+          cp build/rime-package/*.yaml "$work/"
+          for dict in xhup_flow_chars xhup_flow_words xhup_flow_shortcuts \
+                      xhup_flow_two_key_shortcuts xhup_flow_fixed_first_shortcuts \
+                      xhup_flow_flow xhup_flow_learn; do
+            compile_dict_via_wrapper "$work" "$dict"
+          done
+          rime_deployer --compile "$work/xhup_flow.schema.yaml" "$work" "$shared"
+          rime_deployer --compile "$work/xhup_flow_static.schema.yaml" "$work" "$shared"
+          # rime_deployer 把编译产物写入 <user_dir>/build/。
+          for bin in build/xhup_flow.table.bin build/xhup_flow_fixed_first_shortcuts.table.bin \
+                     build/xhup_flow_flow.table.bin; do
+            [[ -s "$work/$bin" ]] || { echo "::error::编译产物缺失: $bin"; exit 1; }
+          done
+          echo "librime 编译校验通过:两套方案与 Flow 词典编译成功"
+
+      - name: 组装发布 zip(附安装说明)
+        run: |
+          set -euo pipefail
+          ver="${{ steps.meta.outputs.rime_version }}"
+          mkdir -p artifacts
+          stage="$(mktemp -d)"
+          trap 'rm -rf "$stage"' EXIT
+          cp build/rime-package/*.yaml "$stage/"
+          cp rime/package/INSTALL.md "$stage/"
+          # 显式列出文件(zip 不加 -r 时对目录会报 "Nothing to do")。
+          (cd "$stage" && zip -q "$GITHUB_WORKSPACE/artifacts/xhup-flow-rime-v$ver.zip" *)
+          (cd artifacts && sha256sum "xhup-flow-rime-v$ver.zip" > "xhup-flow-rime-v$ver.zip.sha256")
+          ls -l artifacts/
+
+      - name: 上传 Rime 源包产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-packaging-rime
+          path: artifacts/
+          retention-days: 7
+
+  # ---------- Windows:NSIS + MSI ----------
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      app_version: ${{ steps.meta.outputs.app_version }}
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7
+
+      - name: 读取应用版本
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(node -p "JSON.parse(require('fs').readFileSync('$APP_VERSION_CONF','utf8')).version")"
+          echo "app_version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: 准备 Rust 工具链
+        run: rustup show
+
+      - name: 缓存 Cargo 下载
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: pkg-win-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '**/Cargo.toml') }}
+          restore-keys: |
+            pkg-win-
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: trainer/package.json
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: trainer/pnpm-lock.yaml
+
+      - name: 安装依赖
+        run: pnpm -C trainer install --frozen-lockfile
+
+      - name: Tauri 构建(NSIS + MSI)
+        run: pnpm -C trainer tauri build --bundles nsis,msi
+
+      - name: 校验并重命名产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="${{ steps.meta.outputs.app_version }}"
+          nsis_count=$(ls target/release/bundle/nsis/*.exe 2>/dev/null | wc -l)
+          msi_count=$(ls target/release/bundle/msi/*.msi 2>/dev/null | wc -l)
+          [[ "$nsis_count" -eq 1 ]] || { echo "::error::期望 1 个 NSIS 包,实际 $nsis_count"; exit 1; }
+          [[ "$msi_count" -eq 1 ]] || { echo "::error::期望 1 个 MSI 包,实际 $msi_count"; exit 1; }
+          mkdir -p artifacts/windows
+          cp target/release/bundle/nsis/*.exe "artifacts/windows/xhup-flow-trainer-v$ver-windows-x64-setup.exe"
+          cp target/release/bundle/msi/*.msi "artifacts/windows/xhup-flow-trainer-v$ver-windows-x64.msi"
+          for f in artifacts/windows/*; do [[ -s "$f" ]] || { echo "::error::产物为空: $f"; exit 1; }; done
+          ls -l artifacts/windows/
+
+      - name: 上传 Windows 产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-packaging-windows
+          path: artifacts/windows/
+          retention-days: 7
+
+  # ---------- macOS:universal DMG(aarch64 + x86_64) ----------
+  macos:
+    name: macOS universal
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7
+
+      - name: 读取应用版本
+        id: meta
+        run: |
+          set -euo pipefail
+          ver="$(node -p "JSON.parse(require('fs').readFileSync('$APP_VERSION_CONF','utf8')).version")"
+          echo "app_version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: 准备 Rust 工具链与 universal 目标
+        run: |
+          rustup show
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: 缓存 Cargo 下载
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: pkg-mac-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '**/Cargo.toml') }}
+          restore-keys: |
+            pkg-mac-
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: trainer/package.json
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: trainer/pnpm-lock.yaml
+
+      - name: 安装依赖
+        run: pnpm -C trainer install --frozen-lockfile
+
+      - name: Tauri 构建(universal DMG)
+        run: pnpm -C trainer tauri build --target universal-apple-darwin --bundles dmg
+
+      - name: 校验并重命名产物
+        run: |
+          set -euo pipefail
+          ver="${{ steps.meta.outputs.app_version }}"
+          count=$(ls target/universal-apple-darwin/release/bundle/dmg/*.dmg 2>/dev/null | wc -l)
+          [[ "$count" -eq 1 ]] || { echo "::error::期望 1 个 DMG,实际 $count"; exit 1; }
+          mkdir -p artifacts/macos
+          cp target/universal-apple-darwin/release/bundle/dmg/*.dmg \
+            "artifacts/macos/xhup-flow-trainer-v$ver-macos-universal.dmg"
+          for f in artifacts/macos/*; do [[ -s "$f" ]] || { echo "::error::产物为空: $f"; exit 1; }; done
+          ls -l artifacts/macos/
+
+      - name: 上传 macOS 产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-packaging-macos
+          path: artifacts/macos/
+          retention-days: 7
+
+  # ---------- Linux:deb + rpm(AppImage 见工作流头注说明) ----------
+  linux:
+    name: Linux deb/rpm
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7
+
+      - name: 读取应用版本
+        id: meta
+        run: |
+          set -euo pipefail
+          ver="$(node -p "JSON.parse(require('fs').readFileSync('$APP_VERSION_CONF','utf8')).version")"
+          echo "app_version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: 准备 Rust 工具链
+        run: rustup show
+
+      - name: 缓存 Cargo 下载
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: pkg-linux-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '**/Cargo.toml') }}
+          restore-keys: |
+            pkg-linux-
+
+      - name: 安装 Tauri 编译依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev \
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: trainer/package.json
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: trainer/pnpm-lock.yaml
+
+      - name: 安装依赖
+        run: pnpm -C trainer install --frozen-lockfile
+
+      - name: Tauri 构建(deb + rpm)
+        run: pnpm -C trainer tauri build --bundles deb,rpm
+
+      - name: 校验并重命名产物
+        run: |
+          set -euo pipefail
+          ver="${{ steps.meta.outputs.app_version }}"
+          deb_count=$(ls target/release/bundle/deb/*.deb 2>/dev/null | wc -l)
+          rpm_count=$(ls target/release/bundle/rpm/*.rpm 2>/dev/null | wc -l)
+          [[ "$deb_count" -eq 1 ]] || { echo "::error::期望 1 个 deb,实际 $deb_count"; exit 1; }
+          [[ "$rpm_count" -eq 1 ]] || { echo "::error::期望 1 个 rpm,实际 $rpm_count"; exit 1; }
+          mkdir -p artifacts/linux
+          cp target/release/bundle/deb/*.deb "artifacts/linux/xhup-flow-trainer-v$ver-linux-amd64.deb"
+          cp target/release/bundle/rpm/*.rpm "artifacts/linux/xhup-flow-trainer-v$ver-linux-x86_64.rpm"
+          for f in artifacts/linux/*; do [[ -s "$f" ]] || { echo "::error::产物为空: $f"; exit 1; }; done
+          ls -l artifacts/linux/
+
+      - name: 上传 Linux 产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-packaging-linux
+          path: artifacts/linux/
+          retention-days: 7
+
+  # ---------- Android:universal APK(未签名,无发布 secrets) ----------
+  android:
+    name: Android universal APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NDK_VERSION: "27.2.12479018"
+      BUILD_TOOLS_VERSION: "36.0.0"
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7
+
+      - name: 读取应用版本
+        id: meta
+        run: |
+          set -euo pipefail
+          ver="$(node -p "JSON.parse(require('fs').readFileSync('$APP_VERSION_CONF','utf8')).version")"
+          echo "app_version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: 准备 Rust 工具链与 Android 目标
+        run: |
+          rustup show
+          rustup target add \
+            aarch64-linux-android \
+            armv7-linux-androideabi \
+            i686-linux-android \
+            x86_64-linux-android
+
+      - name: 缓存 Cargo 下载
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: pkg-android-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '**/Cargo.toml') }}
+          restore-keys: |
+            pkg-android-
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: trainer/package.json
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: trainer/pnpm-lock.yaml
+
+      - name: 安装 Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 安装 Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: 安装 Android SDK 组件(固定版本)
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;${BUILD_TOOLS_VERSION}" \
+            "ndk;${NDK_VERSION}"
+
+      - name: 安装依赖
+        run: pnpm -C trainer install --frozen-lockfile
+
+      - name: Tauri Android 构建(universal APK,未签名)
+        run: |
+          export NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          pnpm -C trainer tauri android build --apk
+
+      - name: 校验并重命名产物
+        run: |
+          set -euo pipefail
+          ver="${{ steps.meta.outputs.app_version }}"
+          apk="trainer/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
+          [[ -s "$apk" ]] || { echo "::error::未签名 APK 不存在或为 0 字节: $apk"; exit 1; }
+          mkdir -p artifacts/android
+          cp "$apk" "artifacts/android/xhup-flow-trainer-v$ver-android-universal-UNSIGNED.apk"
+          ls -l artifacts/android/
+
+      - name: 上传 Android 产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-packaging-android
+          path: artifacts/android/
+          retention-days: 7
+
+  # ---------- 汇总:SHA256SUMS + BUILD-INFO(仅产物清单,不发布) ----------
+  release-manifest:
+    name: 发布清单
+    needs: [rime-package, windows, macos, linux, android]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RIME_VERSION: ${{ needs.rime-package.outputs.rime_version }}
+      APP_VERSION: ${{ needs.windows.outputs.app_version }}
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7
+
+      - name: 准备 Rust 工具链
+        run: rustup show
+
+      - name: 缓存 Cargo 下载
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: pkg-manifest-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '**/Cargo.toml') }}
+          restore-keys: |
+            pkg-manifest-
+
+      - name: 生成规范数据与 Rime 包哈希(确定性校验)
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          cargo run -p xhup-cli --locked -- generate trainer --output "$work/gen" >/dev/null
+          cargo run -p xhup-cli --locked -- generate rime --output "$work/gen" >/dev/null
+          (cd "$work/gen" && sha256sum -- * | LC_ALL=C sort -k2 > "$GITHUB_WORKSPACE/CANONICAL-SHA256SUMS.txt")
+          echo "规范数据/Rime 源文件哈希已生成(确定性生成,可跨机比对)"
+
+      - name: 下载全部平台产物
+        uses: actions/download-artifact@v8
+        with:
+          pattern: product-packaging-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: 生成 SHA256SUMS 与 BUILD-INFO
+        run: |
+          set -euo pipefail
+          cd artifacts
+          expected=(
+            "xhup-flow-rime-v$RIME_VERSION.zip"
+            "xhup-flow-trainer-v$APP_VERSION-windows-x64-setup.exe"
+            "xhup-flow-trainer-v$APP_VERSION-windows-x64.msi"
+            "xhup-flow-trainer-v$APP_VERSION-macos-universal.dmg"
+            "xhup-flow-trainer-v$APP_VERSION-linux-amd64.deb"
+            "xhup-flow-trainer-v$APP_VERSION-linux-x86_64.rpm"
+            "xhup-flow-trainer-v$APP_VERSION-android-universal-UNSIGNED.apk"
+          )
+          for f in "${expected[@]}"; do
+            [[ -s "$f" ]] || { echo "::error::缺少产物或为 0 字节: $f"; exit 1; }
+          done
+          sha256sum -- *.zip *.exe *.msi *.dmg *.deb *.rpm *.apk | LC_ALL=C sort -k2 > SHA256SUMS.txt
+          {
+            echo "XHUP Flow v$APP_VERSION 发布清单(PR 审阅产物,未发布)"
+            echo ""
+            echo "Git commit: $GITHUB_SHA"
+            echo "Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo ""
+            echo "应用版本(tauri.conf.json): $APP_VERSION"
+            echo "Rime 源包版本(xhup_flow.schema.yaml): $RIME_VERSION"
+            echo ""
+            echo "平台产物: Windows(NSIS+MSI,未签名) / macOS(universal DMG,未签名) /"
+            echo "  Linux(deb+rpm;AppImage 暂不构建) / Android(universal APK,未签名)"
+            echo "平台中立包: xhup-flow-rime-v$RIME_VERSION.zip(含 INSTALL.md 安装说明)"
+            echo ""
+            echo "规范数据与 Rime 源文件哈希: 见 CANONICAL-SHA256SUMS.txt"
+            echo "  (同一 Cargo.lock 与源码下字节级确定性生成)"
+            echo ""
+            echo "隐私: 全部产物本地运行,无遥测、无账号;PR 模式不创建 tag / Release。"
+          } > BUILD-INFO.txt
+          cat SHA256SUMS.txt
+          cat BUILD-INFO.txt
+
+      - name: 上传发布清单
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-packaging-manifest
+          path: |
+            artifacts/SHA256SUMS.txt
+            artifacts/BUILD-INFO.txt
+            CANONICAL-SHA256SUMS.txt
+          retention-days: 7
+
+      - name: 构建摘要
+        run: |
+          {
+            echo "### Product Packaging(审阅产物)"
+            echo "- 应用版本: \`$APP_VERSION\` / Rime 包版本: \`$RIME_VERSION\`"
+            echo "- 平台: Windows(NSIS+MSI) / macOS(universal DMG) / Linux(deb+rpm) / Android(未签名 APK) / Rime 源包"
+            echo "- 全部产物未签名;未创建 tag / Release;SHA256SUMS 与 BUILD-INFO 已生成"
+          } >> "$GITHUB_STEP_SUMMARY"
