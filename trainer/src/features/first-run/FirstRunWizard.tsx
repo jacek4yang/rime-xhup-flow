@@ -71,17 +71,33 @@ export interface FirstRunWizardProps {
   onStartTraining: (mode: PracticeMode) => void;
   /** 用户要求直接进入控制中心(已健康/需要人工处理时)。 */
   onOpenControlCenter: () => void;
+  /** 重新运行信号:每次自增触发向导重新评估(设置页入口)。 */
+  reopenSignal?: number;
 }
 
-export function FirstRunWizard({ onStartTraining, onOpenControlCenter }: FirstRunWizardProps) {
+export function FirstRunWizard({
+  onStartTraining,
+  onOpenControlCenter,
+  reopenSignal = 0,
+}: FirstRunWizardProps) {
   const { t } = useI18n();
   const [state, dispatch] = useReducer(transition, undefined, initialFirstRunState);
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
 
   // 已完成/跳过过引导:静默不渲染(高级用户不被向导困住)。
-  const [record] = useState(readOnboarding);
+  const [record, setRecord] = useState(readOnboarding);
   const [dismissed, setDismissed] = useState(false);
   const outcomeHandled = useRef(false);
+
+  // 设置页「重新运行引导」:记录已被清除,重置终局标记并重新打开。
+  const lastSignal = useRef(reopenSignal);
+  useEffect(() => {
+    if (reopenSignal === lastSignal.current) return;
+    lastSignal.current = reopenSignal;
+    outcomeHandled.current = false;
+    setDismissed(false);
+    setRecord(readOnboarding());
+  }, [reopenSignal]);
 
   // 异步驱动:进入异步步骤时发起对应命令,结果/错误回灌状态机。
   // 以 state 对象为依赖:同一步骤的重试(新对象)会重新执行。

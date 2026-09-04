@@ -26,6 +26,7 @@ import { StatsView } from "@/features/stats/StatsView";
 import { ReferenceView } from "@/features/reference/ReferenceView";
 import { ControlCenterView } from "@/features/product/ControlCenterView";
 import { FirstRunWizard } from "@/features/first-run/FirstRunWizard";
+import { clearOnboarding } from "@/features/first-run/onboarding";
 import { SettingsView } from "@/features/settings/SettingsView";
 import type { PracticeMode } from "@/features/practice/types";
 
@@ -54,6 +55,8 @@ export function AppShell() {
   const [presetMode, setPresetMode] = useState<PracticeMode | null>(null);
   /** 跳入练习时指定的复习条目(错题「练这些」)。 */
   const [reviewEntries, setReviewEntries] = useState<TrainingItem[] | null>(null);
+  /** 首次启动向导的重新运行信号(设置页触发,自增)。 */
+  const [onboardingReopen, setOnboardingReopen] = useState(0);
 
   const goPractice = (mode: PracticeMode) => {
     setPresetMode(mode);
@@ -92,11 +95,19 @@ export function AppShell() {
         {view === "stats" && <StatsView />}
         {view === "reference" && <ReferenceView />}
         {view === "product" && <ControlCenterView />}
-        {view === "settings" && <SettingsView />}
+        {view === "settings" && (
+          <SettingsView
+            onRerunOnboarding={() => {
+              clearOnboarding();
+              setOnboardingReopen((n) => n + 1);
+            }}
+          />
+        )}
       </main>
       <MobileBottomNav active={view} onNavigate={setView} />
       {/* 首次启动向导:完成/跳过后不再出现;不影响常规导航。 */}
       <FirstRunWizard
+        reopenSignal={onboardingReopen}
         onStartTraining={(mode) => {
           setPresetMode(mode);
           setReviewEntries(null);

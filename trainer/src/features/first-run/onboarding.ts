@@ -60,3 +60,14 @@ export function writeOnboarding(status: OnboardingStatus): boolean {
     return false;
   }
 }
+
+/** 清除引导记录(设置页「重新运行引导」用);存储不可用时静默忽略。 */
+export function clearOnboarding(): void {
+  const store = storage();
+  if (!store) return;
+  try {
+    store.removeItem(STORAGE_KEY);
+  } catch {
+    // 存储被禁用时无记录可清,无需处理。
+  }
+}

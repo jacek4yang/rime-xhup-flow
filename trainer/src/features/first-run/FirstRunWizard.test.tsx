@@ -11,7 +11,7 @@ import { resetTrainerStore } from "@/stores/trainer-store";
 import type { ProductStatusDto } from "@/lib/product";
 import type { TauriInternals } from "@/lib/native";
 import { FirstRunWizard } from "./FirstRunWizard";
-import { writeOnboarding } from "./onboarding";
+import { clearOnboarding, writeOnboarding } from "./onboarding";
 
 const invokeMock = vi.fn();
 
@@ -258,5 +258,26 @@ describe("FirstRunWizard", () => {
     render(<FirstRunWizard onStartTraining={vi.fn()} onOpenControlCenter={vi.fn()} />);
     await waitFor(() => expect(invokeMock).not.toHaveBeenCalled());
     expect(screen.queryByText("欢迎使用 XHUP Flow")).not.toBeInTheDocument();
+  });
+
+  it("重新运行信号:已引导用户可从设置页再次打开向导", async () => {
+    writeOnboarding("skipped");
+    mockFullInstall();
+    const props = { onStartTraining: vi.fn(), onOpenControlCenter: vi.fn() };
+    const { rerender } = render(<FirstRunWizard {...props} reopenSignal={0} />);
+    await waitFor(() => expect(invokeMock).not.toHaveBeenCalled());
+    expect(screen.queryByText("欢迎使用 XHUP Flow")).not.toBeInTheDocument();
+
+    // 设置页入口:清除记录 + 自增信号。
+    clearOnboarding();
+    rerender(<FirstRunWizard {...props} reopenSignal={1} />);
+    await screen.findByText("欢迎使用 XHUP Flow");
+
+    // 再次走完检测(跳过即可),记录重新写入。
+    await userEvent.click(screen.getByRole("button", { name: "开始" }));
+    await userEvent.click(await screen.findByRole("button", { name: "跳过,稍后再说" }));
+    await waitFor(() =>
+      expect(window.localStorage.getItem("xhup-flow.onboarding.v1")).toContain("skipped"),
+    );
   });
 });
