@@ -11,17 +11,19 @@ import { OnScreenKeyboard, buildKeyLabels } from "@/components/OnScreenKeyboard"
 import { useI18n } from "@/lib/use-i18n";
 import type { I18nKey } from "@/lib/i18n";
 import { useTrainerIndex } from "@/lib/trainer-context";
+import { KeyDetailDialog } from "./KeyDetailDialog";
 
 /**
- * 键位参考:键盘图 + 映射表 + 零声母 + 编码结构说明。
- * 所有数据来自生成的 trainer JSON,前端不维护任何映射副本。
+ * 键位参考:键盘图(点按任一键打开键位知识面板) + 速查 + 映射表 +
+ * 零声母 + 编码结构说明。所有数据来自生成的 trainer JSON,前端不维护
+ * 任何映射副本。
  */
 export function ReferenceView() {
   const index = useTrainerIndex();
   const { t } = useI18n();
   const [query, setQuery] = useState("");
+  const [detailKey, setDetailKey] = useState<string | null>(null);
   const { doublePinyin } = index.dataset;
-  const keyLabels = buildKeyLabels(doublePinyin);
   const keys = [..."qwertyuiop", ..."asdfghjkl", ..."zxcvbnm"].sort();
 
   return (
@@ -36,9 +38,15 @@ export function ReferenceView() {
       <Card>
         <CardHeader>
           <CardTitle>{t("reference.keyboardView")}</CardTitle>
+          <CardDescription>{t("reference.keyboardTapHint")}</CardDescription>
         </CardHeader>
         <CardContent>
-          <OnScreenKeyboard reference={doublePinyin} />
+          {/* 键位页展示双拼 + 形码两类参考;点按 = 键位知识面板。 */}
+          <OnScreenKeyboard
+            reference={doublePinyin}
+            refMode="both"
+            onKeyInfo={(key) => setDetailKey(key)}
+          />
         </CardContent>
       </Card>
 
@@ -68,24 +76,19 @@ export function ReferenceView() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-            {keys.map((key) => {
-              const label = keyLabels.get(key);
-              return (
-                <div
-                  key={key}
-                  className="flex items-baseline gap-2 rounded-lg border border-border px-3 py-2"
-                >
-                  <span className="font-mono text-base font-semibold uppercase">
-                    {key}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {[label?.initials.join(" "), label?.finals.join(" ")]
-                      .filter(Boolean)
-                      .join(" · ") || "—"}
-                  </span>
-                </div>
-              );
-            })}
+            {keys.map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setDetailKey(key)}
+                className="flex items-baseline gap-2 rounded-lg border border-border px-3 py-2 text-start transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                <span className="font-mono text-base font-semibold uppercase">
+                  {key}
+                </span>
+                <KeyMappingSummary keyChar={key} />
+              </button>
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -139,7 +142,30 @@ export function ReferenceView() {
           </ul>
         </CardContent>
       </Card>
+
+      <KeyDetailDialog
+        keyChar={detailKey ?? "q"}
+        open={detailKey !== null}
+        onOpenChange={(next) => {
+          if (!next) setDetailKey(null);
+        }}
+      />
     </div>
+  );
+}
+
+/** 映射表行内的双拼摘要(声母 · 韵母;可换行,不截断)。 */
+function KeyMappingSummary({ keyChar }: { keyChar: string }) {
+  const index = useTrainerIndex();
+  const label = useMemo(
+    () => buildKeyLabels(index.dataset.doublePinyin).get(keyChar),
+    [index, keyChar],
+  );
+  const text =
+    [label?.initials.join(" "), label?.finals.join(" ")].filter(Boolean).join(" · ") ||
+    "—";
+  return (
+    <span className="min-w-0 text-xs leading-snug text-muted-foreground">{text}</span>
   );
 }
 

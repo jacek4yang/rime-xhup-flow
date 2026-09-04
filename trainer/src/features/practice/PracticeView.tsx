@@ -20,8 +20,12 @@ import { selectPool } from "@/lib/trainer-index";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import { accuracy, formatDuration, formatPercent, kpm, cpm } from "@/lib/stats";
 import { listWeakItems } from "@/lib/review";
+import { haptic } from "@/lib/haptics";
+import { registerBackHandler } from "@/lib/back-handler";
 import { useI18n } from "@/lib/use-i18n";
 import { useTrainerStore } from "@/stores/trainer-store";
+import { buildShapeKeyStats } from "@/features/learn/shape-explorer";
+import type { ShapeKeyRef, KeyboardRefMode } from "@/components/OnScreenKeyboard";
 import {
   activeCode,
   advance,
@@ -86,6 +90,8 @@ export function PracticeView({
   const index = useTrainerIndex();
   const { t } = useI18n();
   const hintMode = useTrainerStore((state) => state.hintMode);
+  const keyRefMode = useTrainerStore((state) => state.keyRefMode);
+  const hapticsMode = useTrainerStore((state) => state.keyHaptics);
   const storeProgress = useTrainerStore((state) => state.progress);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -120,11 +126,6 @@ export function PracticeView({
     ),
   );
 
-  const commit = (result: StepResult) => {
-    dispatchEvents(result.events);
-    setSession(result.state);
-  };
-
   // 答对/答错补全后的短暂反馈,然后自动前进。
   useEffect(() => {
     if (!session || session.phase !== "feedback") return;
@@ -152,10 +153,93 @@ export function PracticeView({
     return () => clearInterval(timer);
   }, [session?.phase, session]);
 
+  // Android/浏览器返回:活跃时返回 = 暂停(暂停浮层即离开确认);
+  // 暂停中再返回 = 结束离开;小结屏返回 = 退出会话。
+  useEffect(() => {
+    if (!session) {
+      registerBackHandler(null);
+      return;
+    }
+    if (session.phase === "question" || session.phase === "feedback") {
+      registerBackHandler(() => {
+        commit(pause(session, Date.now()));
+        return true;
+      });
+      return () => registerBackHandler(null);
+    }
+    if (session.phase === "paused") {
+      registerBackHandler(() => {
+        dispatchEvents(finish(session, Date.now()).events);
+        onExit();
+        return true;
+      });
+      return () => registerBackHandler(null);
+    }
+    registerBackHandler(() => {
+      onExit();
+      return true;
+    });
+    return () => registerBackHandler(null);
+    // commit/onExit 为稳定闭包;session 变化时重新注册。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   const weakItems = useMemo(
     () => listWeakItems(index, storeProgress, 5),
     [index, storeProgress],
   );
+
+  // 键帽参考:情境模式按练习目标解析;其余模式由用户显式选择。
+  const resolvedRefMode = useMemo<KeyboardRefMode>(() => {
+    if (keyRefMode !== "contextual") return keyRefMode;
+    switch (config.entries ? "mixed" : config.mode) {
+      case "double":
+      case "level1":
+        return "double";
+      case "sound-shape":
+        return "shape";
+      case "full":
+      case "mixed":
+      case "mixed-shortcut":
+      case "mixed-all":
+        return "both";
+      case "fixed-word":
+      case "two-key-word":
+      case "zero-regression":
+      case "fixed-first":
+        return "double";
+      case "sentence":
+        return "none";
+      default:
+        return "double";
+    }
+  }, [keyRefMode, config]);
+
+  // 形码参考(键 → 首形/次形代表字):规范数据聚合,只建一次。
+  const shapeRef = useMemo<ShapeKeyRef>(() => {
+    const map: ShapeKeyRef = new Map();
+    for (const stat of buildShapeKeyStats(index.dataset.entries, 1)) {
+      const first = stat.firstSamples[0]?.char;
+      const second = stat.secondSamples[0]?.char;
+      if (first ?? second) {
+        map.set(stat.key, { first: first ?? "", second: second ?? "" });
+      }
+    }
+    return map;
+  }, [index.dataset.entries]);
+
+  const commit = (result: StepResult) => {
+    dispatchEvents(result.events);
+    setSession(result.state);
+    // 触感反馈:错键较强,答对有独特短促反馈(用户可关)。
+    if (result.state.lastWrongKey && result.state.lastWrongKey !== session?.lastWrongKey) {
+      haptic(hapticsMode, "wrong");
+    } else if (result.events.some((event) => event.type === "question-completed")) {
+      haptic(hapticsMode, "success");
+    } else {
+      haptic(hapticsMode, "key");
+    }
+  };
 
   if (!session) {
     return (
@@ -351,6 +435,8 @@ export function PracticeView({
         nextKey={codeHintVisible ? expectedKey(session) : null}
         wrongKey={session.lastWrongKey}
         onKeyPress={handleLetter}
+        refMode={resolvedRefMode}
+        shapeRef={shapeRef}
         compact
       />
 

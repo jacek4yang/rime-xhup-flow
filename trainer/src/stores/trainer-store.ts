@@ -25,8 +25,14 @@ import type { BackupSettings } from "@/lib/backup";
 import {
   DEFAULT_DIFFICULTY,
   DEFAULT_HINT_MODE,
+  DEFAULT_HAPTICS_MODE,
+  DEFAULT_KEY_REF_MODE,
   DEFAULT_MODE,
   DEFAULT_SESSION_LENGTH,
+  HAPTICS_MODES,
+  KEY_REF_MODES,
+  type HapticsMode,
+  type KeyRefMode,
   SESSION_LENGTH_OPTIONS,
   type HintMode,
   type PracticeMode,
@@ -64,6 +70,10 @@ export type TrainerData = {
   language: Language;
   theme: ThemePreference;
   hintMode: HintMode;
+  /** 键帽参考内容模式(与提示策略正交;见 KeyRefMode)。 */
+  keyRefMode: KeyRefMode;
+  /** 键位触感反馈(off/light/medium;桌面不支持时自动无效)。 */
+  keyHaptics: HapticsMode;
   difficulty: Difficulty;
   sessionLength: SessionLength;
   lastMode: PracticeMode;
@@ -96,6 +106,8 @@ export type TrainerActions = {
   setLanguage: (language: Language) => void;
   setTheme: (theme: ThemePreference) => void;
   setHintMode: (hintMode: HintMode) => void;
+  setKeyRefMode: (keyRefMode: KeyRefMode) => void;
+  setKeyHaptics: (keyHaptics: HapticsMode) => void;
   setDifficulty: (difficulty: Difficulty) => void;
   setSessionLength: (sessionLength: SessionLength) => void;
   setLastMode: (lastMode: PracticeMode) => void;
@@ -126,6 +138,8 @@ function defaultData(): TrainerData {
     language: "zh",
     theme: DEFAULT_THEME,
     hintMode: DEFAULT_HINT_MODE,
+    keyRefMode: DEFAULT_KEY_REF_MODE,
+    keyHaptics: DEFAULT_HAPTICS_MODE,
     difficulty: DEFAULT_DIFFICULTY,
     sessionLength: DEFAULT_SESSION_LENGTH,
     lastMode: DEFAULT_MODE,
@@ -185,7 +199,7 @@ function isDailyStats(value: unknown): value is DailyStats {
 }
 
 const THEMES: readonly ThemePreference[] = ["system", "light", "dark"];
-const HINT_MODES: readonly HintMode[] = ["always", "on-error", "hidden"];
+const HINT_MODES: readonly HintMode[] = ["always", "on-delay", "on-error", "hidden"];
 const DIFFICULTIES: readonly Difficulty[] = ["beginner", "daily", "full"];
 /** V1 四模式 + V2 新模式(全部可作为 lastMode 合法值)。 */
 const MODES: readonly PracticeMode[] = [
@@ -281,6 +295,8 @@ export function sanitizePersisted(value: unknown): TrainerData {
     language: pickEnum(value.language, LANGUAGES, defaults.language),
     theme: pickEnum(value.theme, THEMES, defaults.theme),
     hintMode: pickEnum(value.hintMode, HINT_MODES, defaults.hintMode),
+    keyRefMode: pickEnum(value.keyRefMode, KEY_REF_MODES, defaults.keyRefMode),
+    keyHaptics: pickEnum(value.keyHaptics, HAPTICS_MODES, defaults.keyHaptics),
     difficulty: pickEnum(value.difficulty, DIFFICULTIES, defaults.difficulty),
     sessionLength,
     lastMode: pickEnum(value.lastMode, MODES, defaults.lastMode),
@@ -329,6 +345,8 @@ export const useTrainerStore = create<TrainerStore>()(
       setLanguage: (language) => set({ language }),
       setTheme: (theme) => set({ theme }),
       setHintMode: (hintMode) => set({ hintMode }),
+      setKeyRefMode: (keyRefMode) => set({ keyRefMode }),
+      setKeyHaptics: (keyHaptics) => set({ keyHaptics }),
       setDifficulty: (difficulty) => set({ difficulty }),
       setSessionLength: (sessionLength) => set({ sessionLength }),
       setLastMode: (lastMode) => set({ lastMode }),
@@ -403,6 +421,8 @@ export const useTrainerStore = create<TrainerStore>()(
         language: state.language,
         theme: state.theme,
         hintMode: state.hintMode,
+        keyRefMode: state.keyRefMode,
+        keyHaptics: state.keyHaptics,
         difficulty: state.difficulty,
         sessionLength: state.sessionLength,
         lastMode: state.lastMode,
