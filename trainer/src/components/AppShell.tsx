@@ -11,6 +11,7 @@ import {
   Grid3x3,
   House,
   Keyboard,
+  Package,
   RotateCcw,
   Settings,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import { PracticeSetupView } from "@/features/practice/PracticeSetupView";
 import { WeaknessCenter } from "@/features/review/ReviewView";
 import { StatsView } from "@/features/stats/StatsView";
 import { ReferenceView } from "@/features/reference/ReferenceView";
+import { ControlCenterView } from "@/features/product/ControlCenterView";
 import { SettingsView } from "@/features/settings/SettingsView";
 import type { PracticeMode } from "@/features/practice/types";
 
@@ -32,6 +34,7 @@ export type ViewKey =
   | "review"
   | "stats"
   | "reference"
+  | "product"
   | "settings";
 
 const NAV_ITEMS: { key: ViewKey; label: I18nKey; icon: typeof House }[] = [
@@ -40,6 +43,7 @@ const NAV_ITEMS: { key: ViewKey; label: I18nKey; icon: typeof House }[] = [
   { key: "review", label: "nav.review", icon: RotateCcw },
   { key: "stats", label: "nav.stats", icon: ChartColumn },
   { key: "reference", label: "nav.reference", icon: Grid3x3 },
+  { key: "product", label: "nav.product", icon: Package },
   { key: "settings", label: "nav.settings", icon: Settings },
 ];
 
@@ -86,6 +90,7 @@ export function AppShell() {
         {view === "review" && <WeaknessCenter onPracticeEntries={goReviewPractice} />}
         {view === "stats" && <StatsView />}
         {view === "reference" && <ReferenceView />}
+        {view === "product" && <ControlCenterView />}
         {view === "settings" && <SettingsView />}
       </main>
       <MobileBottomNav active={view} onNavigate={setView} />
