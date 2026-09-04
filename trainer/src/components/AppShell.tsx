@@ -82,6 +82,7 @@ export function AppShell() {
           <DashboardView
             onStartPractice={goPractice}
             onShowReview={() => setView("review")}
+            onOpenLearn={() => setView("learn")}
           />
         )}
         {view === "practice" && (
