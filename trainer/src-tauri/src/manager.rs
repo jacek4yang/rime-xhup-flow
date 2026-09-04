@@ -1537,4 +1537,64 @@ mod tests {
         assert!(plan_uninstall(&user).unwrap().is_empty());
         let _ = fs::remove_dir_all(&user);
     }
+
+    #[test]
+    fn unicode_and_space_paths_survive_full_lifecycle() {
+        // 路径健壮性(Windows 高频问题:中文用户名与含空格目录):
+        // 全部管理操作在 Unicode + 空格路径下必须与普通路径行为一致。
+        let user = fake_user_dir("中文 用户 目录 with 空格");
+        let v1 = fake_package("1.0.0");
+        execute(&plan_install(&user, &v1).unwrap(), &user, Some(&v1)).unwrap();
+        assert_eq!(
+            install_status(&user, RimeClient::Fcitx5, Some(&v1)).health(&v1.version),
+            InstallHealth::Healthy
+        );
+        // 升级:备份与回滚路径同样落在 Unicode/空格目录内。
+        let v2 = fake_package("1.1.0");
+        execute(&plan_install(&user, &v2).unwrap(), &user, Some(&v2)).unwrap();
+        assert_eq!(
+            fs::read_to_string(user.join(OWNED_FILES[0])).unwrap(),
+            "1.1.0"
+        );
+        assert!(user.join("xhup_flow_user.userdb").is_dir());
+        // 卸载:拥有文件删除,用户自有文件与学习数据保留。
+        execute(&plan_uninstall(&user).unwrap(), &user, None).unwrap();
+        assert!(user.join("default.custom.yaml").is_file());
+        assert!(user.join("xhup_flow_user.userdb").is_dir());
+        let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_overlong_path_fails_cleanly_without_panic() {
+        // Windows 默认 MAX_PATH(260)限制下的两种真实环境都必须行为正确:
+        // - 未启用 LongPathsEnabled:系统拒绝创建超长目录,计划阶段必须
+        //   返回类型化错误而非 panic;
+        // - 已启用:完整安装/卸载照常成功。
+        let base = temp_dir("long-path");
+        let mut user = base.clone();
+        let segment = "很长的目录段落-用-于-推-高-整-体-路-径-长-度-0123456789";
+        while user.as_os_str().len() < 520 {
+            user.push(segment);
+        }
+        match fs::create_dir_all(&user) {
+            Err(_) => {
+                let v1 = fake_package("1.0.0");
+                assert!(
+                    plan_install(&user, &v1).is_err(),
+                    "超长路径必须返回类型化错误而非 panic"
+                );
+            }
+            Ok(()) => {
+                let v1 = fake_package("1.0.0");
+                execute(&plan_install(&user, &v1).unwrap(), &user, Some(&v1)).unwrap();
+                assert_eq!(
+                    install_status(&user, RimeClient::Fcitx5, Some(&v1)).health(&v1.version),
+                    InstallHealth::Healthy
+                );
+                execute(&plan_uninstall(&user).unwrap(), &user, None).unwrap();
+            }
+        }
+        let _ = fs::remove_dir_all(&base);
+    }
 }
