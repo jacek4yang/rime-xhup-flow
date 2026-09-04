@@ -4,7 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { resetTrainerStore } from "@/stores/trainer-store";
 import type { ProductStatusDto, TauriInternals } from "@/lib/product";
@@ -101,7 +101,9 @@ describe("ControlCenterView", () => {
     await user.click(await screen.findByRole("button", { name: "安装" }));
     expect(await screen.findByText(/尚未写入任何文件/)).toBeInTheDocument();
     expect(screen.getByText("xhup_flow.schema.yaml")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "确认执行" }));
+    // Radix Dialog 在 jsdom 中对遮罩/内容切换 pointer-events,弹窗内
+    // 按钮用 fireEvent 触发(语义仍是「用户点击了确认」)。
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认执行" }));
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("product_execute", { kind: "install" }),
     );
@@ -127,7 +129,9 @@ describe("ControlCenterView", () => {
     render(<ControlCenterView />);
     await user.click(await screen.findByRole("button", { name: "卸载" }));
     expect(await screen.findByText(/只删除 XHUP 拥有的 11 个方案文件/)).toBeInTheDocument();
-    await user.click(screen.getAllByRole("button", { name: "卸载" })[1]);
+    // Radix Dialog 打开时会把页面内容 aria-hidden 并切换 pointer-events;
+    // 用 role="dialog" 作用域定位弹窗内按钮,fireEvent 触发保证稳定。
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "卸载" }));
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("product_execute", { kind: "uninstall" }),
     );
@@ -145,7 +149,7 @@ describe("ControlCenterView", () => {
     expect(screen.getByText(/无账号、无遥测、无云端同步/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "重置学习" }));
     expect(await screen.findByText("重置学习数据?")).toBeInTheDocument();
-    await user.click(screen.getAllByRole("button", { name: "重置学习" })[1]);
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "重置学习" }));
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("learning_reset", { confirmed: true }),
     );
