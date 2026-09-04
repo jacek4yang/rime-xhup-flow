@@ -67,6 +67,7 @@ jobs:
             rime-pkg-${{ runner.os }}-
 
       - name: 生成 Rime 源包
+        id: meta
         run: |
           set -euo pipefail
           cargo run -p xhup-cli --locked -- generate rime --output build/rime-package
