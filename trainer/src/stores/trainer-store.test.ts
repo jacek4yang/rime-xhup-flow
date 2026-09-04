@@ -19,7 +19,7 @@ describe("默认状态", () => {
   it("偏好与进度为全新默认值(V2 含 keyErrors)", () => {
     const state = useTrainerStore.getState();
     expect(state.theme).toBe("system");
-    expect(state.hintMode).toBe("always");
+    expect(state.hintMode).toBe("on-error");
     expect(state.difficulty).toBe("daily");
     expect(state.sessionLength).toBe(30);
     expect(state.lastMode).toBe("double");
@@ -324,7 +324,7 @@ describe("sanitizePersisted(损坏/旧数据回退)", () => {
       keyErrors: { z: 2, BAD: 1 },
     });
     expect(sanitized.theme).toBe("dark");
-    expect(sanitized.hintMode).toBe("always");
+    expect(sanitized.hintMode).toBe("on-error");
     expect(sanitized.difficulty).toBe("beginner");
     expect(sanitized.sessionLength).toBe(30);
     expect(sanitized.lastMode).toBe("mixed");

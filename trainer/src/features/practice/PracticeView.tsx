@@ -281,6 +281,9 @@ export function PracticeView({
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
+          // 禁止移动端系统软键盘弹出:输入走屏显键盘与实体键盘,
+          // 系统输入法面板只会遮挡练习区。
+          inputMode="none"
           aria-label={t("practice.inputArea")}
           className="absolute inset-0 h-full w-full cursor-text opacity-0"
         />
@@ -344,7 +347,8 @@ export function PracticeView({
 
       <OnScreenKeyboard
         reference={index.dataset.doublePinyin}
-        nextKey={expectedKey(session)}
+        // 提示可见时才高亮下一期待键;否则键盘高亮会泄露答案。
+        nextKey={codeHintVisible ? expectedKey(session) : null}
         wrongKey={session.lastWrongKey}
         onKeyPress={handleLetter}
         compact

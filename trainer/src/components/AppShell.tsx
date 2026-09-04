@@ -73,7 +73,7 @@ export function AppShell() {
   return (
     <div className="min-h-svh bg-background text-foreground">
       <DesktopSidebar active={view} onNavigate={setView} />
-      <main className="mx-auto w-full max-w-5xl px-4 pb-24 pt-4 sm:px-6 md:pb-10 md:pl-60 md:pt-8">
+      <main className="mx-auto w-full max-w-5xl px-4 pb-24 pt-[calc(1rem+env(safe-area-inset-top))] sm:px-6 md:pb-10 md:pl-60 md:pt-[calc(2rem+env(safe-area-inset-top))]">
         {view === "today" && (
           <DashboardView
             onStartPractice={goPractice}

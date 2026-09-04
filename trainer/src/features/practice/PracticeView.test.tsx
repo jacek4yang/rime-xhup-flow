@@ -239,6 +239,34 @@ describe("PracticeView", () => {
     expect(screen.queryByText("xk")).not.toBeInTheDocument();
   });
 
+  it("答案不泄露:提示隐藏/错误后显示时,键盘不高亮下一期待键", () => {
+    useTrainerStore.setState({ hintMode: "hidden" });
+    const { container } = renderPractice();
+    expect(container.querySelector("button[data-next]")).toBeNull();
+    press("z"); // 错键后也不高亮(答案仍未显示)。
+    expect(container.querySelector("button[data-next]")).toBeNull();
+  });
+
+  it("答案不泄露:默认提示模式(错误后显示)答错前无高亮,答错后才提示", () => {
+    const { container } = renderPractice();
+    expect(container.querySelector("button[data-next]")).toBeNull();
+    press("z");
+    expect(container.querySelector("button[data-next]")).not.toBeNull();
+  });
+
+  it("提示方式:始终显示时键盘高亮下一期待键(抄码模式)", () => {
+    useTrainerStore.setState({ hintMode: "always" });
+    const { container } = renderPractice();
+    expect(container.querySelector("button[data-next]")).not.toBeNull();
+  });
+
+  it("移动端:练习输入框禁止系统软键盘(inputMode=none)", () => {
+    const { container } = renderPractice();
+    const input = container.querySelector("input");
+    expect(input).not.toBeNull();
+    expect(input).toHaveAttribute("inputmode", "none");
+  });
+
   it("Ctrl 组合键不被拦截", () => {
     renderPractice();
     fireEvent.keyDown(input(), { key: "c", ctrlKey: true });
