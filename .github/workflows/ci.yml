@@ -207,4 +207,6 @@ jobs:
             libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: 平台原生冒烟(产品管理核心 + 学习管理,全部封闭假目录)
-        run: cargo test -p trainer --lib -p xhup-cli --lib --locked
+        run: |
+          cargo test -p trainer --lib --locked
+          cargo test -p xhup-cli --lib --locked
