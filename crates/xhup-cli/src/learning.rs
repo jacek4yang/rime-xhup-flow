@@ -135,7 +135,10 @@ fn find_dict_manager(explicit: Option<&Path>) -> Result<PathBuf, LearningError> 
 }
 
 /// PATH 查找(不引入依赖;常见安装路径兜底)。
-fn which_dict_manager() -> Option<PathBuf> {
+///
+/// 公开给产品管理端(Trainer 控制中心)复用:检测学习管理工具是否
+/// 可用,避免第二份 PATH 查找实现。
+pub fn which_dict_manager() -> Option<PathBuf> {
     for candidate in [
         "/usr/bin/rime_dict_manager",
         "/usr/local/bin/rime_dict_manager",
