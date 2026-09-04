@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import { OnScreenKeyboard, buildKeyLabels } from "@/components/OnScreenKeyboard";
 import { useI18n } from "@/lib/use-i18n";
+import type { I18nKey } from "@/lib/i18n";
 import { useTrainerIndex } from "@/lib/trainer-context";
 
 /**
@@ -17,7 +18,7 @@ import { useTrainerIndex } from "@/lib/trainer-context";
  */
 export function ReferenceView() {
   const index = useTrainerIndex();
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const { doublePinyin } = index.dataset;
   const keyLabels = buildKeyLabels(doublePinyin);
@@ -28,15 +29,13 @@ export function ReferenceView() {
       <header>
         <h1 className="text-xl font-semibold">{t("nav.reference")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {language === "zh"
-            ? "双拼键位、一级简码与编码速查;数据来自规范码表。"
-            : "Double-pinyin keys, level-1 shortcuts and code lookup."}
+          {t("reference.subtitle")}
         </p>
       </header>
 
       <Card>
         <CardHeader>
-          <CardTitle>键盘视图</CardTitle>
+          <CardTitle>{t("reference.keyboardView")}</CardTitle>
         </CardHeader>
         <CardContent>
           <OnScreenKeyboard reference={doublePinyin} />
@@ -46,11 +45,7 @@ export function ReferenceView() {
       <Card>
         <CardHeader>
           <CardTitle>{t("reference.search")}</CardTitle>
-          <CardDescription>
-            {language === "zh"
-              ? "读规范数据:单字全码 / 词全码 / 生产简码(只读)。"
-              : "Read-only lookup over canonical chars, words and shortcuts."}
-          </CardDescription>
+          <CardDescription>{t("reference.searchHint")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <label className="flex items-center gap-2 rounded-md border border-border px-3 focus-within:outline-2 focus-within:outline-ring">
@@ -69,7 +64,7 @@ export function ReferenceView() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{language === "zh" ? "映射表" : "Mapping"}</CardTitle>
+          <CardTitle>{t("reference.mapping")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -97,10 +92,8 @@ export function ReferenceView() {
 
       <Card>
         <CardHeader>
-          <CardTitle>零声母</CardTitle>
-          <CardDescription>
-            没有声母的音节,按下面的规则补全两位音码。
-          </CardDescription>
+          <CardTitle>{t("reference.zeroInitials")}</CardTitle>
+          <CardDescription>{t("reference.zeroInitialsHint")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
@@ -121,21 +114,27 @@ export function ReferenceView() {
 
       <Card>
         <CardHeader>
-          <CardTitle>编码结构</CardTitle>
+          <CardTitle>{t("reference.codeStructure")}</CardTitle>
         </CardHeader>
         <CardContent>
           <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
             <li>
-              <span className="font-medium text-foreground">2 码(双拼)</span>
-              :两位音码,声母 + 韵母各一键。
+              <span className="font-medium text-foreground">
+                {t("reference.code2")}
+              </span>
+              {t("reference.code2Desc")}
             </li>
             <li>
-              <span className="font-medium text-foreground">3 码(音形)</span>
-              :双拼音码 + 第一个形码。
+              <span className="font-medium text-foreground">
+                {t("reference.code3")}
+              </span>
+              {t("reference.code3Desc")}
             </li>
             <li>
-              <span className="font-medium text-foreground">4 码(全码)</span>
-              :双拼音码 + 两位形码,是最终的全码。
+              <span className="font-medium text-foreground">
+                {t("reference.code4")}
+              </span>
+              {t("reference.code4Desc")}
             </li>
           </ul>
         </CardContent>
@@ -168,12 +167,12 @@ function SearchResults({ query }: { query: string }) {
     return matches;
   }, [index, query]);
 
-  const KIND_LABELS: Record<string, string> = {
-    char: "字",
-    level1: "一级",
-    word: "词",
-    shortcut: "简码",
-    sentence: "句",
+  const KIND_LABELS: Record<string, I18nKey> = {
+    char: "reference.kindChar",
+    level1: "reference.kindLevel1",
+    word: "reference.kindWord",
+    shortcut: "reference.kindShortcut",
+    sentence: "reference.kindSentence",
   };
 
   if (query.trim().length === 0) return null;
@@ -192,7 +191,7 @@ function SearchResults({ query }: { query: string }) {
             {result.code}
           </span>
           <span className="ml-auto text-xs text-muted-foreground">
-            {KIND_LABELS[result.kind] ?? result.kind}
+            {KIND_LABELS[result.kind] ? t(KIND_LABELS[result.kind]) : result.kind}
           </span>
         </li>
       ))}

@@ -12,6 +12,14 @@
  * (2/3/4 码单字)与 V1 兼容。
  */
 
+import { translate, type I18nKey } from "@/lib/i18n";
+import { useTrainerStore } from "@/stores/trainer-store";
+
+/** 加载期错误文案语言:数据加载先于 React 上下文,直接读 store。 */
+function t(key: I18nKey, params?: Record<string, string | number>): string {
+  return translate(useTrainerStore.getState().language, key, params);
+}
+
 /** 一条单字训练条目:一个最终化的 `(汉字, 静态码)` 关系。 */
 export type TrainerEntry = {
   char: string;
@@ -337,9 +345,7 @@ function validateDoublePinyin(value: unknown): DoublePinyinReference {
 export function validateTrainerDataset(value: unknown): TrainerDataset {
   if (!isRecord(value)) fail("训练数据结构无效");
   if (value.schemaVersion !== 2) {
-    fail(
-      `训练数据版本应为 2(实际 ${String(value.schemaVersion)});请重新构建以生成 V2 数据`,
-    );
+    fail(t("trainer.errorVersion", { actual: String(value.schemaVersion) }));
   }
   if (typeof value.packageVersion !== "string" || value.packageVersion === "") {
     fail("训练数据缺少 packageVersion");
@@ -407,16 +413,18 @@ export async function loadTrainerDataset(
   try {
     response = await fetch(url);
   } catch (cause) {
-    throw new TrainerDataError(`无法加载训练数据:${String(cause)}`);
+    throw new TrainerDataError(t("trainer.errorLoad", { reason: String(cause) }));
   }
   if (!response.ok) {
-    throw new TrainerDataError(`无法加载训练数据(HTTP ${response.status})`);
+    throw new TrainerDataError(
+      t("trainer.errorLoad", { reason: `HTTP ${response.status}` }),
+    );
   }
   let parsed: unknown;
   try {
     parsed = await response.json();
   } catch (cause) {
-    throw new TrainerDataError(`训练数据不是合法 JSON:${String(cause)}`);
+    throw new TrainerDataError(t("trainer.errorLoad", { reason: String(cause) }));
   }
   return validateTrainerDataset(parsed);
 }

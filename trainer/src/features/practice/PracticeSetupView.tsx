@@ -106,7 +106,7 @@ export function PracticeSetupView({
   onPresetConsumed: () => void;
   onExitToToday: () => void;
 }) {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const lastMode = useTrainerStore((state) => state.lastMode);
   const difficulty = useTrainerStore((state) => state.difficulty);
   const sessionLength = useTrainerStore((state) => state.sessionLength);
@@ -178,9 +178,7 @@ export function PracticeSetupView({
       <header>
         <h1 className="text-xl font-semibold">{t("practice.start")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {language === "zh"
-            ? "选择模式后直接开始连续打字,全程无需鼠标。"
-            : "Pick a mode and type continuously — no mouse needed."}
+          {t("practice.setupHint")}
         </p>
       </header>
 
@@ -213,12 +211,12 @@ export function PracticeSetupView({
                 >
                   <CardHeader>
                     <CardTitle className="flex items-center justify-between">
-                      {MODE_LABELS[candidate]}
+                      {t(MODE_LABELS[candidate])}
                       <span className="text-xs font-normal text-muted-foreground">
                         {modeKeyBadge(candidate)}
                       </span>
                     </CardTitle>
-                    <CardDescription>{MODE_DESCRIPTIONS[candidate]}</CardDescription>
+                    <CardDescription>{t(MODE_DESCRIPTIONS[candidate])}</CardDescription>
                   </CardHeader>
                 </Card>
               ))}
@@ -239,7 +237,7 @@ export function PracticeSetupView({
                 selected={difficulty === candidate}
                 onClick={() => setDifficulty(candidate)}
               >
-                {DIFFICULTY_LABELS[candidate]}
+                {t(DIFFICULTY_LABELS[candidate])}
               </OptionButton>
             ))}
           </OptionRow>
@@ -250,11 +248,7 @@ export function PracticeSetupView({
                 selected={sessionLength === candidate}
                 onClick={() => setSessionLength(candidate)}
               >
-                {candidate === 0
-                  ? language === "zh"
-                    ? "无限"
-                    : "∞"
-                  : candidate}
+                {candidate === 0 ? t("practice.lengthUnlimited") : candidate}
               </OptionButton>
             ))}
           </OptionRow>

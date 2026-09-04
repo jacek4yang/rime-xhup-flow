@@ -1,3 +1,4 @@
+import type { I18nKey } from "@/lib/i18n";
 import type { CodeLength, Difficulty, PoolId } from "@/lib/trainer-index";
 
 /**
@@ -109,34 +110,35 @@ export function isCharMode(mode: PracticeMode): boolean {
   );
 }
 
-export const MODE_LABELS: Record<PracticeMode, string> = {
-  double: "双拼",
-  "sound-shape": "音形",
-  full: "全码",
-  mixed: "单字综合",
-  level1: "一级简码",
-  "two-key-word": "二码词简码",
-  "zero-regression": "零冲突词简码",
-  "fixed-first": "固定首码词简码",
-  "fixed-word": "固定词",
-  "mixed-shortcut": "简码综合",
-  sentence: "组句",
-  "mixed-all": "全模式综合",
+/** 模式标签走 i18n 字典(practice.mode*),渲染处用 t() 查找。 */
+export const MODE_LABELS: Record<PracticeMode, I18nKey> = {
+  double: "practice.modeDouble",
+  "sound-shape": "practice.modeSoundShape",
+  full: "practice.modeFull",
+  mixed: "practice.modeMixed",
+  level1: "practice.modeLevel1",
+  "two-key-word": "practice.modeTwoKeyWord",
+  "zero-regression": "practice.modeZeroRegression",
+  "fixed-first": "practice.modeFixedFirst",
+  "fixed-word": "practice.modeFixedWord",
+  "mixed-shortcut": "practice.modeMixedShortcut",
+  sentence: "practice.modeSentence",
+  "mixed-all": "practice.modeMixedAll",
 };
 
-export const MODE_DESCRIPTIONS: Record<PracticeMode, string> = {
-  double: "两字音码,熟悉小鹤双拼",
-  "sound-shape": "双拼 + 首形,过渡到音形",
-  full: "四位全码,核心肌肉记忆",
-  mixed: "2 / 3 / 4 码均衡轮换",
-  level1: "26 个一级简码,最高频入口",
-  "two-key-word": "二键直达的零冲突词简码",
-  "zero-regression": "高稳健零冲突词语简码",
-  "fixed-first": "高稳健 FIXED_FIRST 词语简码",
-  "fixed-word": "固定词全码(4 / 6 / 8 键轮换)",
-  "mixed-shortcut": "三个生产简码层均衡轮换",
-  sentence: "连续组句:整句拼接码连续输入",
-  "mixed-all": "全部内容均衡轮换",
+export const MODE_DESCRIPTIONS: Record<PracticeMode, I18nKey> = {
+  double: "practice.descDouble",
+  "sound-shape": "practice.descSoundShape",
+  full: "practice.descFull",
+  mixed: "practice.descMixed",
+  level1: "practice.descLevel1",
+  "two-key-word": "practice.descTwoKeyWord",
+  "zero-regression": "practice.descZeroRegression",
+  "fixed-first": "practice.descFixedFirst",
+  "fixed-word": "practice.descFixedWord",
+  "mixed-shortcut": "practice.descMixedShortcut",
+  sentence: "practice.descSentence",
+  "mixed-all": "practice.descMixedAll",
 };
 
 /** UI 默认展示的模式分组(完整模式选择器在产品 UX 版本展开)。 */
@@ -147,17 +149,17 @@ export const CHARMODE_GROUP: readonly PracticeMode[] = [
   "mixed",
 ];
 
-export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
-  beginner: "入门",
-  daily: "日常",
-  full: "完整",
+export const DIFFICULTY_LABELS: Record<Difficulty, I18nKey> = {
+  beginner: "practice.diffBeginner",
+  daily: "practice.diffDaily",
+  full: "practice.diffFull",
 };
 
-export const HINT_MODE_LABELS: Record<HintMode, string> = {
-  always: "始终显示",
-  "on-delay": "迟疑后显示",
-  "on-error": "错误后显示",
-  hidden: "隐藏",
+export const HINT_MODE_LABELS: Record<HintMode, I18nKey> = {
+  always: "practice.hintAlways",
+  "on-delay": "practice.hintOnDelay",
+  "on-error": "practice.hintOnError",
+  hidden: "practice.hintHidden",
 };
 
 /** 一题的判定结果。 */

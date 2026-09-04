@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/use-i18n";
 import type { DoublePinyinReference } from "@/lib/trainer-data";
 
 const KEY_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"] as const;
@@ -47,10 +48,11 @@ export function OnScreenKeyboard({
   onKeyPress?: (key: string) => void;
   compact?: boolean;
 }) {
+  const { t } = useI18n();
   const labels = useMemo(() => buildKeyLabels(reference), [reference]);
 
   return (
-    <div className="flex flex-col items-center gap-1.5" aria-label="键盘">
+    <div className="flex flex-col items-center gap-1.5" aria-label={t("common.keyboard")}>
       {KEY_ROWS.map((row) => (
         <div key={row} className="flex w-full justify-center gap-1 sm:gap-1.5">
           {[...row].map((key) => {
@@ -99,7 +101,11 @@ export function OnScreenKeyboard({
                 key={key}
                 type="button"
                 tabIndex={-1}
-                aria-label={`按键 ${key}${hint ? `,${hint}` : ""}`}
+                aria-label={
+                  hint
+                    ? t("practice.keyAria", { key, hint })
+                    : t("practice.keyAriaPlain", { key })
+                }
                 className={className}
                 onClick={() => onKeyPress(key)}
               >

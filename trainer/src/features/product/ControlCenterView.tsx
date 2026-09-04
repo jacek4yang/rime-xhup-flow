@@ -24,11 +24,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { CommandError, isDesktopApp } from "@/lib/native";
 import type { I18nKey } from "@/lib/i18n";
 import { useI18n } from "@/lib/use-i18n";
 import {
-  isDesktopApp,
+  ERROR_CODES,
   productApi,
+  type ErrorCode,
+  type InstallHealth,
   type MaintenanceKind,
   type PlanActionDto,
   type PlanDto,
@@ -49,7 +52,23 @@ const PLAN_ACTION_LABELS: Record<PlanActionDto["kind"], I18nKey> = {
   delete: "product.planDelete",
 };
 
-function errorReason(error: unknown): string {
+const HEALTH_LABELS: Record<InstallHealth, I18nKey> = {
+  not_installed: "product.healthNotInstalled",
+  healthy: "product.healthHealthy",
+  update_available: "product.healthUpdateAvailable",
+  modified: "product.healthModified",
+  incomplete: "product.healthIncomplete",
+};
+
+/** 错误呈现:优先按稳定错误码翻译,未知码退回人读消息。 */
+function errorText(error: unknown, t: (key: I18nKey, params?: Record<string, string | number>) => string): string {
+  if (error instanceof CommandError) {
+    const code = error.code as ErrorCode;
+    if ((ERROR_CODES as readonly string[]).includes(error.code)) {
+      return t(`errorCodes.${code}`) as string;
+    }
+    return error.message;
+  }
   if (error instanceof Error) return error.message;
   return String(error);
 }
@@ -90,8 +109,8 @@ export function ControlCenterView() {
         setStatus(next);
         setLoadError(null);
       })
-      .catch((cause: unknown) => setLoadError(errorReason(cause)));
-  }, []);
+      .catch((cause: unknown) => setLoadError(errorText(cause, t)));
+  }, [t]);
 
   useEffect(refresh, [refresh]);
 
@@ -105,7 +124,7 @@ export function ControlCenterView() {
         if (message !== null) setNotice(message);
         refresh();
       } catch (cause: unknown) {
-        setError(t("product.failed", { reason: errorReason(cause) }));
+        setError(errorText(cause, t));
       } finally {
         setBusy(false);
       }
@@ -119,7 +138,7 @@ export function ControlCenterView() {
     productApi
       .plan(kind)
       .then((next) => setPlan({ kind, plan: next }))
-      .catch((cause: unknown) => setError(t("product.failed", { reason: errorReason(cause) })));
+      .catch((cause: unknown) => setError(errorText(cause, t)));
   };
 
   const confirmPlan = () => {
@@ -211,6 +230,21 @@ export function ControlCenterView() {
                   <Row label={t("product.userDataDir")}>
                     <code className="text-xs">{status.user_data_dir}</code>
                   </Row>
+                  {status.health && (
+                    <Row label={t("product.installState")}>
+                      <Badge
+                        variant={
+                          status.health === "healthy"
+                            ? "secondary"
+                            : status.health === "not_installed"
+                              ? "outline"
+                              : "destructive"
+                        }
+                      >
+                        {t(HEALTH_LABELS[status.health])}
+                      </Badge>
+                    </Row>
+                  )}
                   <Row label={t("product.installState")}>
                     {install && install.installed_files > 0 ? (
                       <span className="flex flex-wrap items-center gap-2">
@@ -371,9 +405,7 @@ export function ControlCenterView() {
                       void productApi
                         .diagnostics()
                         .then(setDiagnostics)
-                        .catch((cause: unknown) =>
-                          setError(t("product.failed", { reason: errorReason(cause) })),
-                        )
+                        .catch((cause: unknown) => setError(errorText(cause, t)))
                     }
                     disabled={busy}
                   >
