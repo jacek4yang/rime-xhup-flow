@@ -58,7 +58,15 @@ export default function Mistakes() {
   return (
     <View className="page">
       <View className="card">
-        <Text className="title">{t("review.title")}</Text>
+        <View className="card-heading-row">
+          <Text className="title">{t("review.title")}</Text>
+          <View
+            className="button button-inline button-secondary"
+            onClick={() => navigateToOrRedirect(ROUTES.stats)}
+          >
+            <Text>{t("nav.stats")}</Text>
+          </View>
+        </View>
         <Text className="subtitle">{t("review.subtitle")}</Text>
       </View>
 

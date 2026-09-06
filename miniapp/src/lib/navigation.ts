@@ -18,6 +18,8 @@ export const ROUTES = {
   keyDetail: (key: string) =>
     `/pages/key-detail/index?key=${encodeURIComponent(key)}`,
   mistakes: "/pages/mistakes/index",
+  stats: "/pages/stats/index",
+  importBackup: "/pages/import/index",
   settings: "/pages/settings/index",
 } as const;
 

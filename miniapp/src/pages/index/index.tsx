@@ -110,6 +110,17 @@ export default function Home() {
             <Text className="action-arrow">›</Text>
           </View>
         )}
+        <View
+          className="action-row"
+          hoverClass="action-row-hover"
+          onClick={() => navigateTo(ROUTES.stats)}
+        >
+          <View className="action-main">
+            <Text className="action-title">{t("nav.stats")}</Text>
+            <Text className="subtitle">{t("stats.entryHint")}</Text>
+          </View>
+          <Text className="action-arrow">›</Text>
+        </View>
       </View>
 
       <View className="card">

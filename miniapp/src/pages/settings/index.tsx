@@ -27,6 +27,7 @@ import { HAPTICS_MODES } from "@xhup/trainer-core";
 import { appStore, actions, useAppState } from "../../lib/store";
 import { useI18n } from "../../lib/i18n";
 import { dataset } from "../../lib/dataset";
+import { ROUTES, navigateTo } from "../../lib/navigation";
 
 /** 提示方式全集(核心未导出枚举表;与 HintMode 一一对应)。 */
 const HINT_MODES: readonly HintMode[] = ["always", "on-delay", "on-error", "hidden"];
@@ -103,8 +104,21 @@ export default function Settings() {
       </View>
 
       <View className="card">
-        <Text className="card-heading">{t("settings.language")}</Text>
-        <View className="option-row">
+        <View
+          className="action-row"
+          hoverClass="action-row-hover"
+          onClick={() => navigateTo(ROUTES.stats)}
+        >
+          <View className="action-main">
+            <Text className="action-title">{t("nav.stats")}</Text>
+            <Text className="subtitle">{t("stats.entryHint")}</Text>
+          </View>
+          <Text className="action-arrow">›</Text>
+        </View>
+      </View>
+
+      <View className="card">
+        <Text className="card-heading">{t("settings.language")}</Text>        <View className="option-row">
           {LANGUAGES.map((language) => (
             <View
               key={language}
@@ -186,6 +200,13 @@ export default function Settings() {
           <Text>{t("settings.export")}</Text>
         </View>
         {exported && <Text className="status-ok">已复制到剪贴板(备份 v{BACKUP_VERSION})</Text>}
+
+        <View
+          className="button button-secondary"
+          onClick={() => navigateTo(ROUTES.importBackup)}
+        >
+          <Text>{t("settings.import")}</Text>
+        </View>
 
         <View className="button button-danger" onClick={resetProgress}>
           <Text>{t("settings.reset")}</Text>

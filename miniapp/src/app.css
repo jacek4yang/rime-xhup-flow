@@ -761,3 +761,124 @@ page {
   font-weight: 700;
   color: #2f6fed;
 }
+
+/* ---------- 统计页 ---------- */
+
+.bar-chart {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 8rpx;
+  height: 160rpx;
+}
+
+.bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  height: 100%;
+}
+
+.bar-fill {
+  width: 100%;
+  background: #2f6fed;
+  border-radius: 4rpx;
+}
+
+.bar-fill-empty {
+  width: 100%;
+  height: 4rpx;
+  background: #e5e7eb;
+  border-radius: 4rpx;
+}
+
+.bar-labels {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.bar-label {
+  font-size: 20rpx;
+  color: #a8adb4;
+}
+
+.mastery-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 12rpx;
+  height: 160rpx;
+}
+
+.mastery-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6rpx;
+}
+
+.mastery-count {
+  font-size: 22rpx;
+  color: #646a73;
+}
+
+.mastery-ranges {
+  display: flex;
+  flex-direction: row;
+  gap: 12rpx;
+}
+
+.mastery-ranges .bar-label {
+  flex: 1;
+  text-align: center;
+}
+
+.error-chip-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.error-chip {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8rpx;
+  background: #fdecea;
+  border-radius: 10rpx;
+  padding: 10rpx 20rpx;
+}
+
+.error-chip-key {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #d93026;
+}
+
+.error-chip-count {
+  font-size: 24rpx;
+  color: #646a73;
+}
+
+.warning-soft {
+  color: #b0603a;
+}
+
+/* ---------- 备份导入页 ---------- */
+
+.textarea-input {
+  width: 100%;
+  min-height: 240rpx;
+  background: #f2f3f5;
+  border-radius: 12rpx;
+  padding: 16rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
