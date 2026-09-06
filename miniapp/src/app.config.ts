@@ -10,6 +10,8 @@ export default defineAppConfig({
     "pages/keyboard/index",
     "pages/key-detail/index",
     "pages/mistakes/index",
+    "pages/stats/index",
+    "pages/import/index",
     "pages/settings/index",
   ],
   tabBar: {
