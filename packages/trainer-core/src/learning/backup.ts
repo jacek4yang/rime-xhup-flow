@@ -10,9 +10,17 @@ import type { ItemProgress } from "./progress";
 import type { DailyStats } from "./daily-stats";
 import type { Difficulty } from "../data/trainer-index";
 import type { HintMode, PracticeMode, SessionLength } from "../practice/types";
+import type { LessonEvidence } from "../learning-path/lesson-state";
 
 export const BACKUP_KIND = "xhup-flow-trainer-backup";
 export const BACKUP_VERSION = 2;
+
+/**
+ * 版本策略(里程碑 44):`lessonEvidence` 作为「可选字段」加入版本 2。
+ * 旧备份缺该字段 → 导入为 `{}`(进度零丢失);带该字段的备份被旧版本
+ * 应用导入时,旧代码只读已知字段、自然忽略多余字段,不破坏前向兼容。
+ * 字段为纯增量展示型证据,不参与任何评分正确性判定,因此无需升版。
+ */
 
 /** 备份携带的用户偏好(与 store 的偏好字段一致)。 */
 export type BackupSettings = {
@@ -36,6 +44,8 @@ export type TrainerBackup = {
   daily: Record<string, DailyStats>;
   /** 键位累积错误(V2 新增)。 */
   keyErrors: Record<string, number>;
+  /** 章节学习证据(可选:旧备份缺省 → {};里程碑 44 增量字段)。 */
+  lessonEvidence?: Record<string, LessonEvidence>;
 };
 
 /** 备份错误:信息面向用户。 */
@@ -58,6 +68,7 @@ export function exportBackup(
     progress: Record<string, ItemProgress>;
     daily: Record<string, DailyStats>;
     keyErrors: Record<string, number>;
+    lessonEvidence?: Record<string, LessonEvidence>;
   },
   now: number,
 ): string {
@@ -75,6 +86,7 @@ export function exportBackup(
     progress: data.progress,
     daily: data.daily,
     keyErrors: data.keyErrors,
+    lessonEvidence: data.lessonEvidence ?? {},
   };
   return `${JSON.stringify(backup, null, 2)}\n`;
 }
@@ -156,15 +168,52 @@ function validateKeyErrors(value: unknown): Record<string, number> {
   return keyErrors;
 }
 
+/** 章节学习证据校验:字段可选;存在时逐章节校验(缺失/null 字段回默认)。 */
+function validateLessonEvidence(value: unknown): Record<string, LessonEvidence> {
+  if (value === undefined || value === null) return {};
+  if (!isRecord(value)) fail("lessonEvidence 结构无效");
+  const lessonEvidence: Record<string, LessonEvidence> = {};
+  for (const [chapterId, raw] of Object.entries(value)) {
+    if (!isRecord(raw)) fail(`lessonEvidence[${chapterId}] 结构无效`);
+    const evidence: LessonEvidence = {
+      openedAt: typeof raw.openedAt === "number" ? raw.openedAt : null,
+      practiceSessions: nonNegativeInt(raw.practiceSessions ?? 0, `lessonEvidence[${chapterId}].practiceSessions`),
+      practiceAttempts: nonNegativeInt(raw.practiceAttempts ?? 0, `lessonEvidence[${chapterId}].practiceAttempts`),
+      lastPracticeAt: typeof raw.lastPracticeAt === "number" ? raw.lastPracticeAt : null,
+      bestAccuracy:
+        typeof raw.bestAccuracy === "number" && Number.isFinite(raw.bestAccuracy)
+          ? raw.bestAccuracy
+          : null,
+    };
+    if (
+      evidence.bestAccuracy !== null &&
+      (evidence.bestAccuracy < 0 || evidence.bestAccuracy > 1)
+    ) {
+      fail(`lessonEvidence[${chapterId}].bestAccuracy 应在 0..1`);
+    }
+    lessonEvidence[chapterId] = evidence;
+  }
+  return lessonEvidence;
+}
+
+function nonNegativeInt(value: unknown, at: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    fail(`${at} 应为非负整数`);
+  }
+  return value;
+}
+
 /**
  * 校验并导入备份;返回可直接并入 store 的数据。
- * 只接受版本 2(旧版本无备份格式,不存在迁移路径)。
+ * 只接受版本 2(旧版本无备份格式,不存在迁移路径);lessonEvidence
+ * 为可选增量字段:缺失 → {}(旧备份),存在 → 逐章节校验。
  */
 export function importBackup(json: string): {
   settings: BackupSettings;
   progress: Record<string, ItemProgress>;
   daily: Record<string, DailyStats>;
   keyErrors: Record<string, number>;
+  lessonEvidence: Record<string, LessonEvidence>;
 } {
   let parsed: unknown;
   try {
@@ -203,5 +252,6 @@ export function importBackup(json: string): {
     progress: validateProgress(parsed.progress),
     daily: validateDaily(parsed.daily),
     keyErrors: validateKeyErrors(parsed.keyErrors),
+    lessonEvidence: validateLessonEvidence(parsed.lessonEvidence),
   };
 }

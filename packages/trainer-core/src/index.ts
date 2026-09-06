@@ -23,6 +23,12 @@ export * from "./learning/review";
 export * from "./learning/stats";
 export * from "./learning/backup";
 
+// 学习路径与自适应掌握(里程碑 44)
+export * from "./learning-path/lesson-state";
+export * from "./learning-path/recommendation";
+export * from "./learning-path/shape-mastery";
+export * from "./learning-path/checkpoints";
+
 // 课程内容
 export * from "./lessons/content";
 export * from "./lessons/shape-explorer";
