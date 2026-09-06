@@ -3,6 +3,7 @@ import {
   analyzeShapeMastery,
   expectedShapeKeys,
 } from "./shape-mastery";
+import { recordConfusion } from "../learning/confusion";
 import { emptyProgress, type ItemProgress } from "../learning/progress";
 import { makeIndex } from "../testing/fixtures";
 
@@ -97,5 +98,35 @@ describe("analyzeShapeMastery", () => {
       limit: 1,
     });
     expect(report.confusedKeys).toHaveLength(1);
+  });
+
+  it("confusionPairs:来自 ConfusionMap 的真实形位对,音位/other 不参与", () => {
+    const index = makeIndex();
+    const report = analyzeShapeMastery({
+      index,
+      progressById: {},
+      keyErrors: {},
+      confusions: {
+        ...recordConfusion(recordConfusion({}, "n", "m", "shape1"), "n", "m", "shape1"),
+        ...recordConfusion({}, "c", "d", "shape2"),
+        ...recordConfusion({}, "x", "z", "sound1"), // 音位:不属于形码分析
+        ...recordConfusion({}, "a", "b", { other: 4 }), // 词位降级:同样不参与
+      },
+    });
+    expect(report.confusionPairs).toEqual([
+      { expected: "n", actual: "m", position: "shape1", count: 2 },
+      { expected: "c", actual: "d", position: "shape2", count: 1 },
+    ]);
+  });
+
+  it("无混淆数据时 confusionPairs 为空,confusedKeys 回退仍可用(优雅降级)", () => {
+    const index = makeIndex();
+    const report = analyzeShapeMastery({
+      index,
+      progressById: { "好:hkn": progress({ attempts: 2, wrong: 2 }) },
+      keyErrors: { n: 4 },
+    });
+    expect(report.confusionPairs).toEqual([]);
+    expect(report.confusedKeys).toEqual([{ actual: "n", count: 4, isShapeKey: true }]);
   });
 });

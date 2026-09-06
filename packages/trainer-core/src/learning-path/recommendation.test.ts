@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dailyRecommendation, modeForPool, REVIEW_MASTERY_FLOOR } from "./recommendation";
 import { emptyProgress, type ItemProgress } from "../learning/progress";
+import { recordConfusion } from "../learning/confusion";
 import { makeIndex } from "../testing/fixtures";
 
 const NOW = 1_000_000_000_000;
@@ -76,7 +77,11 @@ describe("dailyRecommendation", () => {
     const picks = dailyRecommendation(input({ index, progressById, limit: 2 }));
     expect(
       picks.map((pick) =>
-        pick.kind === "lesson" ? "lesson" : pick.kind === "practice-mode" ? "mode" : pick.itemId,
+        pick.kind === "lesson"
+          ? "lesson"
+          : pick.kind === "practice-mode" || pick.kind === "shape-confusion"
+            ? "mode"
+            : pick.itemId,
       ),
     ).toEqual([
       "好:hk",
@@ -131,6 +136,29 @@ describe("dailyRecommendation", () => {
   it("limit 截断输出", () => {
     const picks = dailyRecommendation(input({ limit: 1 }));
     expect(picks).toHaveLength(1);
+  });
+
+  it("shape-confusion:形位重复混淆(count ≥ 阈值)→ 推荐全码强化", () => {
+    const confusions = {
+      ...recordConfusion(
+        recordConfusion(recordConfusion({}, "n", "m", "shape1"), "n", "m", "shape1"),
+        "n",
+        "m",
+        "shape1",
+      ),
+      ...recordConfusion({}, "x", "z", "sound1"), // 音位高频混淆不触发形码桶
+    };
+    const picks = dailyRecommendation(input({ confusions }));
+    const shape = picks.find((pick) => pick.kind === "shape-confusion");
+    expect(shape).toMatchObject({
+      kind: "shape-confusion",
+      mode: "full",
+      expected: "n",
+      actual: "m",
+    });
+    // 低于阈值(偶发失误)不触发。
+    const sparse = dailyRecommendation(input({ confusions: recordConfusion({}, "n", "m", "shape1") }));
+    expect(sparse.find((pick) => pick.kind === "shape-confusion")).toBeUndefined();
   });
 
   it("确定性:相同输入两次调用输出完全一致", () => {
