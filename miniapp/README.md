@@ -22,7 +22,14 @@ Rust 生成规范数据 → packages/trainer-core(平台中立)→ miniapp(Taro/
   把产品档位(off/light/medium)诚实映射到 `Taro.vibrateShort` 的
   物理档位(light/medium/heavy);设备不支持时静默无效。
 - **主包体积**:启动只加载约 19KB 数据分片;完整数据集不进小程序。
-  `pnpm --filter miniapp size` 输出体积报告并在超限时失败。
+  `pnpm --filter miniapp size` 输出体积报告并在超限时失败(主包
+  1.5MB、单 JS chunk 200KB);`--json` 输出确定性 JSON 供 CI 产物
+  留档,`--out <file>` 同时写文件(CI 会把报告作为 artifact 上传)。
+- **启动校验开销**:数据分片在启动时同步走共享核心完整校验
+  (`validateTrainerDataset` + `buildTrainerIndex`,见
+  `src/lib/dataset.ts`)。实测基线:19.3KB 分片在 CI 档 Node 上约
+  1-3ms,远低于 `src/lib/dataset.perf.test.ts` 守护的 200ms 预算;
+  分片增长或校验退化时该基准测试会在 CI 直接暴露。
 
 ## 页面(里程碑 #42 MVP)
 
