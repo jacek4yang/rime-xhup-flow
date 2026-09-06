@@ -17,6 +17,8 @@ import {
   emptyDailyStats,
   emptyProgress,
   LANGUAGES,
+  sanitizeConfusionMap,
+  type ConfusionMap,
   type DailyStats,
   type ErrorTeachingMode,
   type HapticsMode,
@@ -55,6 +57,11 @@ export type AppState = {
   daily: Record<string, DailyStats>;
   /** 键位累积错误(小写字母键 → 次数)。 */
   keyErrors: Record<string, number>;
+  /**
+   * 键位混淆聚合(confusionId → 条目;与桌面端 V2 可选字段对齐)。
+   * 旧数据缺省 → {};紧凑聚合而非原始按键日志,损坏条目逐条丢弃。
+   */
+  confusions: ConfusionMap;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -74,6 +81,7 @@ export function defaultAppState(): AppState {
     progress: {},
     daily: {},
     keyErrors: {},
+    confusions: {},
   };
 }
 
@@ -239,6 +247,8 @@ export function sanitizePersisted(value: unknown): AppState {
     progress: sanitizeProgress(state.progress),
     daily: sanitizeDaily(state.daily),
     keyErrors: sanitizeKeyErrors(state.keyErrors),
+    // 混淆聚合走共享核心的同一校验边界(逐条降级,上限由核心约束)。
+    confusions: sanitizeConfusionMap(state.confusions),
   };
 }
 

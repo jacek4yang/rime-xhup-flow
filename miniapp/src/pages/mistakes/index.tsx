@@ -1,7 +1,7 @@
 /**
  * 错题与弱点页:掌握度排序的薄弱条目清单(核心 listWeakItems)+
- * 键位热力(keyHeatmap)与维度聚合(aggregateWeakness)。
- * 「练这些」把薄弱条目直接送进会话页(src=weak)。
+ * 键位热力(keyHeatmap)、常见键位混淆(topConfusions)与维度聚合
+ * (aggregateWeakness)。「练这些」把薄弱条目直接送进会话页(src=weak)。
  */
 
 import { useMemo, useState } from "react";
@@ -9,9 +9,12 @@ import { View, Text } from "@tarojs/components";
 import { useDidShow } from "@tarojs/taro";
 import {
   aggregateWeakness,
+  confusionId,
   itemAccuracy,
   keyHeatmap,
   listWeakItems,
+  positionLabel,
+  topConfusions,
 } from "@xhup/trainer-core";
 import type { WeakListEntry } from "@xhup/trainer-core";
 import { trainerIndex } from "../../lib/dataset";
@@ -41,6 +44,11 @@ export default function Mistakes() {
   );
   const heat = useMemo(() => keyHeatmap(state.keyErrors), [state.keyErrors]);
   const maxHeat = Math.max(1, ...Object.values(heat));
+  // 键位混淆:按次数取前 8 对(本机训练结果;词/句位降级为 other:N)。
+  const topConfusionList = useMemo(
+    () => topConfusions(state.confusions, 8),
+    [state.confusions],
+  );
 
   const practiceWeak = () => {
     if (weakItems.length === 0) return;
@@ -106,6 +114,30 @@ export default function Mistakes() {
                     </View>
                   ))}
               </View>
+            </View>
+          )}
+
+          {topConfusionList.length > 0 && (
+            <View className="card">
+              <Text className="card-heading">{t("confusion.title")}</Text>
+              <Text className="subtitle">{t("confusion.hint")}</Text>
+              {topConfusionList.map((entry) => {
+                const label = positionLabel(entry.position);
+                return (
+                  <View
+                    className="weak-row"
+                    key={confusionId(entry.expected, entry.actual, entry.position)}
+                  >
+                    <Text className="weak-code">
+                      {entry.expected.toUpperCase()} → {entry.actual.toUpperCase()}
+                    </Text>
+                    <Text className="weak-target">
+                      {t(label.key, label.params)}
+                    </Text>
+                    <Text className="weak-meta">×{entry.count}</Text>
+                  </View>
+                );
+              })}
             </View>
           )}
 

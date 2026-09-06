@@ -127,6 +127,7 @@ export default function Session() {
             keystrokes: event.keystrokes,
             wrongKeyEvents: event.wrongKeyEvents,
             wrongKeys: event.wrongKeys,
+            confusions: event.confusions,
             chars: event.item.charCount,
             corrections: event.corrections,
             practiceMs: event.practiceMs,
