@@ -67,6 +67,7 @@ export function SettingsView({ onRerunOnboarding }: { onRerunOnboarding?: () => 
         progress: state.progress,
         daily: state.daily,
         keyErrors: state.keyErrors,
+        lessonEvidence: state.lessonEvidence,
       },
       Date.now(),
     );

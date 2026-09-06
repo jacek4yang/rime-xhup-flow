@@ -1,4 +1,5 @@
-import { ArrowRight, Play } from "lucide-react";
+import { useMemo } from "react";
+import { ArrowRight, BookOpen, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,11 +11,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { StatChip } from "@/components/StatChip";
 import { accuracy, formatDuration, formatPercent, localDateKey } from "@xhup/trainer-core";
-import { listWeakItems } from "@xhup/trainer-core";
+import {
+  dailyRecommendation,
+  listWeakItems,
+  type Recommendation,
+} from "@xhup/trainer-core";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import { useI18n } from "@/lib/use-i18n";
 import { useTrainerStore } from "@/stores/trainer-store";
-import type { I18nKey } from "@xhup/trainer-core";
+import type { I18nKey, TrainingItem } from "@xhup/trainer-core";
 import {
   MODE_DESCRIPTIONS,
   MODE_LABELS,
@@ -29,25 +34,74 @@ const MODE_KEYS: Record<(typeof MODE_ORDER)[number], I18nKey> = {
   mixed: "dashboard.modeKeyMixed",
 };
 
+/** 推荐条目前置图标(按 kind 区分入口类型)。 */
+function RecommendationIcon({ kind }: { kind: Recommendation["kind"] }) {
+  if (kind === "lesson") return <BookOpen aria-hidden className="size-4 shrink-0 text-primary" />;
+  if (kind === "practice-mode") return <Play aria-hidden className="size-4 shrink-0 text-primary" />;
+  return <RotateCcw aria-hidden className="size-4 shrink-0 text-muted-foreground" />;
+}
+
 export function DashboardView({
   onStartPractice,
   onShowReview,
   onOpenLearn,
+  onOpenChapter,
+  onPracticeItems,
 }: {
   onStartPractice: (mode: PracticeMode) => void;
   onShowReview: () => void;
   onOpenLearn?: () => void;
+  /** 打开推荐章节(学习中心定位到该章)。 */
+  onOpenChapter?: (chapterId: string) => void;
+  /** 直接以指定条目进入复习练习(今日推荐条目点击)。 */
+  onPracticeItems?: (items: TrainingItem[]) => void;
 }) {
   const { t } = useI18n();
   const index = useTrainerIndex();
   const lastMode = useTrainerStore((state) => state.lastMode);
   const progress = useTrainerStore((state) => state.progress);
+  const keyErrors = useTrainerStore((state) => state.keyErrors);
+  const lessonEvidence = useTrainerStore((state) => state.lessonEvidence);
   const today = useTrainerStore((state) => state.daily[localDateKey()]);
   const weakItems = listWeakItems(index, progress, 5);
   const todayAccuracy = today
     ? accuracy(today.keystrokes, today.wrongKeyEvents)
     : null;
 
+  // 今日推荐:确定性生成;今天已练过的条目视为「重复」,降低再次推荐。
+  const recommendations = useMemo(() => {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const recentIds = Object.entries(progress)
+      .filter(([, entry]) => (entry.lastSeenAt ?? 0) >= startOfDay.getTime())
+      .map(([id]) => id);
+    return dailyRecommendation({
+      index,
+      progressById: progress,
+      keyErrors,
+      lessonEvidence,
+      recentIds,
+      now: Date.now(),
+      limit: 3,
+    });
+  }, [index, progress, keyErrors, lessonEvidence]);
+
+  const openRecommendation = (rec: Recommendation) => {
+    switch (rec.kind) {
+      case "lesson":
+        if (onOpenChapter) onOpenChapter(rec.chapterId);
+        else onOpenLearn?.();
+        return;
+      case "practice-mode":
+        onStartPractice(rec.mode);
+        return;
+      default: {
+        const item = index.byId.get(rec.itemId);
+        if (onPracticeItems && item) onPracticeItems([item]);
+        else onShowReview();
+      }
+    }
+  };
   return (
     <div className="flex flex-col gap-4">
       <Card className="bg-primary/5">
@@ -123,6 +177,58 @@ export function DashboardView({
             <p className="text-sm text-muted-foreground">
               {t("dashboard.todayEmpty")}
             </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("dashboard.recommendations")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {recommendations.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {t("dashboard.recommendEmpty")}
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {recommendations.map((rec, recIndex) => (
+                <li key={`${rec.kind}-${recIndex}`}>
+                  <button
+                    type="button"
+                    onClick={() => openRecommendation(rec)}
+                    className="flex min-h-11 w-full items-center gap-3 rounded-lg border border-border px-3 py-2 text-start transition-colors hover:border-primary/50 hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    <RecommendationIcon kind={rec.kind} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
+                        {rec.kind === "lesson"
+                          ? rec.title
+                          : rec.kind === "practice-mode"
+                            ? t(MODE_LABELS[rec.mode])
+                            : rec.target}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {t(rec.reason)}
+                      </span>
+                    </span>
+                    {rec.kind !== "lesson" && rec.kind !== "practice-mode" && (
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {rec.code}
+                      </span>
+                    )}
+                    {rec.kind === "lesson" && (
+                      <Badge variant="outline" className="shrink-0">
+                        {rec.state === "needs-review"
+                          ? t("learn.state.needsReview")
+                          : t("learn.state.notStarted")}
+                      </Badge>
+                    )}
+                    <ArrowRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
         </CardContent>
       </Card>
