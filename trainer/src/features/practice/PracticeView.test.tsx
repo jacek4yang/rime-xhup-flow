@@ -244,6 +244,42 @@ describe("PracticeView", () => {
     expect(await screen.findByText("本次练习")).toBeInTheDocument();
   });
 
+  // 后台不计时:WebView 不可见自动暂停,回前台自动恢复。
+  function setHidden(hidden: boolean) {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      get: () => hidden,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }
+
+  it("切后台自动暂停,回前台自动恢复(后台时长不计入练习)", async () => {
+    renderPractice();
+    setHidden(true);
+    expect(await screen.findByText("已暂停")).toBeInTheDocument();
+    setHidden(false);
+    await waitFor(() =>
+      expect(screen.queryByText("已暂停")).not.toBeInTheDocument(),
+    );
+    // 恢复后仍可输入
+    press("x");
+    expect(
+      screen.getByLabelText("编码 2 键,已输入 1 键"),
+    ).toBeInTheDocument();
+  });
+
+  it("手动暂停后回前台不自动恢复(恢复权留给用户)", async () => {
+    renderPractice();
+    press("Escape");
+    expect(await screen.findByText("已暂停")).toBeInTheDocument();
+    setHidden(false);
+    await waitFor(() =>
+      expect(screen.getByText("已暂停")).toBeInTheDocument(),
+    );
+    // 还原可见性,避免串扰后续用例。
+    setHidden(true);
+  });
+
   it("提示方式:始终显示时直接显示编码", () => {
     useTrainerStore.setState({ hintMode: "always" });
     renderPractice();

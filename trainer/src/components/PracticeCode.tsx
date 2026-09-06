@@ -27,9 +27,12 @@ export function PracticeCode({
   outcome: QuestionOutcome | null;
 }) {
   const { t } = useI18n();
+  // 句子长码可达 40 键:缩小槽位并允许换行,任何码长都完整可见
+  // (与小程序端 CodeSlots 同一套降级语义:收缩/换行,绝不截断)。
+  const compact = code.length > 8;
   return (
     <div
-      className="flex items-start justify-center gap-2 sm:gap-3"
+      className="flex flex-wrap items-start justify-center gap-2 sm:gap-3"
       aria-label={t("practice.codeSlotsAria", {
         total: code.length,
         typed: typed.length,
@@ -51,7 +54,10 @@ export function PracticeCode({
               }
               transition={{ duration: 0.2 }}
               className={cn(
-                "flex size-12 items-center justify-center rounded-lg border-2 font-mono text-xl font-semibold transition-colors sm:size-14 sm:text-2xl",
+                "flex items-center justify-center rounded-lg border-2 font-mono font-semibold transition-colors",
+                compact
+                  ? "size-8 text-base sm:size-10 sm:text-lg"
+                  : "size-12 text-xl sm:size-14 sm:text-2xl",
                 filled
                   ? outcome === null
                     ? "border-primary/60 bg-primary/10 text-primary"
@@ -66,7 +72,9 @@ export function PracticeCode({
               {filled ? typed[index] : ""}
             </motion.div>
             <span className="text-xs text-muted-foreground">
-              {t(SLOT_LABELS[index])}
+              {index < SLOT_LABELS.length
+                ? t(SLOT_LABELS[index])
+                : t("practice.teachingSlotN", { n: index + 1 })}
             </span>
           </div>
         );
