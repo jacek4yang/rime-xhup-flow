@@ -183,7 +183,7 @@ int main(int argc, char **argv) {
         RIME_STRUCT(RimeContext, context);
         int page0 = -1, per_page = 0;
         if (rime->get_context(session, &context)) {
-            page0 = context.menu.page_num;
+            page0 = context.menu.page_no;
             per_page = context.menu.num_candidates;
             rime->free_context(&context);
         }
@@ -192,7 +192,7 @@ int main(int argc, char **argv) {
         (void)key_handled(XKB_Equal, 0); /* '=' → Page_Down */
         int page1 = -1;
         if (rime->get_context(session, &context)) {
-            page1 = context.menu.page_num;
+            page1 = context.menu.page_no;
             rime->free_context(&context);
         }
         report(page1 == 1, "'=' 翻到下一页", NULL);
@@ -200,7 +200,7 @@ int main(int argc, char **argv) {
         (void)key_handled(XKB_Minus, 0); /* '-' → Page_Up */
         int page_back = -1;
         if (rime->get_context(session, &context)) {
-            page_back = context.menu.page_num;
+            page_back = context.menu.page_no;
             rime->free_context(&context);
         }
         report(page_back == 0, "'-' 翻回上一页", NULL);
