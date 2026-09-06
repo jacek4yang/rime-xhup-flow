@@ -215,11 +215,16 @@ page {
 
 /* ---------- 教学键盘:固定 rpx 几何,错位三行 ---------- */
 
+/* 几何预算:屏宽 750rpx − 会话页左右内边距 48rpx = 内容区 702rpx。
+ * 最宽的第 0 行(QWERTYUIOP)= 10 键 × 62rpx + 9 缝 × 8rpx = 692rpx ≤ 702rpx;
+ * 错位行缩进 = 键距(70rpx)的整数倍。任何机型等比缩放,不会横向溢出。 */
 .kb {
   display: flex;
   flex-direction: column;
   gap: 12rpx;
   align-items: center;
+  /* 键盘贴底时避开 Home 指示条(全面屏安全区)。 */
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .kb-row {
@@ -229,18 +234,18 @@ page {
   gap: 8rpx;
 }
 
-/* 经典 QWERTY 错位:padding 让居中的行整体右移半个/一个键位。 */
+/* 经典 QWERTY 错位:padding 让居中的行整体右移一个/两个键距(70rpx)。 */
 .kb-row-1 {
-  padding-left: 74rpx;
+  padding-left: 70rpx;
 }
 
 .kb-row-2 {
-  padding-left: 148rpx;
+  padding-left: 140rpx;
 }
 
 .kb-key {
   position: relative;
-  width: 66rpx;
+  width: 62rpx;
   height: 96rpx;
   background: #ffffff;
   border-radius: 10rpx;
@@ -277,7 +282,8 @@ page {
   font-size: 18rpx;
   line-height: 1.1;
   color: #646a73;
-  max-width: 56rpx;
+  /* 62rpx 键帽内最多容纳 50rpx;超宽内容直接裁掉,绝不显示"..."。 */
+  max-width: 50rpx;
   overflow: hidden;
   white-space: nowrap;
 }
@@ -320,8 +326,11 @@ page {
 .slots {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 12rpx;
+  /* 句子长码可达 40 槽:允许换行,保证任意码长都完整可见。 */
+  row-gap: 16rpx;
 }
 
 .slot-wrap {
@@ -405,11 +414,19 @@ page {
 
 /* ---------- 会话页 ---------- */
 
+/* 会话页整体装进定高纵向滚动容器:短屏(iPhone SE 级)上键盘
+ * 会把统计芯片顶出视口,此时页内可滚动而不是被裁掉;
+ * 页面配置仍 disableScroll,滚动只发生在这个容器内。 */
+.session-scroll {
+  height: 100vh;
+}
+
 .session-page {
   display: flex;
   flex-direction: column;
   gap: 16rpx;
-  padding: 16rpx 24rpx 32rpx;
+  /* 底部内边距含安全区:全面屏上统计芯片不被 Home 指示条遮挡。 */
+  padding: 16rpx 24rpx calc(32rpx + env(safe-area-inset-bottom));
 }
 
 .session-header {
