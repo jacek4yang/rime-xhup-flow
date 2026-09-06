@@ -335,7 +335,7 @@ fn auxiliary_dictionaries_are_in_dependency_compile_graph() {
 
     for dict in referenced.iter().filter(|d| **d != "xhup_flow") {
         assert!(
-            dependencies.contains(dict),
+            dependencies.contains(*dict),
             "辅助词典 {dict} 未列入主方案 schema/dependencies:部署将静默失效"
         );
         let wrapper = artifacts
