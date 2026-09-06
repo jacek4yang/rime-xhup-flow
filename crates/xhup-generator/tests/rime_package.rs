@@ -33,10 +33,13 @@ fn artifact_set_is_exact_and_ordered() {
             "xhup_flow_fixed_first_shortcuts.dict.yaml",
             "xhup_flow_flow.dict.yaml",
             "xhup_flow_learn.dict.yaml",
+            "xhup_flow_fixed_first_shortcuts.schema.yaml",
+            "xhup_flow_flow.schema.yaml",
+            "xhup_flow_learn.schema.yaml",
             "xhup_flow.schema.yaml",
             "xhup_flow_static.schema.yaml",
         ],
-        "产物集合与顺序固定:简码词典 → 单字词典 → 词语简码词典 → 二码简码词典 → 词语词典 → 顶层词典 → FIXED_FIRST 简码词典 → Flow 组句词典 → Flow 学习词典 → 方案 → 静态兼容方案"
+        "产物集合与顺序固定:简码词典 → 单字词典 → 词语简码词典 → 二码简码词典 → 词语词典 → 顶层词典 → FIXED_FIRST 简码词典 → Flow 组句词典 → Flow 学习词典 → 词典编译 wrapper(FIXED_FIRST/Flow/Learn)→ 方案 → 静态兼容方案"
     );
 }
 

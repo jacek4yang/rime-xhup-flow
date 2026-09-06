@@ -7,6 +7,11 @@ schema:
   version: "{{VERSION}}"
   author:
     - XHUP Flow
+  # librime 部署只编译默认 translator 命名空间的词典;FIXED_FIRST
+  # 辅助词典必须经官方 schema/dependencies 机制声明,部署器才会
+  # 为它生成 table.bin(与 xhup_flow 同;真机部署验收发现)。
+  dependencies:
+    - xhup_flow_fixed_first_shortcuts
   description: |
     XHUP Flow 的静态兼容方案:与 xhup_flow 完全相同的静态输入层
     (一级简码、规范单字、全部词语简码、固定词语),不含 Flow 引擎

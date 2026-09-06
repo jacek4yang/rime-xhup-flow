@@ -7,6 +7,14 @@ schema:
   version: "{{VERSION}}"
   author:
     - XHUP Flow
+  # librime 部署只编译默认 translator 命名空间的词典;FIXED_FIRST /
+  # Flow / Learn 三个辅助词典必须经官方 schema/dependencies 机制
+  # 声明,Weasel / rime_deployer 才会为它们生成 table.bin(真机
+  # 部署验收发现:缺失时 FIXED_FIRST 简码、组句与本地学习全部静默失效)。
+  dependencies:
+    - xhup_flow_fixed_first_shortcuts
+    - xhup_flow_flow
+    - xhup_flow_learn
   description: |
     XHUP Flow 的跨平台小鹤音形方案,仅使用标准 librime 核心组件。
     当前版本提供 26 个一级简码字、规范单字(二至四码)、高稳健零冲突

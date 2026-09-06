@@ -125,3 +125,13 @@ SHA-256：
 仓库保留上游配置随附的 LGPL-3.0 许可证文本，见 [`LICENSE`](LICENSE)。
 
 如果以后从其他项目导入新的词库、Lua 插件或配置文件，请在合并和再分发前单独确认对应来源的许可证、署名和再分发要求，不应默认认为所有 Rime 词库都采用同一种许可证。
+
+## 测试用第三方文件
+
+### `tests/librime/win32/rime_api.h`
+
+- 来源仓库:`rime/librime`,标签 `1.13.1`
+- https://github.com/rime/librime/blob/1.13.1/src/rime_api.h
+- 许可证:BSD-3-Clause(RIME Developers)
+- 用途:仅用于 Windows 真机部署探针(`rime_probe.c`)加载 Weasel 自带
+  `rime.dll` 时获得稳定的 C API 声明;不是构建依赖,不参与任何产物。
