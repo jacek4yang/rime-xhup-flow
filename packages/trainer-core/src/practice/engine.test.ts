@@ -353,3 +353,96 @@ describe("进度对齐", () => {
     void makeEntry;
   });
 });
+
+describe("键位混淆捕获", () => {
+  it("错键记录期望→实际对:声 1 位(x 期成 z)", () => {
+    const { state } = typeKey(start(), "z", zeroRng, 100);
+    expect(state.confusions["x>z@sound1"]).toEqual({
+      expected: "x",
+      actual: "z",
+      position: "sound1",
+      count: 1,
+    });
+    expect(state.confusionsThisQuestion).toEqual(state.confusions);
+  });
+
+  it("声 2 位错键:typed 推进后期望键取活动路线在该位的字符", () => {
+    let state = typeKey(start(), "x", zeroRng, 100).state;
+    state = typeKey(state, "w", zeroRng, 110).state;
+    expect(state.confusions["k>w@sound2"]).toMatchObject({
+      expected: "k",
+      actual: "w",
+      position: "sound2",
+    });
+  });
+
+  it("形 1 / 形 2 位错键取对应具名码位", () => {
+    const index = makeIndex();
+    // 好:hknc(4 码:声1 h 声2 k 形1 n 形2 c)。
+    const pool = buildPool("char-4", index.pools["char-4"].filter((item) => item.id === "好:hknc"));
+    const config: SessionConfig = { mode: "full", targetLength: 30, pools: [pool] };
+    let state = start(config);
+    state = typeKey(state, "h", zeroRng, 100).state;
+    state = typeKey(state, "k", zeroRng, 110).state;
+    state = typeKey(state, "m", zeroRng, 120).state; // 期望 n(形 1)
+    expect(state.confusions["n>m@shape1"]).toMatchObject({ position: "shape1" });
+    state = typeKey(state, "n", zeroRng, 130).state;
+    state = typeKey(state, "d", zeroRng, 140).state; // 期望 c(形 2)
+    expect(state.confusions["c>d@shape2"]).toMatchObject({ position: "shape2" });
+  });
+
+  it("词条目码位降级为 other:N(已知限制)", () => {
+    const index = makeIndex();
+    const pool = buildPool("word-4", index.pools["word-4"]);
+    const config: SessionConfig = { mode: "fixed-word", targetLength: 30, pools: [pool] };
+    const state = typeKey(start(config), "q", zeroRng, 100).state;
+    // 我们:womf,第 0 位期望 w → other:0。
+    expect(state.confusions["w>q@o0"]).toMatchObject({ position: { other: 0 } });
+  });
+
+  it("会话级累计跨题累加;advance 重置本题表;事件携带本题混淆", () => {
+    // 单条目池:回炉未到期时排除最近题后回退整池,下一题仍是 行:xk。
+    const item = makeIndex().pools["char-2"].find((entry) => entry.id === "行:xk")!;
+    const config: SessionConfig = {
+      mode: "double",
+      targetLength: 0,
+      pools: [buildPool("char-2", [item])],
+    };
+    // 第一题:声 1 位 x→z。
+    let state = start(config);
+    state = typeKey(state, "z", zeroRng, 100).state;
+    state = typeKey(state, "x", zeroRng, 110).state;
+    state = typeKey(state, "k", zeroRng, 200).state;
+    // 完成时本题表保留;事件交出本题混淆(见下一用例)。
+    expect(state.confusionsThisQuestion["x>z@sound1"]!.count).toBe(1);
+    const { state: nextQuestion } = advance(state, zeroRng, 300);
+    expect(nextQuestion.confusionsThisQuestion).toEqual({});
+    expect(nextQuestion.confusions["x>z@sound1"]!.count).toBe(1);
+    // 第二题再次声 1 位按错 → 会话级 +1。
+    state = typeKey(nextQuestion, "z", zeroRng, 400).state;
+    state = typeKey(state, "x", zeroRng, 410).state;
+    const result = typeKey(state, "k", zeroRng, 500);
+    expect(result.state.confusions["x>z@sound1"]!.count).toBe(2);
+  });
+
+  it("question-completed 事件携带本题混淆对", () => {
+    const config = { ...makeConfig(), targetLength: 1 as const };
+    let state = start(config);
+    state = typeKey(state, "z", zeroRng, 100).state;
+    state = typeKey(state, "x", zeroRng, 110).state;
+    const result = typeKey(state, "k", zeroRng, 200);
+    const event = result.events.find((e) => e.type === "question-completed");
+    expect(event && event.type === "question-completed" ? event.confusions : null).toEqual({
+      "x>z@sound1": { expected: "x", actual: "z", position: "sound1", count: 1 },
+    });
+  });
+
+  it("重复按同一错键只累加计数,退格不产生混淆", () => {
+    let state = start();
+    state = typeKey(state, "z", zeroRng, 100).state;
+    state = typeKey(state, "z", zeroRng, 110).state;
+    expect(state.confusions["x>z@sound1"]!.count).toBe(2);
+    const after = backspace(state);
+    expect(after.confusions).toBe(state.confusions);
+  });
+});

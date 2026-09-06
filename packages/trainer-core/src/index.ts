@@ -21,6 +21,7 @@ export * from "./learning/daily-stats";
 export * from "./learning/weakness";
 export * from "./learning/review";
 export * from "./learning/stats";
+export * from "./learning/confusion";
 export * from "./learning/backup";
 
 // 学习路径与自适应掌握(里程碑 44)
