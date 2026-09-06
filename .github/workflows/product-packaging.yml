@@ -194,9 +194,12 @@ jobs:
           cp build/rime-package/*.yaml "$work/"
           cat > "$work/default.custom.yaml" <<'EOF'
           patch:
-            schema_list/+:
+            schema_list:
               - schema: xhup_flow
           EOF
+          # schema_list 整体替换(而非 /+ 追加):rime-prelude 共享数据的
+          # 默认列表引用了大量本目录不存在的方案,追加会让 WorkspaceUpdate
+          # 以 missing schema 失败。真实用户目录由 Weasel 维护各自的列表。
           rime_deployer --build "$work" "$shared"
           for bin in build/xhup_flow_fixed_first_shortcuts.table.bin                      build/xhup_flow_flow.table.bin                      build/xhup_flow_learn.table.bin; do
             [[ -s "$work/$bin" ]] || { echo "::error::真实部署路径未编译辅助词典: $bin(schema/dependencies 回归)"; exit 1; }
