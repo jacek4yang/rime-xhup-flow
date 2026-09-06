@@ -50,3 +50,8 @@ Thumbs.db
 # Node/Vite/TypeScript 本地产物(根目录测试缓存等)
 node_modules/
 *.tsbuildinfo
+
+# 小程序本地产物(dist 由 taro 构建;分片由脚本从规范数据确定性生成)
+miniapp/dist/
+miniapp/src/data/generated/
+miniapp/.swc/

@@ -87,23 +87,35 @@ jobs:
       - name: 安装 pnpm
         uses: pnpm/action-setup@v6
         with:
-          package_json_file: trainer/package.json
+          package_json_file: package.json
 
       - name: 安装 Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: trainer/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: 安装依赖
-        run: pnpm -C trainer install --frozen-lockfile
+      - name: 安装依赖(pnpm 工作区)
+        run: pnpm install --frozen-lockfile
 
-      - name: 单元与组件测试
-        run: pnpm -C trainer test
+      - name: 共享核心测试(含平台纯度守卫)
+        run: pnpm core:test
 
-      - name: 构建前端(自动生成规范训练数据)
-        run: pnpm -C trainer build
+      - name: 训练器单元与组件测试
+        run: pnpm trainer:test
+
+      - name: 构建训练器前端(自动生成规范训练数据)
+        run: pnpm trainer:build
+
+      - name: 小程序数据分片校验与语义测试
+        run: pnpm miniapp:test
+
+      - name: 构建微信小程序 weapp 产物
+        run: pnpm miniapp:build
+
+      - name: 小程序包体积门槛
+        run: pnpm --filter miniapp size
 
   librime:
     name: librime runtime integration

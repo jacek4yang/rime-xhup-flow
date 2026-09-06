@@ -5,3 +5,12 @@ packages:
 
 allowBuilds:
   esbuild: true
+  "@parcel/watcher": true
+  "@swc/core": true
+  "@tarojs/binding": true
+  core-js: false
+  core-js-pure: false
+  '@tarojs/cli': true
+
+overrides:
+  webpack: 5.91.0
