@@ -159,6 +159,28 @@ jobs:
           done
           echo "librime 编译校验通过:两套方案与 Flow 词典编译成功"
 
+      - name: 真实部署路径回归守卫(schema/dependencies 编译辅助词典)
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          shared="/usr/share/rime-data"
+          # 模拟真实 Weasel 部署:WorkspaceUpdate 按 schema_list 走完整
+          # 工作区更新,并经主方案 schema/dependencies 编译辅助词典。
+          # 不使用任何 wrapper 技巧 —— #43 真机缺陷(辅助词典静默失效)
+          # 只能由这条路径证明已修复且不可回归。
+          cp build/rime-package/*.yaml "$work/"
+          cat > "$work/default.custom.yaml" <<'EOF'
+          patch:
+            schema_list/+:
+              - schema: xhup_flow
+          EOF
+          rime_deployer --build "$work" "$shared"
+          for bin in build/xhup_flow_fixed_first_shortcuts.table.bin                      build/xhup_flow_flow.table.bin                      build/xhup_flow_learn.table.bin; do
+            [[ -s "$work/$bin" ]] || { echo "::error::真实部署路径未编译辅助词典: $bin(schema/dependencies 回归)"; exit 1; }
+          done
+          echo "真实部署路径回归守卫通过:schema/dependencies 编译出全部辅助 table.bin"
+
       - name: 组装发布 zip(附安装说明)
         run: |
           set -euo pipefail

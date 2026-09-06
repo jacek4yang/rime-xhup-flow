@@ -283,3 +283,75 @@ fn generation_is_byte_reproducible() {
         .collect();
     assert_eq!(first, second, "产物集合顺序与内容字节级一致");
 }
+
+#[test]
+fn auxiliary_dictionaries_are_in_dependency_compile_graph() {
+    // RC 回归守卫(#43 真机缺陷):librime 部署只编译默认 translator
+    // 命名空间的词典;主方案引用的每一个非默认词典都必须
+    // (a) 出现在主方案 `schema/dependencies`,且
+    // (b) 存在同名 wrapper schema(schema_id 与 translator dictionary
+    //     都等于该词典名),部署器才会为其生成 table.bin。
+    // 缺任一项 => FIXED_FIRST/Flow/Learn 在真机静默失效。
+    let artifacts = generate_rime_artifacts();
+    let schema = contents_of(&artifacts, "xhup_flow.schema.yaml");
+
+    // 收集主方案引用的全部词典(所有 `dictionary: X` 行)。
+    let mut referenced: Vec<&str> = Vec::new();
+    for line in schema.lines() {
+        let trimmed = line.trim();
+        if let Some(dict) = trimmed.strip_prefix("dictionary: ") {
+            let dict = dict.trim();
+            if !referenced.contains(&dict) {
+                referenced.push(dict);
+            }
+        }
+    }
+    assert!(referenced.contains(&"xhup_flow"), "主方案必须引用主词典");
+
+    // 主方案的 dependencies 列表。
+    let deps_start = schema
+        .find("  dependencies:")
+        .expect("主方案必须声明 schema/dependencies");
+    let deps_block = &schema[deps_start..];
+    let deps_end = deps_block
+        .find(
+            "
+  description:",
+        )
+        .or_else(|| {
+            deps_block.find(
+                "
+
+",
+            )
+        })
+        .expect("dependencies 块应有边界");
+    let deps_block = &deps_block[..deps_end];
+    let dependencies: Vec<&str> = deps_block
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("- "))
+        .map(str::trim)
+        .collect();
+
+    for dict in referenced.iter().filter(|d| **d != "xhup_flow") {
+        assert!(
+            dependencies.contains(dict),
+            "辅助词典 {dict} 未列入主方案 schema/dependencies:部署将静默失效"
+        );
+        let wrapper = artifacts
+            .iter()
+            .find(|a| a.filename() == &format!("{dict}.schema.yaml"))
+            .unwrap_or_else(|| panic!("辅助词典 {dict} 缺少同名编译 wrapper schema"));
+        assert!(
+            wrapper
+                .contents()
+                .contains(&format!("schema_id: \"{dict}\""))
+                || wrapper.contents().contains(&format!("schema_id: {dict}")),
+            "wrapper schema id 必须等于词典名 {dict}"
+        );
+        assert!(
+            wrapper.contents().contains(&format!("dictionary: {dict}")),
+            "wrapper 必须把默认命名空间词典指向 {dict}"
+        );
+    }
+}
