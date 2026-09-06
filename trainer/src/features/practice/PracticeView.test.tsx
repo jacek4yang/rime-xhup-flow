@@ -329,7 +329,10 @@ describe("PracticeView", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
-  it("答案不泄露:默认提示模式(错误后显示)答错前无高亮,答错后才提示", () => {    const { container } = renderPractice();
+  it("答案不泄露:默认提示模式(错误后显示)答错前无高亮,答错后才提示", () => {
+    // quick 教学:错键不暂停,便于单独验证提示(答案)泄露策略。
+    useTrainerStore.setState({ errorTeaching: "quick" });
+    const { container } = renderPractice();
     expect(container.querySelector("button[data-next]")).toBeNull();
     press("z");
     expect(container.querySelector("button[data-next]")).not.toBeNull();
@@ -357,6 +360,8 @@ describe("PracticeView", () => {
   });
 
   it("答错后该题计入错题进度", async () => {
+    // quick 教学:错键不暂停,本题可继续输入直至完成并计入错题进度。
+    useTrainerStore.setState({ errorTeaching: "quick" });
     renderPractice();
     press("z");
     press("x");

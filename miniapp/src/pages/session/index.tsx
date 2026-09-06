@@ -88,6 +88,8 @@ export default function Session() {
   const { t } = useI18n();
   const [session, setSession] = useState<SessionState | null>(null);
   const sessionRef = useRef<SessionState | null>(null);
+  // 错误教学打开时标记为教学暂停(计时排除;与手动暂停 UI 区分)。
+  const teachingPausedRef = useRef(false);
   const [exhausted, setExhausted] = useState(false);
   const weakItemsRef = useRef<TrainingItem[]>([]);
   const sessionMetaRef = useRef<{ mode: string; src: "normal" | "weak" }>({
@@ -239,10 +241,34 @@ export default function Session() {
   const retryQuestion = useCallback(() => {
     const prev = sessionRef.current;
     if (!prev) return;
+    if (teachingPausedRef.current) {
+      teachingPausedRef.current = false;
+      const resumed = resume(prev, Date.now());
+      const next = retryCurrent(resumed);
+      sessionRef.current = next;
+      setSession(next);
+      return;
+    }
     const next = retryCurrent(prev);
     sessionRef.current = next;
     setSession(next);
   }, []);
+
+  // 错误教学打开即暂停(计时排除);重试按钮负责恢复。
+  useEffect(() => {
+    const prev = sessionRef.current;
+    if (!prev) return;
+    if (
+      state.settings.errorTeaching !== "quick" &&
+      prev.phase === "question" &&
+      prev.lastWrongKey !== null
+    ) {
+      teachingPausedRef.current = true;
+      const result = pause(prev, Date.now());
+      sessionRef.current = result.state;
+      setSession(result.state);
+    }
+  }, [session, state.settings.errorTeaching]);
 
   const finishToSummary = useCallback(() => {
     const current = sessionRef.current;
@@ -329,10 +355,13 @@ export default function Session() {
     session.phase === "feedback";
   const { targetLength } = session.config;
   const refMode = resolveRefMode(state.settings.keyRefMode, session.config.mode);
+  // 计时策略(#28,与桌面一致):讲解打开即暂停——读讲解的时间不进
+  // KPM/CPM 分母;重试时恢复并重置计时起点。
   const teachingVisible =
     state.settings.errorTeaching !== "quick" &&
-    session.phase === "question" &&
-    session.lastWrongKey !== null;
+    session.lastWrongKey !== null &&
+    (session.phase === "question" ||
+      (session.phase === "paused" && teachingPausedRef.current));
 
   return (
     // 定高滚动容器(app.css .session-scroll):短屏设备上键盘之上
