@@ -64,6 +64,7 @@ function dispatchEvents(events: SessionEvent[], chapterId?: string): void {
         keystrokes: event.keystrokes,
         wrongKeyEvents: event.wrongKeyEvents,
         wrongKeys: event.wrongKeys,
+        confusions: event.confusions,
         chars: event.item.charCount,
         corrections: event.corrections,
         practiceMs: event.practiceMs,

@@ -10,6 +10,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { StatChip } from "@/components/StatChip";
 import { accuracy, cpm, formatDuration, formatPercent, kpm } from "@xhup/trainer-core";
+import { topConfusions, positionLabel, confusionId } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
 import type { WeakListEntry } from "@xhup/trainer-core";
 import type { SessionState } from "@xhup/trainer-core";
@@ -31,6 +32,8 @@ export function SessionSummary({
   const { t } = useI18n();
   const sessionKpm = kpm(session.keystrokes, session.activeMs);
   const sessionCpm = cpm(session.charsCompleted, session.activeMs);
+  // 本场混淆对:按次数取前 5(会话级累计,来自引擎逐键捕获)。
+  const sessionConfusions = topConfusions(session.confusions, 5);
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
       <Card>
@@ -92,6 +95,36 @@ export function SessionSummary({
                 </span>
               </div>
             ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {sessionConfusions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("confusion.title")}</CardTitle>
+            <CardDescription>{t("confusion.hint")}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {sessionConfusions.map((entry) => {
+              const label = positionLabel(entry.position);
+              return (
+                <div
+                  key={confusionId(entry.expected, entry.actual, entry.position)}
+                  className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
+                >
+                  <span className="font-mono text-sm font-semibold">
+                    {entry.expected.toUpperCase()} → {entry.actual.toUpperCase()}
+                  </span>
+                  <Badge variant="outline" className="text-xs">
+                    {t(label.key, label.params)}
+                  </Badge>
+                  <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                    ×{entry.count}
+                  </span>
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       )}

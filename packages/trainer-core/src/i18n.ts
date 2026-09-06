@@ -458,7 +458,6 @@ const zh = {
   "recommend.reasonShapeConfusion": "形码键位混淆,针对性强化",
   "confusion.title": "常见键位混淆",
   "confusion.hint": "你在期望某个键时最常按成的键;来自本机训练结果,不是通用统计。",
-  "confusion.row": "期望 {expected} → 实际 {actual} · {n} 次",
   "confusion.position.sound1": "声1",
   "confusion.position.sound2": "声2",
   "confusion.position.shape1": "形1",
@@ -941,7 +940,6 @@ const en: Record<I18nKey, string> = {
   "confusion.title": "Common key confusions",
   "confusion.hint":
     "The keys you type most often when expecting another key; from your local training results, not universal statistics.",
-  "confusion.row": "expected {expected} → typed {actual} · {n} times",
   "confusion.position.sound1": "Sound 1",
   "confusion.position.sound2": "Sound 2",
   "confusion.position.shape1": "Shape 1",

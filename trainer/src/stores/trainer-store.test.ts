@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { localDateKey } from "@xhup/trainer-core";
+import { localDateKey, recordConfusion } from "@xhup/trainer-core";
 import {
   emptyDailyStats,
   migratePersisted,
@@ -26,6 +26,7 @@ describe("默认状态", () => {
     expect(state.progress).toEqual({});
     expect(state.daily).toEqual({});
     expect(state.keyErrors).toEqual({});
+    expect(state.confusions).toEqual({});
   });
 });
 
@@ -85,6 +86,54 @@ describe("recordQuestionResult", () => {
       wrongKeyEvents: 3,
       corrections: 1,
     });
+  });
+
+  it("混淆对按题合并落库:计数相加,同对跨题累计", () => {
+    const now = Date.now();
+    const base = {
+      id: "好:hknc",
+      outcome: "imperfect" as const,
+      routeUsed: "primary" as const,
+      keystrokes: 5,
+      wrongKeyEvents: 1,
+      wrongKeys: ["m"],
+      chars: 1,
+      corrections: 0,
+      practiceMs: 600,
+      bestStreak: 0,
+      now,
+    };
+    useTrainerStore
+      .getState()
+      .recordQuestionResult({ ...base, confusions: recordConfusion({}, "n", "m", "shape1") });
+    useTrainerStore
+      .getState()
+      .recordQuestionResult({
+        ...base,
+        now: now + 1000,
+        confusions: recordConfusion(recordConfusion({}, "n", "m", "shape1"), "c", "d", "shape2"),
+      });
+    const confusions = useTrainerStore.getState().confusions;
+    expect(confusions["n>m@shape1"]!.count).toBe(2);
+    expect(confusions["c>d@shape2"]!.count).toBe(1);
+  });
+
+  it("payload 未带 confusions 时合并结果不变(旧调用方兼容)", () => {
+    const now = Date.now();
+    useTrainerStore.getState().recordQuestionResult({
+      id: "行:xk",
+      outcome: "perfect",
+      routeUsed: "primary",
+      keystrokes: 2,
+      wrongKeyEvents: 0,
+      wrongKeys: [],
+      chars: 1,
+      corrections: 0,
+      practiceMs: 100,
+      bestStreak: 1,
+      now,
+    });
+    expect(useTrainerStore.getState().confusions).toEqual({});
   });
 
   it("备用路线完成按 imperfect 记进度", () => {
@@ -243,6 +292,39 @@ describe("章节学习证据(里程碑 44)", () => {
     expect(sanitizePersisted("garbage").lessonEvidence).toEqual({});
   });
 
+  it("confusions:损坏条目逐条丢弃,好条目保留,缺省回 {}", () => {
+    const sanitized = sanitizePersisted({
+      confusions: {
+        "k>m@shape1": { expected: "k", actual: "m", position: "shape1", count: 3 },
+        bad: { expected: "k", actual: "MM", position: "shape1", count: 1 },
+        worse: "nope",
+      },
+    });
+    expect(Object.keys(sanitized.confusions)).toEqual(["k>m@shape1"]);
+    expect(sanitizePersisted({}).confusions).toEqual({});
+    expect(sanitizePersisted(null).confusions).toEqual({});
+  });
+
+  it("applyBackup 支持可选 confusions,缺省回 {}", () => {
+    const settings = {
+      theme: "dark" as const,
+      hintMode: "on-error" as const,
+      difficulty: "beginner" as const,
+      sessionLength: 30 as const,
+      lastMode: "double" as const,
+    };
+    useTrainerStore.getState().applyBackup({ settings, progress: {}, daily: {}, keyErrors: {} });
+    expect(useTrainerStore.getState().confusions).toEqual({});
+    useTrainerStore.getState().applyBackup({
+      settings,
+      progress: {},
+      daily: {},
+      keyErrors: {},
+      confusions: recordConfusion({}, "x", "z", "sound1"),
+    });
+    expect(useTrainerStore.getState().confusions["x>z@sound1"]).toMatchObject({ count: 1 });
+  });
+
   it("旧版本持久化(V2 早期无 lessonEvidence)迁移后回 {}", () => {
     const migrated = migratePersisted({ theme: "dark" }, 2);
     expect(migrated.lessonEvidence).toEqual({});
@@ -279,6 +361,7 @@ describe("持久化", () => {
         "daily",
         "keyErrors",
         "lessonEvidence",
+        "confusions",
       ].sort(),
     );
   });

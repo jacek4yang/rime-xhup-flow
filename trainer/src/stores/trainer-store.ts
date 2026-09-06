@@ -10,6 +10,10 @@
  *
  * 里程碑 44:`lessonEvidence`(章节学习证据)作为版本 2 的可选增量
  * 字段加入——旧持久化数据缺省回 `{}`,无需升版;备份同理。
+ *
+ * 键位混淆(RC 稳定化):`confusions`(期望键 → 实际键 + 码位的紧凑
+ * 聚合,见 core learning/confusion)同样以版本 2 可选字段接入——旧数据
+ * 缺省回 `{}`,逐条校验边界(损坏条目单独丢弃),聚合上限由核心约束。
  */
 
 import { create } from "zustand";
@@ -26,6 +30,11 @@ import { emptyDailyStats, type DailyStats } from "@xhup/trainer-core";
 import {
   emptyLessonEvidence,
   type LessonEvidence,
+} from "@xhup/trainer-core";
+import {
+  mergeConfusionMaps,
+  sanitizeConfusionMap,
+  type ConfusionMap,
 } from "@xhup/trainer-core";
 import { DEFAULT_THEME, type ThemePreference } from "@/lib/theme";
 import type { Difficulty } from "@xhup/trainer-core";
@@ -82,6 +91,12 @@ export type TrainerData = {
    * 不参与任何评分正确性判定,因此无需升版(lenient 迁移)。
    */
   lessonEvidence: Record<string, LessonEvidence>;
+  /**
+   * 键位混淆聚合(confusionId → 条目;RC 稳定化)。
+   * 持久化中的可选字段:旧数据缺省 → {};紧凑聚合而非原始按键日志,
+   * 上限与键格式由核心 learning/confusion 约束(lenient 迁移,不升版)。
+   */
+  confusions: ConfusionMap;
 };
 
 export type QuestionResultPayload = {
@@ -93,6 +108,8 @@ export type QuestionResultPayload = {
   wrongKeyEvents: number;
   /** 本题按错的键(去重;键位统计用)。 */
   wrongKeys: string[];
+  /** 本题混淆对(期望键 → 实际键 + 码位;来自会话事件,可选增量)。 */
+  confusions?: ConfusionMap;
   /** 完成汉字数(组句 > 1)。 */
   chars: number;
   corrections: number;
@@ -122,7 +139,7 @@ export type TrainerActions = {
   setDifficulty: (difficulty: Difficulty) => void;
   setSessionLength: (sessionLength: SessionLength) => void;
   setLastMode: (lastMode: PracticeMode) => void;
-  /** 一题完成:更新条目进度 + 当日统计 + 键位错误(低频写入,每题一次)。 */
+  /** 一题完成:更新条目进度 + 当日统计 + 键位错误与混淆对(低频写入,每题一次)。 */
   recordQuestionResult: (payload: QuestionResultPayload) => void;
   /** 章节页被打开:记录 openedAt(不覆盖练习证据的其它字段)。 */
   markLessonOpened: (chapterId: string, now: number) => void;
@@ -137,6 +154,7 @@ export type TrainerActions = {
     daily: Record<string, DailyStats>;
     keyErrors: Record<string, number>;
     lessonEvidence?: Record<string, LessonEvidence>;
+    confusions?: ConfusionMap;
   }) => void;
   /** 重置指定条目的掌握度(弱点中心操作;保留偏好)。 */
   resetItemProgress: (ids: readonly string[]) => void;
@@ -164,6 +182,7 @@ function defaultData(): TrainerData {
     daily: {},
     keyErrors: {},
     lessonEvidence: {},
+    confusions: {},
   };
 }
 
@@ -343,6 +362,7 @@ export function sanitizePersisted(value: unknown): TrainerData {
       ).filter(([key]) => /^[a-z]$/.test(key)),
     ),
     lessonEvidence: pickRecord(value.lessonEvidence, isLessonEvidence),
+    confusions: sanitizeConfusionMap(value.confusions),
   };
 }
 
@@ -368,6 +388,7 @@ export function migratePersisted(persisted: unknown, version: number): TrainerDa
       daily: migrateDailyV1(persisted.daily),
       keyErrors: {},
       lessonEvidence: {},
+      confusions: {},
     };
     return migrated;
   }
@@ -404,6 +425,8 @@ export const useTrainerStore = create<TrainerStore>()(
           return {
             progress: { ...state.progress, [payload.id]: updated },
             keyErrors,
+            // 混淆对按题合并落库(低频写入;计数相加,上限由核心约束)。
+            confusions: mergeConfusionMaps(state.confusions, payload.confusions ?? {}),
             daily: mergeDaily(state.daily, dateKey, (stats) => ({
               practiceMs: stats.practiceMs + payload.practiceMs,
               questions: stats.questions + 1,
@@ -472,6 +495,7 @@ export const useTrainerStore = create<TrainerStore>()(
           daily: backup.daily,
           keyErrors: backup.keyErrors,
           lessonEvidence: backup.lessonEvidence ?? {},
+          confusions: backup.confusions ?? {},
         })),
 
       resetItemProgress: (ids) =>
@@ -505,6 +529,7 @@ export const useTrainerStore = create<TrainerStore>()(
         daily: state.daily,
         keyErrors: state.keyErrors,
         lessonEvidence: state.lessonEvidence,
+        confusions: state.confusions,
       }),
       migrate: migratePersisted,
       merge: (persisted, current) => ({
