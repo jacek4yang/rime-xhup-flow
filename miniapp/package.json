@@ -12,8 +12,8 @@
     "generate:data": "node scripts/generate-shards.mjs",
     "build:weapp": "npm run generate:data && taro build --type weapp",
     "dev:weapp": "npm run generate:data && taro build --type weapp --watch",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "typecheck": "node scripts/generate-shards.mjs && tsc --noEmit",
+    "test": "node scripts/generate-shards.mjs && vitest run",
     "size": "node scripts/size-report.mjs"
   },
   "browserslist": [
