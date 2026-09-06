@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import { OnScreenKeyboard, buildKeyLabels } from "@/components/OnScreenKeyboard";
 import { useI18n } from "@/lib/use-i18n";
-import type { I18nKey } from "@/lib/i18n";
+import type { I18nKey } from "@xhup/trainer-core";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import { KeyDetailDialog } from "./KeyDetailDialog";
 

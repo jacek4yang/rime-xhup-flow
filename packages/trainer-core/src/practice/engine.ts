@@ -13,13 +13,13 @@
  * 简码回忆而不把全码当「无效输入」。
  */
 
-import type { TrainingItem } from "@/lib/trainer-index";
+import type { TrainingItem } from "../data/trainer-index";
 import {
   applyImperfect,
   applyPerfect,
   emptyProgress,
   type ItemProgress,
-} from "@/lib/progress";
+} from "../learning/progress";
 import {
   pickNext,
   scheduleReview,

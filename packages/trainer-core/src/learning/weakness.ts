@@ -10,8 +10,8 @@
  * 不修改任何 canonical 数据;只读进度。
  */
 
-import type { ItemProgress } from "@/lib/progress";
-import type { TrainingItem, TrainerIndex } from "@/lib/trainer-index";
+import type { ItemProgress } from "./progress";
+import type { TrainingItem, TrainerIndex } from "../data/trainer-index";
 
 /** 单个薄弱条目的视图。 */
 export type WeakItem = {

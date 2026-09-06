@@ -8,8 +8,8 @@
  * - 本章不引入数据之外的任何字根表或口诀,避免以讹传讹。
  */
 
-import type { I18nKey } from "@/lib/i18n";
-import type { PracticeMode } from "@/features/practice/types";
+import type { I18nKey } from "../i18n";
+import type { PracticeMode } from "../practice/types";
 
 /** 一段章节内容(按顺序渲染)。 */
 export type LearnSection =

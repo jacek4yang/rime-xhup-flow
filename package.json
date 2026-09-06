@@ -1,0 +1,15 @@
+{
+  "name": "xhup-flow",
+  "private": true,
+  "packageManager": "pnpm@11.24.0",
+  "scripts": {
+    "trainer:typecheck": "pnpm --filter trainer typecheck",
+    "trainer:test": "pnpm --filter trainer test",
+    "trainer:build": "pnpm --filter trainer build",
+    "core:typecheck": "pnpm --filter @xhup/trainer-core typecheck",
+    "core:test": "pnpm --filter @xhup/trainer-core test",
+    "miniapp:typecheck": "pnpm --filter miniapp typecheck",
+    "miniapp:build": "pnpm --filter miniapp build:weapp",
+    "miniapp:test": "pnpm --filter miniapp test"
+  }
+}

@@ -9,10 +9,10 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatChip } from "@/components/StatChip";
-import { accuracy, cpm, formatDuration, formatPercent, kpm } from "@/lib/stats";
+import { accuracy, cpm, formatDuration, formatPercent, kpm } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
-import type { WeakItem } from "@/lib/review";
-import type { SessionState } from "./engine";
+import type { WeakListEntry } from "@xhup/trainer-core";
+import type { SessionState } from "@xhup/trainer-core";
 
 /** 会话结束后的内联小结:关键指标 + 最需要复习的几项 + 下一步动作。 */
 export function SessionSummary({
@@ -23,7 +23,7 @@ export function SessionSummary({
   onExitToToday,
 }: {
   session: SessionState;
-  weakItems: WeakItem[];
+  weakItems: WeakListEntry[];
   onRestart: () => void;
   onPracticeWeak: () => void;
   onExitToToday: () => void;

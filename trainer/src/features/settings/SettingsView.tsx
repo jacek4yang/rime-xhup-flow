@@ -18,18 +18,18 @@ import {
 import { OptionButton, OptionRow } from "@/components/OptionGroup";
 import { Separator } from "@/components/ui/separator";
 import { THEME_LABELS, type ThemePreference } from "@/lib/theme";
-import { exportBackup, importBackup, BackupError } from "@/lib/backup";
-import { LANGUAGE_LABELS, LANGUAGES } from "@/lib/i18n";
+import { exportBackup, importBackup, BackupError } from "@xhup/trainer-core";
+import { LANGUAGE_LABELS, LANGUAGES } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import { useTrainerStore } from "@/stores/trainer-store";
-import type { Difficulty } from "@/lib/trainer-index";
+import type { Difficulty } from "@xhup/trainer-core";
 import {
   DIFFICULTY_LABELS,
   HINT_MODE_LABELS,
   SESSION_LENGTH_OPTIONS,
   type HintMode,
-} from "@/features/practice/types";
+} from "@xhup/trainer-core";
 
 const THEMES: ThemePreference[] = ["system", "light", "dark"];
 const HINT_MODES: HintMode[] = ["always", "on-delay", "on-error", "hidden"];

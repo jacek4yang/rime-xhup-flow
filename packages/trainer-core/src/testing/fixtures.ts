@@ -9,9 +9,9 @@ import type {
   TrainerSentence,
   TrainerShortcut,
   TrainerWord,
-} from "@/lib/trainer-data";
-import { buildTrainerIndex, type TrainerIndex } from "@/lib/trainer-index";
-import { emptyProgress, type ItemProgress } from "@/lib/progress";
+} from "../data/trainer-data";
+import { buildTrainerIndex, type TrainerIndex } from "../data/trainer-index";
+import { emptyProgress, type ItemProgress } from "../learning/progress";
 
 export function makeEntry(char: string, code: string, score = 0): TrainerEntry {
   return {

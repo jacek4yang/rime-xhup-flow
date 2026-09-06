@@ -5,8 +5,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { TrainerDataset } from "@/lib/trainer-data";
-import { buildTrainerIndex } from "@/lib/trainer-index";
+import type { TrainerDataset } from "@xhup/trainer-core";
+import { buildTrainerIndex } from "@xhup/trainer-core";
 import { TrainerIndexProvider } from "@/lib/trainer-context";
 import { LearnView } from "./LearnView";
 

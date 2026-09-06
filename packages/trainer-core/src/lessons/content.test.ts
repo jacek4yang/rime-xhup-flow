@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { TrainerEntry } from "@/lib/trainer-data";
+import type { TrainerEntry } from "../data/trainer-data";
 import { LEARN_CHAPTERS, validateChapters } from "./content";
 import { buildShapeKeyStats, topShapeKeys } from "./shape-explorer";
 

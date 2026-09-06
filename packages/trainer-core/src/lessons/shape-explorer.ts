@@ -5,8 +5,8 @@
  * 数据之外的字根表。纯函数;例字按频率证据排序。
  */
 
-import type { TrainerEntry } from "@/lib/trainer-data";
-import { charItem, compareByFrequency, type TrainingItem } from "@/lib/trainer-index";
+import type { TrainerEntry } from "../data/trainer-data";
+import { charItem, compareByFrequency, type TrainingItem } from "../data/trainer-index";
 
 /** 单个形键的聚合结果。 */
 export type ShapeKeyStat = {

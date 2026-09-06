@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
+    "@xhup/trainer-core": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.38.0",

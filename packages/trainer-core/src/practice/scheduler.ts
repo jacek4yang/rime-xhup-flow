@@ -18,8 +18,8 @@
  * 不持久化)。轮换按 MODE_POOL_ROTATION 顺序推进,到期回炉题可临时打破。
  */
 
-import { emptyProgress, type ItemProgress } from "@/lib/progress";
-import type { TrainingItem } from "@/lib/trainer-index";
+import { emptyProgress, type ItemProgress } from "../learning/progress";
+import type { TrainingItem } from "../data/trainer-index";
 import { MODE_POOL_ROTATION, type PracticeMode } from "./types";
 
 export type Rng = () => number;

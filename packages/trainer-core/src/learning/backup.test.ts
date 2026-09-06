@@ -6,7 +6,7 @@ import {
   importBackup,
 } from "./backup";
 import { emptyProgress } from "./progress";
-import { emptyDailyStats } from "@/stores/trainer-store";
+import { emptyDailyStats } from "./daily-stats";
 import type { ItemProgress } from "./progress";
 
 const sampleData = () => ({

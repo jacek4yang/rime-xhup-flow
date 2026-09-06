@@ -18,14 +18,14 @@ import {
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { itemAccuracy, listWeakItems } from "@/lib/review";
-import { aggregateWeakness, keyHeatmap } from "@/lib/weakness";
-import { formatPercent } from "@/lib/stats";
+import { itemAccuracy, listWeakItems } from "@xhup/trainer-core";
+import { aggregateWeakness, keyHeatmap } from "@xhup/trainer-core";
+import { formatPercent } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
-import type { I18nKey } from "@/lib/i18n";
+import type { I18nKey } from "@xhup/trainer-core";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import { useTrainerStore } from "@/stores/trainer-store";
-import type { TrainingItem } from "@/lib/trainer-index";
+import type { TrainingItem } from "@xhup/trainer-core";
 
 type ModeFilter = "all" | 2 | 3 | 4;
 

@@ -12,8 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { localDateKey } from "@/lib/stats";
-import { aggregateWeakness } from "@/lib/weakness";
+import { localDateKey } from "@xhup/trainer-core";
+import { aggregateWeakness } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import { useTrainerStore } from "@/stores/trainer-store";

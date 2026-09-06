@@ -5,7 +5,7 @@ import {
   charItem,
   selectPool,
 } from "./trainer-index";
-import { makeDataset, makeEntry } from "@/test/fixtures";
+import { makeDataset, makeEntry } from "../testing/fixtures";
 
 describe("buildTrainerIndex(V2)", () => {
   const index = buildTrainerIndex(makeDataset());

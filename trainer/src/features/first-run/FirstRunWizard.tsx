@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CommandError } from "@/lib/native";
-import type { I18nKey } from "@/lib/i18n";
+import type { I18nKey } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
 import {
   ERROR_CODES,
@@ -27,7 +27,7 @@ import {
   type ProductStatusDto,
   type RimeClient,
 } from "@/lib/product";
-import type { PracticeMode } from "@/features/practice/types";
+import type { PracticeMode } from "@xhup/trainer-core";
 import { readOnboarding, writeOnboarding } from "./onboarding";
 import {
   initialFirstRunState,

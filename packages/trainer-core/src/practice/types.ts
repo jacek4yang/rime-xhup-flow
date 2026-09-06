@@ -1,5 +1,5 @@
-import type { I18nKey } from "@/lib/i18n";
-import type { CodeLength, Difficulty, PoolId } from "@/lib/trainer-index";
+import type { I18nKey } from "../i18n";
+import type { CodeLength, Difficulty, PoolId } from "../data/trainer-index";
 
 /**
  * 练习模式(V2)。

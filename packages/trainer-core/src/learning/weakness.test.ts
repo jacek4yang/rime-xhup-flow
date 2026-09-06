@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { aggregateWeakness, keyHeatmap } from "./weakness";
 import { emptyProgress } from "./progress";
-import { makeIndex } from "@/test/fixtures";
+import { makeIndex } from "../testing/fixtures";
 
 describe("aggregateWeakness", () => {
   it("只统计见过的条目;薄弱排序按错误率 × 掌握度缺口", () => {

@@ -5,13 +5,13 @@ import { AppShell } from "@/components/AppShell";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { TrainerIndexProvider } from "@/lib/trainer-context";
 import {
-  loadTrainerDataset,
   TrainerDataError,
   type TrainerDataset,
-} from "@/lib/trainer-data";
-import { buildTrainerIndex } from "@/lib/trainer-index";
+} from "@xhup/trainer-core";
+import { loadTrainerDataset } from "@/lib/trainer-data";
+import { buildTrainerIndex } from "@xhup/trainer-core";
 import { applyThemeToDocument, onSystemThemeChange } from "@/lib/theme";
-import { translate, type I18nKey } from "@/lib/i18n";
+import { translate, type I18nKey } from "@xhup/trainer-core";
 import { useTrainerStore } from "@/stores/trainer-store";
 
 type LoadState =

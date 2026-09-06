@@ -3,7 +3,7 @@
  */
 
 import { useTrainerStore } from "@/stores/trainer-store";
-import { translate, type I18nKey, type Language } from "@/lib/i18n";
+import { translate, type I18nKey, type Language } from "@xhup/trainer-core";
 
 export function useI18n(): {
   t: (key: I18nKey, params?: Record<string, string | number>) => string;

@@ -6,10 +6,10 @@
  * 当前版本 2;损坏 / 未知结构抛 {@link BackupError},调用方展示原因。
  */
 
-import type { ItemProgress } from "@/lib/progress";
-import type { DailyStats } from "@/stores/trainer-store";
-import type { Difficulty } from "@/lib/trainer-index";
-import type { HintMode, PracticeMode, SessionLength } from "@/features/practice/types";
+import type { ItemProgress } from "./progress";
+import type { DailyStats } from "./daily-stats";
+import type { Difficulty } from "../data/trainer-index";
+import type { HintMode, PracticeMode, SessionLength } from "../practice/types";
 
 export const BACKUP_KIND = "xhup-flow-trainer-backup";
 export const BACKUP_VERSION = 2;

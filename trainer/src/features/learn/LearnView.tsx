@@ -12,16 +12,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import type { I18nKey } from "@/lib/i18n";
+import type { I18nKey } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
 import { useTrainerIndex } from "@/lib/trainer-context";
-import type { PracticeMode } from "@/features/practice/types";
-import { LEARN_CHAPTERS, LEVEL_LABELS, type LearnSection } from "./content";
+import type { PracticeMode } from "@xhup/trainer-core";
+import { LEARN_CHAPTERS, LEVEL_LABELS, type LearnSection } from "@xhup/trainer-core";
 import {
   buildShapeKeyStats,
   topShapeKeys,
   type ShapeKeyStat,
-} from "./shape-explorer";
+} from "@xhup/trainer-core";
 
 export function LearnView({
   onStartPractice,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ItemProgress } from "@/lib/progress";
+import type { ItemProgress } from "../learning/progress";
 import {
   advance,
   backspace,
@@ -14,7 +14,7 @@ import {
   type SessionState,
 } from "./engine";
 import { buildPool } from "./scheduler";
-import { makeEntry, makeIndex, makeSentence, makeShortcut, progressWith } from "@/test/fixtures";
+import { makeEntry, makeIndex, makeSentence, makeShortcut, progressWith } from "../testing/fixtures";
 
 const zeroRng = () => 0;
 

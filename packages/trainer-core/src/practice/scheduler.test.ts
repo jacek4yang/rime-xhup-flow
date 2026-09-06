@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { emptyProgress, type ItemProgress } from "@/lib/progress";
-import { charItem, wordItem } from "@/lib/trainer-index";
-import { makeEntry, makeWord, makeShortcut, progressWith, seededRng } from "@/test/fixtures";
+import { emptyProgress, type ItemProgress } from "../learning/progress";
+import { charItem, wordItem } from "../data/trainer-index";
+import { makeEntry, makeWord, makeShortcut, progressWith, seededRng } from "../testing/fixtures";
 import {
   buildPool,
   computePriority,

@@ -5,9 +5,9 @@
  */
 
 import type { ItemProgress } from "./progress";
-import type { TrainingItem, TrainerIndex } from "./trainer-index";
+import type { TrainingItem, TrainerIndex } from "../data/trainer-index";
 
-export type WeakItem = {
+export type WeakListEntry = {
   item: TrainingItem;
   progress: ItemProgress;
 };
@@ -16,8 +16,8 @@ export function listWeakItems(
   index: TrainerIndex,
   progressById: Record<string, ItemProgress>,
   limit?: number,
-): WeakItem[] {
-  const items: WeakItem[] = [];
+): WeakListEntry[] {
+  const items: WeakListEntry[] = [];
   for (const [id, progress] of Object.entries(progressById)) {
     if (progress.attempts === 0 || progress.wrong === 0) continue;
     const item = index.byId.get(id);
@@ -38,6 +38,6 @@ export function itemAccuracy(progress: ItemProgress): number | null {
   return progress.correct / progress.attempts;
 }
 
-export function weakItemId(item: WeakItem): string {
+export function weakItemId(item: WeakListEntry): string {
   return item.item.id;
 }
