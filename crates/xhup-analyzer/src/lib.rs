@@ -28,6 +28,7 @@ pub mod prefix;
 pub mod production;
 pub mod production_fixed_first;
 pub mod production_two_key;
+pub mod replay;
 pub mod report;
 pub mod sweep;
 pub mod two_key_study;
@@ -69,6 +70,9 @@ pub use production_fixed_first::{
     PRODUCTION_MIN_SHORTCUT_LENGTH, build_fixed_first_universe, collect_fixed_first_evidence,
     fixed_first_audit_manifest, fixed_first_benefit_audit, select_fixed_first_production,
     serialize_fixed_first_tsv,
+};
+pub use replay::{
+    InputPlan, ReplayCostModel, ReplayMapping, ReplayReport, Replayer, SentenceReplay,
 };
 pub use report::{Timings, render_report};
 pub use sweep::{
