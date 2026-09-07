@@ -16,6 +16,7 @@
 
 pub mod candidates;
 pub mod compat;
+pub mod corpus;
 pub mod cost;
 pub mod dynamic;
 pub mod evidence;
@@ -39,6 +40,7 @@ pub use compat::{
     CompatRow, CompatibilityReport, CurrentHit, ReferenceEntry, TierCompat, compare, dump_diff_tsv,
     parse_reference_tsv, render_report as render_compat_report,
 };
+pub use corpus::{CorpusStats, CorpusStatsBuilder, Segmenter, WordCorpusStats};
 pub use cost::{CostBreakdown, CostModel};
 pub use dynamic::DynamicCandidateKind;
 pub use evidence::{Eligibility, EvidenceCoverage, LexicalEvidence, LexicalEvidenceSet};
