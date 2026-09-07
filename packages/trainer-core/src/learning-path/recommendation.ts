@@ -10,16 +10,20 @@
  * 2. weak-item     —— 复用 listWeakItems(掌握度低 → 错误多 → 最近错过);
  * 3. recent-mistake—— 最近练错过的条目(按 lastSeenAt 降序);
  * 4. lesson        —— 按 LEARN_CHAPTERS 顺序,第一个未达 mastered 的章节;
- * 5. practice-mode —— 高频未见过的规范条目所在池对应的练习模式
+ * 5. shape-confusion —— 形位出现重复混淆(同一混淆对 count ≥
+ *    {@link SHAPE_CONFUSION_MIN_COUNT})时推荐全码模式针对性强化;
+ * 6. practice-mode —— 高频未见过的规范条目所在池对应的练习模式
  *    (selectPool 按频率排序,取第一个未见条目;recentIds 中的条目视为
  *    「刚练过」,不再作为新内容推荐)。
  *
- * 已知限制:keyErrors 目前作为保留字段接收(条目级排序已携带错误信号;
- * 键位级推荐待形码弱点视图接入后再用)。
+ * 已知限制:keyErrors 作为保留字段接收(条目级排序已携带错误信号);
+ * 键位级推荐经 confusions 的形位混淆桶(桶 5)接入。
  */
 
 import type { ItemProgress } from "../learning/progress";
 import { listWeakItems } from "../learning/review";
+import type { ConfusionMap } from "../learning/confusion";
+import { sortedConfusions } from "../learning/confusion";
 import type { Difficulty, PoolId, TrainerIndex } from "../data/trainer-index";
 import { selectPool } from "../data/trainer-index";
 import { LEARN_CHAPTERS } from "../lessons/content";
@@ -61,10 +65,21 @@ export type PracticeModeRecommendation = {
   reason: I18nKey;
 };
 
+/** 形位混淆推荐(重复按错同一对形键 → 全码模式针对性强化)。 */
+export type ShapeConfusionRecommendation = {
+  kind: "shape-confusion";
+  mode: PracticeMode;
+  /** 当前最严重的形位混淆对(展示用)。 */
+  expected: string;
+  actual: string;
+  reason: I18nKey;
+};
+
 export type Recommendation =
   | ItemRecommendation
   | LessonRecommendation
-  | PracticeModeRecommendation;
+  | PracticeModeRecommendation
+  | ShapeConfusionRecommendation;
 
 export type RecommendationInput = {
   index: TrainerIndex;
@@ -72,6 +87,8 @@ export type RecommendationInput = {
   progressById: Record<string, ItemProgress>;
   /** 键位累积错误(保留字段;见模块注释)。 */
   keyErrors: Record<string, number>;
+  /** 键位混淆聚合(可选;形位混淆桶的数据源)。 */
+  confusions?: ConfusionMap;
   /** 章节学习证据。 */
   lessonEvidence: Record<string, LessonEvidence>;
   /** 最近练过的条目 id(重复惩罚:不作为「新内容」推荐)。 */
@@ -84,6 +101,12 @@ export type RecommendationInput = {
 
 /** 「曾经掌握后回落」代理的掌握度下限。 */
 export const REVIEW_MASTERY_FLOOR = 60;
+
+/**
+ * 形位混淆桶的触发阈值:同一混淆对(期望形键 → 实际键)累计达到该
+ * 次数才推荐(避免偶发失误触发);取最严重的一对,决胜键显式。
+ */
+export const SHAPE_CONFUSION_MIN_COUNT = 3;
 
 /**
  * 薄弱条目的掌握度上限:weak-item 只收掌握度低于该值的条目;
@@ -205,7 +228,24 @@ export function dailyRecommendation(input: RecommendationInput): Recommendation[
     break;
   }
 
-  // 5. practice-mode:高频未见过的规范条目所在池(跳过 recentIds)。
+  // 5. shape-confusion:形位重复混淆 → 全码模式针对性强化(确定性取
+  //    最严重的形位对;音位与 {other:N} 条目不参与形码判定)。
+  if (picked.length < limit) {
+    const topShapeConfusion = sortedConfusions(input.confusions ?? {}).find(
+      (entry) => entry.position === "shape1" || entry.position === "shape2",
+    );
+    if (topShapeConfusion && topShapeConfusion.count >= SHAPE_CONFUSION_MIN_COUNT) {
+      picked.push({
+        kind: "shape-confusion",
+        mode: "full",
+        expected: topShapeConfusion.expected,
+        actual: topShapeConfusion.actual,
+        reason: "recommend.reasonShapeConfusion",
+      });
+    }
+  }
+
+  // 6. practice-mode:高频未见过的规范条目所在池(跳过 recentIds)。
   if (picked.length < limit) {
     const recentSet = new Set(input.recentIds ?? []);
     for (const poolId of MODE_POOL_ROTATION["mixed-all"]) {

@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   BACKUP_KIND,
   BACKUP_VERSION,
+  MAX_BACKUP_JSON_CHARS,
   exportBackup,
   importBackup,
 } from "./backup";
 import { emptyProgress } from "./progress";
 import { emptyDailyStats } from "./daily-stats";
 import type { ItemProgress } from "./progress";
+import { recordConfusion } from "./confusion";
 
 const sampleData = () => ({
   theme: "dark" as const,
@@ -39,6 +41,7 @@ const sampleData = () => ({
       bestAccuracy: 0.95,
     },
   },
+  confusions: recordConfusion(recordConfusion({}, "k", "m", "shape1"), "x", "z", "sound1"),
 });
 
 describe("exportBackup", () => {
@@ -102,6 +105,36 @@ describe("importBackup", () => {
     delete legacy.lessonEvidence;
     const restored = importBackup(JSON.stringify(legacy));
     expect(restored.lessonEvidence).toEqual({});
+  });
+
+  it("confusions 往返保真;旧备份缺省 → {}(版本 2 可选增量字段)", () => {
+    const restored = importBackup(exportBackup(sampleData(), 1700));
+    expect(restored.confusions).toEqual(sampleData().confusions);
+
+    const legacy = JSON.parse(exportBackup(sampleData(), 1700));
+    delete legacy.confusions;
+    expect(importBackup(JSON.stringify(legacy)).confusions).toEqual({});
+
+    const exported = JSON.parse(
+      exportBackup({ ...sampleData(), confusions: undefined }, 1700),
+    );
+    expect(exported.confusions).toEqual({});
+  });
+
+  it("confusions 损坏条目单独丢弃,不拒绝整份备份", () => {
+    const backup = JSON.parse(exportBackup(sampleData(), 1700));
+    backup.confusions["garbage"] = { expected: "K", actual: "mm", position: "middle", count: 1 };
+    backup.confusions["negative"] = { expected: "k", actual: "w", position: "sound1", count: -2 };
+    const restored = importBackup(JSON.stringify(backup));
+    expect(Object.keys(restored.confusions)).toEqual(["k>m@shape1", "x>z@sound1"]);
+  });
+
+  it("拒绝超过 2 MB 的备份(可操作的错误提示)", () => {
+    const backup = exportBackup(sampleData(), 1700);
+    expect(backup.length).toBeLessThan(MAX_BACKUP_JSON_CHARS);
+    const oversized = " ".repeat(MAX_BACKUP_JSON_CHARS + 1);
+    expect(() => importBackup(oversized)).toThrow(/过大/);
+    expect(() => importBackup(backup)).not.toThrow();
   });
 
   it("拒绝非法 lessonEvidence 结构", () => {

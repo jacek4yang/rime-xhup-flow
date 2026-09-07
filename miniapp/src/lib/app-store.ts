@@ -13,6 +13,8 @@ import {
   emptyDailyStats,
   emptyProgress,
   localDateKey,
+  mergeConfusionMaps,
+  type ConfusionMap,
   type ItemProgress,
   type StorageAdapter,
 } from "@xhup/trainer-core";
@@ -32,6 +34,8 @@ export type QuestionResultPayload = {
   wrongKeyEvents: number;
   /** 本题按错的键(去重)。 */
   wrongKeys: readonly string[];
+  /** 本题混淆对(期望键 → 实际键 + 码位;来自会话事件,可选增量)。 */
+  confusions?: ConfusionMap;
   chars: number;
   corrections: number;
   practiceMs: number;
@@ -47,11 +51,12 @@ export type AppStore = {
   addPracticeTime(practiceMs: number, now: number): void;
   /** 重置学习进度与按日统计;偏好保留(与桌面端 resetProgress 一致)。 */
   resetProgress(): void;
-  /** 用校验过的备份数据整体替换进度/统计/键位错误。 */
+  /** 用校验过的备份数据整体替换进度/统计/键位错误与混淆聚合。 */
   applyBackup(data: {
     progress: Record<string, ItemProgress>;
     daily: AppState["daily"];
     keyErrors: Record<string, number>;
+    confusions?: ConfusionMap;
   }): void;
 };
 
@@ -146,6 +151,8 @@ export function createAppStore(storage: StorageAdapter, storeKey: string): AppSt
         ...state,
         progress: { ...state.progress, [payload.id]: updated },
         keyErrors,
+        // 混淆对按题合并落库(低频写入;计数相加,上限由核心约束)。
+        confusions: mergeConfusionMaps(state.confusions, payload.confusions ?? {}),
         daily: {
           ...state.daily,
           [dateKey]: {
@@ -184,6 +191,7 @@ export function createAppStore(storage: StorageAdapter, storeKey: string): AppSt
         progress: data.progress,
         daily: data.daily,
         keyErrors: data.keyErrors,
+        confusions: data.confusions ?? {},
       });
     },
   };

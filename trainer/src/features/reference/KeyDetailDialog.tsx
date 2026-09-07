@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/use-i18n";
 import type { I18nKey } from "@xhup/trainer-core";
+import { confusionsFor, positionLabel } from "@xhup/trainer-core";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import { useTrainerStore } from "@/stores/trainer-store";
 import { buildKeyLabels, compactFinals, compactInitials } from "@/components/OnScreenKeyboard";
@@ -42,6 +43,7 @@ export function KeyDetailDialog({
   const { t } = useI18n();
   const index = useTrainerIndex();
   const keyErrors = useTrainerStore((state) => state.keyErrors);
+  const confusions = useTrainerStore((state) => state.confusions);
   const [tab, setTab] = useState<KeyDetailTab>("double");
 
   const labels = useMemo(
@@ -67,6 +69,12 @@ export function KeyDetailDialog({
   }, [index, keyChar]);
 
   const myErrorCount = keyErrors[keyChar] ?? 0;
+
+  // 键位混淆:与该键相关(期望或实际)的真实混淆对,本机训练结果。
+  const myConfusions = useMemo(
+    () => confusionsFor(confusions, keyChar, 6),
+    [confusions, keyChar],
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -166,6 +174,33 @@ export function KeyDetailDialog({
                   ? t("keyDetail.myErrors", { n: myErrorCount })
                   : t("keyDetail.myErrorsNone")}
               </p>
+              {myConfusions.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {t("confusion.title")}
+                  </p>
+                  {myConfusions.map((entry) => {
+                    const label = positionLabel(entry.position);
+                    return (
+                      <div
+                        key={`${entry.expected}>${entry.actual}@${label.key}`}
+                        className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"
+                      >
+                        <span className="font-mono text-sm font-semibold">
+                          {entry.expected.toUpperCase()} → {entry.actual.toUpperCase()}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {t(label.key, label.params)}
+                        </span>
+                        <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                          ×{entry.count}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">{t("confusion.hint")}</p>
               <p className="text-xs text-muted-foreground">{t("keyDetail.errorsNote")}</p>
             </div>
           )}

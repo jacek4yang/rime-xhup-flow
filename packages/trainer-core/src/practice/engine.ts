@@ -11,9 +11,18 @@
  * 实际输入路线——主练码(简码)完成且零错键 = perfect;改走备用路线
  * (全码)合法可完成,但按 imperfect 计,并把路线记入事件,鼓励
  * 简码回忆而不把全码当「无效输入」。
+ *
+ * 键位混淆捕获:每次错键在会话状态累计「期望键 → 实际键 + 码位」的
+ * 紧凑聚合(learning/confusion),随 question-completed 事件交外层落库;
+ * 引擎不保存任何原始按键序列。
  */
 
 import type { TrainingItem } from "../data/trainer-index";
+import {
+  positionForIndex,
+  recordConfusion,
+  type ConfusionMap,
+} from "../learning/confusion";
 import {
   applyImperfect,
   applyPerfect,
@@ -50,6 +59,13 @@ export type SessionState = {
   wrongKeysThisQuestion: number;
   /** 本题按过的键(去重;键位统计用),每题重置。 */
   wrongKeys: string[];
+  /**
+   * 本题产生的混淆对(期望键 → 实际键 + 码位),每题重置;
+   * 会话级累计见 {@link SessionState.confusions}。
+   */
+  confusionsThisQuestion: ConfusionMap;
+  /** 会话级混淆累计(紧凑聚合,非原始日志;小结与落库数据源)。 */
+  confusions: ConfusionMap;
   /** 最近一次按错的键(用于键盘闪烁提示),下一个按键事件后清除。 */
   lastWrongKey: string | null;
   lastOutcome: QuestionOutcome | null;
@@ -87,6 +103,8 @@ export type SessionEvent =
       wrongKeyEvents: number;
       /** 本题按错的键(去重)。 */
       wrongKeys: string[];
+      /** 本题混淆对(期望键 → 实际键 + 码位;紧凑聚合)。 */
+      confusions: ConfusionMap;
       /** 本题退格修正次数。 */
       corrections: number;
       practiceMs: number;
@@ -152,6 +170,8 @@ export function createSession(
     hadError: false,
     wrongKeysThisQuestion: 0,
     wrongKeys: [] as string[],
+    confusionsThisQuestion: {},
+    confusions: {},
     lastWrongKey: null,
     lastOutcome: null,
     lastRoute: null,
@@ -203,6 +223,10 @@ export function typeKey(
   const effective = route === "alternate" && alternate !== null ? alternate : primary;
 
   if (key !== effective[state.typed.length]) {
+    // 混淆捕获:期望键 = 当前活动路线在该码位的字符,实际键 = 所按之键;
+    // 码位由条目种类与序号推导(positionForIndex,词/句降级为 other:N)。
+    const expected = effective[state.typed.length] ?? "";
+    const position = positionForIndex(current, state.typed.length);
     return {
       state: {
         ...state,
@@ -211,6 +235,13 @@ export function typeKey(
         wrongKeys: state.wrongKeys.includes(key)
           ? state.wrongKeys
           : [...state.wrongKeys, key],
+        confusionsThisQuestion: recordConfusion(
+          state.confusionsThisQuestion,
+          expected,
+          key,
+          position,
+        ),
+        confusions: recordConfusion(state.confusions, expected, key, position),
         keystrokes: state.keystrokes + 1,
         wrongKeyEvents: state.wrongKeyEvents + 1,
         lastWrongKey: key,
@@ -287,6 +318,7 @@ function completeQuestion(
         keystrokes: activeCode(state).length + state.wrongKeysThisQuestion,
         wrongKeyEvents: state.wrongKeysThisQuestion,
         wrongKeys: state.wrongKeys,
+        confusions: state.confusionsThisQuestion,
         corrections: state.correctionsThisQuestion,
         practiceMs: practiceMsThisQuestion,
         bestStreak,
@@ -333,6 +365,7 @@ export function advance(
       hadError: false,
       wrongKeysThisQuestion: 0,
       wrongKeys: [],
+      confusionsThisQuestion: {},
       correctionsThisQuestion: 0,
       lastWrongKey: null,
       lastOutcome: null,

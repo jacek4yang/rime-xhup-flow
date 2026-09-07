@@ -64,6 +64,7 @@ function dispatchEvents(events: SessionEvent[], chapterId?: string): void {
         keystrokes: event.keystrokes,
         wrongKeyEvents: event.wrongKeyEvents,
         wrongKeys: event.wrongKeys,
+        confusions: event.confusions,
         chars: event.item.charCount,
         corrections: event.corrections,
         practiceMs: event.practiceMs,
@@ -184,6 +185,7 @@ export function PracticeView({
   // 回前台自动恢复——与小程序端 useDidHide 暂停、桌面端返回键暂停
   // 同一套语义,后台时长绝不计入 KPM/activeMs。
   const autoPausedRef = useRef(false);
+  const errorTeaching = useTrainerStore((state) => state.errorTeaching);
   useEffect(() => {
     if (!session) return;
     const onVisibility = () => {
@@ -195,7 +197,12 @@ export function PracticeView({
         }
         return;
       }
-      if (autoPausedRef.current && current.phase === "paused") {
+      // 教学暂停优先:讲解还开着时不自动恢复,由「重试」按钮恢复。
+      if (
+        autoPausedRef.current &&
+        current.phase === "paused" &&
+        !teachingPausedRef.current
+      ) {
         autoPausedRef.current = false;
         setSession(resume(current, Date.now()));
       }
@@ -205,6 +212,20 @@ export function PracticeView({
     // commit/onExit 为稳定闭包;session 变化时重新订阅以读到最新相位。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
+
+  // 错误教学打开即暂停(计时排除);重试按钮负责恢复。
+  useEffect(() => {
+    if (!session) return;
+    if (
+      errorTeaching !== "quick" &&
+      session.phase === "question" &&
+      session.lastWrongKey !== null
+    ) {
+      teachingPausedRef.current = true;
+      commit(pause(session, Date.now()));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, errorTeaching]);
 
   // Android/浏览器返回:活跃时返回 = 暂停(暂停浮层即离开确认);
   // 暂停中再返回 = 结束离开;小结屏返回 = 退出会话。
@@ -298,13 +319,23 @@ export function PracticeView({
   };
 
   // 错误教学:答错即暂停讲解并重试同一题(quick 模式维持原节奏)。
-  const errorTeaching = useTrainerStore((state) => state.errorTeaching);
+  // 计时策略(#28,显式且经测试):讲解打开即暂停会话——读讲解的时间
+  // 不进 KPM/CPM 分母;重试时恢复并重置计时起点。
+  const teachingPausedRef = useRef(false);
   const teachingVisible =
     errorTeaching !== "quick" &&
-    session?.phase === "question" &&
-    session.lastWrongKey !== null;
+    session !== null &&
+    session.lastWrongKey !== null &&
+    (session.phase === "question" ||
+      (session.phase === "paused" && teachingPausedRef.current));
   const retryQuestion = () => {
     if (!session) return;
+    if (teachingPausedRef.current) {
+      teachingPausedRef.current = false;
+      const resumed = resume(session, Date.now());
+      setSession(retryCurrent(resumed));
+      return;
+    }
     setSession(retryCurrent(session));
   };
 
@@ -478,7 +509,7 @@ export function PracticeView({
           </motion.div>
         </AnimatePresence>
 
-        {session.phase === "paused" && (
+        {session.phase === "paused" && !teachingPausedRef.current && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-xl bg-card/95 backdrop-blur-sm">
             <p className="text-lg font-semibold">{t("common.paused")}</p>
             <div className="flex gap-2">

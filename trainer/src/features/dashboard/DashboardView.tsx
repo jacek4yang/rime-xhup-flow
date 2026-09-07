@@ -37,7 +37,8 @@ const MODE_KEYS: Record<(typeof MODE_ORDER)[number], I18nKey> = {
 /** 推荐条目前置图标(按 kind 区分入口类型)。 */
 function RecommendationIcon({ kind }: { kind: Recommendation["kind"] }) {
   if (kind === "lesson") return <BookOpen aria-hidden className="size-4 shrink-0 text-primary" />;
-  if (kind === "practice-mode") return <Play aria-hidden className="size-4 shrink-0 text-primary" />;
+  if (kind === "practice-mode" || kind === "shape-confusion")
+    return <Play aria-hidden className="size-4 shrink-0 text-primary" />;
   return <RotateCcw aria-hidden className="size-4 shrink-0 text-muted-foreground" />;
 }
 
@@ -61,6 +62,7 @@ export function DashboardView({
   const lastMode = useTrainerStore((state) => state.lastMode);
   const progress = useTrainerStore((state) => state.progress);
   const keyErrors = useTrainerStore((state) => state.keyErrors);
+  const confusions = useTrainerStore((state) => state.confusions);
   const lessonEvidence = useTrainerStore((state) => state.lessonEvidence);
   const today = useTrainerStore((state) => state.daily[localDateKey()]);
   const weakItems = listWeakItems(index, progress, 5);
@@ -79,12 +81,13 @@ export function DashboardView({
       index,
       progressById: progress,
       keyErrors,
+      confusions,
       lessonEvidence,
       recentIds,
       now: Date.now(),
       limit: 3,
     });
-  }, [index, progress, keyErrors, lessonEvidence]);
+  }, [index, progress, keyErrors, confusions, lessonEvidence]);
 
   const openRecommendation = (rec: Recommendation) => {
     switch (rec.kind) {
@@ -93,6 +96,7 @@ export function DashboardView({
         else onOpenLearn?.();
         return;
       case "practice-mode":
+      case "shape-confusion":
         onStartPractice(rec.mode);
         return;
       default: {
@@ -204,7 +208,7 @@ export function DashboardView({
                       <span className="block truncate text-sm font-medium">
                         {rec.kind === "lesson"
                           ? rec.title
-                          : rec.kind === "practice-mode"
+                          : rec.kind === "practice-mode" || rec.kind === "shape-confusion"
                             ? t(MODE_LABELS[rec.mode])
                             : rec.target}
                       </span>
@@ -212,11 +216,13 @@ export function DashboardView({
                         {t(rec.reason)}
                       </span>
                     </span>
-                    {rec.kind !== "lesson" && rec.kind !== "practice-mode" && (
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {rec.code}
-                      </span>
-                    )}
+                    {rec.kind !== "lesson" &&
+                      rec.kind !== "practice-mode" &&
+                      rec.kind !== "shape-confusion" && (
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {rec.code}
+                        </span>
+                      )}
                     {rec.kind === "lesson" && (
                       <Badge variant="outline" className="shrink-0">
                         {rec.state === "needs-review"

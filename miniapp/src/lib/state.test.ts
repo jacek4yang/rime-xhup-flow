@@ -10,6 +10,7 @@ import {
   applyPerfect,
   emptyDailyStats,
   emptyProgress,
+  recordConfusion,
   type StorageAdapter,
 } from "@xhup/trainer-core";
 import {
@@ -48,6 +49,7 @@ describe("状态 Schema 与持久化校验边界", () => {
     state.progress["的:de"] = { ...emptyProgress(), attempts: 3, correct: 2, wrong: 1, mastery: 20, lastSeenAt: 42 };
     state.daily["2026-09-06"] = { ...emptyDailyStats(), questions: 5, keystrokes: 18 };
     state.keyErrors = { a: 2, q: 1 };
+    state.confusions = recordConfusion(recordConfusion({}, "k", "m", "shape1"), "x", "z", "sound1");
 
     const raw = serializeDocument(state);
     const restored = parsePersistedDocument(raw);
@@ -56,6 +58,7 @@ describe("状态 Schema 与持久化校验边界", () => {
     expect(restored!.progress["的:de"]!.attempts).toBe(3);
     expect(restored!.daily["2026-09-06"]!.keystrokes).toBe(18);
     expect(restored!.keyErrors).toEqual({ a: 2, q: 1 });
+    expect(restored!.confusions).toEqual(state.confusions);
   });
 
   it("损坏 JSON 返回 null(调用方回退默认值)", () => {
@@ -102,6 +105,21 @@ describe("状态 Schema 与持久化校验边界", () => {
     expect(sanitized.keyErrors).toEqual({ a: 3 });
   });
 
+  it("confusions:损坏条目逐条丢弃,好条目保留,缺省回 {}", () => {
+    const sanitized = sanitizePersisted({
+      state: {
+        confusions: {
+          "k>m@shape1": { expected: "k", actual: "m", position: "shape1", count: 3 },
+          bad: { expected: "k", actual: "MM", position: "shape1", count: 1 },
+          worse: "nope",
+        },
+      },
+    });
+    expect(Object.keys(sanitized.confusions)).toEqual(["k>m@shape1"]);
+    expect(sanitizePersisted(null).confusions).toEqual({});
+    expect(defaultAppState().confusions).toEqual({});
+  });
+
   it("V1 旧进度迁移:可恢复条目保留,新字段取默认", () => {
     const migrated = migrateLegacyProgress({
       "的:de": { attempts: 5, correct: 4, wrong: 1, streak: 2, mastery: 30, lastSeenAt: 100 },
@@ -138,6 +156,7 @@ describe("应用状态仓库(存储注入)", () => {
       keystrokes: 3,
       wrongKeyEvents: 1,
       wrongKeys: ["q"],
+      confusions: recordConfusion({}, "k", "m", "shape1"),
       chars: 1,
       corrections: 1,
       practiceMs: 6_000,
@@ -175,6 +194,39 @@ describe("应用状态仓库(存储注入)", () => {
     const store = createAppStore(storage, "test.state.v2");
     expect(store.getState().settings.language).toBe("zh");
     expect(store.getState().progress).toEqual({});
+  });
+
+  it("recordQuestionResult:混淆对按题合并落库并持久化(缺省载荷不破坏)", () => {
+    const storage = memoryStorage();
+    const store = createAppStore(storage, "test.state.v2");
+    const now = new Date(2026, 8, 6, 12, 0, 0).getTime();
+    const base = {
+      id: "好:hknc",
+      outcome: "imperfect" as const,
+      keystrokes: 5,
+      wrongKeyEvents: 1,
+      wrongKeys: ["m"],
+      chars: 1,
+      corrections: 0,
+      practiceMs: 600,
+      bestStreak: 0,
+    };
+    store.recordQuestionResult({ ...base, confusions: recordConfusion({}, "n", "m", "shape1"), now });
+    store.recordQuestionResult({
+      ...base,
+      confusions: recordConfusion(recordConfusion({}, "n", "m", "shape1"), "c", "d", "shape2"),
+      now: now + 1_000,
+    });
+    // 未带 confusions 的旧调用方:合并结果不变。
+    store.recordQuestionResult({ ...base, now: now + 2_000 });
+
+    const confusions = store.getState().confusions;
+    expect(confusions["n>m@shape1"]!.count).toBe(2);
+    expect(confusions["c>d@shape2"]!.count).toBe(1);
+
+    // 已持久化:新 store 实例读到相同聚合。
+    const reloaded = createAppStore(storage, "test.state.v2");
+    expect(reloaded.getState().confusions["n>m@shape1"]!.count).toBe(2);
   });
 
   it("resetProgress 清进度保留偏好;updateSettings 持久化", () => {

@@ -19,7 +19,8 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { itemAccuracy, listWeakItems } from "@xhup/trainer-core";
-import { aggregateWeakness, keyHeatmap } from "@xhup/trainer-core";
+import { aggregateWeakness, keyHeatmap, topConfusions, positionLabel } from "@xhup/trainer-core";
+import { confusionId } from "@xhup/trainer-core";
 import { formatPercent } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
 import type { I18nKey } from "@xhup/trainer-core";
@@ -62,6 +63,7 @@ export function WeaknessCenter({
   const { t } = useI18n();
   const progress = useTrainerStore((state) => state.progress);
   const keyErrors = useTrainerStore((state) => state.keyErrors);
+  const confusions = useTrainerStore((state) => state.confusions);
   const resetItemProgress = useTrainerStore((state) => state.resetItemProgress);
   const [filter, setFilter] = useState<ModeFilter>("all");
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -79,6 +81,8 @@ export function WeaknessCenter({
     [index, progress, keyErrors],
   );
   const heat = useMemo(() => keyHeatmap(keyErrors), [keyErrors]);
+  // 键位混淆:按次数取前 8 对(本机训练结果;词/句位降级为 other:N)。
+  const topConfusionList = useMemo(() => topConfusions(confusions, 8), [confusions]);
   const filtered =
     filter === "all"
       ? weakItems
@@ -216,6 +220,36 @@ export function WeaknessCenter({
                   <span className="sr-only">{count}</span>
                 </span>
               ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {topConfusionList.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("confusion.title")}</CardTitle>
+            <CardDescription>{t("confusion.hint")}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {topConfusionList.map((entry) => {
+              const label = positionLabel(entry.position);
+              return (
+                <div
+                  key={confusionId(entry.expected, entry.actual, entry.position)}
+                  className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
+                >
+                  <span className="font-mono text-sm font-semibold">
+                    {entry.expected.toUpperCase()} → {entry.actual.toUpperCase()}
+                  </span>
+                  <Badge variant="outline" className="text-xs">
+                    {t(label.key, label.params)}
+                  </Badge>
+                  <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                    ×{entry.count}
+                  </span>
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       )}

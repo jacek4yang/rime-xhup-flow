@@ -4,17 +4,20 @@
  * 期望形键来自规范数据:单字全码(音 2 码 + 形 2 码)的第 3、4 位分别
  * 是首形(shape1)与次形(shape2);3 码条目只有首形。
  *
- * 已知限制(诚实记录,不虚构数据):
- * - 引擎/持久化层目前只保存「条目级错误次数」与「按键级错误次数
- *   (keyErrors)」,没有保存逐次按键的「期望键 → 实际键」配对。因此:
- *   - shapeAccuracy 是条目级代理:见过的含形条目中「全程无错键完成」
- *     的占比,混入了音码位的失误,只能作参考而非逐键准确率;
- *   - confusedKeys 只能到「键级」:列出被误按的键(来自 keyErrors)并
- *     标注它是否在规范数据中充当形键;真正的期望→实际混淆对需要引擎
- *     状态扩展后再补充。
+ * 数据来源分层(诚实记录,不虚构数据):
+ * - confusionPairs:真实的「期望键 → 实际键」混淆对,来自引擎逐键捕获并
+ *   持久化的 ConfusionMap(learning/confusion),过滤到形位(shape1/shape2)
+ *   ——这是逐键准确信号,可信度高于条目级代理;
+ * - shapeAccuracy 仍是条目级代理:见过的含形条目中「全程无错键完成」的
+ *   占比,混入了音码位的失误,只能作参考而非逐键准确率;
+ * - confusedKeys 是键级回退:没有混淆数据时(旧持久化/尚未错键)列出
+ *   被误按的键并标注是否为规范形键;消费方应优先用 confusionPairs,
+ *   为空时回退 confusedKeys(优雅降级)。
  */
 
 import type { ItemProgress } from "../learning/progress";
+import type { KeyConfusion, ConfusionMap } from "../learning/confusion";
+import { sortedConfusions } from "../learning/confusion";
 import type { TrainerIndex } from "../data/trainer-index";
 
 /** 形键在编码中的位置角色。 */
@@ -38,7 +41,7 @@ export type WeakShapeKey = {
 
 /**
  * 键级混淆嫌疑:被误按的键 + 它是否为规范数据中的形键。
- * 逐键「期望 → 实际」对尚未持久化,这里不做任何臆测配对。
+ * 键级回退路径:没有混淆对数据时的优雅降级(见模块注释)。
  */
 export type ConfusedKeyEntry = {
   /** 被误按的键(小写)。 */
@@ -49,12 +52,26 @@ export type ConfusedKeyEntry = {
   isShapeKey: boolean;
 };
 
+/** 真实混淆对(期望形键 → 实际键,来自 ConfusionMap 的形位条目)。 */
+export type ShapeConfusionPair = {
+  /** 期望形键(小写)。 */
+  expected: string;
+  /** 实际按成的键(小写)。 */
+  actual: string;
+  /** 形位(仅 shape1/shape2;音位条目不在此列)。 */
+  position: "shape1" | "shape2";
+  /** 累计次数。 */
+  count: number;
+};
+
 export type ShapeMasteryReport = {
   /** 形位准确率代理(0..1;无样本为 null)。 */
   shapeAccuracy: { shape1: number | null; shape2: number | null };
   /** 薄弱形键(按 wrongRate → keyErrors → key 排序;至多 limit 条)。 */
   weakShapeKeys: WeakShapeKey[];
-  /** 键级混淆嫌疑(按 count 降序;至多 limit 条)。 */
+  /** 真实形位混淆对(按 count 降序;至多 limit 条;无数据时为空)。 */
+  confusionPairs: ShapeConfusionPair[];
+  /** 键级混淆嫌疑(按 count 降序;至多 limit 条;回退路径)。 */
   confusedKeys: ConfusedKeyEntry[];
 };
 
@@ -64,6 +81,8 @@ export type ShapeMasteryInput = {
   progressById: Record<string, ItemProgress>;
   /** 按键累积错误(小写字母 → 次数)。 */
   keyErrors: Record<string, number>;
+  /** 键位混淆聚合(可选;缺省视为尚无数据,走键级回退)。 */
+  confusions?: ConfusionMap;
   /** 列表截断(默认 8)。 */
   limit?: number;
 };
@@ -165,12 +184,31 @@ export function analyzeShapeMastery(input: ShapeMasteryInput): ShapeMasteryRepor
     .sort((a, b) => b.count - a.count || a.actual.localeCompare(b.actual))
     .slice(0, limit);
 
+  // 真实形位混淆对:只取具名 shape1/shape2 条目(sortedConfusions 已按
+  // count 降序 + 确定性决胜);音位与 {other:N} 条目不属于形码分析。
+  const confusionPairs: ShapeConfusionPair[] = (input.confusions
+    ? sortedConfusions(input.confusions)
+    : []
+  )
+    .filter(
+      (entry): entry is KeyConfusion & { position: "shape1" | "shape2" } =>
+        entry.position === "shape1" || entry.position === "shape2",
+    )
+    .map((entry) => ({
+      expected: entry.expected,
+      actual: entry.actual,
+      position: entry.position,
+      count: entry.count,
+    }))
+    .slice(0, limit);
+
   return {
     shapeAccuracy: {
       shape1: totalWithShape1 === 0 ? null : round3(cleanWithShape1 / totalWithShape1),
       shape2: totalWithShape2 === 0 ? null : round3(cleanWithShape2 / totalWithShape2),
     },
     weakShapeKeys: weakShapeKeys.slice(0, limit),
+    confusionPairs,
     confusedKeys,
   };
 }
