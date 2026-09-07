@@ -15,6 +15,7 @@
 #![forbid(unsafe_code)]
 
 pub mod candidates;
+pub mod compat;
 pub mod cost;
 pub mod dynamic;
 pub mod frequency;
@@ -32,6 +33,10 @@ pub mod two_key_study;
 pub use candidates::{
     CandidateEnumerationSpec, CandidateGrammar, EnumerationStats, Mode, ShortcutCandidate,
     ShortcutMode, WordTarget, enumerate_targets, enumerate_targets_with_spec,
+};
+pub use compat::{
+    CompatRow, CompatibilityReport, CurrentHit, ReferenceEntry, TierCompat, compare, dump_diff_tsv,
+    parse_reference_tsv, render_report as render_compat_report,
 };
 pub use cost::{CostBreakdown, CostModel};
 pub use dynamic::DynamicCandidateKind;
