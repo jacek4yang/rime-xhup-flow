@@ -35,7 +35,7 @@ const THEMES: ThemePreference[] = ["system", "light", "dark"];
 const HINT_MODES: HintMode[] = ["always", "on-delay", "on-error", "hidden"];
 const DIFFICULTIES: Difficulty[] = ["beginner", "daily", "full"];
 
-export function SettingsView() {
+export function SettingsView({ onRerunOnboarding }: { onRerunOnboarding?: () => void }) {
   const index = useTrainerIndex();
   const theme = useTrainerStore((state) => state.theme);
   const hintMode = useTrainerStore((state) => state.hintMode);
@@ -183,6 +183,17 @@ export function SettingsView() {
             <span className="font-mono tabular-nums">
               {index.dataset.entries.length}
             </span>
+          </div>
+          <Separator className="my-2" />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">{t("settings.onboarding")}</span>
+            <Button
+              variant="outline"
+              className="min-h-11"
+              onClick={onRerunOnboarding}
+            >
+              {t("settings.rerunOnboarding")}
+            </Button>
           </div>
           <Separator className="my-2" />
           <p className="text-sm text-muted-foreground">
