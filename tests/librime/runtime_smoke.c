@@ -324,13 +324,13 @@ int main(int argc, char **argv) {
     report(has_active_composition(), "aibe → 组合仍活动(未截断)", NULL);
     reset_composition();
 
-    /* 4 键:bcjy(本次交易)是 5 键 ZR 简码 bcjyu(不参与)的 strict prefix。 */
-    type_keys("bcjy");
-    check_only("bcjy → 菜单含 本次交易(继续前)", "本次交易", 0);
-    report(!has_commit() && has_active_composition(), "bcjy → 继续前无 auto commit", NULL);
-    type_keys("u");
-    check_only("bcjyu → 菜单含 不参与(继续后)", "不参与", 1);
-    report(has_active_composition(), "bcjyu → 组合仍活动(未截断)", NULL);
+    /* 4 键:bjqu(不计其数)是 5 键 ZR 简码 bjqui(不就是)的 strict prefix。 */
+    type_keys("bjqu");
+    check_only("bjqu → 菜单含 不计其数(继续前)", "不计其数", 0);
+    report(!has_commit() && has_active_composition(), "bjqu → 继续前无 auto commit", NULL);
+    type_keys("i");
+    check_only("bjqui → 菜单含 不就是(继续后)", "不就是", 1);
+    report(has_active_composition(), "bjqui → 组合仍活动(未截断)", NULL);
     reset_composition();
 
     /* 6 键:mwyzng(没有哪个)是 8 键固定词码 mwyznggz(没有能够)的 strict prefix。 */
