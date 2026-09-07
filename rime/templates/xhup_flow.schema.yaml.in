@@ -16,7 +16,8 @@ schema:
     词语按逐字双拼两码拼接,二字词仅收录不与规范四码单字冲突者;
     高稳健 FIXED_FIRST 词语简码由独立的第二 translator 提供,严格排在
     既有固定候选之后,不改变任何已有候选的相对次序;
-    自动组句与用户词学习仍未开启,长短语与更多简码将在后续数据层加入。
+    Flow 引擎提供连续组句与本地用户词学习(独立第三 translator,
+    initial_quality 0,严格排在全部静态候选之后;用户数据仅存本地)。
 
 switches:
   - name: ascii_mode
@@ -45,14 +46,18 @@ engine:
     - punct_translator
     - table_translator
     - table_translator@fixed_first
+    - table_translator@flow
+    - table_translator@learn
+  filters:
+    - uniquifier
 
 speller:
   alphabet: zyxwvutsrqponmlkjihgfedcba
 
 # primary translator:全部既有固定层与零冲突简码层。initial_quality
 # 1000000 仅作为 translator 间优先级栅栏(常数同时加到全部 primary
-# 候选,其内部相对次序完全不变),保证 FIXED_FIRST 候选严格排在既有
-# 固定候选之后;它不是候选词频,也不参与 primary 内部排序。
+# 候选,其内部相对次序完全不变),保证 FIXED_FIRST/Flow 候选严格排在
+# 既有固定候选之后;它不是候选词频,也不参与 primary 内部排序。
 translator:
   dictionary: xhup_flow
   enable_completion: false
@@ -67,6 +72,39 @@ fixed_first:
   enable_completion: false
   enable_sentence: false
   enable_user_dict: false
+  initial_quality: 0
+
+# Flow translator:连续组句 + 句子词条学习。专用组句词典
+# xhup_flow_flow 仅含词条 canonical 全码(无单字、无简码别名):句子
+# 只由词组成,分段质量高,不产生逐字退化句子。携带共享用户词典
+# xhup_flow_user(句子候选属于用户词典语言,提交时 Memorize 学习
+# 其词条元素);initial_quality 0 保证候选永远位于全部静态候选之后。
+flow:
+  dictionary: xhup_flow_flow
+  user_dict: xhup_flow_user
+  enable_completion: false
+  enable_sentence: true
+  sentence_over_completion: true
+  enable_user_dict: true
+  initial_quality: 0
+
+# learn translator:学习短语编码(encoder)。学习词典 xhup_flow_learn
+# 含单字 + 词条全码(单字是规则式短语编码原语);enable_sentence
+# false(单字组句会产生退化句子,组句由 flow translator 负责)。
+# 单字/词条 exact 查询与 primary 静态层完全重合,经 uniquifier 去重后
+# 不可见。共享同一用户词典 xhup_flow_user:flow 层句子提交属于该语言,
+# 本层 Memorize 触发多元素 EncodePhrase,把 ≥5 字短语按「逐字声码
+# 首键」规则编码入库。
+learn:
+  dictionary: xhup_flow_learn
+  user_dict: xhup_flow_user
+  enable_completion: false
+  enable_sentence: false
+  enable_user_dict: true
+  enable_encoder: true
+  encode_commit_history: true
+  max_phrase_length: 20
+  max_homographs: 1
   initial_quality: 0
 
 punctuator:

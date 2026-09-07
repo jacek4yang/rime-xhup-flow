@@ -24,6 +24,7 @@ mod frequency;
 mod package;
 mod rime;
 mod rime_fixed_first_shortcuts;
+mod rime_flow;
 mod rime_shortcuts;
 mod rime_two_key_shortcuts;
 mod rime_word_shortcuts;
@@ -50,6 +51,10 @@ pub use rime::{
 };
 pub use rime_fixed_first_shortcuts::{
     RIME_FIXED_FIRST_SHORTCUT_DICTIONARY_FILENAME, generate_rime_fixed_first_shortcut_dictionary,
+};
+pub use rime_flow::{
+    FLOW_ENCODER_MAX_PHRASE_LENGTH, RIME_FLOW_DICTIONARY_FILENAME, RIME_LEARN_DICTIONARY_FILENAME,
+    flow_encoder_yaml, generate_rime_flow_dictionary, generate_rime_learn_dictionary,
 };
 pub use rime_shortcuts::{RIME_SHORTCUT_DICTIONARY_FILENAME, generate_rime_shortcut_dictionary};
 pub use rime_two_key_shortcuts::{

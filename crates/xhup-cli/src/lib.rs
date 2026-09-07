@@ -1,14 +1,71 @@
 //! XHUP Flow 命令行工具:Rime 源文件生成等开发/构建命令的编排边界。
 //!
 //! 本 crate 只负责参数解析与文件系统编排;生成内容由 `xhup-generator`
-//! 提供,本 crate 不重复任何生成逻辑。
+//! 提供,用户学习管理由 `learning` 模块(包装 librime 官方
+//! `rime_dict_manager`)提供,本 crate 不重复任何业务逻辑。
 #![forbid(unsafe_code)]
+
+pub mod learning;
 
 use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+
+/// 学习管理子命令参数(包装 [`learning`] 模块;本 crate 只做参数与
+/// 打印编排)。
+#[derive(Debug, Args)]
+struct LearningArgs {
+    #[command(subcommand)]
+    action: LearningAction,
+}
+
+#[derive(Debug, Subcommand)]
+enum LearningAction {
+    /// 查询学习状态(用户词典 / DB / 快照存在性;不输出学习内容)
+    Status {
+        /// Rime 用户数据目录
+        #[arg(long)]
+        user_data_dir: PathBuf,
+        /// rime_dict_manager 路径(缺省从 PATH 查找)
+        #[arg(long)]
+        dict_manager: Option<PathBuf>,
+    },
+    /// 导出用户词典快照(<name>.userdb.txt,标准 Rime 文本格式)
+    Export {
+        /// Rime 用户数据目录
+        #[arg(long)]
+        user_data_dir: PathBuf,
+        /// 快照输出目录(缺省写入用户数据目录)
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
+        /// rime_dict_manager 路径(缺省从 PATH 查找)
+        #[arg(long)]
+        dict_manager: Option<PathBuf>,
+    },
+    /// 从快照恢复用户词典(跨安装迁移)
+    Import {
+        /// Rime 用户数据目录
+        #[arg(long)]
+        user_data_dir: PathBuf,
+        /// 快照文件(文件名必须为 xhup_flow_user.userdb.txt)
+        #[arg(long)]
+        snapshot: PathBuf,
+        /// rime_dict_manager 路径(缺省从 PATH 查找)
+        #[arg(long)]
+        dict_manager: Option<PathBuf>,
+    },
+    /// 重置用户词典(破坏性;只删除 xhup_flow_user,需 --yes)
+    Reset {
+        /// Rime 用户数据目录
+        #[arg(long)]
+        user_data_dir: PathBuf,
+        /// 确认破坏性重置
+        #[arg(long)]
+        yes: bool,
+    },
+}
 
 use clap::{Args, Parser, Subcommand};
 use xhup_generator::{TRAINER_DATA_FILENAME, generate_rime_artifacts, generate_trainer_dataset};
@@ -25,6 +82,8 @@ pub struct Cli {
 enum Command {
     /// 生成当前已支持的 Rime 源文件
     Generate(GenerateArgs),
+    /// 用户词学习管理(status / export / import / reset)
+    Learning(LearningArgs),
 }
 
 #[derive(Debug, Args)]
@@ -79,6 +138,8 @@ pub enum CliError {
         /// 底层 I/O 错误。
         source: io::Error,
     },
+    /// 学习管理失败(status / export / import / reset)。
+    Learning(learning::LearningError),
 }
 
 impl fmt::Display for CliError {
@@ -98,6 +159,7 @@ impl fmt::Display for CliError {
             } => {
                 write!(f, "无法替换最终产物 {}: {source}", artifact.display())
             }
+            Self::Learning(source) => write!(f, "{source}"),
         }
     }
 }
@@ -108,8 +170,15 @@ impl Error for CliError {
             Self::CreateDirectory { source, .. }
             | Self::WriteTemporaryFile { source, .. }
             | Self::ReplaceArtifact { source, .. } => Some(source),
+            Self::Learning(source) => Some(source),
             Self::OutputNotDirectory { .. } => None,
         }
+    }
+}
+
+impl From<learning::LearningError> for CliError {
+    fn from(source: learning::LearningError) -> Self {
+        Self::Learning(source)
     }
 }
 
@@ -136,6 +205,58 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                     "已生成训练器数据集: {}",
                     args.output.join(TRAINER_DATA_FILENAME).display()
                 );
+                Ok(())
+            }
+        },
+        Command::Learning(args) => match args.action {
+            LearningAction::Status {
+                user_data_dir,
+                dict_manager,
+            } => {
+                let status = learning::status(&user_data_dir, dict_manager.as_deref())?;
+                println!("用户词典: {}", status.user_dict);
+                println!("用户数据目录: {}", status.user_data_dir.display());
+                if status.db_exists {
+                    println!(
+                        "用户词典 DB: 存在({})",
+                        status.db_path.expect("db_exists 时必有路径").display()
+                    );
+                } else {
+                    println!("用户词典 DB: 不存在(尚无学习数据)");
+                }
+                if let Some(snapshot) = status.snapshot_path {
+                    println!("已有快照: {}", snapshot.display());
+                }
+                if !status.known_user_dicts.is_empty() {
+                    println!("本目录用户词典: {}", status.known_user_dicts.join(", "));
+                }
+                Ok(())
+            }
+            LearningAction::Export {
+                user_data_dir,
+                output_dir,
+                dict_manager,
+            } => {
+                let snapshot = learning::export(
+                    &user_data_dir,
+                    output_dir.as_deref(),
+                    dict_manager.as_deref(),
+                )?;
+                println!("已导出快照: {}", snapshot.display());
+                Ok(())
+            }
+            LearningAction::Import {
+                user_data_dir,
+                snapshot,
+                dict_manager,
+            } => {
+                learning::import(&user_data_dir, &snapshot, dict_manager.as_deref())?;
+                println!("已从快照恢复: {}", snapshot.display());
+                Ok(())
+            }
+            LearningAction::Reset { user_data_dir, yes } => {
+                learning::reset(&user_data_dir, yes)?;
+                println!("已重置用户词典 {}", learning::FLOW_USER_DICT_NAME);
                 Ok(())
             }
         },

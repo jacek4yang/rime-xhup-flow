@@ -1,0 +1,66 @@
+# Rime schema
+# encoding: utf-8
+---
+schema:
+  schema_id: xhup_flow_static
+  name: 小鹤音形(静态)
+  version: "{{VERSION}}"
+  author:
+    - XHUP Flow
+  description: |
+    XHUP Flow 的静态兼容方案:与 xhup_flow 完全相同的静态输入层
+    (一级简码、规范单字、全部词语简码、固定词语),不含 Flow 引擎
+    (无组句、无用户词学习、无用户词典)。适用于调试、性能基准、
+    隐私敏感场景与静态/动态 A/B 对照。不重复任何静态词典:与
+    xhup_flow 引用同一组词典文件,仅 translator 组成不同。
+
+switches:
+  - name: ascii_mode
+    reset: 0
+    states: [中文, 西文]
+  - name: ascii_punct
+    states: [。，, ．，]
+  - name: full_shape
+    states: [半角, 全角]
+
+engine:
+  processors:
+    - ascii_composer
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - ascii_segmentor
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - punct_translator
+    - table_translator
+    - table_translator@fixed_first
+
+speller:
+  alphabet: zyxwvutsrqponmlkjihgfedcba
+
+translator:
+  dictionary: xhup_flow
+  enable_completion: false
+  enable_sentence: false
+  enable_user_dict: false
+  initial_quality: 1000000
+
+fixed_first:
+  dictionary: xhup_flow_fixed_first_shortcuts
+  enable_completion: false
+  enable_sentence: false
+  enable_user_dict: false
+  initial_quality: 0
+
+punctuator:
+  import_preset: default
+
+key_binder:
+  import_preset: default
