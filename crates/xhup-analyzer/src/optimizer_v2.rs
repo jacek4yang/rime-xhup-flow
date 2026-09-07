@@ -9,7 +9,7 @@
 //!
 //! - 每个重要信号显式、可测、缺失显式(None 绝不静默当 0);
 //! - 参数集中在一个结构体,扫描框架直接采样;
-//! - 效用计算纯函数化,可解释(UtilityBreakdown 逐项可查);
+//! - 效用计算纯函数化,可解释(UtilityBreakdownV2 逐项可查);
 //! - 确定性:同输入同参数 → 同输出。
 
 use crate::evidence::LexicalEvidence;
@@ -121,7 +121,10 @@ impl EvidenceWeights {
     pub fn effective(&self, evidence: &LexicalEvidence) -> (f64, f64, f64, f64) {
         let mut weights = [
             (self.global_share, true), // 全局频率恒有(万象,canonical 前提)
-            (self.conversation_share, evidence.conversation_frequency().is_some()),
+            (
+                self.conversation_share,
+                evidence.conversation_frequency().is_some(),
+            ),
             (
                 self.sentence_coverage_weight,
                 evidence.sentence_coverage().is_some(),
@@ -154,7 +157,7 @@ impl EvidenceWeights {
 
 /// 效用分解:每一项显式可查(可解释性门禁)。
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct UtilityBreakdown {
+pub struct UtilityBreakdownV2 {
     /// 频率效用(多信号加权和)。
     pub frequency_utility: f64,
     /// 节省键数(相对全码)。
@@ -171,7 +174,7 @@ pub struct UtilityBreakdown {
     pub rare_pollution: f64,
 }
 
-impl UtilityBreakdown {
+impl UtilityBreakdownV2 {
     /// 总效用(频率收益 + 省键 − 各项成本)。
     pub fn total(&self) -> f64 {
         self.frequency_utility + self.keystrokes_saved + self.xhup_prior
@@ -196,11 +199,14 @@ pub fn evaluate_assignment(
     prior: f64,
     full_code_len: usize,
     pattern_consistent: bool,
-) -> UtilityBreakdown {
+) -> UtilityBreakdownV2 {
     let (wg, wc, wsc, wcd) = weights.effective(evidence);
     // 各信号统一到可比尺度:频率类信号取 log1p 压缩动态范围。
     let global = (evidence.normalized_frequency()).ln_1p();
-    let conversation = evidence.conversation_frequency().map(f64::ln_1p).unwrap_or(0.0);
+    let conversation = evidence
+        .conversation_frequency()
+        .map(f64::ln_1p)
+        .unwrap_or(0.0);
     let sentence = evidence.sentence_coverage().map(f64::ln_1p).unwrap_or(0.0);
     let diversity = evidence
         .context_diversity()
@@ -222,7 +228,7 @@ pub fn evaluate_assignment(
         0.0
     };
 
-    UtilityBreakdown {
+    UtilityBreakdownV2 {
         frequency_utility,
         keystrokes_saved,
         xhup_prior: prior - prior_penalty - cognitive_penalty,
@@ -238,7 +244,7 @@ mod tests {
     use super::*;
     use crate::evidence::LexicalEvidenceSet;
 
-    fn evidence_of(word: &str) -> (crate::AnalysisData, LexicalEvidenceSet) {
+    fn evidence_of() -> (crate::AnalysisData, LexicalEvidenceSet) {
         let data = crate::build_analysis();
         let set = LexicalEvidenceSet::build(&data.words, &data.frequency);
         (data, set)
@@ -246,7 +252,7 @@ mod tests {
 
     #[test]
     fn effective_weights_renormalize_over_missing_signals() {
-        let (_, set) = evidence_of("我们");
+        let (_, set) = evidence_of();
         let all_missing = set
             .entries()
             .iter()
@@ -270,13 +276,17 @@ mod tests {
     #[test]
     fn shorter_slot_with_low_rank_beats_full_code_for_common_word() {
         // 高频词 3 键首选应显著优于 4 键全码(rank 视占用)。
-        let (_, set) = evidence_of("我们");
+        let (_, set) = evidence_of();
         let women = set.entries().iter().find(|e| e.word() == "我们").unwrap();
         let cost = CostModelV2::default();
         let weights = EvidenceWeights::default();
         let shortcut = evaluate_assignment(
             women,
-            &CandidateSlot { key_len: 3, rank: 1, occupant_mass: 0.0 },
+            &CandidateSlot {
+                key_len: 3,
+                rank: 1,
+                occupant_mass: 0.0,
+            },
             &cost,
             &weights,
             0.5,
@@ -285,7 +295,11 @@ mod tests {
         );
         let full = evaluate_assignment(
             women,
-            &CandidateSlot { key_len: 4, rank: 1, occupant_mass: 0.0 },
+            &CandidateSlot {
+                key_len: 4,
+                rank: 1,
+                occupant_mass: 0.0,
+            },
             &cost,
             &weights,
             0.5,
@@ -305,16 +319,22 @@ mod tests {
     #[test]
     fn rare_word_on_scarce_slot_is_penalized() {
         // 长尾词占 2 键稀缺位 → rare_pollution 生效。
-        let (_, set) = evidence_of("众所周知");
+        // 阈值标定(2026-09 真实分布):normalized 中位 ≈2.6e-6、P25 ≈2.0e-6,
+        // 1e-6 ≈ 最底五分位;「木寨」(万象分数 3,归一化 ≈5e-9)是真长尾。
+        let (_, set) = evidence_of();
         let rare = set
             .entries()
             .iter()
-            .find(|e| e.word() == "众所周知")
-            .unwrap();
+            .find(|e| e.word() == "木寨")
+            .expect("木寨 应在库");
         let cost = CostModelV2::default();
         let breakdown = evaluate_assignment(
             rare,
-            &CandidateSlot { key_len: 2, rank: 1, occupant_mass: 0.0 },
+            &CandidateSlot {
+                key_len: 2,
+                rank: 1,
+                occupant_mass: 0.0,
+            },
             &cost,
             &EvidenceWeights::default(),
             0.5,
@@ -331,8 +351,16 @@ mod tests {
     #[test]
     fn disruption_scales_with_occupant_mass() {
         let cost = CostModelV2::default();
-        let empty = CandidateSlot { key_len: 3, rank: 2, occupant_mass: 0.0 };
-        let occupied = CandidateSlot { key_len: 3, rank: 2, occupant_mass: 0.7 };
+        let empty = CandidateSlot {
+            key_len: 3,
+            rank: 2,
+            occupant_mass: 0.0,
+        };
+        let occupied = CandidateSlot {
+            key_len: 3,
+            rank: 2,
+            occupant_mass: 0.7,
+        };
         assert_eq!(cost.disruption_cost(&empty), 0.0);
         assert!(cost.disruption_cost(&occupied) > 0.0);
         assert!(
@@ -343,9 +371,13 @@ mod tests {
 
     #[test]
     fn evaluation_is_deterministic() {
-        let (_, set) = evidence_of("我们");
+        let (_, set) = evidence_of();
         let women = set.entries().iter().find(|e| e.word() == "我们").unwrap();
-        let slot = CandidateSlot { key_len: 2, rank: 1, occupant_mass: 0.3 };
+        let slot = CandidateSlot {
+            key_len: 2,
+            rank: 1,
+            occupant_mass: 0.3,
+        };
         let a = evaluate_assignment(
             women,
             &slot,

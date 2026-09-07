@@ -23,6 +23,7 @@ pub mod evidence;
 pub mod frequency;
 pub mod occupancy;
 pub mod optimize;
+pub mod optimizer_v2;
 pub mod policy;
 pub mod prefix;
 pub mod production;
@@ -52,6 +53,9 @@ pub use occupancy::{
 pub use optimize::{
     CandidateEvaluation, DisruptionRecord, OptimizationOutcome, OptimizationProfile, ProfileStats,
     ShortcutAssignment, UtilityBreakdown, evaluate_candidate, evaluate_target, optimize,
+};
+pub use optimizer_v2::{
+    CandidateSlot, CostModelV2, EvidenceWeights, UtilityBreakdownV2, evaluate_assignment,
 };
 pub use prefix::{
     FixedFirstLengthSentinel, FixedFirstPrefixAudit, FixedFirstPrefixSentinel, LengthSentinels,
