@@ -62,6 +62,10 @@ export function AppShell() {
   const [view, setView] = useState<ViewKey>(ROOT_VIEW);
   /** 跳入练习时预选的模式(今日的模式卡片)。 */
   const [presetMode, setPresetMode] = useState<PracticeMode | null>(null);
+  /** 预设模式的来源章节(学习中心「去练习」;证据归因用)。 */
+  const [presetChapterId, setPresetChapterId] = useState<string | null>(null);
+  /** 学习中心的初始章节请求(今日推荐跳转)。 */
+  const [learnChapterRequest, setLearnChapterRequest] = useState<string | null>(null);
   /** 跳入练习时指定的复习条目(错题「练这些」)。 */
   const [reviewEntries, setReviewEntries] = useState<TrainingItem[] | null>(null);
   /** 首次启动向导的重新运行信号(设置页触发,自增)。 */
@@ -122,8 +126,16 @@ export function AppShell() {
     return () => clearTimeout(timer);
   }, [exitToast]);
 
-  const goPractice = (mode: PracticeMode) => {
+  // 学习中心章节请求只生效一次:离开学习页即清除,避免下次进入又跳章。
+  useEffect(() => {
+    if (view !== "learn" && learnChapterRequest !== null) {
+      setLearnChapterRequest(null);
+    }
+  }, [view, learnChapterRequest]);
+
+  const goPractice = (mode: PracticeMode, chapterId?: string) => {
     setPresetMode(mode);
+    setPresetChapterId(chapterId ?? null);
     setReviewEntries(null);
     navigate("practice");
   };
@@ -150,14 +162,21 @@ export function AppShell() {
             onStartPractice={goPractice}
             onShowReview={() => navigate("review")}
             onOpenLearn={() => navigate("learn")}
+            onOpenChapter={(chapterId) => {
+              setLearnChapterRequest(chapterId);
+              navigate("learn");
+            }}
+            onPracticeItems={goReviewPractice}
           />
         )}
         {view === "practice" && (
           <PracticeSetupView
             presetMode={presetMode}
+            presetChapterId={presetChapterId}
             reviewEntries={reviewEntries}
             onPresetConsumed={() => {
               setPresetMode(null);
+              setPresetChapterId(null);
               setReviewEntries(null);
             }}
             onExitToToday={exitToToday}
@@ -166,7 +185,12 @@ export function AppShell() {
         {view === "review" && <WeaknessCenter onPracticeEntries={goReviewPractice} />}
         {view === "stats" && <StatsView />}
         {view === "reference" && <ReferenceView />}
-        {view === "learn" && <LearnView onStartPractice={goPractice} />}
+        {view === "learn" && (
+          <LearnView
+            onStartPractice={goPractice}
+            initialChapterId={learnChapterRequest ?? undefined}
+          />
+        )}
         {view === "product" && <ControlCenterView />}
         {view === "settings" && (
           <SettingsView
@@ -192,6 +216,7 @@ export function AppShell() {
         reopenSignal={onboardingReopen}
         onStartTraining={(mode) => {
           setPresetMode(mode);
+          setPresetChapterId(null);
           setReviewEntries(null);
           setView("practice");
         }}

@@ -6,38 +6,92 @@
  * 不新建第二套训练逻辑。
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Play } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import type { I18nKey } from "@xhup/trainer-core";
+import type { I18nKey, LessonState } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import type { PracticeMode } from "@xhup/trainer-core";
-import { LEARN_CHAPTERS, LEVEL_LABELS, type LearnSection } from "@xhup/trainer-core";
+import {
+  deriveAllLessonStates,
+  LEARN_CHAPTERS,
+  LEVEL_LABELS,
+  type LearnSection,
+} from "@xhup/trainer-core";
 import {
   buildShapeKeyStats,
   topShapeKeys,
   type ShapeKeyStat,
 } from "@xhup/trainer-core";
+import { useTrainerStore } from "@/stores/trainer-store";
+
+/** 章节建议状态 → 徽标文案。 */
+const LESSON_STATE_LABELS: Record<LessonState, I18nKey> = {
+  "not-started": "learn.state.notStarted",
+  learning: "learn.state.learning",
+  practicing: "learn.state.practicing",
+  mastered: "learn.state.mastered",
+  "needs-review": "learn.state.needsReview",
+};
+
+/** 章节建议状态 → 徽标样式(建议性标签,不做门控)。 */
+function lessonStateBadgeVariant(state: LessonState): "default" | "secondary" | "destructive" | "outline" {
+  switch (state) {
+    case "mastered":
+      return "default";
+    case "needs-review":
+      return "destructive";
+    case "practicing":
+      return "secondary";
+    default:
+      return "outline";
+  }
+}
 
 export function LearnView({
   onStartPractice,
+  initialChapterId,
 }: {
-  onStartPractice: (mode: PracticeMode) => void;
+  onStartPractice: (mode: PracticeMode, chapterId?: string) => void;
+  /** 外部请求打开的章节(今日推荐跳转);仅作为初始值。 */
+  initialChapterId?: string;
 }) {
   const { t } = useI18n();
   const index = useTrainerIndex();
-  const [chapterId, setChapterId] = useState<string>(LEARN_CHAPTERS[0].id);
+  const initial = LEARN_CHAPTERS.some((chapter) => chapter.id === initialChapterId)
+    ? initialChapterId!
+    : LEARN_CHAPTERS[0].id;
+  const [chapterId, setChapterId] = useState<string>(initial);
   const chapterIndex = LEARN_CHAPTERS.findIndex((chapter) => chapter.id === chapterId);
   const chapter = LEARN_CHAPTERS[chapterIndex] ?? LEARN_CHAPTERS[0];
+
+  const progress = useTrainerStore((state) => state.progress);
+  const lessonEvidence = useTrainerStore((state) => state.lessonEvidence);
+  const markLessonOpened = useTrainerStore((state) => state.markLessonOpened);
+
+  // 打开章节即记录证据(仅 openedAt;建议性标签的数据源,可重复触发)。
+  useEffect(() => {
+    markLessonOpened(chapter.id, Date.now());
+  }, [chapter.id, markLessonOpened]);
 
   // 全码单字数据只聚合一次。
   const shapeStats = useMemo(
     () => buildShapeKeyStats(index.dataset.entries),
     [index.dataset.entries],
+  );
+
+  // 各章节建议状态(打开时刻的一次性快照;纯展示,不门控)。
+  const lessonStates = useMemo(
+    () => deriveAllLessonStates(index, progress, lessonEvidence, Date.now()),
+    [index, progress, lessonEvidence],
+  );
+  const stateById = useMemo(
+    () => new Map(lessonStates.map((entry) => [entry.chapter.id, entry.state])),
+    [lessonStates],
   );
 
   return (
@@ -59,8 +113,17 @@ export function LearnView({
                 : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
             )}
           >
-            <span className="text-sm font-medium">
-              {itemIndex + 1}. {item.title}
+            <span className="flex w-full items-center gap-2">
+              <span className="text-sm font-medium">
+                {itemIndex + 1}. {item.title}
+              </span>
+              <Badge
+                variant={lessonStateBadgeVariant(stateById.get(item.id) ?? "not-started")}
+                className="ml-auto shrink-0 px-1.5 py-0 text-[10px]"
+                aria-label={t("learn.stateBadgeAria")}
+              >
+                {t(LESSON_STATE_LABELS[stateById.get(item.id) ?? "not-started"])}
+              </Badge>
             </span>
             <span className="hidden text-xs text-muted-foreground lg:block">
               {LEVEL_LABELS[item.level]} · {item.summary}
@@ -74,6 +137,12 @@ export function LearnView({
           <header className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
               <Badge variant="secondary">{LEVEL_LABELS[chapter.level]}</Badge>
+              <Badge
+                variant={lessonStateBadgeVariant(stateById.get(chapter.id) ?? "not-started")}
+                aria-label={t("learn.stateBadgeAria")}
+              >
+                {t(LESSON_STATE_LABELS[stateById.get(chapter.id) ?? "not-started"])}
+              </Badge>
               <span className="text-xs text-muted-foreground">
                 {t("learn.chapterOf", {
                   current: chapterIndex + 1,
@@ -91,6 +160,7 @@ export function LearnView({
               section={section}
               t={t}
               shapeStats={shapeStats}
+              chapterId={chapter.id}
               onStartPractice={onStartPractice}
             />
           ))}
@@ -125,12 +195,14 @@ function SectionView({
   section,
   t,
   shapeStats,
+  chapterId,
   onStartPractice,
 }: {
   section: LearnSection;
   t: (key: I18nKey, params?: Record<string, string | number>) => string;
   shapeStats: ShapeKeyStat[];
-  onStartPractice: (mode: PracticeMode) => void;
+  chapterId: string;
+  onStartPractice: (mode: PracticeMode, chapterId?: string) => void;
 }) {
   switch (section.kind) {
     case "text":
@@ -171,7 +243,7 @@ function SectionView({
           <h3 className="text-sm font-semibold">{section.heading}</h3>
           <Button
             className="min-h-11 w-fit"
-            onClick={() => onStartPractice(section.mode)}
+            onClick={() => onStartPractice(section.mode, chapterId)}
           >
             <Play aria-hidden />
             {t(section.label)}

@@ -447,6 +447,20 @@ const zh = {
   "keyDetail.myErrorsNone": "本地记录中此键暂无误按。",
   "keyDetail.errorsNote": "统计来自本机练习数据,只反映你自己的错误,不构成通用统计。",
   "reference.keyboardTapHint": "点按任意键查看双拼映射、形码分布与例字。",
+  "dashboard.recommendations": "今日推荐",
+  "dashboard.recommendEmpty": "先完成一组练习,推荐会随进度生成。",
+  "recommend.reasonReview": "掌握度回落,复习巩固",
+  "recommend.reasonWeak": "错误率较高,优先攻克",
+  "recommend.reasonRecentMistake": "最近练错,趁热打铁",
+  "recommend.reasonLesson": "学习路径的下一站",
+  "recommend.reasonLessonReview": "本章建议复习",
+  "recommend.reasonNewPool": "高频新内容,拓展覆盖",
+  "learn.stateBadgeAria": "章节学习状态(建议)",
+  "learn.state.notStarted": "未开始",
+  "learn.state.learning": "学习中",
+  "learn.state.practicing": "练习中",
+  "learn.state.mastered": "已掌握",
+  "learn.state.needsReview": "建议复习",
 } as const;
 
 export type I18nKey = keyof typeof zh;
@@ -905,6 +919,21 @@ const en: Record<I18nKey, string> = {
   "keyDetail.myErrorsNone": "No local mistakes recorded for this key.",
   "keyDetail.errorsNote": "Statistics come from on-device practice data and describe only your own mistakes.",
   "reference.keyboardTapHint": "Tap any key for double pinyin mapping, shape distribution and examples.",
+  "dashboard.recommendations": "Today's picks",
+  "dashboard.recommendEmpty":
+    "Finish a session first — picks appear as you progress.",
+  "recommend.reasonReview": "Mastery dipped — review it",
+  "recommend.reasonWeak": "High error rate — tackle it first",
+  "recommend.reasonRecentMistake": "Missed recently — retry while fresh",
+  "recommend.reasonLesson": "Next stop on your learning path",
+  "recommend.reasonLessonReview": "This lesson needs review",
+  "recommend.reasonNewPool": "New frequent items — broaden coverage",
+  "learn.stateBadgeAria": "Advisory lesson status",
+  "learn.state.notStarted": "Not started",
+  "learn.state.learning": "Learning",
+  "learn.state.practicing": "Practicing",
+  "learn.state.mastered": "Mastered",
+  "learn.state.needsReview": "Needs review",
 } as const;
 
 const dictionaries: Record<Language, Record<I18nKey, string>> = { zh, en };

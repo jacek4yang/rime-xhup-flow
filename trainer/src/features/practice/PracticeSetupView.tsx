@@ -36,6 +36,11 @@ export type PracticeConfig = {
   targetLength: number;
   /** 复习会话的指定条目;为空则按模式+难度选题。 */
   entries?: TrainingItem[];
+  /**
+   * 发起本次练习的章节(学习中心「去练习」);空则不属于任何章节。
+   * 仅用于章节学习证据归因,不影响选题与评分。
+   */
+  chapterId?: string;
 };
 
 const MODES: PracticeMode[] = [
@@ -108,11 +113,14 @@ function modeKeyBadge(mode: PracticeMode): string {
  */
 export function PracticeSetupView({
   presetMode,
+  presetChapterId,
   reviewEntries,
   onPresetConsumed,
   onExitToToday,
 }: {
   presetMode: PracticeMode | null;
+  /** 预设模式对应的来源章节(学习中心「去练习」);证据归因用。 */
+  presetChapterId?: string | null;
   reviewEntries: TrainingItem[] | null;
   onPresetConsumed: () => void;
   onExitToToday: () => void;
@@ -196,7 +204,12 @@ export function PracticeSetupView({
   const start = () => {
     setLastMode(mode);
     setActive({
-      config: { mode, difficulty, targetLength: sessionLength },
+      config: {
+        mode,
+        difficulty,
+        targetLength: sessionLength,
+        chapterId: presetChapterId ?? undefined,
+      },
       seed: 0,
     });
   };

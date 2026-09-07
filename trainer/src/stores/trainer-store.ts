@@ -7,6 +7,9 @@
  * 持久化版本 2(V2):相对 V1 新增 `DailyStats.chars/corrections` 与
  * `keyErrors`;V1 状态经 migrate 逐字段迁移(进度/统计/偏好保留,
  * 新字段回默认值),未知/损坏字段在校验边界逐字段回退为默认值。
+ *
+ * 里程碑 44:`lessonEvidence`(章节学习证据)作为版本 2 的可选增量
+ * 字段加入——旧持久化数据缺省回 `{}`,无需升版;备份同理。
  */
 
 import { create } from "zustand";
@@ -20,6 +23,10 @@ import {
 import { localDateKey } from "@xhup/trainer-core";
 import { LANGUAGES, type Language } from "@xhup/trainer-core";
 import { emptyDailyStats, type DailyStats } from "@xhup/trainer-core";
+import {
+  emptyLessonEvidence,
+  type LessonEvidence,
+} from "@xhup/trainer-core";
 import { DEFAULT_THEME, type ThemePreference } from "@/lib/theme";
 import type { Difficulty } from "@xhup/trainer-core";
 import type { BackupSettings } from "@xhup/trainer-core";
@@ -69,6 +76,12 @@ export type TrainerData = {
   daily: Record<string, DailyStats>;
   /** 键位累积错误(小写字母 → 次数;V2,弱点热力图数据源)。 */
   keyErrors: Record<string, number>;
+  /**
+   * 章节学习证据(章节 id → 证据;里程碑 44)。
+   * 持久化中的可选字段:旧数据缺省 → {};只承载建议性展示证据,
+   * 不参与任何评分正确性判定,因此无需升版(lenient 迁移)。
+   */
+  lessonEvidence: Record<string, LessonEvidence>;
 };
 
 export type QuestionResultPayload = {
@@ -88,6 +101,17 @@ export type QuestionResultPayload = {
   now: number;
 };
 
+/** 章节练习证据的增量载荷(recordLessonPractice 用)。 */
+export type LessonPracticePayload = {
+  /** 新增完成题数(按题更新为 1;会话级为 0)。 */
+  attempts: number;
+  /** 新增练习会话数(从章节发起练习记 1;按题更新为 0)。 */
+  sessions?: number;
+  /** 本次完成的键级准确率(0..1;null 表示无有效样本)。 */
+  accuracy?: number | null;
+  now: number;
+};
+
 export type TrainerActions = {
   setLanguage: (language: Language) => void;
   setTheme: (theme: ThemePreference) => void;
@@ -100,6 +124,10 @@ export type TrainerActions = {
   setLastMode: (lastMode: PracticeMode) => void;
   /** 一题完成:更新条目进度 + 当日统计 + 键位错误(低频写入,每题一次)。 */
   recordQuestionResult: (payload: QuestionResultPayload) => void;
+  /** 章节页被打开:记录 openedAt(不覆盖练习证据的其它字段)。 */
+  markLessonOpened: (chapterId: string, now: number) => void;
+  /** 章节练习证据增量:累计会话/题数,更新最近练习时间与最佳准确率。 */
+  recordLessonPractice: (chapterId: string, payload: LessonPracticePayload) => void;
   /** 暂停/结束时结清的纯练习时长。 */
   addPracticeTime: (practiceMs: number, now: number) => void;
   /** 导入备份:整体替换进度/统计/偏好(主题与语言保留本地值)。 */
@@ -108,6 +136,7 @@ export type TrainerActions = {
     progress: Record<string, ItemProgress>;
     daily: Record<string, DailyStats>;
     keyErrors: Record<string, number>;
+    lessonEvidence?: Record<string, LessonEvidence>;
   }) => void;
   /** 重置指定条目的掌握度(弱点中心操作;保留偏好)。 */
   resetItemProgress: (ids: readonly string[]) => void;
@@ -134,6 +163,7 @@ function defaultData(): TrainerData {
     progress: {},
     daily: {},
     keyErrors: {},
+    lessonEvidence: {},
   };
 }
 
@@ -171,6 +201,18 @@ function isProgress(value: unknown): value is ItemProgress {
 
 function isKeyErrorCount(value: unknown): value is number {
   return isNumber(value);
+}
+
+/** 章节证据校验:字段形状合法即可(宽松;时间戳/准确率范围不强校验)。 */
+function isLessonEvidence(value: unknown): value is LessonEvidence {
+  return (
+    isRecord(value) &&
+    (value.openedAt === null || isNumber(value.openedAt)) &&
+    isNumber(value.practiceSessions) &&
+    isNumber(value.practiceAttempts) &&
+    (value.lastPracticeAt === null || isNumber(value.lastPracticeAt)) &&
+    (value.bestAccuracy === null || isNumber(value.bestAccuracy))
+  );
 }
 
 function isDailyStats(value: unknown): value is DailyStats {
@@ -300,6 +342,7 @@ export function sanitizePersisted(value: unknown): TrainerData {
         pickRecord(value.keyErrors, isKeyErrorCount),
       ).filter(([key]) => /^[a-z]$/.test(key)),
     ),
+    lessonEvidence: pickRecord(value.lessonEvidence, isLessonEvidence),
   };
 }
 
@@ -324,6 +367,7 @@ export function migratePersisted(persisted: unknown, version: number): TrainerDa
       progress: migrateProgressV1(persisted.progress),
       daily: migrateDailyV1(persisted.daily),
       keyErrors: {},
+      lessonEvidence: {},
     };
     return migrated;
   }
@@ -372,6 +416,41 @@ export const useTrainerStore = create<TrainerStore>()(
           };
         }),
 
+      markLessonOpened: (chapterId, now) =>
+        set((state) => ({
+          lessonEvidence: {
+            ...state.lessonEvidence,
+            [chapterId]: {
+              ...(state.lessonEvidence[chapterId] ?? emptyLessonEvidence()),
+              openedAt: now,
+            },
+          },
+        })),
+
+      recordLessonPractice: (chapterId, payload) =>
+        set((state) => {
+          const current = state.lessonEvidence[chapterId] ?? emptyLessonEvidence();
+          const accuracy = payload.accuracy ?? null;
+          const bestAccuracy =
+            accuracy !== null &&
+            (current.bestAccuracy === null || accuracy > current.bestAccuracy)
+              ? accuracy
+              : current.bestAccuracy;
+          return {
+            lessonEvidence: {
+              ...state.lessonEvidence,
+              [chapterId]: {
+                openedAt: current.openedAt,
+                practiceSessions:
+                  current.practiceSessions + (payload.sessions ?? 0),
+                practiceAttempts: current.practiceAttempts + payload.attempts,
+                lastPracticeAt: payload.now,
+                bestAccuracy,
+              },
+            },
+          };
+        }),
+
       addPracticeTime: (practiceMs, now) =>
         set((state) => ({
           daily: mergeDaily(
@@ -392,6 +471,7 @@ export const useTrainerStore = create<TrainerStore>()(
           progress: backup.progress,
           daily: backup.daily,
           keyErrors: backup.keyErrors,
+          lessonEvidence: backup.lessonEvidence ?? {},
         })),
 
       resetItemProgress: (ids) =>
@@ -424,6 +504,7 @@ export const useTrainerStore = create<TrainerStore>()(
         progress: state.progress,
         daily: state.daily,
         keyErrors: state.keyErrors,
+        lessonEvidence: state.lessonEvidence,
       }),
       migrate: migratePersisted,
       merge: (persisted, current) => ({

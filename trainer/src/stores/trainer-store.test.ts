@@ -147,6 +147,108 @@ describe("addPracticeTime", () => {
   });
 });
 
+describe("章节学习证据(里程碑 44)", () => {
+  it("默认状态 lessonEvidence 为空对象", () => {
+    expect(useTrainerStore.getState().lessonEvidence).toEqual({});
+  });
+
+  it("markLessonOpened 记录打开时间,不覆盖练习证据", () => {
+    useTrainerStore.getState().recordLessonPractice("double", {
+      attempts: 5,
+      sessions: 1,
+      accuracy: 0.9,
+      now: 100,
+    });
+    useTrainerStore.getState().markLessonOpened("double", 200);
+    const evidence = useTrainerStore.getState().lessonEvidence.double!;
+    expect(evidence.openedAt).toBe(200);
+    expect(evidence.practiceSessions).toBe(1);
+    expect(evidence.practiceAttempts).toBe(5);
+    expect(evidence.bestAccuracy).toBe(0.9);
+    expect(evidence.lastPracticeAt).toBe(100);
+  });
+
+  it("recordLessonPractice 累计会话/题数,bestAccuracy 取最佳", () => {
+    useTrainerStore.getState().recordLessonPractice("shape", {
+      attempts: 1,
+      sessions: 1,
+      accuracy: 0.5,
+      now: 100,
+    });
+    useTrainerStore.getState().recordLessonPractice("shape", {
+      attempts: 1,
+      accuracy: 1,
+      now: 200,
+    });
+    useTrainerStore.getState().recordLessonPractice("shape", {
+      attempts: 1,
+      accuracy: null,
+      now: 300,
+    });
+    const evidence = useTrainerStore.getState().lessonEvidence.shape!;
+    expect(evidence.practiceSessions).toBe(1);
+    expect(evidence.practiceAttempts).toBe(3);
+    expect(evidence.lastPracticeAt).toBe(300);
+    expect(evidence.bestAccuracy).toBe(1);
+  });
+
+  it("applyBackup 支持 lessonEvidence,缺省回 {}", () => {
+    useTrainerStore.getState().markLessonOpened("double", 1);
+    useTrainerStore.getState().applyBackup({
+      settings: {
+        theme: "dark",
+        hintMode: "on-error",
+        difficulty: "beginner",
+        sessionLength: 30,
+        lastMode: "double",
+      },
+      progress: {},
+      daily: {},
+      keyErrors: {},
+    });
+    expect(useTrainerStore.getState().lessonEvidence).toEqual({});
+    useTrainerStore.getState().applyBackup({
+      settings: {
+        theme: "dark",
+        hintMode: "on-error",
+        difficulty: "beginner",
+        sessionLength: 30,
+        lastMode: "double",
+      },
+      progress: {},
+      daily: {},
+      keyErrors: {},
+      lessonEvidence: { full: { openedAt: 9, practiceSessions: 1, practiceAttempts: 2, lastPracticeAt: 9, bestAccuracy: 1 } },
+    });
+    expect(useTrainerStore.getState().lessonEvidence.full).toMatchObject({
+      openedAt: 9,
+      practiceSessions: 1,
+    });
+  });
+
+  it("sanitizePersisted 对损坏 lessonEvidence 逐条回退", () => {
+    const sanitized = sanitizePersisted({
+      lessonEvidence: {
+        good: {
+          openedAt: 1,
+          practiceSessions: 2,
+          practiceAttempts: 3,
+          lastPracticeAt: 4,
+          bestAccuracy: 0.5,
+        },
+        broken: { practiceSessions: "many" },
+      },
+    });
+    expect(Object.keys(sanitized.lessonEvidence)).toEqual(["good"]);
+    expect(sanitizePersisted("garbage").lessonEvidence).toEqual({});
+  });
+
+  it("旧版本持久化(V2 早期无 lessonEvidence)迁移后回 {}", () => {
+    const migrated = migratePersisted({ theme: "dark" }, 2);
+    expect(migrated.lessonEvidence).toEqual({});
+  });
+});
+
 describe("持久化", () => {
   it("写入 localStorage 时带 version 2 与 keyErrors 字段", () => {
     useTrainerStore.getState().setTheme("dark");
@@ -176,6 +278,7 @@ describe("持久化", () => {
         "progress",
         "daily",
         "keyErrors",
+        "lessonEvidence",
       ].sort(),
     );
   });

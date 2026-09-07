@@ -54,7 +54,7 @@ import {
 
 const FEEDBACK_MS = 150;
 
-function dispatchEvents(events: SessionEvent[]): void {
+function dispatchEvents(events: SessionEvent[], chapterId?: string): void {
   for (const event of events) {
     if (event.type === "question-completed") {
       useTrainerStore.getState().recordQuestionResult({
@@ -70,6 +70,18 @@ function dispatchEvents(events: SessionEvent[]): void {
         bestStreak: event.bestStreak,
         now: Date.now(),
       });
+      // 章节学习证据:从章节发起的练习按题累计 attempts 与键级准确率
+      // (bestAccuracy 取单题最佳,作为「最近表现」代理;见 lesson-state)。
+      if (chapterId) {
+        useTrainerStore.getState().recordLessonPractice(chapterId, {
+          attempts: 1,
+          accuracy:
+            event.keystrokes > 0
+              ? (event.keystrokes - event.wrongKeyEvents) / event.keystrokes
+              : null,
+          now: Date.now(),
+        });
+      }
     } else if (event.type === "time-flushed") {
       useTrainerStore.getState().addPracticeTime(event.practiceMs, Date.now());
     }
@@ -128,6 +140,19 @@ export function PracticeView({
     ),
   );
 
+  // 章节练习会话计数:从章节发起的练习,会话启动即记 1 次
+  // (重启会话会重挂载本组件,自然计为新的一次)。
+  const lessonSessionCounted = useRef(false);
+  useEffect(() => {
+    if (!config.chapterId || lessonSessionCounted.current) return;
+    lessonSessionCounted.current = true;
+    useTrainerStore.getState().recordLessonPractice(config.chapterId, {
+      attempts: 0,
+      sessions: 1,
+      now: Date.now(),
+    });
+  }, [config.chapterId]);
+
   // 答对/答错补全后的短暂反馈,然后自动前进。
   useEffect(() => {
     if (!session || session.phase !== "feedback") return;
@@ -171,7 +196,7 @@ export function PracticeView({
     }
     if (session.phase === "paused") {
       registerBackHandler(() => {
-        dispatchEvents(finish(session, Date.now()).events);
+        dispatchEvents(finish(session, Date.now()).events, config.chapterId);
         onExit();
         return true;
       });
@@ -234,7 +259,7 @@ export function PracticeView({
   }, [shapeStats]);
 
   const commit = (result: StepResult) => {
-    dispatchEvents(result.events);
+    dispatchEvents(result.events, config.chapterId);
     setSession(result.state);
     // 触感反馈:错键较强,答对有独特短促反馈(用户可关)。
     if (result.state.lastWrongKey && result.state.lastWrongKey !== session?.lastWrongKey) {
@@ -311,7 +336,7 @@ export function PracticeView({
   };
 
   const handleExit = () => {
-    dispatchEvents(finish(session, Date.now()).events);
+    dispatchEvents(finish(session, Date.now()).events, config.chapterId);
     onExit();
   };
 

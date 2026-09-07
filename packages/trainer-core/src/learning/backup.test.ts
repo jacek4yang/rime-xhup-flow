@@ -30,6 +30,15 @@ const sampleData = () => ({
     "2026-09-01": { ...emptyDailyStats(), practiceMs: 1000, questions: 2 },
   },
   keyErrors: { z: 3 },
+  lessonEvidence: {
+    double: {
+      openedAt: 100,
+      practiceSessions: 2,
+      practiceAttempts: 30,
+      lastPracticeAt: 200,
+      bestAccuracy: 0.95,
+    },
+  },
 });
 
 describe("exportBackup", () => {
@@ -72,6 +81,50 @@ describe("importBackup", () => {
     });
     expect(restored.daily["2026-09-01"].practiceMs).toBe(1000);
     expect(restored.keyErrors).toEqual({ z: 3 });
+    expect(restored.lessonEvidence).toEqual({
+      double: {
+        openedAt: 100,
+        practiceSessions: 2,
+        practiceAttempts: 30,
+        lastPracticeAt: 200,
+        bestAccuracy: 0.95,
+      },
+    });
+  });
+
+  it("lessonEvidence 为可选增量字段:缺省导出补 {},旧备份导入得 {}", () => {
+    // 未提供 lessonEvidence 的导出(宿主旧状态)补空对象,保持确定性。
+    const exported = JSON.parse(exportBackup({ ...sampleData(), lessonEvidence: undefined }, 1700));
+    expect(exported.lessonEvidence).toEqual({});
+
+    // 旧版本 2 备份(无该字段)导入 → {}。
+    const legacy = JSON.parse(exportBackup(sampleData(), 1700));
+    delete legacy.lessonEvidence;
+    const restored = importBackup(JSON.stringify(legacy));
+    expect(restored.lessonEvidence).toEqual({});
+  });
+
+  it("拒绝非法 lessonEvidence 结构", () => {
+    const backup = JSON.parse(exportBackup(sampleData(), 1700));
+    expect(() =>
+      importBackup(JSON.stringify({ ...backup, lessonEvidence: "nope" })),
+    ).toThrow(/lessonEvidence 结构无效/);
+    expect(() =>
+      importBackup(
+        JSON.stringify({
+          ...backup,
+          lessonEvidence: { double: { practiceSessions: -1 } },
+        }),
+      ),
+    ).toThrow(/应为非负整数/);
+    expect(() =>
+      importBackup(
+        JSON.stringify({
+          ...backup,
+          lessonEvidence: { double: { bestAccuracy: 1.5 } },
+        }),
+      ),
+    ).toThrow(/bestAccuracy 应在 0..1/);
   });
 
   it("拒绝损坏 JSON 与未知结构", () => {
