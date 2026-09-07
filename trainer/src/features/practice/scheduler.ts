@@ -1,55 +1,81 @@
 /**
  * 练习调度器(纯逻辑,不依赖 React,可注入 RNG 测试)。
  *
- * 选题优先级 = 词频增益 × 薄弱度 × 未见增益:
+ * V2:池以字符串 PoolId 为键(单字/词按码长、简码按层、组句单池),
+ * 轮换顺序由 MODE_POOL_ROTATION[mode] 给出;同一套加权调度覆盖全部模式,
+ * 不为任何模式单写一套选题逻辑。
+ *
+ * 选题优先级 = 词频增益 × 薄弱度 × 未见增益 × 迟疑增益 × 层权重:
  *
  *   frequencyNorm  = maxLog === 0 ? 0 : log1p(score) / maxLog
  *   frequencyBoost = 0.75 + frequencyNorm * 0.75      (约 0.75..1.50)
  *   weakness       = 1 + wrong * 3 + (100 - mastery) / 20
  *   unseenBoost    = attempts === 0 ? 1.4 : 1
- *   priority       = frequencyBoost * weakness * unseenBoost
+ *   latencyBoost   = 1 + min(0.5, avgLatencyPerChar / LATENCY_REF_MS_PER_CHAR)
+ *   priority       = frequencyBoost * weakness * unseenBoost * latencyBoost * layerWeight
  *
- * 另有两条规则:最近 5 题防重复;答错的题 3-8 题后自然回炉(仅会话内,不持久化)。
- * mixed 模式按 2 → 3 → 4 码长均衡轮换,到期回炉题可临时打破轮换。
+ * 另有两条规则:最近 5 题防重复;答错的题 3-8 题后自然回炉(仅会话内,
+ * 不持久化)。轮换按 MODE_POOL_ROTATION 顺序推进,到期回炉题可临时打破。
  */
 
-import { itemId, type TrainerEntry } from "@/lib/trainer-data";
 import { emptyProgress, type ItemProgress } from "@/lib/progress";
-import type { CodeLength } from "@/lib/trainer-index";
-import { MODE_LENGTHS, type PracticeMode } from "./types";
+import type { TrainingItem } from "@/lib/trainer-index";
+import { MODE_POOL_ROTATION, type PracticeMode } from "./types";
 
 export type Rng = () => number;
 
-/** 一个码长的候选池:题目列表 + 预计算的 log 词频上限。 */
+/** 一个候选池:统一训练项列表 + 预计算的 log 词频上限。 */
 export type QuestionPool = {
-  length: CodeLength;
-  entries: readonly TrainerEntry[];
+  id: string;
+  items: readonly TrainingItem[];
   maxLogFrequency: number;
+  /** 池级权重(如一级简码等基础层略优先;默认 1)。 */
+  layerWeight: number;
 };
 
+/** 迟疑增益的参照:每汉字平均完成耗时达到该值时增益封顶(+0.5)。 */
+export const LATENCY_REF_MS_PER_CHAR = 8000;
+
 export function buildPool(
-  length: CodeLength,
-  entries: readonly TrainerEntry[],
+  id: string,
+  items: readonly TrainingItem[],
+  layerWeight = 1,
 ): QuestionPool {
   let maxLogFrequency = 0;
-  for (const entry of entries) {
-    maxLogFrequency = Math.max(maxLogFrequency, Math.log1p(entry.frequencyScore));
+  for (const item of items) {
+    maxLogFrequency = Math.max(maxLogFrequency, Math.log1p(item.frequencyScore));
   }
-  return { length, entries, maxLogFrequency };
+  return { id, items, maxLogFrequency, layerWeight };
+}
+
+/** 迟疑增益:按汉字数归一的完成耗时越慢,越需要再练。 */
+export function latencyBoost(progress: ItemProgress, charCount: number): number {
+  if (progress.avgLatencyMs === null || charCount <= 0) return 1;
+  const perChar = progress.avgLatencyMs / charCount;
+  return 1 + Math.min(0.5, perChar / LATENCY_REF_MS_PER_CHAR);
 }
 
 /** 单候选的选题优先级。 */
 export function computePriority(
-  entry: TrainerEntry,
+  item: TrainingItem,
   progress: ItemProgress,
   maxLogFrequency: number,
+  layerWeight = 1,
 ): number {
   const frequencyNorm =
-    maxLogFrequency === 0 ? 0 : Math.log1p(entry.frequencyScore) / maxLogFrequency;
+    maxLogFrequency === 0
+      ? 0
+      : Math.log1p(item.frequencyScore) / maxLogFrequency;
   const frequencyBoost = 0.75 + frequencyNorm * 0.75;
   const weakness = 1 + progress.wrong * 3 + (100 - progress.mastery) / 20;
   const unseenBoost = progress.attempts === 0 ? 1.4 : 1;
-  return frequencyBoost * weakness * unseenBoost;
+  return (
+    frequencyBoost *
+    weakness *
+    unseenBoost *
+    latencyBoost(progress, item.charCount) *
+    layerWeight
+  );
 }
 
 /** 加权随机选题;excludeIds 中的条目会被跳过,全部被排除时回退到整池。 */
@@ -58,32 +84,32 @@ export function pickWeighted(
   progressById: ReadonlyMap<string, ItemProgress>,
   excludeIds: ReadonlySet<string>,
   rng: Rng,
-): TrainerEntry | null {
-  if (pool.entries.length === 0) return null;
+): TrainingItem | null {
+  if (pool.items.length === 0) return null;
   const candidates =
     excludeIds.size === 0
-      ? pool.entries
-      : pool.entries.filter((entry) => !excludeIds.has(itemId(entry)));
-  const source = candidates.length > 0 ? candidates : pool.entries;
+      ? pool.items
+      : pool.items.filter((item) => !excludeIds.has(item.id));
+  const source = candidates.length > 0 ? candidates : pool.items;
+
+  const priorityOf = (item: TrainingItem): number =>
+    computePriority(
+      item,
+      progressById.get(item.id) ?? emptyProgress(),
+      pool.maxLogFrequency,
+      pool.layerWeight,
+    );
 
   let total = 0;
-  for (const entry of source) {
-    total += computePriority(
-      entry,
-      progressById.get(itemId(entry)) ?? emptyProgress(),
-      pool.maxLogFrequency,
-    );
+  for (const item of source) {
+    total += priorityOf(item);
   }
   if (total <= 0) return source[0] ?? null;
 
   let draw = rng() * total;
-  for (const entry of source) {
-    draw -= computePriority(
-      entry,
-      progressById.get(itemId(entry)) ?? emptyProgress(),
-      pool.maxLogFrequency,
-    );
-    if (draw < 0) return entry;
+  for (const item of source) {
+    draw -= priorityOf(item);
+    if (draw < 0) return item;
   }
   return source[source.length - 1] ?? null;
 }
@@ -121,7 +147,7 @@ export type PickNextInput = {
 };
 
 export type PickNextResult = {
-  entry: TrainerEntry;
+  item: TrainingItem;
   reviewQueue: ReviewItem[];
   mixedCursor: number;
 };
@@ -129,17 +155,17 @@ export type PickNextResult = {
 function findInPools(
   pools: readonly QuestionPool[],
   id: string,
-): TrainerEntry | null {
+): TrainingItem | null {
   for (const pool of pools) {
-    const found = pool.entries.find((entry) => itemId(entry) === id);
+    const found = pool.items.find((item) => item.id === id);
     if (found) return found;
   }
   return null;
 }
 
 /**
- * 选出下一题。回炉题到期优先(除非就是上一题);否则按模式的码长轮换
- * 在对应池内加权随机,并避开最近出现过的题。
+ * 选出下一题。回炉题到期优先(除非就是上一题);否则按模式的池轮换
+ * 加权随机,并避开最近出现过的题。
  */
 export function pickNext(input: PickNextInput): PickNextResult | null {
   const { mode, pools, progressById, recentIds, mixedCursor, rng } = input;
@@ -157,26 +183,26 @@ export function pickNext(input: PickNextInput): PickNextResult | null {
   if (dueIndex >= 0) {
     const due = reviewQueue[dueIndex];
     if (due) {
-      const entry = findInPools(pools, due.id);
+      const item = findInPools(pools, due.id);
       reviewQueue = reviewQueue.filter((_, index) => index !== dueIndex);
-      if (entry) return { entry, reviewQueue, mixedCursor };
+      if (item) return { item, reviewQueue, mixedCursor };
     }
   }
 
-  const lengths = MODE_LENGTHS[mode];
+  const rotation = MODE_POOL_ROTATION[mode];
   const excludeIds = new Set(recentIds.slice(-RECENT_LIMIT));
 
-  // 从轮换光标开始依次尝试各码长,跳过空池。
-  for (let step = 0; step < lengths.length; step += 1) {
-    const length = lengths[(mixedCursor + step) % lengths.length];
-    const pool = pools.find((candidate) => candidate.length === length);
-    if (!pool || pool.entries.length === 0) continue;
-    const entry = pickWeighted(pool, progressById, excludeIds, rng);
-    if (entry) {
+  // 从轮换光标开始依次尝试各池,跳过空池。
+  for (let step = 0; step < rotation.length; step += 1) {
+    const poolId = rotation[(mixedCursor + step) % rotation.length];
+    const pool = pools.find((candidate) => candidate.id === poolId);
+    if (!pool || pool.items.length === 0) continue;
+    const item = pickWeighted(pool, progressById, excludeIds, rng);
+    if (item) {
       return {
-        entry,
+        item,
         reviewQueue,
-        mixedCursor: (mixedCursor + step + 1) % lengths.length,
+        mixedCursor: (mixedCursor + step + 1) % rotation.length,
       };
     }
   }

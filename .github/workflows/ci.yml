@@ -1,9 +1,9 @@
 name: CI
 
 on:
+  # 全部 pull_request 都跑 CI(stacked PR 以 feature 分支为基,同样需要门禁);
+  # main 的 push 保持触发。
   pull_request:
-    branches:
-      - main
   push:
     branches:
       - main

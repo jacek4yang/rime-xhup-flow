@@ -66,14 +66,14 @@ export function SessionSummary({
             <CardTitle>最需要复习</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
-            {weakItems.map(({ entry, progress }) => (
+            {weakItems.map(({ item, progress }) => (
               <div
-                key={`${entry.char}:${entry.code}`}
+                key={item.id}
                 className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
               >
-                <span className="text-2xl font-medium">{entry.char}</span>
+                <span className="text-2xl font-medium">{item.target}</span>
                 <span className="font-mono text-sm text-muted-foreground">
-                  {entry.code}
+                  {item.primaryCode}
                 </span>
                 <span className="ml-auto flex items-center gap-2">
                   <Badge variant={progress.mastery < 40 ? "destructive" : "outline"}>

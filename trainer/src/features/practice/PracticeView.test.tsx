@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { TrainerEntry } from "@/lib/trainer-data";
-import { buildTrainerIndex, type TrainerIndex } from "@/lib/trainer-index";
+import type { TrainingItem } from "@/lib/trainer-index";
+import { buildTrainerIndex, charItem, type TrainerIndex } from "@/lib/trainer-index";
 import { TrainerIndexProvider } from "@/lib/trainer-context";
 import { resetTrainerStore, useTrainerStore } from "@/stores/trainer-store";
 import { PracticeSetupView } from "./PracticeSetupView";
@@ -26,12 +27,20 @@ const ENTRIES: TrainerEntry[] = [
 
 function fixtureIndex(): TrainerIndex {
   return buildTrainerIndex({
-    schemaVersion: 1,
+    schemaVersion: 2,
     packageVersion: "0.1.0",
     entries: ENTRIES,
+    words: [{ word: "我们", code: "womf", length: 4, charCount: 2, rimeWeight: 9 }],
+    level1Shortcuts: [{ key: "q", char: "去" }],
+    wordShortcuts: [{ word: "时间", fullCode: "uijm", shortcutCode: "uij", mode: "FF" }],
+    fixedFirstShortcuts: [{ word: "发展", fullCode: "favj", shortcutCode: "faj", mode: "FFI" }],
+    twoKeyShortcuts: [{ word: "记得", fullCode: "jide", shortcutCode: "jd", mode: "II" }],
+    sentences: [{ text: "我们时间", code: "womfuijm", components: ["我们", "时间"] }],
     doublePinyin: { initials: [], finals: [], zeroInitials: [] },
   });
 }
+
+const ITEMS: TrainingItem[] = ENTRIES.map(charItem);
 
 function noop() {}
 
@@ -40,7 +49,7 @@ function renderPractice(config?: Partial<PracticeConfig>) {
     mode: "double",
     difficulty: "daily",
     targetLength: 2,
-    entries: ENTRIES,
+    entries: ITEMS,
     ...config,
   };
   return render(
