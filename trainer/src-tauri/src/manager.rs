@@ -27,8 +27,11 @@ pub const OWNED_FILES: &[&str] = &[
     "xhup_flow.schema.yaml",
     "xhup_flow_chars.dict.yaml",
     "xhup_flow_fixed_first_shortcuts.dict.yaml",
+    "xhup_flow_fixed_first_shortcuts.schema.yaml",
     "xhup_flow_flow.dict.yaml",
+    "xhup_flow_flow.schema.yaml",
     "xhup_flow_learn.dict.yaml",
+    "xhup_flow_learn.schema.yaml",
     "xhup_flow_shortcuts.dict.yaml",
     "xhup_flow_static.schema.yaml",
     "xhup_flow_two_key_shortcuts.dict.yaml",
@@ -129,16 +132,13 @@ impl RimeClient {
             .collect();
         match self {
             Self::Weasel => {
-                let mut candidates = Vec::new();
+                let mut bases = Vec::new();
                 for base in ["ProgramFiles", "ProgramFiles(x86)"] {
                     if let Some(dir) = std::env::var_os(base) {
-                        candidates.push((
-                            PathBuf::from(dir).join("Rime").join("WeaselDeployer.exe"),
-                            args.clone(),
-                        ));
+                        bases.push(PathBuf::from(dir).join("Rime"));
                     }
                 }
-                candidates
+                weasel_deployer_candidates(bases, args)
             }
             Self::Squirrel => vec![(
                 PathBuf::from("/Library/Input Methods/Squirrel.app/Contents/MacOS/Squirrel"),
@@ -183,6 +183,45 @@ pub enum RedeploySupport {
     },
     /// 无可靠自动机制,按 [`RimeClient::redeploy_guidance`] 手动执行。
     Manual,
+}
+
+/// WeaselDeployer.exe 候选发现(纯函数,测试可注入目录)。
+///
+/// 覆盖两种真实安装布局:
+/// - 旧版安装器:`<Rime 目录>\WeaselDeployer.exe`;
+/// - 官方当前布局:版本化子目录 `weasel-<版本>\`(取字典序最大的
+///   版本目录,保证确定性),真机 0.17.4 即此布局。
+fn weasel_deployer_candidates(
+    rime_dirs: Vec<PathBuf>,
+    args: Vec<String>,
+) -> Vec<(PathBuf, Vec<String>)> {
+    let mut candidates = Vec::new();
+    for rime_dir in rime_dirs {
+        // 直接安装根(旧版安装器布局)。
+        candidates.push((rime_dir.join("WeaselDeployer.exe"), args.clone()));
+        // 版本化安装目录(官方安装器当前布局:Rime\weasel-<版本>\)。
+        let versioned = rime_dir
+            .read_dir()
+            .ok()
+            .and_then(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .filter(|entry| {
+                        entry.file_type().is_ok_and(|t| t.is_dir())
+                            && entry
+                                .file_name()
+                                .to_str()
+                                .is_some_and(|name| name.starts_with("weasel-"))
+                    })
+                    .map(|entry| entry.path())
+                    .max()
+            })
+            .map(|dir| dir.join("WeaselDeployer.exe"));
+        if let Some(path) = versioned {
+            candidates.push((path, args.clone()));
+        }
+    }
+    candidates
 }
 
 /// 在候选列表中探测第一个存在的可执行文件(纯函数,测试可注入)。
@@ -1204,10 +1243,14 @@ mod tests {
         let status = install_status(&user, RimeClient::Fcitx5, Some(&package));
         let learning = learning_summary(&user);
         let report = diagnostics_report(&status, "0.1.0", &learning);
-        assert!(report.contains("XHUP 文件: 11/11"));
+        assert!(report.contains(&format!(
+            "XHUP 文件: {}/{}",
+            OWNED_FILES.len(),
+            OWNED_FILES.len()
+        )));
         assert!(report.contains("xhup_flow, xhup_flow_static"));
         assert!(report.contains("已安装版本: 1.0.0"));
-        assert!(report.contains("完整性: 一致 11 / 不同 0"));
+        assert!(report.contains(&format!("完整性: 一致 {} / 不同 0", OWNED_FILES.len())));
         assert!(report.contains("平台: "));
         assert!(report.contains("重新部署: 手动执行("));
         assert!(
@@ -1536,6 +1579,41 @@ mod tests {
         assert!(user.join("xhup_flow_user.userdb").is_dir());
         assert!(plan_uninstall(&user).unwrap().is_empty());
         let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
+    fn weasel_redeploy_candidates_probe_versioned_install_dir() {
+        // 真机发现:官方安装器把 WeaselDeployer.exe 放在版本化目录
+        // (Rime/weasel-<版本>/),不是 Rime 根。候选发现覆盖两种布局;
+        // 存在性探测由 resolve_redeploy 负责,这里断言路径与顺序。
+        let base = temp_dir("redeploy-candidates");
+        let rime_dir = base.join("Rime");
+        let versioned = rime_dir.join("weasel-0.17.4");
+        fs::create_dir_all(&versioned).unwrap();
+        fs::write(versioned.join("WeaselDeployer.exe"), b"MZ").unwrap();
+
+        // 仅版本化布局:根路径候选恒在(可能不存在),版本路径随目录出现。
+        let candidates =
+            weasel_deployer_candidates(vec![rime_dir.clone()], vec!["/deploy".to_string()]);
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].0, rime_dir.join("WeaselDeployer.exe"));
+        assert_eq!(candidates[1].0, versioned.join("WeaselDeployer.exe"));
+        assert_eq!(candidates[1].1, vec!["/deploy".to_string()]);
+
+        // 根路径不存在、版本路径存在:能力探测必须命中版本化部署器。
+        let support = resolve_redeploy(&candidates, &|path| {
+            path == versioned.join("WeaselDeployer.exe")
+        });
+        assert!(matches!(support, RedeploySupport::Automatic { .. }));
+
+        // 版本目录消失(旧版布局):只剩根路径候选。
+        fs::remove_dir_all(&versioned).unwrap();
+        let candidates =
+            weasel_deployer_candidates(vec![rime_dir.clone()], vec!["/deploy".to_string()]);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].0, rime_dir.join("WeaselDeployer.exe"));
+
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]

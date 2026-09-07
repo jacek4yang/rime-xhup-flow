@@ -24,7 +24,16 @@ clients: Weasel (Windows), Squirrel (macOS), Fcitx5-Rime / IBus-Rime
 | `xhup_flow_fixed_first_shortcuts.dict.yaml` | FIXED_FIRST 词语简码 |
 | `xhup_flow_flow.dict.yaml` | Flow 组句词典 |
 | `xhup_flow_learn.dict.yaml` | Flow 学习词典 |
+| `xhup_flow_fixed_first_shortcuts.schema.yaml` | 词典编译 wrapper(部署器编译辅助词典用,不可选择) |
+| `xhup_flow_flow.schema.yaml` | 词典编译 wrapper(同上) |
+| `xhup_flow_learn.schema.yaml` | 词典编译 wrapper(同上) |
 | `INSTALL.md` | 本说明(部署时无需复制) |
+
+**为什么有 wrapper schema**:librime 部署只编译默认 translator 命名空间的
+词典;FIXED_FIRST / Flow / Learn 词典经主方案 `schema/dependencies` 指向
+同名 wrapper schema,部署器(Weasel / rime_deployer)才会为它们生成
+table.bin。缺失时 FIXED_FIRST 简码、组句与本地学习会静默失效。
+wrapper 不在任何 `schema_list` 中,不可被用户选择。
 
 两套方案同时安装;在输入法的方案菜单中选择 Flow 或 Static。
 

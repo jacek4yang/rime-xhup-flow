@@ -92,15 +92,18 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
             "xhup_flow.schema.yaml",
             "xhup_flow_chars.dict.yaml",
             "xhup_flow_fixed_first_shortcuts.dict.yaml",
+            "xhup_flow_fixed_first_shortcuts.schema.yaml",
             "xhup_flow_flow.dict.yaml",
+            "xhup_flow_flow.schema.yaml",
             "xhup_flow_learn.dict.yaml",
+            "xhup_flow_learn.schema.yaml",
             "xhup_flow_shortcuts.dict.yaml",
             "xhup_flow_static.schema.yaml",
             "xhup_flow_two_key_shortcuts.dict.yaml",
             "xhup_flow_word_shortcuts.dict.yaml",
             "xhup_flow_words.dict.yaml",
         ],
-        "输出应为且仅为 11 个 Rime 源文件"
+        "输出应为且仅为 14 个 Rime 源文件(含 3 个词典编译 wrapper schema)"
     );
     for filename in &filenames {
         assert!(

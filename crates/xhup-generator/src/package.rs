@@ -42,6 +42,12 @@ const RIME_SCHEMA_FILENAME: &str = "xhup_flow.schema.yaml";
 /// 静态兼容方案产物文件名(Flow 引擎的静态回退,不重复静态词典)。
 const RIME_STATIC_SCHEMA_FILENAME: &str = "xhup_flow_static.schema.yaml";
 
+/// 辅助词典的「编译 wrapper」schema(见 generate_rime_artifacts 文档)。
+const RIME_FIXED_FIRST_WRAPPER_SCHEMA_FILENAME: &str =
+    "xhup_flow_fixed_first_shortcuts.schema.yaml";
+const RIME_FLOW_WRAPPER_SCHEMA_FILENAME: &str = "xhup_flow_flow.schema.yaml";
+const RIME_LEARN_WRAPPER_SCHEMA_FILENAME: &str = "xhup_flow_learn.schema.yaml";
+
 /// 顶层词典模板。
 const DICTIONARY_TEMPLATE: &str = include_str!("../../../rime/templates/xhup_flow.dict.yaml.in");
 
@@ -51,6 +57,35 @@ const SCHEMA_TEMPLATE: &str = include_str!("../../../rime/templates/xhup_flow.sc
 /// 静态兼容方案模板。
 const STATIC_SCHEMA_TEMPLATE: &str =
     include_str!("../../../rime/templates/xhup_flow_static.schema.yaml.in");
+
+/// 编译 wrapper schema 模板:librime 部署只编译「默认 translator 命名
+/// 空间」的词典;`table_translator@fixed_first` / `@flow` / `@learn`
+/// 引用的词典必须各自有一个同名 wrapper schema(经主方案的
+/// `schema/dependencies` 官方机制参与部署),Weasel / rime_deployer
+/// 才会为它们生成 table.bin。真机部署验收发现:缺失时 FIXED_FIRST
+/// 简码、Flow 组句与本地学习全部静默失效。wrapper 不进入任何
+/// schema_list,不可被用户选择。
+const DICT_COMPILE_WRAPPER_TEMPLATE: &str = r#"# Rime schema
+# encoding: utf-8
+---
+schema:
+  schema_id: "{{SCHEMA_ID}}"
+  name: "{{SCHEMA_ID}}(词典编译 wrapper)"
+  version: "{{VERSION}}"
+  description: |
+    仅供部署器编译 {{SCHEMA_ID}} 词典;不进入 schema_list,不可选择。
+  dependencies: []
+
+engine:
+  translators:
+    - table_translator
+
+translator:
+  dictionary: {{SCHEMA_ID}}
+  enable_completion: false
+  enable_sentence: false
+  enable_user_dict: false
+"#;
 
 /// 模板中唯一的占位符。
 const VERSION_PLACEHOLDER: &str = "{{VERSION}}";
@@ -112,6 +147,14 @@ fn render_template(template: &str, name: &str) -> String {
 /// table_translator@flow 加载,不被顶层词典导入)→ 主方案(Flow 引擎)
 /// → 静态兼容方案(无 Flow translator 的回退)。同一规范数据、生成器
 /// 源码与模板产生同一顺序、字节级一致的产物集合。
+/// 渲染辅助词典的编译 wrapper schema。
+fn render_dict_compile_wrapper(schema_id: &str) -> String {
+    let version = env!("CARGO_PKG_VERSION");
+    DICT_COMPILE_WRAPPER_TEMPLATE
+        .replace("{{SCHEMA_ID}}", schema_id)
+        .replace("{{VERSION}}", version)
+}
+
 pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
     vec![
         RimeArtifact {
@@ -149,6 +192,18 @@ pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
         RimeArtifact {
             filename: RIME_LEARN_DICTIONARY_FILENAME,
             contents: generate_rime_learn_dictionary(),
+        },
+        RimeArtifact {
+            filename: RIME_FIXED_FIRST_WRAPPER_SCHEMA_FILENAME,
+            contents: render_dict_compile_wrapper("xhup_flow_fixed_first_shortcuts"),
+        },
+        RimeArtifact {
+            filename: RIME_FLOW_WRAPPER_SCHEMA_FILENAME,
+            contents: render_dict_compile_wrapper("xhup_flow_flow"),
+        },
+        RimeArtifact {
+            filename: RIME_LEARN_WRAPPER_SCHEMA_FILENAME,
+            contents: render_dict_compile_wrapper("xhup_flow_learn"),
         },
         RimeArtifact {
             filename: RIME_SCHEMA_FILENAME,

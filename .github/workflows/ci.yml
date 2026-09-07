@@ -183,6 +183,9 @@ jobs:
           tests/librime/run-flow-audit.sh /tmp/xhup-flow-package
           /tmp/static-menu.manifest target/debug/xhup-cli
 
+      - name: librime 日常输入控制(ASCII/标点/数字选择/翻页/Escape/Enter)
+        run: tests/librime/run-ime-controls.sh /tmp/xhup-flow-package
+
   native-smoke:
     name: 原生冒烟(${{ matrix.os }})
     needs: rust

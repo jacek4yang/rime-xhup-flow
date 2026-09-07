@@ -7,6 +7,14 @@ schema:
   version: "{{VERSION}}"
   author:
     - XHUP Flow
+  # librime 部署只编译默认 translator 命名空间的词典;FIXED_FIRST /
+  # Flow / Learn 三个辅助词典必须经官方 schema/dependencies 机制
+  # 声明,Weasel / rime_deployer 才会为它们生成 table.bin(真机
+  # 部署验收发现:缺失时 FIXED_FIRST 简码、组句与本地学习全部静默失效)。
+  dependencies:
+    - xhup_flow_fixed_first_shortcuts
+    - xhup_flow_flow
+    - xhup_flow_learn
   description: |
     XHUP Flow 的跨平台小鹤音形方案,仅使用标准 librime 核心组件。
     当前版本提供 26 个一级简码字、规范单字(二至四码)、高稳健零冲突
@@ -106,6 +114,16 @@ learn:
   max_phrase_length: 20
   max_homographs: 1
   initial_quality: 0
+
+# 中英文切换不依赖客户端共享数据里的 default.yaml(部分平台的共享
+# 数据没有 ascii_composer 配置,Shift 切换会静默失效):在方案内显式
+# 声明 switch_key,与 Weasel 官方默认行为一致。
+ascii_composer:
+  good_old_caps_lock: true
+  switch_key:
+    Shift_L: inline_ascii
+    Shift_R: commit_text
+    Caps_Lock: clear
 
 punctuator:
   import_preset: default
