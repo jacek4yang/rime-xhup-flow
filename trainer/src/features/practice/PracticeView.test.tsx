@@ -274,8 +274,26 @@ describe("PracticeView", () => {
     expect(container.querySelector("button[data-next]")).toBeNull();
   });
 
-  it("答案不泄露:默认提示模式(错误后显示)答错前无高亮,答错后才提示", () => {
-    const { container } = renderPractice();
+  it("错误教学(adaptive):答错暂停讲解,重试清空已输入且换不来完美分", async () => {
+    const user = userEvent.setup();
+    renderPractice();
+    press("z");
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    // 分类讲解:单字第 1 键(声母)出错。
+    expect(screen.getByText(/期望 X,实际输入 Z/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /重试本题/ }));
+    expect(screen.getByLabelText("编码 2 键,已输入 0 键")).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("错误教学(quick):答错不暂停", () => {
+    useTrainerStore.setState({ errorTeaching: "quick" });
+    renderPractice();
+    press("z");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("答案不泄露:默认提示模式(错误后显示)答错前无高亮,答错后才提示", () => {    const { container } = renderPractice();
     expect(container.querySelector("button[data-next]")).toBeNull();
     press("z");
     expect(container.querySelector("button[data-next]")).not.toBeNull();

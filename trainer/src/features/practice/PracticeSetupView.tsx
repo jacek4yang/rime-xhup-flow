@@ -18,11 +18,13 @@ import { useTrainerStore } from "@/stores/trainer-store";
 import { PracticeView } from "./PracticeView";
 import {
   DIFFICULTY_LABELS,
+  ERROR_TEACHING_MODES,
   HAPTICS_MODES,
   KEY_REF_MODES,
   MODE_DESCRIPTIONS,
   MODE_LABELS,
   SESSION_LENGTH_OPTIONS,
+  type ErrorTeachingMode,
   type HapticsMode,
   type KeyRefMode,
   type PracticeMode,
@@ -126,6 +128,8 @@ export function PracticeSetupView({
   const setKeyRefMode = useTrainerStore((state) => state.setKeyRefMode);
   const keyHaptics = useTrainerStore((state) => state.keyHaptics);
   const setKeyHaptics = useTrainerStore((state) => state.setKeyHaptics);
+  const errorTeaching = useTrainerStore((state) => state.errorTeaching);
+  const setErrorTeaching = useTrainerStore((state) => state.setErrorTeaching);
 
   // 带预设模式(今日页模式卡/学习中心)直接进入设置屏;复习条目直接进入会话。
   const [screen, setScreen] = useState<"home" | "setup">(presetMode ? "setup" : "home");
@@ -271,6 +275,17 @@ export function PracticeSetupView({
                   onClick={() => setKeyHaptics(candidate as HapticsMode)}
                 >
                   {t(`practice.haptics.${candidate}`)}
+                </OptionButton>
+              ))}
+            </OptionRow>
+            <OptionRow label={t("practice.errorTeaching")}>
+              {ERROR_TEACHING_MODES.map((candidate) => (
+                <OptionButton
+                  key={candidate}
+                  selected={errorTeaching === candidate}
+                  onClick={() => setErrorTeaching(candidate as ErrorTeachingMode)}
+                >
+                  {t(`practice.errorTeaching.${candidate}`)}
                 </OptionButton>
               ))}
             </OptionRow>

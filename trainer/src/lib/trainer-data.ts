@@ -26,6 +26,8 @@ export type TrainerEntry = {
   code: string;
   length: 2 | 3 | 4;
   readings: string[];
+  /** 规范默认读音(带调;教育元数据,缺失时回退无调展示)。 */
+  toneReading?: string;
   frequencyScore: number;
   rimeWeight: number;
 };
@@ -141,7 +143,7 @@ function validateEntry(value: unknown, index: number): TrainerEntry {
   const at = `第 ${index + 1} 条训练数据`;
   if (!isRecord(value)) fail(`${at} 结构无效`);
 
-  const { char, code, length, readings, frequencyScore, rimeWeight } = value;
+  const { char, code, length, readings, toneReading, frequencyScore, rimeWeight } = value;
 
   if (typeof char !== "string" || [...char].length !== 1) {
     fail(`${at} 的 char 应恰好为一个字符`);
@@ -176,11 +178,18 @@ function validateEntry(value: unknown, index: number): TrainerEntry {
   if (new Set(readings).size !== readings.length) {
     fail(`${at} 的 readings 存在重复读音`);
   }
+  if (
+    toneReading !== undefined &&
+    (typeof toneReading !== "string" || toneReading.length < 1 || toneReading.length > 7)
+  ) {
+    fail(`${at} 的 toneReading 应为 1-7 字符的带调拼音`);
+  }
   return {
     char,
     code,
     length,
     readings,
+    ...(toneReading === undefined ? {} : { toneReading }),
     frequencyScore,
     rimeWeight,
   };
