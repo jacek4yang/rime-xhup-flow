@@ -198,6 +198,9 @@ jobs:
       - name: Lua quick_hint 纯逻辑单测(lua5.4,不依赖 librime)
         run: lua5.4 tests/lua/test_quick_hint.lua
 
+      - name: Lua quick_hint 模块级仿真(真实生成数据 + require 路径约定)
+        run: lua5.4 tests/lua/sim_quick_hint.lua /tmp/xhup-flow-package
+
       - name: librime Lua quick_hint 审计(真实插件:提示注释 + 次序不变)
         run: tests/librime/run-lua-audit.sh /tmp/xhup-flow-package
 
