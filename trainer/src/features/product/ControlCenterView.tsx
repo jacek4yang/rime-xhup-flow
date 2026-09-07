@@ -6,7 +6,16 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { ClipboardCheck, Download, FileText, RefreshCw, Stethoscope, Trash2, Upload } from "lucide-react";
+import {
+  ClipboardCheck,
+  Download,
+  FileText,
+  PackageCheck,
+  RefreshCw,
+  Stethoscope,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -100,6 +109,7 @@ export function ControlCenterView() {
   const [uninstallOpen, setUninstallOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [importPath, setImportPath] = useState("");
+  const [exportDest, setExportDest] = useState("");
   const [diagnostics, setDiagnostics] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
@@ -386,6 +396,76 @@ export function ControlCenterView() {
                   <Trash2 className="size-4" aria-hidden />
                   {t("product.learningReset")}
                 </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {status.rime_detected && (
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("product.redeployTitle")}</CardTitle>
+                <CardDescription>{t("product.redeployHint")}</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      void run(async () => {
+                        await productApi.redeploy();
+                        return t("product.redeployDone");
+                      })
+                    }
+                    disabled={busy}
+                  >
+                    <RefreshCw className="size-4" aria-hidden />
+                    {t("product.redeployAuto")}
+                  </Button>
+                </div>
+                {/* 能力型呈现:自动机制不可用时,按钮返回平台官方手动
+                    指引;指引同时始终展示,覆盖无自动机制的平台。 */}
+                <p className="text-muted-foreground">
+                  {t("product.redeployManualTitle")}:{status.redeploy_guidance}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {status.rime_detected && (
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("product.exportTitle")}</CardTitle>
+                <CardDescription>{t("product.exportHint")}</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2">
+                <label htmlFor="export-destination" className="text-sm font-medium">
+                  {t("product.exportDestination")}
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    id="export-destination"
+                    type="text"
+                    value={exportDest}
+                    onChange={(event) => setExportDest(event.target.value)}
+                    className="min-h-11 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      void run(async () =>
+                        t("product.exported", {
+                          path: await productApi.exportPackage(exportDest.trim()),
+                        }),
+                      )
+                    }
+                    disabled={busy || exportDest.trim() === ""}
+                  >
+                    <PackageCheck className="size-4" aria-hidden />
+                    {t("product.exportAction")}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}
