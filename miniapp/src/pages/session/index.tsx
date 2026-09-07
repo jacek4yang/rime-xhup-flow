@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text } from "@tarojs/components";
+import { View, Text, ScrollView } from "@tarojs/components";
 import Taro, { useDidHide } from "@tarojs/taro";
 import {
   HINT_DELAY_MS,
@@ -206,6 +206,10 @@ export default function Session() {
   }, [session?.phase]);
 
   // 切后台自动暂停:结清活跃时间,返回时停留在暂停浮层。
+  // Taro 的 useDidHide 对应页面 onHide;微信在小程序整体切后台时也会
+  // 触发当前页 onHide,因此无需再挂 Taro.onAppHide(也没有 offAppHide
+  // 之类的反注册泄漏面)。后台时长不计入 KPM/activeMs:pause 已把
+  // activeMs 结清到隐藏时刻,恢复(resume)重置 lastTickAt。
   useDidHide(() => {
     const current = sessionRef.current;
     if (current && current.phase === "question") {
@@ -330,143 +334,147 @@ export default function Session() {
     session.lastWrongKey !== null;
 
   return (
-    <View className="session-page">
-      <View className="session-header">
-        <View className="session-header-btn" hoverClass="action-row-hover" onClick={confirmExit}>
-          <Text className="session-header-text">‹ {t("common.exit")}</Text>
-        </View>
-        <Text className="session-mode">{t(MODE_LABELS[session.config.mode])}</Text>
-        <Text className="session-progress">
-          {targetLength > 0
-            ? t("practice.progressOf", { done: session.questionsCompleted, total: targetLength })
-            : t("practice.progressUnlimited", { n: session.questionsCompleted })}
-        </Text>
-        <View
-          className="session-header-btn"
-          hoverClass="action-row-hover"
-          onClick={() => {
-            const current = sessionRef.current;
-            if (!current) return;
-            if (current.phase === "paused") {
-              const next = resume(current, Date.now());
-              sessionRef.current = next;
-              setSession(next);
-            } else if (current.phase === "question") {
-              apply(pause(current, Date.now()), current.lastWrongKey);
-            }
-          }}
-        >
-          <Text className="session-header-text">
-            {session.phase === "paused" ? t("common.resume") : t("common.pause")}
+    // 定高滚动容器(app.css .session-scroll):短屏设备上键盘之上
+    // 的内容放不下时页内滚动,统计芯片不会被完全顶出视口。
+    <ScrollView scrollY className="session-scroll">
+      <View className="session-page">
+        <View className="session-header">
+          <View className="session-header-btn" hoverClass="action-row-hover" onClick={confirmExit}>
+            <Text className="session-header-text">‹ {t("common.exit")}</Text>
+          </View>
+          <Text className="session-mode">{t(MODE_LABELS[session.config.mode])}</Text>
+          <Text className="session-progress">
+            {targetLength > 0
+              ? t("practice.progressOf", { done: session.questionsCompleted, total: targetLength })
+              : t("practice.progressUnlimited", { n: session.questionsCompleted })}
           </Text>
-        </View>
-      </View>
-
-      <View className="session-card">
-        <Text className="session-target">{session.current.target}</Text>
-        <Text className="session-reading">
-          {session.current.kind === "sentence" && hintVisible
-            ? (session.current.components ?? []).join(" · ")
-            : session.current.readings.join(" / ")}
-        </Text>
-        {hintVisible && (
-          <Text className="session-code-hint">{session.current.primaryCode}</Text>
-        )}
-        <CodeSlots
-          code={activeCode(session)}
-          typed={session.typed}
-          lastWrongKey={session.lastWrongKey}
-          outcome={session.phase === "feedback" ? session.lastOutcome : null}
-        />
-        {session.phase === "feedback" && (
-          <Text
-            className={`session-feedback ${
-              session.lastOutcome === "perfect"
-                ? "session-feedback-ok"
-                : "session-feedback-warn"
-            }`}
-          >
-            {session.lastOutcome === "perfect"
-              ? "✓ 全对"
-              : `正确编码:${session.current.primaryCode}`}
-          </Text>
-        )}
-
-        {session.phase === "paused" && (
-          <View className="pause-overlay">
-            <Text className="pause-title">{t("common.paused")}</Text>
-            <View
-              className="button"
-              onClick={() => {
-                const current = sessionRef.current;
-                if (!current) return;
+          <View
+            className="session-header-btn"
+            hoverClass="action-row-hover"
+            onClick={() => {
+              const current = sessionRef.current;
+              if (!current) return;
+              if (current.phase === "paused") {
                 const next = resume(current, Date.now());
                 sessionRef.current = next;
                 setSession(next);
-              }}
-            >
-              <Text>{t("common.resume")}</Text>
-            </View>
-            <View className="button button-secondary" onClick={finishToSummary}>
-              <Text>{t("common.finish")}</Text>
-            </View>
-          </View>
-        )}
-
-        {teachingVisible && session.lastWrongKey !== null && (
-          <TeachingCard
-            item={session.current}
-            entry={findEntry(trainerIndex.dataset.entries, session.current.target)}
-            wrongKey={session.lastWrongKey}
-            position={session.typed.length}
-            mode={state.settings.errorTeaching}
-            shapeStats={shapeStats}
-            onRetry={retryQuestion}
-          />
-        )}
-      </View>
-
-      <TeachingKeyboard
-        labels={keyLabels}
-        shapeRef={shapeRef}
-        refMode={refMode}
-        nextKey={hintVisible ? expectedKey(session) : null}
-        wrongKey={session.lastWrongKey}
-        onKeyPress={handleLetter}
-        showBackspace
-        onBackspace={handleBackspace}
-      />
-
-      <View className="stat-grid session-stats">
-        <StatChip label={t("common.streak")} value={session.currentStreak} />
-        <StatChip
-          label={t("common.accuracy")}
-          value={formatPercent(accuracy(session.keystrokes, session.wrongKeyEvents))}
-        />
-        <StatChip label={t("common.elapsed")} value={formatDuration(displayedMs)} />
-        <StatChip
-          label={t("common.kpm")}
-          value={sessionKpm === null ? "—" : Math.round(sessionKpm)}
-        />
-        {session.charsCompleted > 0 && (
-          <>
-            <StatChip label={t("common.chars")} value={session.charsCompleted} />
-            <StatChip
-              label={t("common.cpm")}
-              value={sessionCpm === null ? "—" : Math.round(sessionCpm)}
-            />
-            <StatChip
-              label={t("common.keysPerChar")}
-              value={
-                session.charsCompleted === 0
-                  ? "—"
-                  : (session.keystrokes / session.charsCompleted).toFixed(1)
+              } else if (current.phase === "question") {
+                apply(pause(current, Date.now()), current.lastWrongKey);
               }
+            }}
+          >
+            <Text className="session-header-text">
+              {session.phase === "paused" ? t("common.resume") : t("common.pause")}
+            </Text>
+          </View>
+        </View>
+
+        <View className="session-card">
+          <Text className="session-target">{session.current.target}</Text>
+          <Text className="session-reading">
+            {session.current.kind === "sentence" && hintVisible
+              ? (session.current.components ?? []).join(" · ")
+              : session.current.readings.join(" / ")}
+          </Text>
+          {hintVisible && (
+            <Text className="session-code-hint">{session.current.primaryCode}</Text>
+          )}
+          <CodeSlots
+            code={activeCode(session)}
+            typed={session.typed}
+            lastWrongKey={session.lastWrongKey}
+            outcome={session.phase === "feedback" ? session.lastOutcome : null}
+          />
+          {session.phase === "feedback" && (
+            <Text
+              className={`session-feedback ${
+                session.lastOutcome === "perfect"
+                  ? "session-feedback-ok"
+                  : "session-feedback-warn"
+              }`}
+            >
+              {session.lastOutcome === "perfect"
+                ? "✓ 全对"
+                : `正确编码:${session.current.primaryCode}`}
+            </Text>
+          )}
+
+          {session.phase === "paused" && (
+            <View className="pause-overlay">
+              <Text className="pause-title">{t("common.paused")}</Text>
+              <View
+                className="button"
+                onClick={() => {
+                  const current = sessionRef.current;
+                  if (!current) return;
+                  const next = resume(current, Date.now());
+                  sessionRef.current = next;
+                  setSession(next);
+                }}
+              >
+                <Text>{t("common.resume")}</Text>
+              </View>
+              <View className="button button-secondary" onClick={finishToSummary}>
+                <Text>{t("common.finish")}</Text>
+              </View>
+            </View>
+          )}
+
+          {teachingVisible && session.lastWrongKey !== null && (
+            <TeachingCard
+              item={session.current}
+              entry={findEntry(trainerIndex.dataset.entries, session.current.target)}
+              wrongKey={session.lastWrongKey}
+              position={session.typed.length}
+              mode={state.settings.errorTeaching}
+              shapeStats={shapeStats}
+              onRetry={retryQuestion}
             />
-          </>
-        )}
+          )}
+        </View>
+
+        <TeachingKeyboard
+          labels={keyLabels}
+          shapeRef={shapeRef}
+          refMode={refMode}
+          nextKey={hintVisible ? expectedKey(session) : null}
+          wrongKey={session.lastWrongKey}
+          onKeyPress={handleLetter}
+          showBackspace
+          onBackspace={handleBackspace}
+        />
+
+        <View className="stat-grid session-stats">
+          <StatChip label={t("common.streak")} value={session.currentStreak} />
+          <StatChip
+            label={t("common.accuracy")}
+            value={formatPercent(accuracy(session.keystrokes, session.wrongKeyEvents))}
+          />
+          <StatChip label={t("common.elapsed")} value={formatDuration(displayedMs)} />
+          <StatChip
+            label={t("common.kpm")}
+            value={sessionKpm === null ? "—" : Math.round(sessionKpm)}
+          />
+          {session.charsCompleted > 0 && (
+            <>
+              <StatChip label={t("common.chars")} value={session.charsCompleted} />
+              <StatChip
+                label={t("common.cpm")}
+                value={sessionCpm === null ? "—" : Math.round(sessionCpm)}
+              />
+              <StatChip
+                label={t("common.keysPerChar")}
+                value={
+                  session.charsCompleted === 0
+                    ? "—"
+                    : (session.keystrokes / session.charsCompleted).toFixed(1)
+                }
+              />
+            </>
+          )}
+        </View>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 

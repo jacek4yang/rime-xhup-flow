@@ -180,6 +180,32 @@ export function PracticeView({
     return () => clearInterval(timer);
   }, [session?.phase, session]);
 
+  // 后台不计时:切后台(WebView 不可见)自动暂停结清活跃时间,
+  // 回前台自动恢复——与小程序端 useDidHide 暂停、桌面端返回键暂停
+  // 同一套语义,后台时长绝不计入 KPM/activeMs。
+  const autoPausedRef = useRef(false);
+  useEffect(() => {
+    if (!session) return;
+    const onVisibility = () => {
+      const current = session;
+      if (document.hidden) {
+        if (current.phase === "question") {
+          autoPausedRef.current = true;
+          commit(pause(current, Date.now()));
+        }
+        return;
+      }
+      if (autoPausedRef.current && current.phase === "paused") {
+        autoPausedRef.current = false;
+        setSession(resume(current, Date.now()));
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+    // commit/onExit 为稳定闭包;session 变化时重新订阅以读到最新相位。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   // Android/浏览器返回:活跃时返回 = 暂停(暂停浮层即离开确认);
   // 暂停中再返回 = 结束离开;小结屏返回 = 退出会话。
   useEffect(() => {

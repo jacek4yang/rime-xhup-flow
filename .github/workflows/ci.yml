@@ -114,8 +114,17 @@ jobs:
       - name: 构建微信小程序 weapp 产物
         run: pnpm miniapp:build
 
-      - name: 小程序包体积门槛
-        run: pnpm --filter miniapp size
+      - name: 小程序包体积门槛(含 JSON 报告)
+        run: |
+          pnpm --filter miniapp size
+          pnpm --filter miniapp exec node scripts/size-report.mjs --out size-report.json
+
+      - name: 上传小程序体积报告
+        uses: actions/upload-artifact@v7
+        with:
+          name: miniapp-size-report
+          path: miniapp/size-report.json
+          if-no-files-found: error
 
   librime:
     name: librime runtime integration
