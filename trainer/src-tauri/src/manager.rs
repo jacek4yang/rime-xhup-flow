@@ -37,6 +37,8 @@ pub const OWNED_FILES: &[&str] = &[
     "xhup_flow_two_key_shortcuts.dict.yaml",
     "xhup_flow_word_shortcuts.dict.yaml",
     "xhup_flow_words.dict.yaml",
+    "lua/xhup_flow/quick_hint.lua",
+    "lua/xhup_flow/data/quick_hints.lua",
 ];
 
 /// 主方案 / 静态回退方案的 schema id(模式选择只在这两者之间)。
@@ -623,9 +625,30 @@ fn backup_path(user_data_dir: &Path, file: &str) -> PathBuf {
     user_data_dir.join("xhup_backup").join(file)
 }
 
+/// staging 临时文件路径:与最终产物**同目录**(子目录产物亦然),
+/// 保证 rename 同卷原子;临时文件名 = `.{基名}.xhup-tmp`。
+fn staging_path(user_data_dir: &Path, file: &str) -> PathBuf {
+    let target = user_data_dir.join(file);
+    target.with_file_name(format!(
+        ".{}.xhup-tmp",
+        target
+            .file_name()
+            .expect("拥有文件应有基名")
+            .to_string_lossy()
+    ))
+}
+
 /// 把目标文件写入同目录隐藏临时文件(staging,不触碰最终产物)。
 fn stage_file(user_data_dir: &Path, file: &str, contents: &str) -> Result<PathBuf, ManagerError> {
-    let temporary = user_data_dir.join(format!(".{file}.xhup-tmp"));
+    // 子目录产物(lua/xhup_flow/**):父目录必须先创建。
+    let target = user_data_dir.join(file);
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|source| ManagerError::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let temporary = staging_path(user_data_dir, file);
     fs::write(&temporary, contents).map_err(|source| ManagerError::Io {
         path: temporary.clone(),
         source,
@@ -658,9 +681,9 @@ struct Committed {
 
 /// 校验计划只涉及 XHUP 拥有文件(execute 的唯一信任边界)。
 ///
-/// - `file` 必须逐字出现在 [`OWNED_FILES`] 中(拒绝路径分隔符、绝对
-///   路径与 `..` 逃逸;`Path::join` 遇绝对路径会替换基目录,必须在此
-///   堵死);
+/// - `file` 必须逐字出现在 [`OWNED_FILES`] 中(白名单精确匹配;白名单
+///   内的子目录条目是编译期常量,路径逃逸不可能进入;`Path::join` 遇
+///   绝对路径会替换基目录,必须在此堵死);
 /// - Overwrite 的 `backup` 必须与本目录推导的 [`backup_path`] 一致
 ///   (不信任计划携带的任意目录);
 /// - 违规返回 [`ManagerError::PackageInvalid`]。
@@ -768,6 +791,11 @@ pub fn execute(
                 done += 1;
             }
         }
+        // 卸载后清理自有空目录(只清 XHUP 命名空间;remove_dir 仅在空目录
+        // 时成功,非空(用户其它文件)自动保留,绝不递归删除)。
+        for dir in ["lua/xhup_flow/data", "lua/xhup_flow", "lua"] {
+            let _ = fs::remove_dir(user_data_dir.join(dir));
+        }
         return Ok(done);
     }
 
@@ -826,7 +854,7 @@ pub fn execute(
     for action in &plan.actions {
         match action {
             PlanAction::Write { file } | PlanAction::Overwrite { file, .. } => {
-                let temporary = user_data_dir.join(format!(".{file}.xhup-tmp"));
+                let temporary = staging_path(user_data_dir, file);
                 let target = user_data_dir.join(file);
                 let committed_result = fs::rename(&temporary, &target).map_err(|source| {
                     let _ = fs::remove_file(&temporary);
@@ -1018,13 +1046,9 @@ mod tests {
                 "生成器产物缺少拥有文件 {file}"
             );
         }
-        // 生成器产物可含 OWNED_FILES 之外的可选增强文件(lua/xhup_flow/**
-        // 简码提示):manager 的子目录安装支持落地前,Trainer 安装暂不含
-        // Lua 层(方案自动降级,输入行为不变);OWNED_FILES 必须全部被覆盖。
-        assert!(
-            package.files.len() >= OWNED_FILES.len(),
-            "生成器产物必须覆盖全部拥有文件"
-        );
+        // OWNED_FILES 与生成器产物一一对应(含 lua/xhup_flow/** 子目录
+        // 条目;子目录安装/备份/卸载语义见本模块测试)。
+        assert_eq!(package.files.len(), OWNED_FILES.len());
         assert!(!package.version.is_empty());
     }
 
@@ -1158,6 +1182,47 @@ mod tests {
         assert!(user.join("xhup_flow_user.userdb").is_dir());
         // 再卸载 → 空计划(幂等)。
         assert!(plan_uninstall(&user).unwrap().is_empty());
+        let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
+    fn lua_subdir_lifecycle_and_user_file_preservation() {
+        // 子目录拥有文件(lua/xhup_flow/**)的完整生命周期:
+        // 安装创建父目录 → 升级备份嵌套路径 → 卸载清自有空目录,
+        // 但用户自己的 lua/ 内容绝不被删。
+        let user = fake_user_dir("lua-subdir");
+        fs::create_dir_all(user.join("lua/my_tools")).unwrap();
+        fs::write(user.join("lua/my_tools/helper.lua"), "用户自己的 lua").unwrap();
+        fs::write(user.join("lua/xhup_flow_note.txt"), "用户笔记").unwrap();
+
+        let package = fake_package("1.0.0");
+        execute(
+            &plan_install(&user, &package).unwrap(),
+            &user,
+            Some(&package),
+        )
+        .unwrap();
+        assert!(user.join("lua/xhup_flow/quick_hint.lua").is_file());
+        assert!(user.join("lua/xhup_flow/data/quick_hints.lua").is_file());
+
+        // 升级 → 嵌套备份路径就位。
+        let package_v2 = fake_package("1.1.0");
+        execute(
+            &plan_install(&user, &package_v2).unwrap(),
+            &user,
+            Some(&package_v2),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(backup_path(&user, "lua/xhup_flow/quick_hint.lua")).unwrap(),
+            "1.0.0"
+        );
+
+        // 卸载 → 自有文件与空目录清除;用户 lua 内容保留。
+        execute(&plan_uninstall(&user).unwrap(), &user, None).unwrap();
+        assert!(!user.join("lua/xhup_flow").exists(), "自有空目录应清除");
+        assert!(user.join("lua/my_tools/helper.lua").is_file());
+        assert!(user.join("lua/xhup_flow_note.txt").is_file());
         let _ = fs::remove_dir_all(&user);
     }
 
@@ -1308,8 +1373,17 @@ mod tests {
             fs::read_to_string(backup_path(&user, OWNED_FILES[0])).unwrap(),
             "1.1.0"
         );
-        // 备份目录文件数有界(恰好拥有文件数)。
-        let count = fs::read_dir(user.join("xhup_backup")).unwrap().count();
+        // 备份目录文件数有界(恰好拥有文件数;lua 备份在嵌套子目录,递归计数)。
+        fn count_files(dir: &std::path::Path) -> usize {
+            fs::read_dir(dir)
+                .unwrap()
+                .map(|entry| {
+                    let path = entry.unwrap().path();
+                    if path.is_dir() { count_files(&path) } else { 1 }
+                })
+                .sum()
+        }
+        let count = count_files(&user.join("xhup_backup"));
         assert_eq!(count, OWNED_FILES.len());
         let _ = fs::remove_dir_all(&user);
     }
