@@ -52,6 +52,37 @@ export const DEFAULT_HINT_MODE: HintMode = "on-error";
 export const DEFAULT_DIFFICULTY: Difficulty = "daily";
 
 /**
+ * 键帽参考内容模式:控制屏显键盘上出现「哪类」教育信息。
+ *
+ * 与提示策略(何时显示答案类信息,HintMode)正交:参考内容永远不包含
+ * 「下一正确键」高亮,高亮由提示策略单独门控,防止答案泄露回归。
+ */
+export type KeyRefMode =
+  /** 按当前练习模式自动选择(默认)。 */
+  | "contextual"
+  | "none"
+  /** 双拼参考:声母/韵母标签。 */
+  | "double"
+  /** 形码参考:代表字标签(来自规范数据聚合)。 */
+  | "shape"
+  /** 双拼 + 形码同时显示。 */
+  | "both";
+
+export const KEY_REF_MODES: readonly KeyRefMode[] = [
+  "contextual",
+  "none",
+  "double",
+  "shape",
+  "both",
+];
+export const DEFAULT_KEY_REF_MODE: KeyRefMode = "contextual";
+
+/** 键位触感反馈强度(Android 默认轻;桌面不支持时自动无效)。 */
+export type HapticsMode = "off" | "light" | "medium";
+export const HAPTICS_MODES: readonly HapticsMode[] = ["off", "light", "medium"];
+export const DEFAULT_HAPTICS_MODE: HapticsMode = "light";
+
+/**
  * 模式 → 池轮换(均衡轮换顺序)。单字四模式沿用 V1 的 MODE_LENGTHS
  * 语义;新模式的池 ID 见 trainer-index 的 PoolId。
  */
