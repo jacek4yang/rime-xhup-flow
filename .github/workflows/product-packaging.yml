@@ -233,17 +233,17 @@ jobs:
       - name: 安装 pnpm
         uses: pnpm/action-setup@v6
         with:
-          package_json_file: trainer/package.json
+          package_json_file: package.json
 
       - name: 安装 Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: trainer/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: 安装依赖
-        run: pnpm -C trainer install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Tauri 构建(NSIS + MSI,MSI 内部版本 ${{ steps.meta.outputs.win_version }})
         run: pnpm -C trainer tauri build --bundles nsis,msi --config "${{ steps.meta.outputs.config }}"
@@ -310,17 +310,17 @@ jobs:
       - name: 安装 pnpm
         uses: pnpm/action-setup@v6
         with:
-          package_json_file: trainer/package.json
+          package_json_file: package.json
 
       - name: 安装 Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: trainer/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: 安装依赖
-        run: pnpm -C trainer install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Tauri 构建(universal DMG)
         run: pnpm -C trainer tauri build --target universal-apple-darwin --bundles dmg --config "${{ steps.meta.outputs.config }}"
@@ -389,17 +389,17 @@ jobs:
       - name: 安装 pnpm
         uses: pnpm/action-setup@v6
         with:
-          package_json_file: trainer/package.json
+          package_json_file: package.json
 
       - name: 安装 Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: trainer/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: 安装依赖
-        run: pnpm -C trainer install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Tauri 构建(deb + rpm)
         run: pnpm -C trainer tauri build --bundles deb,rpm --config "${{ steps.meta.outputs.config }}"
@@ -498,14 +498,14 @@ jobs:
       - name: 安装 pnpm
         uses: pnpm/action-setup@v6
         with:
-          package_json_file: trainer/package.json
+          package_json_file: package.json
 
       - name: 安装 Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: trainer/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: 安装 Java
         uses: actions/setup-java@v6
@@ -525,7 +525,7 @@ jobs:
             "ndk;${NDK_VERSION}"
 
       - name: 安装依赖
-        run: pnpm -C trainer install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: 配置 Android 发布签名(仅 sign_android=true)
         if: ${{ inputs.sign_android == true }}

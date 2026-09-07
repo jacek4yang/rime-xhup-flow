@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/use-i18n";
-import type { DoublePinyinReference } from "@/lib/trainer-data";
+import type { DoublePinyinReference } from "@xhup/trainer-core";
 
 const KEY_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"] as const;
 

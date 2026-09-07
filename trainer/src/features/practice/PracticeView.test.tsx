@@ -5,9 +5,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { TrainerEntry } from "@/lib/trainer-data";
-import type { TrainingItem } from "@/lib/trainer-index";
-import { buildTrainerIndex, charItem, type TrainerIndex } from "@/lib/trainer-index";
+import type { TrainerEntry } from "@xhup/trainer-core";
+import type { TrainingItem } from "@xhup/trainer-core";
+import { buildTrainerIndex, charItem, type TrainerIndex } from "@xhup/trainer-core";
 import { TrainerIndexProvider } from "@/lib/trainer-context";
 import { resetTrainerStore, useTrainerStore } from "@/stores/trainer-store";
 import { consumeBack } from "@/lib/back-handler";

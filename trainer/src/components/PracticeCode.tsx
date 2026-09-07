@@ -1,8 +1,8 @@
 import { motion } from "motion/react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/use-i18n";
-import type { I18nKey } from "@/lib/i18n";
-import type { QuestionOutcome } from "@/features/practice/types";
+import type { I18nKey } from "@xhup/trainer-core";
+import type { QuestionOutcome } from "@xhup/trainer-core";
 
 const SLOT_LABELS = [
   "practice.slotInitial",

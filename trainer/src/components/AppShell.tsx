@@ -18,9 +18,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { consumeBack } from "@/lib/back-handler";
-import type { I18nKey } from "@/lib/i18n";
+import type { I18nKey } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
-import type { TrainingItem } from "@/lib/trainer-index";
+import type { TrainingItem } from "@xhup/trainer-core";
 import { DashboardView } from "@/features/dashboard/DashboardView";
 import { PracticeSetupView } from "@/features/practice/PracticeSetupView";
 import { WeaknessCenter } from "@/features/review/ReviewView";
@@ -31,7 +31,7 @@ import { FirstRunWizard } from "@/features/first-run/FirstRunWizard";
 import { clearOnboarding } from "@/features/first-run/onboarding";
 import { LearnView } from "@/features/learn/LearnView";
 import { SettingsView } from "@/features/settings/SettingsView";
-import type { PracticeMode } from "@/features/practice/types";
+import type { PracticeMode } from "@xhup/trainer-core";
 
 export type ViewKey =
   | "today"

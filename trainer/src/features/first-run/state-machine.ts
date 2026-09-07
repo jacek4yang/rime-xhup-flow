@@ -12,8 +12,8 @@ import type {
   PlanDto,
   ProductStatusDto,
 } from "@/lib/product";
-import type { I18nKey } from "@/lib/i18n";
-import type { PracticeMode } from "@/features/practice/types";
+import type { I18nKey } from "@xhup/trainer-core";
+import type { PracticeMode } from "@xhup/trainer-core";
 
 /** 用户在「输入方案说明」步骤的意向(仅用于展示切换指引,两套方案都会安装)。 */
 export type SchemaChoice = "flow" | "static";

@@ -16,12 +16,13 @@ import {
   applyPerfect,
   emptyProgress,
   type ItemProgress,
-} from "@/lib/progress";
-import { localDateKey } from "@/lib/stats";
-import { LANGUAGES, type Language } from "@/lib/i18n";
+} from "@xhup/trainer-core";
+import { localDateKey } from "@xhup/trainer-core";
+import { LANGUAGES, type Language } from "@xhup/trainer-core";
+import { emptyDailyStats, type DailyStats } from "@xhup/trainer-core";
 import { DEFAULT_THEME, type ThemePreference } from "@/lib/theme";
-import type { Difficulty } from "@/lib/trainer-index";
-import type { BackupSettings } from "@/lib/backup";
+import type { Difficulty } from "@xhup/trainer-core";
+import type { BackupSettings } from "@xhup/trainer-core";
 import {
   DEFAULT_DIFFICULTY,
   DEFAULT_HINT_MODE,
@@ -42,32 +43,12 @@ import {
   type QuestionOutcome,
   type QuestionRoute,
   type SessionLength,
-} from "@/features/practice/types";
+} from "@xhup/trainer-core";
 
-/** 按本地日历日累计的统计。 */
-export type DailyStats = {
-  practiceMs: number;
-  questions: number;
-  keystrokes: number;
-  wrongKeyEvents: number;
-  bestStreak: number;
-  /** 完成的汉字数(V2;CPM 分母)。 */
-  chars: number;
-  /** 退格修正次数(V2)。 */
-  corrections: number;
-};
-
-export function emptyDailyStats(): DailyStats {
-  return {
-    practiceMs: 0,
-    questions: 0,
-    keystrokes: 0,
-    wrongKeyEvents: 0,
-    bestStreak: 0,
-    chars: 0,
-    corrections: 0,
-  };
-}
+// DailyStats 是跨平台进度 Schema 的一部分,定义移至共享核心;
+// 这里保持既有导出形状,桌面内部与既有测试无需感知迁移。
+export { emptyDailyStats } from "@xhup/trainer-core";
+export type { DailyStats } from "@xhup/trainer-core";
 
 export type TrainerData = {
   language: Language;

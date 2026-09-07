@@ -5,7 +5,7 @@
  * "system" 时监听 prefers-color-scheme 变化并跟随。
  */
 
-import type { I18nKey } from "@/lib/i18n";
+import type { I18nKey } from "@xhup/trainer-core";
 
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";

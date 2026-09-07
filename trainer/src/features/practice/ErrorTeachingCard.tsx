@@ -8,12 +8,12 @@
 
 import { Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { I18nKey } from "@/lib/i18n";
+import type { I18nKey } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
-import type { TrainerEntry } from "@/lib/trainer-data";
-import type { TrainingItem } from "@/lib/trainer-index";
-import type { ShapeKeyStat } from "@/features/learn/shape-explorer";
-import type { ErrorTeachingMode } from "./types";
+import type { TrainerEntry } from "@xhup/trainer-core";
+import type { TrainingItem } from "@xhup/trainer-core";
+import type { ShapeKeyStat } from "@xhup/trainer-core";
+import type { ErrorTeachingMode } from "@xhup/trainer-core";
 
 /** 音码键位标签(单字条目;复用码位格的既有槽位文案)。 */
 const CODE_PART_KEYS: readonly I18nKey[] = [

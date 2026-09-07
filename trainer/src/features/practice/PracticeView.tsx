@@ -15,16 +15,16 @@ import { Progress } from "@/components/ui/progress";
 import { StatChip } from "@/components/StatChip";
 import { PracticeCode } from "@/components/PracticeCode";
 import { OnScreenKeyboard } from "@/components/OnScreenKeyboard";
-import type { TrainingItem } from "@/lib/trainer-index";
-import { selectPool } from "@/lib/trainer-index";
+import type { TrainingItem } from "@xhup/trainer-core";
+import { selectPool } from "@xhup/trainer-core";
 import { useTrainerIndex } from "@/lib/trainer-context";
-import { accuracy, formatDuration, formatPercent, kpm, cpm } from "@/lib/stats";
-import { listWeakItems } from "@/lib/review";
+import { accuracy, formatDuration, formatPercent, kpm, cpm } from "@xhup/trainer-core";
+import { listWeakItems } from "@xhup/trainer-core";
 import { haptic } from "@/lib/haptics";
 import { registerBackHandler } from "@/lib/back-handler";
 import { useI18n } from "@/lib/use-i18n";
 import { useTrainerStore } from "@/stores/trainer-store";
-import { buildShapeKeyStats } from "@/features/learn/shape-explorer";
+import { buildShapeKeyStats } from "@xhup/trainer-core";
 import type { ShapeKeyRef, KeyboardRefMode } from "@/components/OnScreenKeyboard";
 import {
   activeCode,
@@ -40,8 +40,8 @@ import {
   type SessionEvent,
   type SessionState,
   type StepResult,
-} from "./engine";
-import { buildPool, type QuestionPool } from "./scheduler";
+} from "@xhup/trainer-core";
+import { buildPool, type QuestionPool } from "@xhup/trainer-core";
 import { SessionSummary } from "./SessionSummary";
 import { ErrorTeachingCard, findEntry } from "./ErrorTeachingCard";
 import type { PracticeConfig } from "./PracticeSetupView";
@@ -50,7 +50,7 @@ import {
   HINT_DELAY_MS,
   MODE_LABELS,
   MODE_POOL_ROTATION,
-} from "./types";
+} from "@xhup/trainer-core";
 
 const FEEDBACK_MS = 150;
 

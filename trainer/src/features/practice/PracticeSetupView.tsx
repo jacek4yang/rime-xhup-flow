@@ -10,8 +10,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { OptionButton, OptionRow } from "@/components/OptionGroup";
 import { cn } from "@/lib/utils";
-import type { TrainingItem } from "@/lib/trainer-index";
-import type { Difficulty } from "@/lib/trainer-index";
+import type { TrainingItem } from "@xhup/trainer-core";
+import type { Difficulty } from "@xhup/trainer-core";
 import { registerBackHandler } from "@/lib/back-handler";
 import { useI18n } from "@/lib/use-i18n";
 import { useTrainerStore } from "@/stores/trainer-store";
@@ -28,7 +28,7 @@ import {
   type HapticsMode,
   type KeyRefMode,
   type PracticeMode,
-} from "./types";
+} from "@xhup/trainer-core";
 
 export type PracticeConfig = {
   mode: PracticeMode;

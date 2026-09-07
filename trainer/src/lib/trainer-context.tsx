@@ -6,7 +6,7 @@
  */
 
 import { createContext, useContext, type ReactNode } from "react";
-import type { TrainerIndex } from "./trainer-index";
+import type { TrainerIndex } from "@xhup/trainer-core";
 
 const TrainerIndexContext = createContext<TrainerIndex | null>(null);
 

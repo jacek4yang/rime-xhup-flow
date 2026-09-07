@@ -9,17 +9,17 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatChip } from "@/components/StatChip";
-import { accuracy, formatDuration, formatPercent, localDateKey } from "@/lib/stats";
-import { listWeakItems } from "@/lib/review";
+import { accuracy, formatDuration, formatPercent, localDateKey } from "@xhup/trainer-core";
+import { listWeakItems } from "@xhup/trainer-core";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import { useI18n } from "@/lib/use-i18n";
 import { useTrainerStore } from "@/stores/trainer-store";
-import type { I18nKey } from "@/lib/i18n";
+import type { I18nKey } from "@xhup/trainer-core";
 import {
   MODE_DESCRIPTIONS,
   MODE_LABELS,
   type PracticeMode,
-} from "@/features/practice/types";
+} from "@xhup/trainer-core";
 
 const MODE_ORDER = ["double", "sound-shape", "full", "mixed"] as const;
 const MODE_KEYS: Record<(typeof MODE_ORDER)[number], I18nKey> = {

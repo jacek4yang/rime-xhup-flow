@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { CommandError, isDesktopApp } from "@/lib/native";
-import type { I18nKey } from "@/lib/i18n";
+import type { I18nKey } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
 import {
   ERROR_CODES,

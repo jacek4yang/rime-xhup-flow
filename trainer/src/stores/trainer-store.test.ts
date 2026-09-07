@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { localDateKey } from "@/lib/stats";
+import { localDateKey } from "@xhup/trainer-core";
 import {
   emptyDailyStats,
   migratePersisted,

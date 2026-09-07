@@ -15,11 +15,11 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/use-i18n";
-import type { I18nKey } from "@/lib/i18n";
+import type { I18nKey } from "@xhup/trainer-core";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import { useTrainerStore } from "@/stores/trainer-store";
 import { buildKeyLabels, compactFinals, compactInitials } from "@/components/OnScreenKeyboard";
-import { buildShapeKeyStats } from "@/features/learn/shape-explorer";
+import { buildShapeKeyStats } from "@xhup/trainer-core";
 
 type KeyDetailTab = "double" | "shape" | "examples" | "mine";
 
