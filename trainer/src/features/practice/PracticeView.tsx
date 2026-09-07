@@ -18,8 +18,9 @@ import { OnScreenKeyboard } from "@/components/OnScreenKeyboard";
 import type { TrainingItem } from "@/lib/trainer-index";
 import { selectPool } from "@/lib/trainer-index";
 import { useTrainerIndex } from "@/lib/trainer-context";
-import { accuracy, formatDuration, formatPercent, kpm } from "@/lib/stats";
+import { accuracy, formatDuration, formatPercent, kpm, cpm } from "@/lib/stats";
 import { listWeakItems } from "@/lib/review";
+import { useI18n } from "@/lib/use-i18n";
 import { useTrainerStore } from "@/stores/trainer-store";
 import {
   activeCode,
@@ -40,6 +41,7 @@ import { SessionSummary } from "./SessionSummary";
 import type { PracticeConfig } from "./PracticeSetupView";
 import {
   DIFFICULTY_LABELS,
+  HINT_DELAY_MS,
   MODE_LABELS,
   MODE_POOL_ROTATION,
 } from "./types";
@@ -82,6 +84,7 @@ export function PracticeView({
   onExitToToday: () => void;
 }) {
   const index = useTrainerIndex();
+  const { t } = useI18n();
   const hintMode = useTrainerStore((state) => state.hintMode);
   const storeProgress = useTrainerStore((state) => state.progress);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -157,9 +160,9 @@ export function PracticeView({
   if (!session) {
     return (
       <Card className="mx-auto max-w-md p-6 text-center">
-        <p className="font-medium">暂无可练习的条目</p>
+        <p className="font-medium">{t("practice.noItems")}</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          当前模式与难度组合下题池为空,请更换设置。
+          {t("practice.emptyPool")}
         </p>
         <Button className="mt-4" onClick={onExit}>
           返回
@@ -217,8 +220,14 @@ export function PracticeView({
       ? session.activeMs
       : session.activeMs + (Date.now() - session.lastTickAt);
   const sessionKpm = kpm(session.keystrokes, displayedMs);
+  const sessionCpm = cpm(session.charsCompleted, displayedMs);
+  const activeNow =
+    session.phase === "paused"
+      ? session.activeMs
+      : session.activeMs + (Date.now() - session.lastTickAt);
   const codeHintVisible =
     hintMode === "always" ||
+    (hintMode === "on-delay" && activeNow >= HINT_DELAY_MS) ||
     (hintMode === "on-error" && session.hadError) ||
     session.phase === "feedback";
   const { targetLength } = session.config;
@@ -228,10 +237,10 @@ export function PracticeView({
       <header className="flex items-center gap-2">
         <Button variant="ghost" size="sm" onClick={handleExit}>
           <ChevronLeft aria-hidden />
-          退出
+          {t("common.exit")}
         </Button>
         <Badge variant="secondary">
-          {config.entries ? "复习" : MODE_LABELS[session.config.mode]}
+          {config.entries ? t("practice.reviewBadge") : MODE_LABELS[session.config.mode]}
         </Badge>
         <Badge variant="outline">{DIFFICULTY_LABELS[config.difficulty]}</Badge>
         <div className="ml-auto flex items-center gap-2">
@@ -243,7 +252,7 @@ export function PracticeView({
           <Button
             variant="ghost"
             size="icon"
-            aria-label="暂停"
+            aria-label={t("common.pause")}
             onClick={() => commit(pause(session, Date.now()))}
           >
             <Pause aria-hidden />
@@ -279,11 +288,21 @@ export function PracticeView({
             transition={{ duration: 0.15 }}
             className="flex flex-col items-center gap-3 sm:gap-4"
           >
-            <div className="text-7xl font-medium leading-none tracking-tight sm:text-8xl">
+            <div
+              className={
+                session.current.charCount > 4
+                  ? "text-3xl font-medium leading-snug tracking-tight sm:text-4xl"
+                  : session.current.charCount > 1
+                    ? "text-5xl font-medium leading-none tracking-tight sm:text-6xl"
+                    : "text-7xl font-medium leading-none tracking-tight sm:text-8xl"
+              }
+            >
               {session.current.target}
             </div>
             <div className="font-mono text-sm text-muted-foreground sm:text-base">
-              {session.current.readings.join(" / ")}
+              {session.current.kind === "sentence" && codeHintVisible
+                ? session.current.components?.join(" · ")
+                : session.current.readings.join(" / ")}
             </div>
             <div
               aria-live="polite"
@@ -302,16 +321,16 @@ export function PracticeView({
 
         {session.phase === "paused" && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-xl bg-card/95 backdrop-blur-sm">
-            <p className="text-lg font-semibold">已暂停</p>
+            <p className="text-lg font-semibold">{t("common.paused")}</p>
             <div className="flex gap-2">
               <Button onClick={() => setSession(resume(session, Date.now()))}>
-                继续练习
+                {t("common.resume")}
               </Button>
               <Button
                 variant="outline"
                 onClick={() => commit(finish(session, Date.now()))}
               >
-                结束本次
+                {t("common.finish")}
               </Button>
             </div>
           </div>
@@ -327,16 +346,35 @@ export function PracticeView({
       />
 
       <div className="grid grid-cols-4 gap-2">
-        <StatChip label="连对" value={session.currentStreak} />
+        <StatChip label={t("common.streak")} value={session.currentStreak} />
         <StatChip
-          label="准确率"
+          label={t("common.accuracy")}
           value={formatPercent(accuracy(session.keystrokes, session.wrongKeyEvents))}
         />
-        <StatChip label="用时" value={formatDuration(displayedMs)} />
+        <StatChip label={t("common.elapsed")} value={formatDuration(displayedMs)} />
         <StatChip
-          label="KPM"
+          label={t("common.kpm")}
           value={sessionKpm === null ? "—" : Math.round(sessionKpm)}
         />
+        {session.charsCompleted > 0 && (
+          <>
+            <StatChip label={t("common.chars")} value={session.charsCompleted} />
+            <StatChip
+              label={t("common.cpm")}
+              value={
+                sessionCpm === null ? "—" : Math.round(sessionCpm)
+              }
+            />
+            <StatChip
+              label={t("common.keysPerChar")}
+              value={
+                session.charsCompleted === 0
+                  ? "—"
+                  : (session.keystrokes / session.charsCompleted).toFixed(1)
+              }
+            />
+          </>
+        )}
       </div>
     </div>
   );

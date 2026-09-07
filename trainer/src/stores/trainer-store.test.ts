@@ -164,6 +164,7 @@ describe("持久化", () => {
     };
     expect(Object.keys(raw.state).sort()).toEqual(
       [
+        "language",
         "theme",
         "hintMode",
         "difficulty",
@@ -238,6 +239,11 @@ describe("V1 → V2 迁移(B9)", () => {
     expect(migrated.keyErrors).toEqual({});
   });
 
+  it("V1 迁移补默认语言 zh", () => {
+    const migrated = migratePersisted(v1Fixture, 1);
+    expect(migrated.language).toBe("zh");
+  });
+
   it("V2 lastMode 值在迁移边界合法", () => {
     const migrated = migratePersisted(
       { ...v1Fixture, lastMode: "sentence" },
@@ -249,6 +255,42 @@ describe("V1 → V2 迁移(B9)", () => {
   it("migratePersisted 对未知版本/损坏数据走校验边界", () => {
     expect(migratePersisted("garbage", 99).progress).toEqual({});
     expect(migratePersisted(null, 1)).toMatchObject({ theme: "system" });
+  });
+});
+
+describe("language 与 resetItemProgress", () => {
+  it("语言偏好可设置并持久化", () => {
+    useTrainerStore.getState().setLanguage("en");
+    expect(useTrainerStore.getState().language).toBe("en");
+    const persisted = JSON.parse(localStorage.getItem(STORAGE_KEY)!) as {
+      state: { language: string };
+    };
+    expect(persisted.state.language).toBe("en");
+  });
+
+  it("resetItemProgress 只清指定条目", () => {
+    const now = Date.now();
+    const payload = {
+      id: "行:xk",
+      outcome: "perfect" as const,
+      routeUsed: "primary" as const,
+      keystrokes: 2,
+      wrongKeyEvents: 0,
+      wrongKeys: [],
+      chars: 1,
+      corrections: 0,
+      practiceMs: 100,
+      bestStreak: 1,
+      now,
+    };
+    useTrainerStore.getState().recordQuestionResult(payload);
+    useTrainerStore
+      .getState()
+      .recordQuestionResult({ ...payload, id: "word:我们:womf" });
+    useTrainerStore.getState().resetItemProgress(["行:xk"]);
+    const state = useTrainerStore.getState();
+    expect(state.progress["行:xk"]).toBeUndefined();
+    expect(state.progress["word:我们:womf"]).toBeDefined();
   });
 });
 

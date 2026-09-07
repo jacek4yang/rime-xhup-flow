@@ -1,0 +1,215 @@
+/**
+ * 轻量类型化 i18n:中文为基准字典,英文键必须与中文完全对齐(测试强制)。
+ *
+ * 不引入 i18n 依赖;`t(key)` 直接返回字符串,插值用 `{n}` 占位。
+ * 语言偏好持久化在 trainer store(默认中文)。
+ */
+
+export const LANGUAGES = ["zh", "en"] as const;
+export type Language = (typeof LANGUAGES)[number];
+
+export const LANGUAGE_LABELS: Record<Language, string> = {
+  zh: "中文",
+  en: "English",
+};
+
+/** 基准字典(zh):键 = 语义标识。 */
+const zh = {
+  "app.name": "XHUP Flow",
+  "app.subtitle": "小鹤音形训练",
+  "nav.today": "今日",
+  "nav.practice": "练习",
+  "nav.review": "错题",
+  "nav.stats": "统计",
+  "nav.reference": "键位",
+  "nav.settings": "设置",
+  "nav.main": "主导航",
+  "common.exit": "退出",
+  "common.pause": "暂停",
+  "common.paused": "已暂停",
+  "common.resume": "继续练习",
+  "common.finish": "结束本次",
+  "common.restart": "再来一组",
+  "common.back": "返回",
+  "common.cancel": "取消",
+  "common.streak": "连对",
+  "common.accuracy": "准确率",
+  "common.elapsed": "用时",
+  "common.kpm": "KPM",
+  "common.cpm": "CPM",
+  "common.keysPerChar": "键/字",
+  "common.summaryTitle": "本次练习",
+  "common.chars": "汉字",
+  "common.attempts": "练 {n} 次",
+  "common.wrongCount": "错 {n} 次",
+  "common.mastery": "掌握 {n}",
+  "common.empty": "暂无数据",
+  "practice.start": "开始练习",
+  "practice.mode": "模式",
+  "practice.difficulty": "难度",
+  "practice.length": "题数",
+  "practice.hint": "提示",
+  "practice.group.chars": "单字",
+  "practice.group.shortcuts": "词语简码",
+  "practice.group.words": "固定词",
+  "practice.group.sentences": "组句",
+  "practice.group.mixed": "综合",
+  "practice.emptyPool": "当前模式与难度组合下题池为空,请更换设置。",
+  "practice.noItems": "暂无可练习的条目",
+  "practice.inputArea": "编码输入区",
+  "practice.progressOf": "{done} / {total}",
+  "practice.progressUnlimited": "已练 {n} 题",
+  "practice.reviewBadge": "复习",
+  "practice.hintFull": "全码备用",
+  "practice.routeAlternate": "走了全码路线",
+  "practice.segmentedHint": "分段",
+  "summary.weak": "最需要复习",
+  "summary.practiceWeak": "复习薄弱项",
+  "review.title": "错题",
+  "review.subtitle": "按掌握度排序,从最薄弱的开始复习。",
+  "review.practiceThese": "练这些({n})",
+  "review.empty": "暂无错题",
+  "review.emptyHint": "还没有练习记录。完成几组练习后,答错的字会出现在这里。",
+  "review.emptyFiltered": "当前筛选下没有错题,换个模式看看。",
+  "review.resetMastery": "重置掌握",
+  "review.resetConfirm": "把所选条目的掌握度清零?此操作不可撤销。",
+  "review.all": "全部",
+  "stats.title": "统计",
+  "stats.last14": "近 14 天练习时长(分钟)",
+  "stats.accuracyTrend": "准确率趋势",
+  "stats.kpmTrend": "KPM 趋势",
+  "stats.cpmTrend": "CPM 趋势",
+  "stats.masteryDist": "掌握度分布",
+  "stats.byCodeLength": "码长表现",
+  "stats.heatmap": "键位热力",
+  "stats.heatmapHint": "按错的键累计;越红越需要练习。",
+  "stats.streak": "连续练习天数",
+  "stats.totalDays": "累计练习天数",
+  "stats.noData": "还没有练习记录,先完成一组练习吧。",
+  "settings.language": "语言",
+  "settings.theme": "主题",
+  "settings.backup": "备份与恢复",
+  "settings.export": "导出进度备份",
+  "settings.import": "导入备份",
+  "settings.imported": "备份已导入",
+  "settings.importFailed": "导入失败:{reason}",
+  "settings.learning": "输入法学习数据",
+  "settings.learningHint":
+    "Flow 引擎的组句学习数据仅存本机 userdb。可用命令行管理:xhup-cli learning status / export / import / reset。",
+  "settings.reset": "重置学习进度",
+  "reference.search": "搜索汉字 / 词语 / 码",
+  "reference.noResult": "没有匹配的条目",
+} as const;
+
+export type I18nKey = keyof typeof zh;
+
+/** 英文字典:键必须与 zh 完全一致(编译期约束 + 测试兜底)。 */
+const en: Record<I18nKey, string> = {
+  "app.name": "XHUP Flow",
+  "app.subtitle": "XHUP Flow Trainer",
+  "nav.today": "Today",
+  "nav.practice": "Practice",
+  "nav.review": "Weaknesses",
+  "nav.stats": "Stats",
+  "nav.reference": "Keyboard",
+  "nav.settings": "Settings",
+  "nav.main": "Main navigation",
+  "common.exit": "Exit",
+  "common.pause": "Pause",
+  "common.paused": "Paused",
+  "common.resume": "Resume",
+  "common.finish": "Finish session",
+  "common.restart": "Practice again",
+  "common.back": "Back",
+  "common.cancel": "Cancel",
+  "common.streak": "Streak",
+  "common.accuracy": "Accuracy",
+  "common.elapsed": "Time",
+  "common.kpm": "KPM",
+  "common.cpm": "CPM",
+  "common.keysPerChar": "keys/char",
+  "common.summaryTitle": "Session summary",
+  "common.chars": "Chars",
+  "common.attempts": "{n} attempts",
+  "common.wrongCount": "{n} wrong",
+  "common.mastery": "Mastery {n}",
+  "common.empty": "No data yet",
+  "practice.start": "Start practice",
+  "practice.mode": "Mode",
+  "practice.difficulty": "Difficulty",
+  "practice.length": "Items",
+  "practice.hint": "Hints",
+  "practice.group.chars": "Characters",
+  "practice.group.shortcuts": "Word shortcuts",
+  "practice.group.words": "Fixed words",
+  "practice.group.sentences": "Sentences",
+  "practice.group.mixed": "Mixed",
+  "practice.emptyPool":
+    "No items available for this mode and difficulty. Try other settings.",
+  "practice.noItems": "Nothing to practice",
+  "practice.inputArea": "Code input area",
+  "practice.progressOf": "{done} / {total}",
+  "practice.progressUnlimited": "{n} done",
+  "practice.reviewBadge": "Review",
+  "practice.hintFull": "Full code fallback",
+  "practice.routeAlternate": "Completed via full code",
+  "practice.segmentedHint": "Segments",
+  "summary.weak": "Most needed review",
+  "summary.practiceWeak": "Practice weak items",
+  "review.title": "Weaknesses",
+  "review.subtitle": "Sorted by mastery — start with the weakest.",
+  "review.practiceThese": "Practice these ({n})",
+  "review.empty": "No mistakes yet",
+  "review.emptyHint":
+    "No practice records yet. Mistakes will appear here after a few sessions.",
+  "review.emptyFiltered": "No mistakes under this filter.",
+  "review.resetMastery": "Reset mastery",
+  "review.resetConfirm":
+    "Reset mastery of the selected items to zero? This cannot be undone.",
+  "review.all": "All",
+  "stats.title": "Statistics",
+  "stats.last14": "Practice time, last 14 days (minutes)",
+  "stats.accuracyTrend": "Accuracy trend",
+  "stats.kpmTrend": "KPM trend",
+  "stats.cpmTrend": "CPM trend",
+  "stats.masteryDist": "Mastery distribution",
+  "stats.byCodeLength": "Performance by code length",
+  "stats.heatmap": "Key heatmap",
+  "stats.heatmapHint": "Accumulated wrong keys — the redder, the weaker.",
+  "stats.streak": "Day streak",
+  "stats.totalDays": "Total practice days",
+  "stats.noData": "No practice records yet — finish a session first.",
+  "settings.language": "Language",
+  "settings.theme": "Theme",
+  "settings.backup": "Backup & restore",
+  "settings.export": "Export progress backup",
+  "settings.import": "Import backup",
+  "settings.imported": "Backup imported",
+  "settings.importFailed": "Import failed: {reason}",
+  "settings.learning": "IME learning data",
+  "settings.learningHint":
+    "Flow engine sentence-learning data lives only in your local userdb. Manage via CLI: xhup-cli learning status / export / import / reset.",
+  "settings.reset": "Reset learning progress",
+  "reference.search": "Search char / word / code",
+  "reference.noResult": "No matching entries",
+};
+
+const dictionaries: Record<Language, Record<I18nKey, string>> = { zh, en };
+
+export function translate(
+  language: Language,
+  key: I18nKey,
+  params?: Record<string, string | number>,
+): string {
+  const template = dictionaries[language][key] ?? dictionaries.zh[key];
+  if (params === undefined) return template;
+  return Object.entries(params).reduce(
+    (text, [name, value]) => text.split(`{${name}}`).join(String(value)),
+    template,
+  );
+}
+
+/** 测试辅助:导出字典键集合(校验对齐)。 */
+export function dictionaryKeys(language: Language): Set<string> {
+  return new Set(Object.keys(dictionaries[language]));
+}
