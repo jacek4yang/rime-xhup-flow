@@ -41,7 +41,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use xhup_core::KeySequence;
-use xhup_generator::canonical_word_shortcut_entries;
+use xhup_generator::{canonical_word_shortcut_entries, raw_shortcuts};
 
 use crate::AnalysisData;
 use crate::candidates::{CandidateEnumerationSpec, CandidateGrammar, WordTarget};
@@ -71,6 +71,8 @@ pub struct FixedFirstUniverseStats {
     pub original_targets: usize,
     /// 因已有 ZERO_REGRESSION production 简码而被移除的目标数(优化前)。
     pub zr_words_excluded: usize,
+    /// 因已有二码 production 简码而被移除的目标数(优化前,一词一简码)。
+    pub two_key_words_excluded: usize,
     /// 剩余目标数。
     pub remaining_targets: usize,
     /// 因短于 production 最短长度被过滤的候选数(如 2-key `uj/II`;
@@ -86,7 +88,8 @@ pub struct FixedFirstUniverseStats {
 
 /// 构造 incremental FIXED_FIRST target/candidate universe。
 ///
-/// 三个限制都发生在 optimizer 之前:先移除已有 ZERO_REGRESSION 简码的词,
+/// 限制都发生在 optimizer 之前:先移除已有 ZERO_REGRESSION 或二码简码的词
+/// (一词一简码:持有任何既有 production 简码的词不再是 FF target),
 /// 再对剩余词移除短于 production 最短长度的候选(2-key 语法理论候选,
 /// 如 `时间 → uj/II`),最后只保留 `baseline fanout > 0` 的重码候选。
 /// `data` 的候选枚举规格必须是 Monotone V2 理论全集(production 最短
@@ -98,6 +101,10 @@ pub fn build_fixed_first_universe(
         .iter()
         .map(|entry| entry.word())
         .collect();
+    // 二码词集合用原始 TSV 扫描而非校验管线:FF 再生成时磁盘上的二码 TSV
+    // 可能处于中间态,校验管线会按设计 panic;原始扫描永远可用(见
+    // xhup_generator::raw_shortcuts 文档)。
+    let two_key_words: BTreeSet<&str> = raw_shortcuts::two_key_words().into_iter().collect();
 
     let mut stats = FixedFirstUniverseStats {
         original_targets: data.targets.len(),
@@ -107,6 +114,9 @@ pub fn build_fixed_first_universe(
     let before = targets.len();
     targets.retain(|target| !zr_words.contains(target.word()));
     stats.zr_words_excluded = before - targets.len();
+    let before = targets.len();
+    targets.retain(|target| !two_key_words.contains(target.word()));
+    stats.two_key_words_excluded = before - targets.len();
     stats.remaining_targets = targets.len();
 
     for target in &mut targets {

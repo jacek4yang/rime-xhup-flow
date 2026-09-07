@@ -120,6 +120,18 @@ fn universe_is_incremental_and_colliding_only() {
             .all(|target| !zr_words.contains(target.word())),
         "incremental universe 不得包含任何 ZR production 词"
     );
+    // 一词一简码:已有二码简码的词同样在优化前被移除。
+    let two_key_words: BTreeSet<&str> = xhup_generator::canonical_two_key_shortcut_entries()
+        .iter()
+        .map(|entry| entry.word())
+        .collect();
+    assert_eq!(stats.two_key_words_excluded, two_key_words.len());
+    assert!(
+        targets
+            .iter()
+            .all(|target| !two_key_words.contains(target.word())),
+        "incremental universe 不得包含任何二码 production 词"
+    );
     // 候选在优化前已被限制为长度 >= 3 且 baseline fanout > 0 的重码候选
     //(无上限);production min-length 是 policy 过滤,不是语法语义。
     for target in &targets {
@@ -142,7 +154,7 @@ fn universe_is_incremental_and_colliding_only() {
     }
     assert_eq!(
         stats.original_targets,
-        stats.zr_words_excluded + stats.remaining_targets
+        stats.zr_words_excluded + stats.two_key_words_excluded + stats.remaining_targets
     );
     assert!(
         stats.below_min_length_candidates > 0,

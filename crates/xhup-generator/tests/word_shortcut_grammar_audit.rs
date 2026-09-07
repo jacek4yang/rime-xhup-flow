@@ -32,10 +32,11 @@ fn is_monotone_suffix(mode: &str) -> bool {
 }
 
 /// PR #22 冻结层模式审计:总数、单调行数、非单调行数(按模式分类)。
+/// (碰撞共存修复重生成 ZR 后锚点整体更新:44,448 → 44,518;分布见下行断言。)
 #[test]
 fn zero_regression_pattern_audit() {
     let entries = canonical_word_shortcut_entries();
-    assert_eq!(entries.len(), 44_448, "PR #22 冻结行数");
+    assert_eq!(entries.len(), 44_518, "ZR 行数锚点(碰撞共存修复后)");
 
     let mut monotone = 0usize;
     let mut non_monotone: BTreeMap<String, usize> = BTreeMap::new();
@@ -66,16 +67,16 @@ fn zero_regression_pattern_audit() {
     for (mode, count) in &rows {
         eprintln!("    {mode}: {count}");
     }
-    assert_eq!(monotone, 31_167, "单调行数锚点");
-    assert_eq!(non_monotone_total, 13_281, "非单调行数锚点");
+    assert_eq!(monotone, 31_224, "单调行数锚点");
+    assert_eq!(non_monotone_total, 13_294, "非单调行数锚点");
     // 按模式分类(降序)。
     let expected: Vec<(&str, usize)> = vec![
-        ("IIF", 4_632),
-        ("IFI", 3_625),
-        ("IF", 2_981),
-        ("IFF", 1_538),
-        ("IIIF", 446),
-        ("FIF", 40),
+        ("IIF", 4_709),
+        ("IFI", 3_570),
+        ("IF", 3_042),
+        ("IFF", 1_478),
+        ("IIIF", 437),
+        ("FIF", 39),
         ("IFII", 14),
         ("IIFI", 5),
     ];

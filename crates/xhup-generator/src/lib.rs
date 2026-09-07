@@ -11,8 +11,10 @@
 //! 各自的规范/最终化数据;训练器数据集目前仍仅投影单字训练数据。静态单字/词语
 //! 条目各由唯一管线最终化(推导 → 去重 → 万象读音分数聚合 → 组内排名 →
 //! 显式 Rime 权重);候选排名由显式权重表达,行/条目输出顺序仅是确定性的
-//! 序列化顺序。一级简码只是一键精确候选,不自动上屏;固定层 4 键词码与规范
-//! 单字全码集严格不相交,词层绝不改变既有 2/3/4 码单字的精确查表行为。在相同
+//! 序列化顺序。一级简码只是一键精确候选,不自动上屏。固定层 4 键词码可能与
+//! 规范单字全码碰撞:词与字在同码上合法共存,词汇存在性绝不因碰撞被剥夺;
+//! 碰撞码的候选次序由 `merged_ranking` 按同源万象频率证据跨表仲裁(权重唯一、
+//! 无平局),非碰撞码行为字节级不变。在相同
 //! 规范数据、相同频率/词语数据、相同 xhup-generator 源码(含其 package
 //! version)与相同模板下,生成结果字节级一致。
 #![forbid(unsafe_code)]
@@ -21,6 +23,7 @@ mod analysis;
 mod char_codes;
 mod fixed_first_shortcuts;
 mod frequency;
+mod merged_ranking;
 mod package;
 mod rime;
 mod rime_fixed_first_shortcuts;
@@ -35,6 +38,21 @@ mod two_key_shortcuts;
 mod word_codes;
 mod word_shortcuts;
 mod words;
+
+/// 各简码层的原始 TSV 词/码集合(纯文本扫描,**不经过校验管线**)。
+///
+/// 仅供跨层引导与 canonical 再生成流程使用:再生成某一简码层时,磁盘上的
+/// 兄弟层 TSV 可能处于与新数据不一致的中间态,校验管线会按设计 panic;
+/// 原始文本扫描永远可用。生产逻辑应使用 canonical 投影(经完整校验)。
+pub mod raw_shortcuts {
+    pub use crate::fixed_first_shortcuts::{
+        raw_shortcut_codes as fixed_first_codes, raw_words as fixed_first_words,
+    };
+    pub use crate::two_key_shortcuts::raw_words as two_key_words;
+    pub use crate::word_shortcuts::{
+        raw_shortcut_codes as zero_regression_codes, raw_words as zero_regression_words,
+    };
+}
 
 pub use analysis::{
     CharCodeAnalysisEntry, WordCodeAnalysisEntry, char_code_analysis_entries,

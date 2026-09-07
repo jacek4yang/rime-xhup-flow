@@ -16,9 +16,14 @@
 //! 路径、blob SHA、许可)作为固定元数据写入输出 TSV 的注释头。构建、测试与
 //! 正常生成都以入库的 TSV 为输入,不依赖本工具。
 //!
-//! collision policy:二字词的 4 键码按 **semantic entry**(词 + 读音序列)粒度
-//! 与规范单字全码集比对——只有推导码冲突的那一条 semantic entry 被排除;同一
-//! 词形若存在不冲突的合法读音序列,仍然保留。
+//! collision policy:二字词的 4 键码可能与规范单字全码碰撞。**碰撞不排除
+//! 词语**(词汇存在性不因码碰撞被剥夺);碰撞码的词/字候选次序由生成器
+//! `merged_ranking` 按同源频率证据跨表仲裁。本工具仅统计碰撞规模供审计。
+//!
+//! shortcut protection:凡被规范简码数据(`data/shortcuts/*.tsv`)引用的
+//! `(词, 完整码)` 不受 top-N 频率截断影响——简码的资格语义要求宿主词在
+//! 固定词层可达;必要时从该词长池的频率尾部逐出等量未受保护条目腾位。
+//! 受保护条目在源数据中无匹配 semantic entry 时失败(简码悬空),不静默放过。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -50,10 +55,14 @@ const HEADER: &str = "\
 # aggregation: 归一化后落到同一 (词, 规范读音序列) 的全部源行分数按 u64 校验和聚合
 # match_policy: 每字属于规范 8105 清单、对应读音是该字规范读音且可编码为
 #   XHUP 输入音节;不发明新读音
-# collision_policy: 二字词按 semantic entry(词 + 读音序列)推导 4 键码,
-#   与规范单字全码集冲突的 semantic entry 被排除;同词形的不冲突读音序列保留
+# collision_policy: 二字词 4 键码与规范单字全码碰撞时不删除任何 semantic
+#   entry;碰撞只影响候选排序,由生成器 merged_ranking 按同源频率证据仲裁
+# shortcut_protection: 被规范简码数据(data/shortcuts/*.tsv)引用的
+#   (词, 完整码) 与 FIXED_FIRST shortcut 目标码上的词层占用者不受
+#   top-N 截断影响,必然入选;必要时从该词长池频率尾部逐出等量未受
+#   保护条目腾位;受保护 (词, 完整码) 无源数据匹配时失败
 # selection: 各词长独立按 (分数降序, 词 Unicode 升序, 读音序列升序) 取
-#   前 50000 / 30000 / 20000 条;合法候选不足目标即失败,不静默缩水
+#   前 50000 / 30000 / 20000 条(含保护递补);合法候选不足目标即失败,不静默缩水
 # serialization: 词长升序 → 词 Unicode 升序 → 读音序列升序
 ";
 
@@ -201,6 +210,64 @@ fn extract(text: &str) -> ExtractReport {
     report
 }
 
+/// shortcut protection 的输入:宿主词关系 + FIXED_FIRST 目标码。
+struct ShortcutProtection {
+    /// 被简码引用的 `(词, 完整码)`:宿主词必须留在固定词层。
+    word_codes: BTreeSet<(String, String)>,
+    /// FIXED_FIRST shortcut 命中的目标码:这些码上的词层占用者必须保留,
+    /// 否则 shortcut 失去 baseline 命中而悬空(ZR/二码层 shortcut 与词层
+    /// 按不变量天然不相交,无需列入)。
+    target_codes: BTreeSet<String>,
+}
+
+/// 读取规范简码数据(`data/shortcuts/*.tsv`)构造保护集。
+///
+/// 简码 TSV 是仓库内 pin 住的规范数据;本工具不访问网络。路径相对 crate
+/// 清单目录解析,与构建/测试的工作目录无关。
+fn load_shortcut_protection() -> ShortcutProtection {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/shortcuts");
+    let mut protection = ShortcutProtection {
+        word_codes: BTreeSet::new(),
+        target_codes: BTreeSet::new(),
+    };
+    for (name, is_fixed_first) in [
+        ("word_zero_regression.tsv", false),
+        ("word_two_key_zero_regression.tsv", false),
+        ("word_fixed_first.tsv", true),
+    ] {
+        let path = dir.join(name);
+        let text = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("无法读取简码数据 {}: {err}", path.display()));
+        for (index, line) in text.lines().enumerate() {
+            if line.starts_with('#') {
+                continue;
+            }
+            let mut fields = line.split('\t');
+            let (Some(word), Some(fullcode)) = (fields.next(), fields.next()) else {
+                panic!(
+                    "{} 第 {} 行缺少 词/完整码 字段: {line:?}",
+                    path.display(),
+                    index + 1
+                );
+            };
+            protection
+                .word_codes
+                .insert((word.to_string(), fullcode.to_string()));
+            if is_fixed_first {
+                let shortcut = fields.next().unwrap_or_else(|| {
+                    panic!(
+                        "{} 第 {} 行缺少 shortcut 字段: {line:?}",
+                        path.display(),
+                        index + 1
+                    )
+                });
+                protection.target_codes.insert(shortcut.to_string());
+            }
+        }
+    }
+    protection
+}
+
 fn main() -> ExitCode {
     let mut args = env::args_os();
     let program = args.next().unwrap_or_default();
@@ -245,19 +312,20 @@ fn main() -> ExitCode {
         report.unencodable
     );
 
-    // 规范单字全码集:二字词 collision 比对的基准(复用公共推导,无第二份实现)。
+    // 规范单字全码集:二字词碰撞统计的基准(复用公共推导,无第二份实现)。
+    // 仅审计,不过滤:碰撞的词/字共存语义见模块头 collision policy。
     let fullcodes: BTreeSet<String> = canonical_char_entries()
         .iter()
         .map(|entry| entry.code().to_string())
         .collect();
     eprintln!("规范单字全码 distinct 数: {}", fullcodes.len());
 
-    // collision 过滤(semantic entry 粒度)并按词长分池。
+    // 按词长分池(不做碰撞过滤);同时统计碰撞规模供审计。
     let mut pools: [Vec<SemanticEntry>; 3] = [Vec::new(), Vec::new(), Vec::new()];
-    let mut two_char_before = 0usize;
-    let mut excluded = 0usize;
+    let mut two_char_total = 0usize;
+    let mut collided = 0usize;
     let mut collided_codes: BTreeSet<String> = BTreeSet::new();
-    let mut excluded_examples: Vec<(u64, String, String)> = Vec::new();
+    let mut collided_examples: Vec<(u64, String, String)> = Vec::new();
     for ((word, readings), score) in report.scores {
         let entry = SemanticEntry {
             word,
@@ -265,32 +333,36 @@ fn main() -> ExitCode {
             score,
         };
         if entry.word_len() == 2 {
-            two_char_before += 1;
+            two_char_total += 1;
             let code = entry.code();
             if fullcodes.contains(&code) {
-                excluded += 1;
+                collided += 1;
                 collided_codes.insert(code.clone());
-                excluded_examples.push((entry.score, entry.word.clone(), code));
-                continue;
+                collided_examples.push((entry.score, entry.word.clone(), code));
             }
         }
         pools[entry.word_len() - 2].push(entry);
     }
 
-    eprintln!("二字词 semantic entries(collision 过滤前): {two_char_before}");
-    eprintln!("排除的二字词 semantic entries: {excluded}");
-    eprintln!(
-        "剩余合法二字词 semantic entries(top-N 前): {}",
-        two_char_before - excluded
-    );
-    eprintln!("冲突的 distinct 全码数: {}", collided_codes.len());
-    excluded_examples.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-    eprintln!("被排除的高频示例(前 15):");
-    for (score, word, code) in excluded_examples.iter().take(15) {
-        eprintln!("  排除: {word}\t{code}\t{score}");
+    eprintln!("二字词 semantic entries: {two_char_total}");
+    eprintln!("其中与单字全码碰撞(保留,由 merged_ranking 仲裁排序): {collided}");
+    eprintln!("碰撞的 distinct 全码数: {}", collided_codes.len());
+    collided_examples.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    eprintln!("碰撞的高频示例(前 15):");
+    for (score, word, code) in collided_examples.iter().take(15) {
+        eprintln!("  共存: {word}\t{code}\t{score}");
     }
 
     // 各词长独立 top-N 选择;合法候选不足目标即失败。
+    // 简码保护层:被规范简码引用的 (词, 完整码) 与 FIXED_FIRST 目标码上的
+    // 词层占用者必然入选,必要时从频率尾部逐出等量未受保护条目;受保护
+    // (词, 完整码) 在池中无匹配即失败(简码悬空)。
+    let protection = load_shortcut_protection();
+    eprintln!(
+        "简码保护:宿主 (词, 完整码) {} 条,FIXED_FIRST 目标码 {} 个",
+        protection.word_codes.len(),
+        protection.target_codes.len()
+    );
     let mut selected: Vec<SemanticEntry> = Vec::new();
     for (index, &(len, target)) in TARGETS.iter().enumerate() {
         let mut pool = std::mem::take(&mut pools[index]);
@@ -300,8 +372,69 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
         pool.sort_by(SemanticEntry::selection_cmp);
-        pool.truncate(target);
-        selected.extend(pool);
+
+        // 受保护条目的池内下标;同时校验所有该词长的受保护关系均有匹配。
+        let mut protected_idx: Vec<usize> = Vec::new();
+        for (i, entry) in pool.iter().enumerate() {
+            let code = entry.code();
+            if protection
+                .word_codes
+                .contains(&(entry.word.clone(), code.clone()))
+                || protection.target_codes.contains(&code)
+            {
+                protected_idx.push(i);
+            }
+        }
+        for pair in &protection.word_codes {
+            let char_count = pair.0.chars().count();
+            if char_count != len {
+                continue;
+            }
+            let found = pool
+                .iter()
+                .any(|entry| entry.word == pair.0 && entry.code() == pair.1);
+            if !found {
+                eprintln!(
+                    "错误: 简码引用的 (词, 完整码) 在源数据中无匹配 semantic entry(简码悬空): {} {}",
+                    pair.0, pair.1
+                );
+                return ExitCode::FAILURE;
+            }
+        }
+
+        let mut chosen = vec![false; pool.len()];
+        for flag in chosen.iter_mut().take(target) {
+            *flag = true;
+        }
+        let protected_set: BTreeSet<usize> = protected_idx.iter().copied().collect();
+        let mut reinstated = 0usize;
+        let mut tail = target;
+        for &i in &protected_idx {
+            if chosen[i] {
+                continue;
+            }
+            // 从已选尾部向下找第一个未受保护条目逐出。
+            loop {
+                if tail == 0 {
+                    eprintln!("错误: {len} 字词受保护条目数超过目标 {target},无法腾位");
+                    return ExitCode::FAILURE;
+                }
+                tail -= 1;
+                if chosen[tail] && !protected_set.contains(&tail) {
+                    chosen[tail] = false;
+                    break;
+                }
+            }
+            chosen[i] = true;
+            reinstated += 1;
+        }
+        eprintln!("{len} 字词: 保护递补 {reinstated} 条(逐出等量尾部条目)");
+
+        selected.extend(
+            pool.into_iter()
+                .zip(chosen)
+                .filter_map(|(entry, keep)| keep.then_some(entry)),
+        );
     }
 
     // canonical serialization:词长升序 → 词 Unicode 升序 → 读音序列升序。

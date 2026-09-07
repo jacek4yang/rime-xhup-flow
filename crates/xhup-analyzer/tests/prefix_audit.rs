@@ -13,11 +13,14 @@ fn prefix_topology_counts_match_frozen_audit() {
         audit.shortcut_count,
         canonical_word_shortcut_entries().len()
     );
-    assert_eq!(audit.shortcut_count, 44_448);
-    assert_eq!(audit.shortcut_prefix_of_baseline_pairs, 33_014);
-    assert_eq!(audit.shortcuts_prefixing_baseline, 5_856);
-    assert_eq!(audit.baseline_prefix_of_shortcut_pairs, 94_441);
-    assert_eq!(audit.shortcut_to_shortcut_pairs, 20_746);
+    assert_eq!(audit.shortcut_count, 44_518);
+    // 碰撞共存修复(ZR 44,448→44,518 / FF 2,380→2,366 / 词层重接纳碰撞
+    // 二字词并逐出尾部低频词)改变了 baseline 词层与简码集合 membership,
+    // 以下计数随之整体更新(碰撞共存 PR,人工 review)。
+    assert_eq!(audit.shortcut_prefix_of_baseline_pairs, 32_014);
+    assert_eq!(audit.shortcuts_prefixing_baseline, 5_796);
+    assert_eq!(audit.baseline_prefix_of_shortcut_pairs, 94_450);
+    assert_eq!(audit.shortcut_to_shortcut_pairs, 20_627);
 }
 
 #[test]
@@ -96,11 +99,12 @@ fn sentinel_frozen_values() {
     }
     assert_eq!(audit.lengths[3].rows, 0, "6-key 层为空");
     assert_eq!(audit.lengths[4].rows, 0, "7-key 层为空");
-    // 每层高频哨兵(PR #22 runtime 冒烟的高频代表)。
+    // 每层高频哨兵(PR #22 runtime 冒烟的高频代表;碰撞共存修复后 5 键层
+    // 高频哨兵从「这就是 vejqu」变为「实际上」,因 ZR membership 变化)。
     let top: [(usize, &str, &str); 3] = [
         (3, "就是", "jqu"),
         (4, "这样的", "veyd"),
-        (5, "这就是", "vejqu"),
+        (5, "实际上", "uijiu"),
     ];
     for (length, word, shortcut) in top {
         let slot = &audit.lengths[length - 3];

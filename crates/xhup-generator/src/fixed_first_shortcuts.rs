@@ -42,6 +42,36 @@ use xhup_core::{KeySequence, XhupHanzi};
 const FIXED_FIRST_SHORTCUTS_TSV: &str =
     include_str!("../../../data/shortcuts/word_fixed_first.tsv");
 
+/// FF 层的原始词集合(纯文本扫描,不经过本层校验管线)。
+///
+/// 跨层「一词一码」检查必须基于这种原始扫描,绝不能调用兄弟层的
+/// OnceLock 校验管线(会形成循环初始化死锁)。
+pub fn raw_words() -> BTreeSet<&'static str> {
+    FIXED_FIRST_SHORTCUTS_TSV
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .map(|line| line.split('\t').next().expect("FF 数据行应有词字段"))
+        .collect()
+}
+
+/// FF 层的原始 shortcut 码集合(纯文本扫描;语义约束同 [`raw_words`])。
+pub fn raw_shortcut_codes() -> BTreeSet<KeySequence> {
+    FIXED_FIRST_SHORTCUTS_TSV
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .map(|line| {
+            let mut fields = line.split('\t');
+            fields.next();
+            fields.next();
+            fields
+                .next()
+                .expect("FF 数据行应有 shortcut 字段")
+                .parse()
+                .expect("FF shortcut 码应可解析")
+        })
+        .collect()
+}
+
 /// 一条 canonical FIXED_FIRST 词语简码关系:一个词的一个 shortcut 别名。
 pub struct CanonicalFixedFirstShortcutEntry {
     word: String,
@@ -158,14 +188,13 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalFixedFirstShortcutE
         .map(|entry| (entry.word().to_string(), entry.code().to_string()))
         .collect();
     let baseline_groups = baseline_fixed_groups();
-    let zr_words: BTreeSet<&str> = crate::canonical_word_shortcut_entries()
-        .iter()
-        .map(|entry| entry.word())
-        .collect();
-    let zr_codes: BTreeSet<KeySequence> = crate::canonical_word_shortcut_entries()
-        .iter()
-        .map(|entry| entry.shortcut_code().clone())
-        .collect();
+    // 跨层集合一律来自兄弟层的原始 TSV 文本扫描:校验管线经 OnceLock
+    // 延迟初始化,兄弟层(two_key)反向引用本层,互相调用校验管线会形成
+    // 循环初始化死锁。「一词一简码」由本层(ZR/二码词)与二码层(ZR/FF 词)
+    // 两侧分别断言。
+    let zr_words: BTreeSet<&str> = crate::word_shortcuts::raw_words();
+    let zr_codes: BTreeSet<KeySequence> = crate::word_shortcuts::raw_shortcut_codes();
+    let two_key_words: BTreeSet<&str> = crate::two_key_shortcuts::raw_words();
 
     let mut entries: Vec<CanonicalFixedFirstShortcutEntry> = Vec::new();
     let mut words: BTreeSet<&str> = BTreeSet::new();
@@ -202,6 +231,10 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalFixedFirstShortcutE
         assert!(
             !zr_words.contains(word),
             "{name} 第 {row_number} 行词已持有 ZERO_REGRESSION 简码: {word:?}"
+        );
+        assert!(
+            !two_key_words.contains(word),
+            "{name} 第 {row_number} 行词已持有二码简码: {word:?}"
         );
 
         // 完整码:可解析,长度为字数两倍,且 (词, 完整码) 属于固定词层。

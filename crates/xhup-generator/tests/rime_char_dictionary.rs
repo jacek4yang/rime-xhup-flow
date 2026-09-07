@@ -143,6 +143,13 @@ fn serialization_order_and_anchors() {
 #[test]
 fn same_code_weights_are_unique_and_descend_in_file_order() {
     let (_, rows) = parse_dictionary(&generate_rime_char_dictionary());
+    // 与词层碰撞的 4 键码使用 merged_ranking 跨表权重:字表内只是合并
+    // 1..=n 排列的子集,不期望表内密度;跨表密度由词/字共存集成测试保证。
+    let word_four_key_codes: BTreeSet<String> = xhup_generator::canonical_word_code_entries()
+        .iter()
+        .filter(|entry| entry.code().len() == 4)
+        .map(|entry| entry.code().to_string())
+        .collect();
     let mut by_code: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
     for (_, code, weight) in &rows {
         by_code.entry(code.as_str()).or_default().push(*weight);
@@ -154,6 +161,9 @@ fn same_code_weights_are_unique_and_descend_in_file_order() {
             weights.windows(2).all(|w| w[0] > w[1]),
             "{code} 文件内同码权重应严格降序"
         );
+        if word_four_key_codes.contains(*code) {
+            continue;
+        }
         assert_eq!(
             weights[0] as usize,
             weights.len(),
