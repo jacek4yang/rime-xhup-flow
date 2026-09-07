@@ -22,10 +22,18 @@
 //! 别名;≥ 5 字的键数 = 字数,与固定词全码键数(4/6/8)天然错开,
 //! 4 字组合词可能与 4 键码位重合但受优先级栅栏保护(见 flow_encoder_yaml)。
 //!
-//! 权重沿用各最终化条目的显式 Rime 权重(排名输出表示);行顺序只是确定性
-//! 序列化顺序,不承担候选排序。输出 UTF-8、LF、恰好一个末尾换行、无 BOM;
-//! 不含时间戳/主机/路径等易变内容,相同规范数据与源码下字节级一致。
+//! 组句词典的权重列携带**万象聚合频率分数**(原始证据,非排名输出表示):
+//! librime `dict_compiler` 建表时对词典权重取 log,`table_translator` 候选
+//! quality 再 exp 还原,组句(`poet`)按句子权重总和比较分段路径 —— 只有
+//! 真实频率证据才能让常用词路径压倒垃圾分段路径;排名权重(组内名次
+//! 1..N)在同码组间不可比,无法区分高频词与生僻词。学习词典仍沿用各最终化
+//! 条目的显式 Rime 权重(排名输出表示,不参与组句)。
+//!
+//! 行顺序只是确定性序列化顺序,不承担候选排序。输出 UTF-8、LF、恰好一个
+//! 末尾换行、无 BOM;不含时间戳/主机/路径等易变内容,相同规范数据与源码
+//! 下字节级一致。
 
+use crate::analysis::word_code_analysis_entries;
 use crate::char_codes::canonical_char_code_entries;
 use crate::word_codes::canonical_word_code_entries;
 
@@ -94,14 +102,16 @@ pub fn flow_encoder_yaml() -> String {
 /// 生成完整的 Flow 组句 Rime 源词典文本(仅词条全码,无单字)。
 ///
 /// 语义见模块文档:供 `table_translator@flow`(enable_sentence)使用;
-/// 句子只由词组成,杜绝逐字退化分段。
+/// 句子只由词组成,杜绝逐字退化分段。权重列为万象聚合频率分数
+/// (经 librime log/exp 往返后原值还原为候选 quality),使组句按
+/// 真实频率证据选择分段路径。
 pub fn generate_rime_flow_dictionary() -> String {
     let mut rows: Vec<(String, String, u32)> = Vec::new();
-    for entry in canonical_word_code_entries() {
+    for entry in word_code_analysis_entries() {
         rows.push((
             entry.word().to_string(),
             entry.code().to_string(),
-            entry.weight(),
+            u32::try_from(entry.frequency_score()).unwrap_or(u32::MAX),
         ));
     }
     rows.sort_by(|a, b| {
@@ -199,6 +209,65 @@ mod tests {
             generate_rime_flow_dictionary(),
             "两次生成字节级一致"
         );
+    }
+
+    /// 组句词典权重携带万象频率分数(而非排名输出权重):逐条与分析投影
+    /// 一致。这是组句质量的根基 —— librime 经 log/exp 往返后以词典权重
+    /// 原值作为候选 quality,句权重 = 路径分数之和,频率证据决定分段胜负。
+    #[test]
+    fn flow_weights_carry_frequency_evidence() {
+        let weights = flow_dict_weights();
+        for entry in word_code_analysis_entries() {
+            assert_eq!(
+                *weights
+                    .get(entry.word())
+                    .unwrap_or_else(|| panic!("词条不在组句词典: {}", entry.word())),
+                entry.frequency_score(),
+                "组句词典权重应等于万象频率分数: {}",
+                entry.word()
+            );
+        }
+    }
+
+    /// 回归守卫(组句审计失败根因):常用词路径必须在频率证据上压倒
+    /// 垃圾分段路径。我们/时间/工作 的分数必须远高于 我们是/剪发/战功
+    /// 等恰好拼出同码序列的生僻分段词,否则组句产出 我们是剪发战功…。
+    #[test]
+    fn common_words_outweigh_garbage_segmentation() {
+        let weights = flow_dict_weights();
+        let weight_of = |word: &str| weights.get(word).copied().unwrap_or(0);
+        for (common, garbage) in [
+            ("我们", "我们是"),
+            ("时间", "剪发"),
+            ("工作", "战功"),
+            ("发展", "做客"),
+        ] {
+            assert!(
+                weight_of(common) > weight_of(garbage) * 10,
+                "{common}({}) 的分数应远超垃圾分段词 {garbage}({})",
+                weight_of(common),
+                weight_of(garbage),
+            );
+        }
+    }
+
+    /// 一次性解析组句词典为 词→权重 映射(测试辅助,避免逐条线性扫描)。
+    fn flow_dict_weights() -> std::collections::HashMap<String, u64> {
+        generate_rime_flow_dictionary()
+            .lines()
+            .skip_while(|line| *line != "...")
+            .skip(1)
+            .map(|line| {
+                let mut fields = line.split('\t');
+                let word = fields.next().expect("词字段存在").to_string();
+                let weight = fields
+                    .nth(1)
+                    .expect("权重字段存在")
+                    .parse()
+                    .expect("权重为整数");
+                (word, weight)
+            })
+            .collect()
     }
 
     /// Flow 词典排除全部简码别名:不含一级简码行(1 键),行数 = 单字关系

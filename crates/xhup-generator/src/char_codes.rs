@@ -9,7 +9,8 @@
 //!     → 按 (汉字, 码) 去重,贡献读音去重
 //!     → 万象读音分数聚合(同一读音只计一次,多形路径不重复计分)
 //!     → 按码分组排名(分数降序,Unicode 标量升序决胜)
-//!     → 指派显式 Rime 权重(组内 N..1,正数且唯一)
+//!     → 指派显式 Rime 权重(组内 N..1;与词层碰撞的 4 键码改用
+//!       [`crate::merged_ranking`] 的跨表合并权重,正数且唯一)
 //!     → 最终化条目集
 //! ```
 //!
@@ -158,23 +159,7 @@ fn derive_contributions() -> BTreeMap<(XhupHanzi, KeySequence), BTreeSet<HanziRe
 
 /// 聚合频率、组内排名、指派权重并按序列化顺序输出最终化条目集。
 fn finalize() -> Vec<FinalizedCharCodeEntry> {
-    let mut entries: Vec<FinalizedCharCodeEntry> = derive_contributions()
-        .into_iter()
-        .map(|((hanzi, code), readings)| {
-            // 频率证据属于读音:同一读音只计一次,多形路径塌缩不重复计分。
-            let frequency_score = readings.iter().fold(0u64, |sum, &reading| {
-                sum.checked_add(reading_score(hanzi, reading))
-                    .expect("聚合分数 u64 溢出")
-            });
-            FinalizedCharCodeEntry {
-                hanzi,
-                code,
-                readings: readings.into_iter().collect(),
-                frequency_score,
-                rime_weight: 0, // 排名后回填
-            }
-        })
-        .collect();
+    let mut entries = scored_entries();
 
     // 按码分组排名:聚合分数降序,汉字 Unicode 标量升序为最终决胜。
     entries.sort_by(|a, b| {
@@ -197,6 +182,18 @@ fn finalize() -> Vec<FinalizedCharCodeEntry> {
         group_start = group_end;
     }
 
+    // 与词层碰撞的 4 键码:改用跨表合并权重(merged_ranking 保证无平局)。
+    for entry in &mut entries {
+        if entry.code.len() == 4
+            && let Some(weight) = crate::merged_ranking::merged_weight(
+                &entry.code,
+                &entry.hanzi.as_char().to_string(),
+            )
+        {
+            entry.rime_weight = weight;
+        }
+    }
+
     // 序列化顺序:码长升序 → 码字典序升序 → 权重降序 → 汉字升序。
     entries.sort_by(|a, b| {
         a.code
@@ -207,6 +204,43 @@ fn finalize() -> Vec<FinalizedCharCodeEntry> {
             .then(a.hanzi.cmp(&b.hanzi))
     });
     entries
+}
+
+/// 聚合频率后的未加权条目(rime_weight 占位 0)。
+fn scored_entries() -> Vec<FinalizedCharCodeEntry> {
+    derive_contributions()
+        .into_iter()
+        .map(|((hanzi, code), readings)| {
+            // 频率证据属于读音:同一读音只计一次,多形路径塌缩不重复计分。
+            let frequency_score = readings.iter().fold(0u64, |sum, &reading| {
+                sum.checked_add(reading_score(hanzi, reading))
+                    .expect("聚合分数 u64 溢出")
+            });
+            FinalizedCharCodeEntry {
+                hanzi,
+                code,
+                readings: readings.into_iter().collect(),
+                frequency_score,
+                rime_weight: 0, // 排名后回填
+            }
+        })
+        .collect()
+}
+
+/// 未加权的 4 键条目快照,供 [`crate::merged_ranking`] 做跨表碰撞仲裁。
+///
+/// 只读取规范数据与频率表,不触发任何最终化/权重逻辑,因此不存在
+/// 与 merged_ranking 的初始化环。
+pub(crate) fn scored_four_key_entries() -> Vec<crate::merged_ranking::ScoredEntry> {
+    scored_entries()
+        .into_iter()
+        .filter(|entry| entry.code.len() == 4)
+        .map(|entry| crate::merged_ranking::ScoredEntry {
+            code: entry.code,
+            text: entry.hanzi.as_char().to_string(),
+            score: entry.frequency_score,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -328,6 +362,19 @@ mod tests {
         for (code, weights) in &by_code {
             let unique: BTreeSet<u32> = weights.iter().copied().collect();
             assert_eq!(unique.len(), weights.len(), "{code} 同码权重应唯一");
+            // 与词层碰撞的 4 键码使用 merged_ranking 的跨表权重:本表内只是
+            // 合并 1..=n 排列的子集,密度不变量由 merged_ranking 测试保证。
+            let collided = entries.iter().any(|entry| {
+                entry.code() == *code
+                    && crate::merged_ranking::merged_weight(
+                        entry.code(),
+                        &entry.hanzi().as_char().to_string(),
+                    )
+                    .is_some()
+            });
+            if collided {
+                continue;
+            }
             assert_eq!(*unique.iter().next().unwrap(), 1, "{code} 最小权重为 1");
             assert_eq!(
                 *unique.iter().next_back().unwrap(),

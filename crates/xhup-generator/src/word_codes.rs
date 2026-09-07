@@ -8,20 +8,22 @@
 //!     → 按 (词, 码) 去重,贡献读音序列去重
 //!     → 聚合唯一贡献读音序列的万象分数(checked-add)
 //!     → 按码分组排名(分数降序,词 Unicode 升序决胜)
-//!     → 指派显式 Rime 权重(组内 N..1,正数且唯一)
+//!     → 指派显式 Rime 权重(组内 N..1;与单字全码碰撞的 4 键码改用
+//!       [`crate::merged_ranking`] 的跨表合并权重,正数且唯一)
 //!     → 最终化条目集
 //! ```
 //!
-//! P0 不变量:所有 4 键词码与规范单字全码集严格不相交。碰撞过滤已在提取期
-//! 按 semantic entry 粒度完成(见 `data/words/README.md`);最终化时再次断言,
-//! 使该不变量成为构建级保证而非仅靠测试观察。
+//! 共存语义:二字词全码(4 键)可能与某个单字的规范全码相同(如 什么 = ufme
+//! 与生僻字 𬳽 同码)。碰撞**不排除词语**——词与单字在同码上合法共存,碰撞
+//! 只影响候选排序,由 merged_ranking 按同源频率证据仲裁。词汇存在性绝不因码
+//! 碰撞而被剥夺(历史缺陷:提取期按码碰撞整体删除二字词,导致 什么/但是 等
+//! 高频词缺席)。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 use xhup_core::{HanziReading, KeySequence};
 
-use crate::rime::canonical_char_entries;
 use crate::words::canonical_word_entries;
 
 /// 一条最终化的静态词语编码关系(模块内投影的事实来源)。
@@ -155,15 +157,7 @@ fn derive_contributions() -> BTreeMap<(&'static str, KeySequence), Contribution>
 
 /// 聚合频率、组内排名、指派权重并按序列化顺序输出最终化条目集。
 fn finalize() -> Vec<FinalizedWordCodeEntry> {
-    let mut entries: Vec<FinalizedWordCodeEntry> = derive_contributions()
-        .into_iter()
-        .map(|((word, code), contribution)| FinalizedWordCodeEntry {
-            word,
-            code,
-            frequency_score: contribution.frequency_score,
-            rime_weight: 0, // 排名后回填
-        })
-        .collect();
+    let mut entries = scored_entries();
 
     // 按码分组排名:聚合分数降序,词 Unicode 标量升序为最终决胜。
     entries.sort_by(|a, b| {
@@ -186,20 +180,12 @@ fn finalize() -> Vec<FinalizedWordCodeEntry> {
         group_start = group_end;
     }
 
-    // P0 构建级不变量:4 键词码与规范单字全码集严格不相交。
-    // 提取期已按 semantic entry 粒度过滤,此处断言使回归无法静默入库。
-    let fullcodes: BTreeSet<String> = canonical_char_entries()
-        .iter()
-        .map(|entry| entry.code().to_string())
-        .collect();
-    for entry in &entries {
-        if entry.code.len() == 4 {
-            assert!(
-                !fullcodes.contains(&entry.code.to_string()),
-                "P0 不变量被破坏:二字词码 {} 与规范单字全码冲突(词: {})",
-                entry.code,
-                entry.word
-            );
+    // 与单字全码碰撞的 4 键码:改用跨表合并权重(merged_ranking 保证无平局)。
+    for entry in &mut entries {
+        if entry.code.len() == 4
+            && let Some(weight) = crate::merged_ranking::merged_weight(&entry.code, entry.word)
+        {
+            entry.rime_weight = weight;
         }
     }
 
@@ -215,9 +201,39 @@ fn finalize() -> Vec<FinalizedWordCodeEntry> {
     entries
 }
 
+/// 聚合频率后的未加权条目(rime_weight 占位 0)。
+fn scored_entries() -> Vec<FinalizedWordCodeEntry> {
+    derive_contributions()
+        .into_iter()
+        .map(|((word, code), contribution)| FinalizedWordCodeEntry {
+            word,
+            code,
+            frequency_score: contribution.frequency_score,
+            rime_weight: 0, // 排名后回填
+        })
+        .collect()
+}
+
+/// 未加权的 4 键条目快照,供 [`crate::merged_ranking`] 做跨表碰撞仲裁。
+///
+/// 只读取规范词语数据并推导码,不触发任何最终化/权重逻辑,因此不存在
+/// 与 merged_ranking 的初始化环。
+pub(crate) fn scored_four_key_entries() -> Vec<crate::merged_ranking::ScoredEntry> {
+    scored_entries()
+        .into_iter()
+        .filter(|entry| entry.code.len() == 4)
+        .map(|entry| crate::merged_ranking::ScoredEntry {
+            code: entry.code,
+            text: entry.word.to_string(),
+            score: entry.frequency_score,
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rime::canonical_char_entries;
     use xhup_core::XhupHanzi;
 
     #[test]
@@ -246,21 +262,43 @@ mod tests {
     }
 
     #[test]
-    fn two_char_codes_are_disjoint_from_canonical_fullcodes() {
-        // P0:最终词层绝不占用规范单字全码
+    fn collided_four_key_codes_coexist_with_char_fullcodes() {
+        // 共存语义:二字词码与规范单字全码碰撞时,词与字都保留,排序由
+        // merged_ranking 按同源频率证据仲裁。冻结哨兵:
+        // 但是(djui)与「蛋」的规范全码共存;什么(ufme)与「𬳽」共存。
         let fullcodes: BTreeSet<String> = canonical_char_entries()
             .iter()
             .map(|entry| entry.code().to_string())
             .collect();
-        for entry in finalized_word_code_entries() {
-            if entry.code().len() == 4 {
-                assert!(
-                    !fullcodes.contains(&entry.code().to_string()),
-                    "二字词 {} 的码 {} 与规范全码冲突",
-                    entry.word(),
-                    entry.code()
-                );
-            }
+        assert!(fullcodes.contains("djui"), "djui 应仍是规范单字全码");
+        assert!(fullcodes.contains("ufme"), "ufme 应仍是规范单字全码");
+        let entries = finalized_word_code_entries();
+        for (word, code) in [("但是", "djui"), ("什么", "ufme")] {
+            assert!(
+                entries
+                    .iter()
+                    .any(|entry| entry.word() == word && entry.code().to_string() == code),
+                "高频词 {word}({code})不得因与单字全码碰撞而缺席"
+            );
+        }
+    }
+
+    #[test]
+    fn no_semantic_entry_is_dropped_by_code_collision() {
+        // 架构级回归守卫:词汇存在性绝不因码碰撞被剥夺——全部 canonical
+        // semantic entries 推导出的 (词, 码) 都必须出现在最终化条目中。
+        let finalized: BTreeSet<(String, String)> = finalized_word_code_entries()
+            .iter()
+            .map(|entry| (entry.word().to_string(), entry.code().to_string()))
+            .collect();
+        for semantic in canonical_word_entries() {
+            let code = derive_code(semantic.readings()).to_string();
+            assert!(
+                finalized.contains(&(semantic.word().to_string(), code.clone())),
+                "semantic entry {} {} 在最终化条目集中缺席",
+                semantic.word(),
+                code
+            );
         }
     }
 
@@ -278,6 +316,15 @@ mod tests {
         for (code, weights) in &by_code {
             let unique: BTreeSet<u32> = weights.iter().copied().collect();
             assert_eq!(unique.len(), weights.len(), "{code} 同码权重应唯一");
+            // 与单字全码碰撞的 4 键码使用 merged_ranking 的跨表权重:本表内
+            // 只是合并 1..=n 排列的子集,密度不变量由 merged_ranking 测试保证。
+            let collided = entries.iter().any(|entry| {
+                entry.code() == *code
+                    && crate::merged_ranking::merged_weight(entry.code(), entry.word()).is_some()
+            });
+            if collided {
+                continue;
+            }
             assert_eq!(*unique.iter().next().unwrap(), 1, "{code} 最小权重为 1");
             assert_eq!(
                 *unique.iter().next_back().unwrap(),
@@ -310,15 +357,10 @@ mod tests {
     }
 
     #[test]
-    fn collision_filter_is_per_semantic_entry_not_per_word() {
-        // 真实 pinned 数据中不存在「同词多读音序列、部分碰撞部分保留」的样本
-        // (上游每个词形恰好一个读音序列,审计见 data/words/README.md),
-        // 此处用小 fixture 锁定过滤粒度:判定只取决于该 semantic entry 自身
-        // 推导的码——碰撞仅排除这一条 (词, 读音序列),与词形无关。
-        let fullcodes: BTreeSet<String> = canonical_char_entries()
-            .iter()
-            .map(|entry| entry.code().to_string())
-            .collect();
+    fn collided_semantic_entries_are_retained_per_entry() {
+        // 碰撞保留按 semantic entry 粒度判定:同一词形的不同读音序列各自
+        // 独立推导码并独立保留;不存在任何按词形或按码的删除。
+        // 「但 dan + 是 shi」推导 djui = 规范全码(「蛋」)→ 该 entry 保留;
         let reading_of = |zi: char, spelling: &str| -> HanziReading {
             *XhupHanzi::try_from(zi)
                 .unwrap()
@@ -327,16 +369,24 @@ mod tests {
                 .find(|r| r.as_str() == spelling)
                 .unwrap()
         };
-        // 「但 dan + 是 shi」推导 djui = 规范全码(「蛋」)→ 该 entry 被排除;
         let collided = derive_code(&[reading_of('但', "dan"), reading_of('是', "shi")]);
         assert_eq!(collided.to_string(), "djui");
+        let fullcodes: BTreeSet<String> = canonical_char_entries()
+            .iter()
+            .map(|entry| entry.code().to_string())
+            .collect();
         assert!(fullcodes.contains(&collided.to_string()));
-        // 「我 wo + 们 men」推导 womf ∉ 规范全码 → 该 entry 保留;
+        assert!(
+            finalized_word_code_entries()
+                .iter()
+                .any(|entry| entry.word() == "但是" && entry.code() == &collided),
+            "但是(djui)应与单字全码共存"
+        );
+        // 「我 wo + 们 men」推导 womf(不与全码碰撞)同样保留;
         let retained = derive_code(&[reading_of('我', "wo"), reading_of('们', "men")]);
         assert_eq!(retained.to_string(), "womf");
         assert!(!fullcodes.contains(&retained.to_string()));
-        // 同一词形若存在另一读音序列推导出不碰撞的码,该 entry 独立判定保留。
-        // 以「长」的多音验证推导是按读音序列独立的:chang/zhang 导出不同码。
+        // 多音字按读音序列独立推导:chang/zhang 导出不同码。
         let chang = derive_code(&[reading_of('长', "chang"), reading_of('是', "shi")]);
         let zhang = derive_code(&[reading_of('长', "zhang"), reading_of('是', "shi")]);
         assert_ne!(chang, zhang);

@@ -505,9 +505,10 @@ mod tests {
             }
         }
         // 具体规模与生产集合一致(ZR / FF / 二码)。
-        assert_eq!(doc["wordShortcuts"].as_array().unwrap().len(), 44_448);
-        assert_eq!(doc["fixedFirstShortcuts"].as_array().unwrap().len(), 2_380);
-        assert_eq!(doc["twoKeyShortcuts"].as_array().unwrap().len(), 245);
+        // (碰撞共存修复后:44,518 / 2,366 / 246)
+        assert_eq!(doc["wordShortcuts"].as_array().unwrap().len(), 44_518);
+        assert_eq!(doc["fixedFirstShortcuts"].as_array().unwrap().len(), 2_366);
+        assert_eq!(doc["twoKeyShortcuts"].as_array().unwrap().len(), 246);
     }
 
     #[test]

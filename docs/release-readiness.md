@@ -11,8 +11,8 @@ CI 通过不等于发布就绪;本清单是人工控制点的权威列表。
 
 - Rust 工作区:fmt / check / clippy(-D warnings)/ 全部测试;
 - Trainer 前端:vitest 全套 + 构建(tsc 严格模式);
-- librime runtime 回归:140,038 静态 exact 码审计、FIXED_FIRST 2380/2380、
-  占用二码 405/405、二码 ZR 245/245、Flow 全静态等值 / 组句 / 学习持久化
+- librime runtime 回归:137,872 静态 exact 码审计、FIXED_FIRST 2366/2366、
+  占用二码 405/405、二码 ZR 246/246、Flow 全静态等值 / 组句 / 学习持久化
   / 学习管理审计、冻结哨兵(`uij`/`uijm`/`uj`/`ujm`);
 - 日常输入控制运行时验收(#43):ASCII 切换 / 中文标点 / 数字选择 /
   =- 翻页 / Escape / Enter / 空格;

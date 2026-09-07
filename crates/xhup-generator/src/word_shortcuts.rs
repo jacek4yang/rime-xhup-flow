@@ -29,6 +29,37 @@ use xhup_core::{KeySequence, XhupHanzi};
 /// 入库的词语简码 TSV(唯一事实来源)。
 const WORD_SHORTCUTS_TSV: &str = include_str!("../../../data/shortcuts/word_zero_regression.tsv");
 
+/// ZR 层的原始词/shortcut 码集合(纯文本扫描,不经过本层校验管线)。
+///
+/// 跨层「一词一码」检查必须基于这种原始扫描,绝不能调用兄弟层的
+/// OnceLock 校验管线:兄弟层反向引用本层,互相调用会形成循环初始化
+/// 死锁(OnceLock 不可重入)。
+pub fn raw_words() -> BTreeSet<&'static str> {
+    WORD_SHORTCUTS_TSV
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .map(|line| line.split('\t').next().expect("ZR 数据行应有词字段"))
+        .collect()
+}
+
+/// ZR 层的原始 shortcut 码集合(纯文本扫描;语义约束同 [`raw_words`])。
+pub fn raw_shortcut_codes() -> BTreeSet<KeySequence> {
+    WORD_SHORTCUTS_TSV
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .map(|line| {
+            let mut fields = line.split('\t');
+            fields.next();
+            fields.next();
+            fields
+                .next()
+                .expect("ZR 数据行应有 shortcut 字段")
+                .parse()
+                .expect("ZR shortcut 码应可解析")
+        })
+        .collect()
+}
+
 /// 一条 canonical 词语简码关系:一个词的一个 shortcut 别名。
 pub struct CanonicalWordShortcutEntry {
     word: String,

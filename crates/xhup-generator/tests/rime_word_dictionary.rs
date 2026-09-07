@@ -71,7 +71,10 @@ fn row_counts_and_uniqueness() {
         );
     }
     let codes: BTreeSet<&str> = rows.iter().map(|(_, code, _)| code.as_str()).collect();
-    assert_eq!(codes.len(), 81_931, "distinct 码数");
+    // 碰撞共存修复后:重接纳的二字词全部落在既有单字全码上(不为词表新增
+    // 独占码),而简码保护递补从 2 字池尾部逐出的低频词带走了它们的独占码,
+    // distinct 码数因此从 81,931 变为 81,167。
+    assert_eq!(codes.len(), 81_167, "distinct 码数");
     let pairs: BTreeSet<(&String, &String)> =
         rows.iter().map(|(word, code, _)| (word, code)).collect();
     assert_eq!(pairs.len(), rows.len(), "无重复 (词, 码) 行");
@@ -95,18 +98,34 @@ fn codes_are_lowercase_letters_only_and_match_word_length() {
 }
 
 #[test]
-fn two_char_codes_are_disjoint_from_canonical_fullcodes() {
-    // P0:最终词词典中的 4 键码绝不占用规范单字全码。
-    let fullcodes: BTreeSet<String> = canonical_char_entries()
-        .iter()
-        .map(|entry| entry.code().to_string())
-        .collect();
+fn two_char_codes_may_coexist_with_canonical_fullcodes() {
+    // 共存语义:二字词 4 键码与规范单字全码碰撞时,词与字都保留;碰撞码上的
+    // 候选次序由 merged_ranking 跨表仲裁(高频词排在生僻字之前)。
+    // 冻结哨兵:什么(ufme)与「𬳽」共存且 什么 权重更高;但是(djui)与
+    // 「蛋」共存。
+    let char_rows = parse_dictionary(&xhup_generator::generate_rime_char_dictionary()).1;
+    let char_weight_at = |code: &str, text: char| -> u32 {
+        char_rows
+            .iter()
+            .find(|(w, c, _)| c == code && w.starts_with(text))
+            .map(|(_, _, weight)| *weight)
+            .unwrap_or_else(|| panic!("字表应有 {text}@{code}"))
+    };
     let (_, rows) = parse_dictionary(&generate_rime_word_dictionary());
-    for (_, code, _) in &rows {
-        if code.len() == 4 {
-            assert!(!fullcodes.contains(code), "4 键词码 {code} 与规范全码冲突");
-        }
-    }
+    let word_weight_at = |code: &str, word: &str| -> u32 {
+        rows.iter()
+            .find(|(w, c, _)| c == code && w == word)
+            .map(|(_, _, weight)| *weight)
+            .unwrap_or_else(|| panic!("词表应有 {word}@{code}"))
+    };
+    let shenme = word_weight_at("ufme", "什么");
+    let rare_char = char_weight_at("ufme", '𬳽');
+    assert!(
+        shenme > rare_char,
+        "什么({shenme}) 应排在 𬳽({rare_char}) 之前"
+    );
+    word_weight_at("djui", "但是");
+    char_weight_at("djui", '蛋');
 }
 
 #[test]
@@ -146,6 +165,12 @@ fn serialization_order_is_strictly_increasing() {
 #[test]
 fn same_code_weights_are_unique_and_descend_in_file_order() {
     let (_, rows) = parse_dictionary(&generate_rime_word_dictionary());
+    // 与单字全码碰撞的 4 键码使用 merged_ranking 跨表权重:词表内只是合并
+    // 1..=n 排列的子集,不期望表内密度;跨表密度由 merged_ranking 单测保证。
+    let char_four_key_codes: BTreeSet<String> = canonical_char_entries()
+        .iter()
+        .map(|entry| entry.code().to_string())
+        .collect();
     let mut by_code: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
     for (_, code, weight) in &rows {
         by_code.entry(code.as_str()).or_default().push(*weight);
@@ -157,6 +182,9 @@ fn same_code_weights_are_unique_and_descend_in_file_order() {
             weights.windows(2).all(|w| w[0] > w[1]),
             "{code} 文件内同码权重应严格降序"
         );
+        if char_four_key_codes.contains(*code) {
+            continue;
+        }
         assert_eq!(
             weights[0] as usize,
             weights.len(),
@@ -219,14 +247,14 @@ fn sentinel_code_sets() {
 }
 
 #[test]
-fn collided_two_char_word_is_absent() {
-    // 回归:「但是 dan shi」推导码 djui 命中规范全码(「蛋」),该 semantic entry
-    // 已被提取期过滤;djui 不得作为词码出现。
+fn collided_two_char_word_is_present() {
+    // 回归:「但是 dan shi」推导码 djui 命中规范全码(「蛋」)。共存语义下
+    // 该 semantic entry 必须保留:djui 作为词码出现,且同码还有单字候选。
     let (_, rows) = parse_dictionary(&generate_rime_word_dictionary());
-    assert!(codes_of(&rows, "但是").is_empty(), "但是 不应出现在词词典");
-    assert!(
-        rows.iter().all(|(_, code, _)| code != "djui"),
-        "djui 是规范全码,不得作为词码"
+    assert_eq!(
+        codes_of(&rows, "但是"),
+        BTreeSet::from(["djui"]),
+        "但是 不得因与单字全码碰撞而缺席"
     );
 }
 

@@ -46,11 +46,11 @@ FROZEN STATIC  >  DYNAMIC USER LEARNING  >  SENTENCE COMPOSITION
 ```
 
 - Flow 引擎绝不改变任何静态候选的相对次序与 top1。runtime 审计对全部
-  140,038 个静态 exact 码逐码断言(干净 userdb 与学习后两种状态):
+  137,872 个静态 exact 码逐码断言(干净 userdb 与学习后两种状态):
   菜单逐项同序相等、无可见重复,动态候选只允许追加在静态组之后。
 - 冻结哨兵(永久有效):`uij → [铈, 鼫, 时间]` 精确序、`uijm → 时间`
   top1、`uj`/`ujm` **不得**出现 时间。
-- 既有门禁:FIXED_FIRST 2380/2380、占用二码 405/405、二码 ZR 245/245。
+- 既有门禁:FIXED_FIRST 2366/2366、占用二码 405/405、二码 ZR 246/246。
 
 ## 简码语法
 
@@ -68,8 +68,9 @@ FROZEN STATIC  >  DYNAMIC USER LEARNING  >  SENTENCE COMPOSITION
 
 - canonical FullCode(单字 2/3/4 码全码);
 - 已发布简码映射的既有映射与菜单次序(一级简码 26、二/三/四码字符
-  菜单、100k 固定词 FullCode、44,448 ZERO_REGRESSION、2,380 FIXED_FIRST、
-  245 二码 ZERO_REGRESSION);
+  菜单、100k 固定词 FullCode、44,518 ZERO_REGRESSION、2,366 FIXED_FIRST、
+  246 二码 ZERO_REGRESSION;v1.0.0 正式发布前的 mapping 调整属经评审的
+  数据演进,冻结自 v1.0.0 起生效);
 - `ShortcutPolicyId` 值;
 - `xhup_flow_user` 用户词典身份(学习数据载体);
 - Trainer 持久化数据迁移兼容(进度/备份可跨版本导入);

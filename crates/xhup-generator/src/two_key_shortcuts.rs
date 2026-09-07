@@ -37,6 +37,18 @@ use xhup_core::{KeySequence, XhupHanzi};
 const TWO_KEY_SHORTCUTS_TSV: &str =
     include_str!("../../../data/shortcuts/word_two_key_zero_regression.tsv");
 
+/// 二码层的原始词集合(纯文本扫描,不经过本层校验管线)。
+///
+/// 跨层「一词一码」检查必须基于这种原始扫描,绝不能调用兄弟层的
+/// OnceLock 校验管线(会形成循环初始化死锁)。
+pub fn raw_words() -> BTreeSet<&'static str> {
+    TWO_KEY_SHORTCUTS_TSV
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .map(|line| line.split('\t').next().expect("二码数据行应有词字段"))
+        .collect()
+}
+
 /// 一条 canonical 二码词语简码关系:一个 2 字词的一个 2 键别名。
 pub struct CanonicalTwoKeyShortcutEntry {
     word: String,
@@ -101,23 +113,15 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalTwoKeyShortcutEntry
         .collect();
     let baseline_codes = baseline_fixed_codes();
     // 既有 ZR / FF 词与码集合(一词最多一码;码全量不相交)。
-    let existing_words: BTreeSet<&str> = crate::canonical_word_shortcut_entries()
-        .iter()
-        .map(|entry| entry.word())
-        .chain(
-            crate::canonical_fixed_first_shortcut_entries()
-                .iter()
-                .map(|entry| entry.word()),
-        )
+    // 跨层检查基于兄弟层的原始 TSV 文本扫描,绝不能调用兄弟层的校验
+    // 管线(兄弟层反向引用本层,互相调用会形成 OnceLock 循环初始化死锁)。
+    let existing_words: BTreeSet<&str> = crate::word_shortcuts::raw_words()
+        .into_iter()
+        .chain(crate::fixed_first_shortcuts::raw_words())
         .collect();
-    let existing_codes: BTreeSet<KeySequence> = crate::canonical_word_shortcut_entries()
-        .iter()
-        .map(|entry| entry.shortcut_code().clone())
-        .chain(
-            crate::canonical_fixed_first_shortcut_entries()
-                .iter()
-                .map(|entry| entry.shortcut_code().clone()),
-        )
+    let existing_codes: BTreeSet<KeySequence> = crate::word_shortcuts::raw_shortcut_codes()
+        .into_iter()
+        .chain(crate::fixed_first_shortcuts::raw_shortcut_codes())
         .collect();
 
     let mut entries: Vec<CanonicalTwoKeyShortcutEntry> = Vec::new();
