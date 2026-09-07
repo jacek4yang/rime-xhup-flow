@@ -28,7 +28,7 @@ export function SessionSummary({
   onPracticeWeak: () => void;
   onExitToToday: () => void;
 }) {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const sessionKpm = kpm(session.keystrokes, session.activeMs);
   const sessionCpm = cpm(session.charsCompleted, session.activeMs);
   return (
@@ -39,12 +39,8 @@ export function SessionSummary({
           <CardDescription>
             {t("practice.progressUnlimited", { n: session.questionsCompleted })} ·{" "}
             {session.config.targetLength > 0
-              ? language === "zh"
-                ? "已达目标"
-                : "Target reached"
-              : language === "zh"
-                ? "手动结束"
-                : "Ended manually"}
+              ? t("summary.targetReached")
+              : t("summary.endedManually")}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -74,7 +70,7 @@ export function SessionSummary({
       {weakItems.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>最需要复习</CardTitle>
+            <CardTitle>{t("summary.weak")}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
             {weakItems.map(({ item, progress }) => (
@@ -88,10 +84,10 @@ export function SessionSummary({
                 </span>
                 <span className="ml-auto flex items-center gap-2">
                   <Badge variant={progress.mastery < 40 ? "destructive" : "outline"}>
-                    掌握 {progress.mastery}
+                    {t("common.mastery", { n: progress.mastery })}
                   </Badge>
                   <span className="text-xs text-muted-foreground">
-                    错 {progress.wrong}
+                    {t("common.wrongShort", { n: progress.wrong })}
                   </span>
                 </span>
               </div>
@@ -103,17 +99,17 @@ export function SessionSummary({
       <div className="flex flex-col gap-2 sm:flex-row">
         <Button size="lg" onClick={onRestart}>
           <RotateCcw aria-hidden />
-          再来一组
+          {t("common.restart")}
         </Button>
         {weakItems.length > 0 && (
           <Button size="lg" variant="secondary" onClick={onPracticeWeak}>
             <Target aria-hidden />
-            练习错题
+            {t("summary.practiceWrong")}
           </Button>
         )}
         <Button size="lg" variant="outline" onClick={onExitToToday}>
           <House aria-hidden />
-          回到今日
+          {t("summary.backToToday")}
         </Button>
       </div>
     </div>

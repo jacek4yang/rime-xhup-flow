@@ -22,26 +22,27 @@ import { itemAccuracy, listWeakItems } from "@/lib/review";
 import { aggregateWeakness, keyHeatmap } from "@/lib/weakness";
 import { formatPercent } from "@/lib/stats";
 import { useI18n } from "@/lib/use-i18n";
+import type { I18nKey } from "@/lib/i18n";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import { useTrainerStore } from "@/stores/trainer-store";
 import type { TrainingItem } from "@/lib/trainer-index";
 
 type ModeFilter = "all" | 2 | 3 | 4;
 
-const FILTERS: { key: ModeFilter; label: string }[] = [
-  { key: "all", label: "全部" },
-  { key: 2, label: "双拼" },
-  { key: 3, label: "音形" },
-  { key: 4, label: "全码" },
+const FILTERS: { key: ModeFilter; label: I18nKey }[] = [
+  { key: "all", label: "review.all" },
+  { key: 2, label: "practice.modeDouble" },
+  { key: 3, label: "practice.modeSoundShape" },
+  { key: 4, label: "practice.modeFull" },
 ];
 
-const LENGTH_LABELS: Record<number, string> = {
-  1: "一级",
-  2: "双拼",
-  3: "音形",
-  4: "全码",
-  6: "3 字词",
-  8: "4 字词",
+const LENGTH_LABELS: Record<number, I18nKey> = {
+  1: "review.lengthLevel1",
+  2: "review.lengthDouble",
+  3: "review.lengthSoundShape",
+  4: "review.lengthFull",
+  6: "review.lengthWord3",
+  8: "review.lengthWord4",
 };
 
 /** 错误率 → 热力颜色(非唯一颜色反馈;同时有数字标签)。 */
@@ -130,7 +131,7 @@ export function WeaknessCenter({
                 : "border-border text-muted-foreground hover:bg-accent",
             )}
           >
-            {candidate.label}
+            {t(candidate.label)}
           </button>
         ))}
         {selected.size > 0 && (
@@ -172,8 +173,10 @@ export function WeaknessCenter({
                 <div className="flex flex-col">
                   <span className="font-mono text-sm">{item.primaryCode}</span>
                   <span className="text-xs text-muted-foreground">
-                    {LENGTH_LABELS[item.codeLength] ?? `${item.codeLength}`} ·{" "}
-                    {t("common.attempts", { n: itemProgress.attempts })} ·{" "}
+                    {LENGTH_LABELS[item.codeLength]
+                      ? t(LENGTH_LABELS[item.codeLength])
+                      : item.codeLength}{" "}
+                    · {t("common.attempts", { n: itemProgress.attempts })} ·{" "}
                     {t("common.wrongCount", { n: itemProgress.wrong })}
                   </span>
                 </div>

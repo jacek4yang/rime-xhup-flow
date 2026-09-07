@@ -256,7 +256,11 @@ fn find_existing_snapshot(user_data_dir: &Path) -> Option<PathBuf> {
         };
         for file in sub.flatten() {
             let path = file.path();
-            if path.file_name()?.to_string_lossy() == snapshot_filename() {
+            // 单个异常条目不得终止整个扫描(此前 `?` 会静默提前返回)。
+            let matches_snapshot = path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy() == snapshot_filename());
+            if matches_snapshot {
                 let modified = file
                     .metadata()
                     .and_then(|m| m.modified())

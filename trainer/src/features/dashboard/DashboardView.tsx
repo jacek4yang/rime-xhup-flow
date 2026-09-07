@@ -12,19 +12,21 @@ import { StatChip } from "@/components/StatChip";
 import { accuracy, formatDuration, formatPercent, localDateKey } from "@/lib/stats";
 import { listWeakItems } from "@/lib/review";
 import { useTrainerIndex } from "@/lib/trainer-context";
+import { useI18n } from "@/lib/use-i18n";
 import { useTrainerStore } from "@/stores/trainer-store";
+import type { I18nKey } from "@/lib/i18n";
 import {
   MODE_DESCRIPTIONS,
   MODE_LABELS,
   type PracticeMode,
 } from "@/features/practice/types";
 
-const MODE_ORDER: PracticeMode[] = ["double", "sound-shape", "full", "mixed"];
-const MODE_KEYS: Partial<Record<PracticeMode, string>> = {
-  double: "2 键",
-  "sound-shape": "3 键",
-  full: "4 键",
-  mixed: "2/3/4 键",
+const MODE_ORDER = ["double", "sound-shape", "full", "mixed"] as const;
+const MODE_KEYS: Record<(typeof MODE_ORDER)[number], I18nKey> = {
+  double: "dashboard.modeKeyDouble",
+  "sound-shape": "dashboard.modeKeySoundShape",
+  full: "dashboard.modeKeyFull",
+  mixed: "dashboard.modeKeyMixed",
 };
 
 export function DashboardView({
@@ -34,6 +36,7 @@ export function DashboardView({
   onStartPractice: (mode: PracticeMode) => void;
   onShowReview: () => void;
 }) {
+  const { t } = useI18n();
   const index = useTrainerIndex();
   const lastMode = useTrainerStore((state) => state.lastMode);
   const progress = useTrainerStore((state) => state.progress);
@@ -47,15 +50,13 @@ export function DashboardView({
     <div className="flex flex-col gap-4">
       <Card className="bg-primary/5">
         <CardHeader>
-          <CardTitle className="text-xl">小鹤音形训练</CardTitle>
-          <CardDescription>
-            从双拼到全码,每天几分钟,把编码练成肌肉记忆。
-          </CardDescription>
+          <CardTitle className="text-xl">{t("app.subtitle")}</CardTitle>
+          <CardDescription>{t("dashboard.tagline")}</CardDescription>
         </CardHeader>
         <CardContent>
           <Button size="lg" onClick={() => onStartPractice(lastMode)}>
             <Play aria-hidden />
-            开始练习
+            {t("practice.start")}
           </Button>
         </CardContent>
       </Card>
@@ -77,11 +78,11 @@ export function DashboardView({
           >
             <CardHeader className="p-4">
               <CardTitle className="flex items-center justify-between text-base">
-                {MODE_LABELS[mode]}
-                <Badge variant="outline">{MODE_KEYS[mode]}</Badge>
+                {t(MODE_LABELS[mode])}
+                <Badge variant="outline">{t(MODE_KEYS[mode])}</Badge>
               </CardTitle>
               <CardDescription className="text-xs">
-                {MODE_DESCRIPTIONS[mode]}
+                {t(MODE_DESCRIPTIONS[mode])}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -90,19 +91,25 @@ export function DashboardView({
 
       <Card>
         <CardHeader>
-          <CardTitle>今日</CardTitle>
+          <CardTitle>{t("nav.today")}</CardTitle>
         </CardHeader>
         <CardContent>
           {today && today.questions > 0 ? (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <StatChip label="练习时间" value={formatDuration(today.practiceMs)} />
-              <StatChip label="完成题数" value={today.questions} />
-              <StatChip label="准确率" value={formatPercent(todayAccuracy)} />
-              <StatChip label="最佳连对" value={today.bestStreak} />
+              <StatChip
+                label={t("dashboard.practiceTime")}
+                value={formatDuration(today.practiceMs)}
+              />
+              <StatChip label={t("dashboard.completed")} value={today.questions} />
+              <StatChip
+                label={t("common.accuracy")}
+                value={formatPercent(todayAccuracy)}
+              />
+              <StatChip label={t("dashboard.bestStreak")} value={today.bestStreak} />
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              今天还没有练习,从「双拼」开始第一组吧。
+              {t("dashboard.todayEmpty")}
             </p>
           )}
         </CardContent>
@@ -111,9 +118,9 @@ export function DashboardView({
       {weakItems.length > 0 && (
         <Card>
           <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>需要复习</CardTitle>
+            <CardTitle>{t("dashboard.needsReview")}</CardTitle>
             <Button variant="ghost" size="sm" onClick={onShowReview}>
-              查看全部
+              {t("dashboard.viewAll")}
               <ArrowRight aria-hidden />
             </Button>
           </CardHeader>
@@ -129,9 +136,9 @@ export function DashboardView({
                 </span>
                 <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
                   <Badge variant={progress.mastery < 40 ? "destructive" : "outline"}>
-                    掌握 {progress.mastery}
+                    {t("common.mastery", { n: progress.mastery })}
                   </Badge>
-                  错 {progress.wrong}
+                  {t("common.wrongShort", { n: progress.wrong })}
                 </span>
               </div>
             ))}
@@ -141,7 +148,7 @@ export function DashboardView({
 
       <Card>
         <CardHeader>
-          <CardTitle>推荐路径</CardTitle>
+          <CardTitle>{t("dashboard.recommendedPath")}</CardTitle>
         </CardHeader>
         <CardContent>
           <ol className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
@@ -150,7 +157,7 @@ export function DashboardView({
                 <span className="flex size-6 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
                   {step + 1}
                 </span>
-                {MODE_LABELS[mode]}({MODE_KEYS[mode]})
+                {t(MODE_LABELS[mode])}({t(MODE_KEYS[mode])})
               </li>
             ))}
           </ol>

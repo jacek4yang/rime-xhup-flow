@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { resetTrainerStore } from "@/stores/trainer-store";
-import type { ProductStatusDto, TauriInternals } from "@/lib/product";
+import type { ProductStatusDto } from "@/lib/product";
+import type { TauriInternals } from "@/lib/native";
 import { ControlCenterView } from "./ControlCenterView";
 
 const invokeMock = vi.fn();
@@ -36,7 +37,9 @@ function freshStatus(): ProductStatusDto {
       missing_files: [],
       schemas: [],
       installed_version: null,
+      integrity: [],
     },
+    health: "not_installed",
     bundled_version: "1.0.0",
     update_available: false,
     learning: {
@@ -75,7 +78,8 @@ describe("ControlCenterView", () => {
     render(<ControlCenterView />);
     expect(await screen.findByText(/Fcitx5-Rime/)).toBeInTheDocument();
     expect(screen.getByText(USER_DIR)).toBeInTheDocument();
-    expect(screen.getByText("未安装")).toBeInTheDocument();
+    // 状态卡同时渲染健康分类徽章与安装进度徽章(未安装时同文案)。
+    expect(screen.getAllByText("未安装").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole("button", { name: "安装" })).toBeInTheDocument();
   });
 
@@ -118,7 +122,9 @@ describe("ControlCenterView", () => {
       installed_files: 11,
       installed_version: "1.0.0",
       schemas: ["xhup_flow", "xhup_flow_static"],
+      integrity: [],
     };
+    status.health = "healthy";
     invokeMock.mockImplementation((command: string) => {
       if (command === "product_status") return Promise.resolve(status);
       if (command === "product_execute") {
@@ -151,7 +157,10 @@ describe("ControlCenterView", () => {
     expect(await screen.findByText("重置学习数据?")).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "重置学习" }));
     await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("learning_reset", { confirmed: true }),
+      expect(invokeMock).toHaveBeenCalledWith("learning_reset", {
+        confirmed: true,
+        dictName: "xhup_flow_user",
+      }),
     );
   });
 });

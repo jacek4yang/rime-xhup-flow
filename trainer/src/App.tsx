@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { MotionConfig } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { AppShell } from "@/components/AppShell";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { TrainerIndexProvider } from "@/lib/trainer-context";
 import {
   loadTrainerDataset,
@@ -10,6 +11,7 @@ import {
 } from "@/lib/trainer-data";
 import { buildTrainerIndex } from "@/lib/trainer-index";
 import { applyThemeToDocument, onSystemThemeChange } from "@/lib/theme";
+import { translate, type I18nKey } from "@/lib/i18n";
 import { useTrainerStore } from "@/stores/trainer-store";
 
 type LoadState =
@@ -17,9 +19,18 @@ type LoadState =
   | { status: "error"; reason: string }
   | { status: "ready"; dataset: TrainerDataset };
 
+// 加载/错误屏在 React 上下文与数据就绪之前渲染,直接读 store 语言并 translate。
+function currentLanguage() {
+  return useTrainerStore.getState().language;
+}
+
+function t(key: I18nKey): string {
+  return translate(currentLanguage(), key);
+}
+
 function errorReason(error: unknown): string {
   if (error instanceof TrainerDataError) return error.message;
-  return "发生未知错误";
+  return t("app.unknownError");
 }
 
 export default function App() {
@@ -47,7 +58,7 @@ export default function App() {
   if (loadState.status === "loading") {
     return (
       <CenteredScreen>
-        <p className="text-sm text-muted-foreground">正在加载训练数据…</p>
+        <p className="text-sm text-muted-foreground">{t("app.loading")}</p>
       </CenteredScreen>
     );
   }
@@ -56,11 +67,11 @@ export default function App() {
     return (
       <CenteredScreen>
         <div className="flex flex-col items-center gap-3 text-center">
-          <h1 className="text-lg font-semibold">训练数据加载失败</h1>
+          <h1 className="text-lg font-semibold">{t("app.loadFailed")}</h1>
           <p className="max-w-sm text-sm text-muted-foreground">
             {loadState.reason}
           </p>
-          <Button onClick={load}>重试</Button>
+          <Button onClick={load}>{t("common.retry")}</Button>
         </div>
       </CenteredScreen>
     );
@@ -68,7 +79,10 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <ReadyApp dataset={loadState.dataset} />
+      {/* 仅包裹数据就绪后的应用;数据加载/错误屏有独立的重试路径。 */}
+      <ErrorBoundary>
+        <ReadyApp dataset={loadState.dataset} />
+      </ErrorBoundary>
     </MotionConfig>
   );
 }
