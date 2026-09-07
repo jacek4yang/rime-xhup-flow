@@ -25,6 +25,7 @@ const zh = {
   "nav.review": "错题",
   "nav.stats": "统计",
   "nav.reference": "键位",
+  "nav.learn": "学习",
   "nav.settings": "设置",
   "nav.main": "主导航",
   "common.exit": "退出",
@@ -57,6 +58,7 @@ const zh = {
   "dashboard.modeKeyFull": "4 键",
   "dashboard.modeKeyMixed": "2/3/4 键",
   "dashboard.practiceTime": "练习时间",
+  "dashboard.learnCta": "从入门到精通 →",
   "dashboard.completed": "完成题数",
   "dashboard.bestStreak": "最佳连对",
   "dashboard.todayEmpty": "今天还没有练习,从「双拼」开始第一组吧。",
@@ -391,6 +393,15 @@ const zh = {
   "firstRun.copyDiagnostics": "复制诊断信息",
   "firstRun.copied": "已复制",
   "firstRun.unknownVersion": "未知",
+  "learn.chapterOf": "第 {current} / {total} 章",
+  "learn.prevChapter": "上一章",
+  "learn.nextChapter": "下一章",
+  "learn.shapeKeysAria": "形键选择",
+  "learn.shapeCharCount": "{n} 字",
+  "learn.firstShapeSamples": "首形 = {key} 的高频例字",
+  "learn.secondShapeSamples": "次形 = {key} 的高频例字",
+  "learn.shapeExplorerNote":
+    "例字与计数全部来自本机训练数据(全码第 3、4 位),随数据版本更新;高频字排序仅供参考,编码以规范数据为准。",
 } as const;
 
 export type I18nKey = keyof typeof zh;
@@ -407,6 +418,7 @@ const en: Record<I18nKey, string> = {
   "nav.review": "Weaknesses",
   "nav.stats": "Stats",
   "nav.reference": "Keyboard",
+  "nav.learn": "Learn",
   "nav.settings": "Settings",
   "nav.main": "Main navigation",
   "common.exit": "Exit",
@@ -440,6 +452,7 @@ const en: Record<I18nKey, string> = {
   "dashboard.modeKeyFull": "4 keys",
   "dashboard.modeKeyMixed": "2/3/4 keys",
   "dashboard.practiceTime": "Practice time",
+  "dashboard.learnCta": "Learn from zero to mastery →",
   "dashboard.completed": "Completed",
   "dashboard.bestStreak": "Best streak",
   "dashboard.todayEmpty":
@@ -793,6 +806,15 @@ const en: Record<I18nKey, string> = {
   "firstRun.copyDiagnostics": "Copy diagnostics",
   "firstRun.copied": "Copied",
   "firstRun.unknownVersion": "unknown",
+  "learn.chapterOf": "Chapter {current} of {total}",
+  "learn.prevChapter": "Previous",
+  "learn.nextChapter": "Next",
+  "learn.shapeKeysAria": "Shape key selection",
+  "learn.shapeCharCount": "{n} chars",
+  "learn.firstShapeSamples": "First-shape = {key}: frequent chars",
+  "learn.secondShapeSamples": "Second-shape = {key}: frequent chars",
+  "learn.shapeExplorerNote":
+    "Samples and counts come from the on-device training data (3rd/4th key of full codes) and follow the data version; frequency order is a hint only - codes are authoritative in the canonical data.",
 } as const;
 
 const dictionaries: Record<Language, Record<I18nKey, string>> = { zh, en };

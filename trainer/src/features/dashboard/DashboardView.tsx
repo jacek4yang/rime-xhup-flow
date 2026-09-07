@@ -32,9 +32,11 @@ const MODE_KEYS: Record<(typeof MODE_ORDER)[number], I18nKey> = {
 export function DashboardView({
   onStartPractice,
   onShowReview,
+  onOpenLearn,
 }: {
   onStartPractice: (mode: PracticeMode) => void;
   onShowReview: () => void;
+  onOpenLearn?: () => void;
 }) {
   const { t } = useI18n();
   const index = useTrainerIndex();
@@ -58,6 +60,16 @@ export function DashboardView({
             <Play aria-hidden />
             {t("practice.start")}
           </Button>
+          {onOpenLearn && (
+            <Button
+              size="lg"
+              variant="ghost"
+              className="ml-2"
+              onClick={onOpenLearn}
+            >
+              {t("dashboard.learnCta")}
+            </Button>
+          )}
         </CardContent>
       </Card>
 
