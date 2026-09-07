@@ -1018,7 +1018,13 @@ mod tests {
                 "生成器产物缺少拥有文件 {file}"
             );
         }
-        assert_eq!(package.files.len(), OWNED_FILES.len());
+        // 生成器产物可含 OWNED_FILES 之外的可选增强文件(lua/xhup_flow/**
+        // 简码提示):manager 的子目录安装支持落地前,Trainer 安装暂不含
+        // Lua 层(方案自动降级,输入行为不变);OWNED_FILES 必须全部被覆盖。
+        assert!(
+            package.files.len() >= OWNED_FILES.len(),
+            "生成器产物必须覆盖全部拥有文件"
+        );
         assert!(!package.version.is_empty());
     }
 

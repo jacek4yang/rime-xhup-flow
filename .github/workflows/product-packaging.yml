@@ -167,6 +167,7 @@ jobs:
             rm "$dir/wrap_${dict}.schema.yaml"
           }
           cp build/rime-package/*.yaml "$work/"
+          cp -r build/rime-package/lua "$work/"
           for dict in xhup_flow_chars xhup_flow_words xhup_flow_shortcuts \
                       xhup_flow_two_key_shortcuts xhup_flow_fixed_first_shortcuts \
                       xhup_flow_flow xhup_flow_learn; do
@@ -192,6 +193,7 @@ jobs:
           # 不使用任何 wrapper 技巧 —— #43 真机缺陷(辅助词典静默失效)
           # 只能由这条路径证明已修复且不可回归。
           cp build/rime-package/*.yaml "$work/"
+          cp -r build/rime-package/lua "$work/"
           cat > "$work/default.custom.yaml" <<'EOF'
           patch:
             schema_list:
@@ -214,9 +216,9 @@ jobs:
           stage="$(mktemp -d)"
           trap 'rm -rf "$stage"' EXIT
           cp build/rime-package/*.yaml "$stage/"
+          cp -r build/rime-package/lua "$stage/"
           cp rime/package/INSTALL.md "$stage/"
-          # 显式列出文件(zip 不加 -r 时对目录会报 "Nothing to do")。
-          (cd "$stage" && zip -q "$GITHUB_WORKSPACE/artifacts/xhup-flow-rime-v$ver.zip" *)
+          (cd "$stage" && zip -q -r "$GITHUB_WORKSPACE/artifacts/xhup-flow-rime-v$ver.zip" *)
           (cd artifacts && sha256sum "xhup-flow-rime-v$ver.zip" > "xhup-flow-rime-v$ver.zip.sha256")
           ls -l artifacts/
 
@@ -667,7 +669,7 @@ jobs:
           trap 'rm -rf "$work"' EXIT
           cargo run -p xhup-cli --locked -- generate trainer --output "$work/gen" >/dev/null
           cargo run -p xhup-cli --locked -- generate rime --output "$work/gen" >/dev/null
-          (cd "$work/gen" && sha256sum -- * | LC_ALL=C sort -k2 > "$GITHUB_WORKSPACE/CANONICAL-SHA256SUMS.txt")
+          (cd "$work/gen" && find . -type f ! -name '.*' | LC_ALL=C sort | xargs sha256sum > "$GITHUB_WORKSPACE/CANONICAL-SHA256SUMS.txt")
           echo "规范数据/Rime 源文件哈希已生成(确定性生成,可跨机比对)"
 
       - name: 下载全部平台产物

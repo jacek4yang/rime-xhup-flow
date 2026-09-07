@@ -1,9 +1,10 @@
 //! 跨平台便携 Rime 源包的模板渲染与多产物生成。
 //!
-//! 便携核心只使用标准 librime 核心组件,不引用 Lua、OpenCC、
-//! octagram、predict 等可选插件组件,也不包含任何前端私有配置;同一份
-//! 生成包面向 ibus-rime、fcitx5-rime、Weasel、Squirrel、fcitx5-macos、
-//! fcitx5-android 等主流前端。
+//! 便携核心的输入行为只使用标准 librime 核心组件;Lua 简码提示
+//! (`lua_filter@*xhup_flow.quick_hint`)是**可选增强**:librime-lua
+//! 缺失时 librime 跳过该组件,方案保持完整静态功能(docs/lua-runtime.md
+//! §2 降级语义)。同一份生成包面向 ibus-rime、fcitx5-rime、Weasel、
+//! Squirrel、fcitx5-macos、fcitx5-android 等主流前端。
 //!
 //! 当前方案是固定精确编码层:显式生成的编码直接精确查表,不做运行时
 //! 拼写运算、候选补全枚举、组句与用户词学习。已提供一级简码(26 键,
@@ -16,6 +17,10 @@
 //! (渲染为 crate 的 package version)。在相同规范数据、相同生成器源码
 //! (含 package version)与相同模板下,生成结果字节级一致。
 
+use crate::lua_hints::{
+    LUA_QUICK_HINT_DATA_FILENAME, LUA_QUICK_HINT_FILENAME, generate_lua_quick_hints_data,
+    lua_quick_hint_source,
+};
 use crate::rime::{RIME_CHAR_DICTIONARY_FILENAME, generate_rime_char_dictionary};
 use crate::rime_fixed_first_shortcuts::{
     RIME_FIXED_FIRST_SHORTCUT_DICTIONARY_FILENAME, generate_rime_fixed_first_shortcut_dictionary,
@@ -133,19 +138,12 @@ fn render_template(template: &str, name: &str) -> String {
 /// (2/3/4 码)→ 词语简码词典(高稳健零冲突别名,3~7 键)→ 二码零冲突
 /// 词语简码词典(2 键空码别名)→ 固定层词语词典(4/6/8 键)→ 顶层词典
 /// (导入前五者)→ FIXED_FIRST 词语简码词典(高稳健重码别名,3/4/6 键,
-/// 由方案中独立的第二 table_translator 加载,不被顶层词典导入)→ 方案
-/// (使用前者)。同一规范数据、生成器源码与模板产生同一顺序、字节级一致
-/// 的产物集合。
-/// 生成完整的便携 Rime 源包产物集合。
-///
-/// 产物顺序固定且面向输入层级:一级简码词典(1 键)→ 单字全码词典
-/// (2/3/4 码)→ 词语简码词典(高稳健零冲突别名,3~7 键)→ 二码零冲突
-/// 词语简码词典(2 键空码别名)→ 固定层词语词典(4/6/8 键)→ 顶层词典
-/// (导入前五者)→ FIXED_FIRST 词语简码词典(高稳健重码别名,3/4/6 键,
 /// 由方案中独立的第二 table_translator 加载,不被顶层词典导入)→
 /// Flow 词典(组句/学习专用,canonical 全码关系,无简码别名,由
-/// table_translator@flow 加载,不被顶层词典导入)→ 主方案(Flow 引擎)
-/// → 静态兼容方案(无 Flow translator 的回退)。同一规范数据、生成器
+/// table_translator@flow 加载,不被顶层词典导入)→ 三个辅助词典的编译
+/// wrapper schema → Lua 简码提示模块与数据(librime-lua `*module` 组件,
+/// 可选增强,缺失时主方案降级为纯静态行为)→ 主方案(Flow 引擎)→
+/// 静态兼容方案(无 Flow translator 的回退)。同一规范数据、生成器
 /// 源码与模板产生同一顺序、字节级一致的产物集合。
 /// 渲染辅助词典的编译 wrapper schema。
 fn render_dict_compile_wrapper(schema_id: &str) -> String {
@@ -204,6 +202,14 @@ pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
         RimeArtifact {
             filename: RIME_LEARN_WRAPPER_SCHEMA_FILENAME,
             contents: render_dict_compile_wrapper("xhup_flow_learn"),
+        },
+        RimeArtifact {
+            filename: LUA_QUICK_HINT_FILENAME,
+            contents: lua_quick_hint_source().to_string(),
+        },
+        RimeArtifact {
+            filename: LUA_QUICK_HINT_DATA_FILENAME,
+            contents: generate_lua_quick_hints_data(),
         },
         RimeArtifact {
             filename: RIME_SCHEMA_FILENAME,

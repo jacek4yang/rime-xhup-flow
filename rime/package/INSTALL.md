@@ -27,7 +27,16 @@ clients: Weasel (Windows), Squirrel (macOS), Fcitx5-Rime / IBus-Rime
 | `xhup_flow_fixed_first_shortcuts.schema.yaml` | 词典编译 wrapper(部署器编译辅助词典用,不可选择) |
 | `xhup_flow_flow.schema.yaml` | 词典编译 wrapper(同上) |
 | `xhup_flow_learn.schema.yaml` | 词典编译 wrapper(同上) |
+| `lua/xhup_flow/quick_hint.lua` | 简码提示模块(可选增强,需 librime-lua) |
+| `lua/xhup_flow/data/quick_hints.lua` | 简码提示数据(生成器产出) |
 | `INSTALL.md` | 本说明(部署时无需复制) |
+
+**Lua 简码提示(可选)**:在有 librime-lua 的环境(小狼毫 ≥0.15、鼠须管
+≥1.0、fcitx5-android、安装 `librime-plugin-lua` 的 Linux 桌面),主方案的
+quick_hint filter 会给有可用简码的候选追加 `⚡<简码>` 注释(默认开,
+可在方案开关中关闭);无 librime-lua 时组件被跳过,输入行为完全不变。
+本包不携带 `rime.lua`,也不触碰用户 `lua/` 目录下 `lua/xhup_flow/`
+以外的任何文件。
 
 **为什么有 wrapper schema**:librime 部署只编译默认 translator 命名空间的
 词典;FIXED_FIRST / Flow / Learn 词典经主方案 `schema/dependencies` 指向
@@ -39,7 +48,8 @@ wrapper 不在任何 `schema_list` 中,不可被用户选择。
 
 ## 安装 / Install
 
-把上表中除 `INSTALL.md` 外的全部文件复制到 Rime 用户数据目录:
+把上表中除 `INSTALL.md` 外的全部文件复制到 Rime 用户数据目录
+(`lua/` 子目录保持目录结构整体复制):
 
 - Windows 小狼毫:`%APPDATA%\Rime`
 - macOS 鼠须管:`~/Library/Rime`

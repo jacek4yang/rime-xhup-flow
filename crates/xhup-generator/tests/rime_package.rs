@@ -36,10 +36,12 @@ fn artifact_set_is_exact_and_ordered() {
             "xhup_flow_fixed_first_shortcuts.schema.yaml",
             "xhup_flow_flow.schema.yaml",
             "xhup_flow_learn.schema.yaml",
+            "lua/xhup_flow/quick_hint.lua",
+            "lua/xhup_flow/data/quick_hints.lua",
             "xhup_flow.schema.yaml",
             "xhup_flow_static.schema.yaml",
         ],
-        "产物集合与顺序固定:简码词典 → 单字词典 → 词语简码词典 → 二码简码词典 → 词语词典 → 顶层词典 → FIXED_FIRST 简码词典 → Flow 组句词典 → Flow 学习词典 → 词典编译 wrapper(FIXED_FIRST/Flow/Learn)→ 方案 → 静态兼容方案"
+        "产物集合与顺序固定:简码词典 → 单字词典 → 词语简码词典 → 二码简码词典 → 词语词典 → 顶层词典 → FIXED_FIRST 简码词典 → Flow 组句词典 → Flow 学习词典 → 词典编译 wrapper(FIXED_FIRST/Flow/Learn)→ Lua 简码提示模块与数据 → 方案 → 静态兼容方案"
     );
 }
 
@@ -189,6 +191,31 @@ fn schema_semantics() {
         schema.contains("filters:\n    - uniquifier"),
         "方案应含 uniquifier 过滤器"
     );
+    // Lua 简码提示:filters 链 uniquifier → quick_hint;开关默认开(reset 1)。
+    let filter_entries: Vec<&str> = schema
+        .lines()
+        .skip_while(|line| *line != "  filters:")
+        .skip(1)
+        .take_while(|line| line.starts_with("    "))
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect();
+    assert_eq!(
+        filter_entries,
+        ["    - uniquifier", "    - lua_filter@*xhup_flow.quick_hint"],
+        "filters 链应为 uniquifier → quick_hint"
+    );
+    assert!(
+        schema.contains("- name: quick_hint\n    reset: 1"),
+        "quick_hint 开关应默认开启"
+    );
+    // Lua 产物:模块源码与生成数据俱在,数据与 canonical 简码映射一致。
+    let module = contents_of(&artifacts, "lua/xhup_flow/quick_hint.lua");
+    assert!(module.contains("xhup_flow.data.quick_hints"));
+    let data = contents_of(&artifacts, "lua/xhup_flow/data/quick_hints.lua");
+    assert!(
+        data.contains("[\"时间\"] = \"uij\""),
+        "提示数据应含 时间 → uij"
+    );
 }
 
 #[test]
@@ -236,7 +263,6 @@ fn schema_excludes_non_portable_or_deferred_features() {
         "matcher",
         "algebra",
         "delimiter",
-        "lua",
         "opencc",
         "predict",
         "octagram",
@@ -247,9 +273,23 @@ fn schema_excludes_non_portable_or_deferred_features() {
     ] {
         assert!(!schema.contains(forbidden), "方案不应包含 `{forbidden}`");
     }
-    // 行内斜杠只允许出现在注释中(引擎配置值不含 `/`)。
+    // Lua 唯一许可例外:quick_hint 简码提示(可选增强,缺失时降级);
+    // 其余任何 lua 组件引用仍然禁止。
+    let lua_lines: Vec<&str> = schema
+        .lines()
+        .filter(|line| line.contains("lua") && !line.trim_start().starts_with('#'))
+        .collect();
+    assert_eq!(
+        lua_lines,
+        ["    - lua_filter@*xhup_flow.quick_hint"],
+        "方案只允许 quick_hint 一个 Lua 组件引用"
+    );
+    // 行内斜杠只允许出现在注释与 quick_hint 模块路径中。
     for line in schema.lines() {
         let code = line.split('#').next().unwrap_or(line);
+        if code.contains("lua_filter@*xhup_flow.quick_hint") {
+            continue;
+        }
         assert!(!code.contains('/'), "方案非注释配置不应包含 `/`: {line}");
     }
 }
@@ -353,5 +393,42 @@ fn auxiliary_dictionaries_are_in_dependency_compile_graph() {
             wrapper.contents().contains(&format!("dictionary: {dict}")),
             "wrapper 必须把默认命名空间词典指向 {dict}"
         );
+    }
+}
+
+#[test]
+fn artifact_manifest_forbids_user_owned_paths() {
+    // 产物清单安全不变量(发布级):XHUP 源包只做「自有文件 overlay」,
+    // 绝不携带会覆盖用户状态/配置的文件名,也不携带路径逃逸。
+    const FORBIDDEN_EXACT: &[&str] = &[
+        "default.custom.yaml",
+        "default.yaml",
+        "installation.yaml",
+        "user.yaml",
+        "rime.lua",
+    ];
+    let artifacts = generate_rime_artifacts();
+    let mut seen = std::collections::BTreeSet::new();
+    for artifact in &artifacts {
+        let name = artifact.filename();
+        assert!(seen.insert(name), "产物文件名必须唯一: {name}");
+        assert!(!FORBIDDEN_EXACT.contains(&name), "禁止产物: {name}");
+        assert!(!name.contains(".."), "产物路径不得含 `..`: {name}");
+        assert!(!name.starts_with('/'), "产物路径不得为绝对路径: {name}");
+        assert!(!name.contains('\\'), "产物路径只用 `/` 分隔: {name}");
+        assert!(
+            !name.contains("/sync/") && !name.starts_with("sync/"),
+            "不得含 sync/: {name}"
+        );
+        assert!(!name.starts_with("build/"), "不得含 build/: {name}");
+        assert!(!name.contains(".userdb"), "不得含 userdb: {name}");
+        // 子目录产物只允许 Lua 命名空间(安全不变量:用户 lua/ 下其它
+        // 文件绝不被触及)。
+        if let Some((dir, _)) = name.split_once('/') {
+            assert!(
+                name.starts_with("lua/xhup_flow/"),
+                "子目录产物只允许 lua/xhup_flow/**: {name}(实际目录 {dir})"
+            );
+        }
     }
 }

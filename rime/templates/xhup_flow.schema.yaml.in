@@ -16,7 +16,8 @@ schema:
     - xhup_flow_flow
     - xhup_flow_learn
   description: |
-    XHUP Flow 的跨平台小鹤音形方案,仅使用标准 librime 核心组件。
+    XHUP Flow 的跨平台小鹤音形方案,输入行为仅使用标准 librime 核心组件
+    (Lua 简码提示为可选增强,插件缺失时自动降级);
     当前版本提供 26 个一级简码字、规范单字(二至四码)、高稳健零冲突
     词语简码(别名,不替换完整码)、二码零冲突词语简码(仅完全空闲的
     二键码位)与高频固定词语(二至四字)输入;
@@ -35,6 +36,11 @@ switches:
     states: [。，, ．，]
   - name: full_shape
     states: [半角, 全角]
+  # 简码提示(Lua quick_hint filter):开 = 候选注释追加 ⚡<简码>。
+  # librime-lua 缺失时该组件被跳过,开关无效果,输入行为不变。
+  - name: quick_hint
+    reset: 1
+    states: [关闭提示, 简码提示]
 
 engine:
   processors:
@@ -58,6 +64,9 @@ engine:
     - table_translator@learn
   filters:
     - uniquifier
+    # 简码提示(可选增强):候选注释追加 ⚡<简码>,只追加不重排;
+    # librime-lua 缺失时 librime 跳过该组件,静态行为不变。
+    - lua_filter@*xhup_flow.quick_hint
 
 speller:
   alphabet: zyxwvutsrqponmlkjihgfedcba
