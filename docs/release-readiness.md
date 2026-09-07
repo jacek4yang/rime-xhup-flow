@@ -58,7 +58,7 @@ CI 通过不等于发布就绪;本清单是人工控制点的权威列表。
 ### 4. v1.0.0-rc.1 发布决策(人工)
 
 - [ ] 决定产品版本号(建议 `1.0.0-rc.1`;当前 workspace/tauri.conf 为
-  0.1.0,`VERSION` 文件 1.0.0 属经典方案 `xhup_fullcode`,见
+  0.1.0;legacy `VERSION` 文件已随经典方案移除,见
   [architecture.md](architecture.md) 版本模型一节)
 - [ ] 统一升版:workspace Cargo.toml ↔ tauri.conf.json(同步修改,
   版本同步测试会强制);Rime 包版本随生成器自动内嵌

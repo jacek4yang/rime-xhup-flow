@@ -25,6 +25,31 @@ jobs:
       - name: 检出仓库
         uses: actions/checkout@v7
 
+      # 架构防回归守卫:生成的 production Rime 产物属于 CI/dist,绝不入库;
+      # 仓库根目录不得再次出现旧架构的生成词典/方案/legacy 发布文件。
+      # 语义白名单:rime/templates/*.yaml.in 是模板源、tests/librime 是
+      # fixture、docs 是文档 —— 守卫只针对仓库根。
+      - name: 架构守卫(根目录不得含生成 Rime 产物或 legacy 发布文件)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          found=()
+          for name in \
+            flypy_base.dict.yaml flypy_chars.dict.yaml \
+            xhup_fullcode.schema.yaml xhup_fullcode.dict.yaml \
+            xhup_fullcode_fixed_chars.dict.yaml \
+            default.custom.yaml VERSION; do
+            [[ -e "$name" ]] && found+=("$name")
+          done
+          for f in *.dict.yaml *.schema.yaml; do
+            found+=("$f")
+          done
+          if ((${#found[@]} > 0)); then
+            echo "::error::根目录出现禁止的生成/legacy 文件: ${found[*]}"
+            exit 1
+          fi
+          echo "架构守卫通过:根目录无生成 Rime 产物与 legacy 发布文件"
+
       - name: 准备 Rust 工具链
         run: rustup show
 

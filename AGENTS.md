@@ -37,7 +37,7 @@ AI 代理在本仓库工作的入口约束。详细流程见 [CONTRIBUTING.md](C
 
 绝不提交:构建产物(`build/`、`target/`、`dist/`、`*.bin` 等)、运行时状态、本地缓存与依赖目录(`node_modules/` 等)、机器相关文件(如 `installation.yaml`、`user.yaml`、`sync/`)、密钥与凭据、本地 AI 会话数据、个人用户词典与输入学习数据。
 
-可复现生成的项目产物,仅在仓库策略明确要求跟踪时才可提交——例如 `xhup_fullcode_fixed_chars.dict.yaml` 由发布流程生成并按策略固化跟踪。
+可复现生成的项目产物一律不提交;Rime 产物由 Rust 生成器在 CI/发布流程产出。legacy `xhup_fullcode` 根目录文件已随 v1 收口移除(见 docs/legacy-fullcode-scheme.md)。
 
 `.gitignore` 已覆盖主要的本地生成物;新增本地状态类文件时应同步更新 `.gitignore`。
 
