@@ -20,6 +20,7 @@ pub mod corpus;
 pub mod cost;
 pub mod dynamic;
 pub mod evidence;
+pub mod export_v2;
 pub mod frequency;
 pub mod mapping_v2;
 pub mod occupancy;
