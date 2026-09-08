@@ -52,6 +52,8 @@ EOF
 controls_dir="$work/ime-controls"
 mkdir -p "$controls_dir"
 cp "$PACKAGE_DIR"/*.yaml "$controls_dir/"
+# 方案引用 lua_filter 时必须随包携带 lua/ 模块(见 run-flow-audit.sh)。
+if [[ -d "$PACKAGE_DIR/lua" ]]; then cp -r "$PACKAGE_DIR/lua" "$controls_dir/"; fi
 cat > "$controls_dir/default.custom.yaml" <<'EOF'
 patch:
   schema_list/+:

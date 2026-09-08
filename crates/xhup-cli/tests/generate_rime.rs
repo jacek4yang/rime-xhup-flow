@@ -45,13 +45,40 @@ fn assert_artifacts_match_generator(output: &Path) {
             "{} 字节与生成器一致",
             artifact.filename()
         );
-        let temporary = output.join(format!(".{}.tmp", artifact.filename()));
+        // 临时文件与最终产物同目录(子目录产物亦然)。
+        let temporary = final_path.with_file_name(format!(
+            ".{}.tmp",
+            final_path.file_name().unwrap().to_string_lossy()
+        ));
         assert!(
             !temporary.exists(),
             "{} 成功后临时文件不残留",
             artifact.filename()
         );
     }
+}
+
+/// 递归列出输出目录中的全部文件(相对路径,`/` 分隔,字典序)。
+fn list_files_recursive(output: &Path) -> Vec<String> {
+    let mut files = Vec::new();
+    let mut stack = vec![output.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                files.push(
+                    path.strip_prefix(output)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
+            }
+        }
+    }
+    files.sort();
+    files
 }
 
 #[test]
@@ -61,14 +88,11 @@ fn first_generation_creates_directory_and_all_artifacts() {
     generate(&output).unwrap();
 
     assert_artifacts_match_generator(&output);
-    let filenames: Vec<String> = fs::read_dir(&output)
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
+    let filenames = list_files_recursive(&output);
     assert_eq!(
         filenames.len(),
         generate_rime_artifacts().len(),
-        "输出目录恰含全部产物且无其他文件"
+        "输出目录(含子目录)恰含全部产物且无其他文件"
     );
 
     fs::remove_dir_all(&output).unwrap();
@@ -80,14 +104,13 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
 
     generate(&output).unwrap();
 
-    let mut filenames: Vec<String> = fs::read_dir(&output)
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
+    let mut filenames = list_files_recursive(&output);
     filenames.sort();
     assert_eq!(
         filenames,
         [
+            "lua/xhup_flow/data/quick_hints.lua",
+            "lua/xhup_flow/quick_hint.lua",
             "xhup_flow.dict.yaml",
             "xhup_flow.schema.yaml",
             "xhup_flow_chars.dict.yaml",
@@ -103,7 +126,7 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
             "xhup_flow_word_shortcuts.dict.yaml",
             "xhup_flow_words.dict.yaml",
         ],
-        "输出应为且仅为 14 个 Rime 源文件(含 3 个词典编译 wrapper schema)"
+        "输出应为且仅为 14 个 Rime 源文件(含 3 个词典编译 wrapper schema)+ 2 个 Lua 简码提示文件"
     );
     for filename in &filenames {
         assert!(
@@ -160,7 +183,11 @@ fn existing_artifacts_are_replaced_exactly() {
     let output = temp_output();
     fs::create_dir_all(&output).unwrap();
     for artifact in generate_rime_artifacts() {
-        fs::write(output.join(artifact.filename()), "垃圾内容").unwrap();
+        let path = output.join(artifact.filename());
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, "垃圾内容").unwrap();
     }
 
     generate(&output).unwrap();
@@ -214,16 +241,8 @@ fn repeated_generation_is_byte_identical() {
 
 /// 读取输出目录内全部产物内容(按文件名排序,便于比较)。
 fn read_all_artifacts(output: &Path) -> Vec<(String, Vec<u8>)> {
-    let mut all: Vec<(String, Vec<u8>)> = fs::read_dir(output)
-        .unwrap()
-        .map(|entry| {
-            let path = entry.unwrap().path();
-            (
-                path.file_name().unwrap().to_string_lossy().into_owned(),
-                fs::read(&path).unwrap(),
-            )
-        })
-        .collect();
-    all.sort();
-    all
+    list_files_recursive(output)
+        .into_iter()
+        .map(|name| (name.clone(), fs::read(output.join(&name)).unwrap()))
+        .collect()
 }

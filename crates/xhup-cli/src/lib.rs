@@ -285,7 +285,21 @@ fn write_outputs(output: &Path, files: &[(&str, &str)]) -> Result<usize, CliErro
     let mut prepared = Vec::with_capacity(files.len());
     for (filename, contents) in files {
         let final_path = output.join(filename);
-        let temporary = output.join(format!(".{filename}.tmp"));
+        // 产物可含子目录(如 lua/xhup_flow/…):父目录必须先创建;
+        // 临时文件与最终产物同目录,保证 rename 同卷原子。
+        if let Some(parent) = final_path.parent() {
+            fs::create_dir_all(parent).map_err(|source| CliError::CreateDirectory {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+        }
+        let temporary = final_path.with_file_name(format!(
+            ".{}.tmp",
+            final_path
+                .file_name()
+                .expect("产物文件名应有基名")
+                .to_string_lossy()
+        ));
         if let Err(source) = fs::write(&temporary, contents.as_bytes()) {
             for (temporary, _) in &prepared {
                 let _ = fs::remove_file(temporary);

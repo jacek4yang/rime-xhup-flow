@@ -81,6 +81,9 @@ prepare_deploy() {
   local dir=$1 schema_id=$2
   mkdir -p "$dir"
   cp "$PACKAGE_DIR"/*.yaml "$dir/"
+  # 方案引用 lua_filter 时必须随包携带 lua/ 模块,否则在装有
+  # librime-lua 的环境里组件创建失败会导致引擎无候选。
+  if [[ -d "$PACKAGE_DIR/lua" ]]; then cp -r "$PACKAGE_DIR/lua" "$dir/"; fi
   cat > "$dir/default.custom.yaml" <<EOF
 patch:
   schema_list/+:

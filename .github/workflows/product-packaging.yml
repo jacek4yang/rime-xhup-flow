@@ -117,12 +117,15 @@ jobs:
         run: |
           set -euo pipefail
           cargo run -p xhup-cli --locked -- generate rime --output build/rime-package
-          # 结构校验:恰好 14 个拥有文件(11 数据/方案 + 3 词典编译 wrapper)、
-          # 全部非空、两套方案齐备、版本内嵌
+          # 结构校验:恰好 14 个顶层拥有文件(11 数据/方案 + 3 词典编译
+          # wrapper)+ lua/ 子目录(简码提示模块与数据);全部非空、
+          # 两套方案齐备、版本内嵌
           files="$(ls build/rime-package)"
           count="$(echo "$files" | wc -l)"
-          [[ "$count" -eq 14 ]] || { echo "::error::期望 14 个源文件,实际 $count:$files"; exit 1; }
-          for f in build/rime-package/*; do
+          [[ "$count" -eq 15 ]] || { echo "::error::期望 14 个源文件 + lua/ 目录,实际 $count:$files"; exit 1; }
+          for f in build/rime-package/*.yaml \
+                   build/rime-package/lua/xhup_flow/quick_hint.lua \
+                   build/rime-package/lua/xhup_flow/data/quick_hints.lua; do
             [[ -s "$f" ]] || { echo "::error::产物为空: $f"; exit 1; }
           done
           grep -q 'schema_id: xhup_flow$' build/rime-package/xhup_flow.schema.yaml \
@@ -132,7 +135,7 @@ jobs:
           rime_version="$(grep -m1 'version:' build/rime-package/xhup_flow.schema.yaml | sed 's/.*version:[[:space:]]*"\([^"]*\)".*/\1/')"
           [[ -n "$rime_version" ]] || { echo "::error::无法解析 Rime 包版本"; exit 1; }
           echo "rime_version=$rime_version" >> "$GITHUB_OUTPUT"
-          echo "Rime 源包版本: $rime_version(14 个文件,结构校验通过)"
+          echo "Rime 源包版本: $rime_version(14 个文件 + lua/ 简码提示,结构校验通过)"
 
       - name: 安装 librime 编译校验环境
         run: |
@@ -167,6 +170,7 @@ jobs:
             rm "$dir/wrap_${dict}.schema.yaml"
           }
           cp build/rime-package/*.yaml "$work/"
+          cp -r build/rime-package/lua "$work/"
           for dict in xhup_flow_chars xhup_flow_words xhup_flow_shortcuts \
                       xhup_flow_two_key_shortcuts xhup_flow_fixed_first_shortcuts \
                       xhup_flow_flow xhup_flow_learn; do
@@ -192,6 +196,7 @@ jobs:
           # 不使用任何 wrapper 技巧 —— #43 真机缺陷(辅助词典静默失效)
           # 只能由这条路径证明已修复且不可回归。
           cp build/rime-package/*.yaml "$work/"
+          cp -r build/rime-package/lua "$work/"
           cat > "$work/default.custom.yaml" <<'EOF'
           patch:
             schema_list:
@@ -214,9 +219,9 @@ jobs:
           stage="$(mktemp -d)"
           trap 'rm -rf "$stage"' EXIT
           cp build/rime-package/*.yaml "$stage/"
+          cp -r build/rime-package/lua "$stage/"
           cp rime/package/INSTALL.md "$stage/"
-          # 显式列出文件(zip 不加 -r 时对目录会报 "Nothing to do")。
-          (cd "$stage" && zip -q "$GITHUB_WORKSPACE/artifacts/xhup-flow-rime-v$ver.zip" *)
+          (cd "$stage" && zip -q -r "$GITHUB_WORKSPACE/artifacts/xhup-flow-rime-v$ver.zip" *)
           (cd artifacts && sha256sum "xhup-flow-rime-v$ver.zip" > "xhup-flow-rime-v$ver.zip.sha256")
           ls -l artifacts/
 
@@ -667,7 +672,7 @@ jobs:
           trap 'rm -rf "$work"' EXIT
           cargo run -p xhup-cli --locked -- generate trainer --output "$work/gen" >/dev/null
           cargo run -p xhup-cli --locked -- generate rime --output "$work/gen" >/dev/null
-          (cd "$work/gen" && sha256sum -- * | LC_ALL=C sort -k2 > "$GITHUB_WORKSPACE/CANONICAL-SHA256SUMS.txt")
+          (cd "$work/gen" && find . -type f ! -name '.*' | LC_ALL=C sort | xargs sha256sum > "$GITHUB_WORKSPACE/CANONICAL-SHA256SUMS.txt")
           echo "规范数据/Rime 源文件哈希已生成(确定性生成,可跨机比对)"
 
       - name: 下载全部平台产物

@@ -2,8 +2,9 @@
 //! 入库模板投影为确定性的便携 Rime 源包与训练器数据集。
 //!
 //! 便携包面向主流 librime 前端(ibus-rime、fcitx5-rime、Weasel、Squirrel、
-//! fcitx5-macos、fcitx5-android 等),只使用标准核心组件,不依赖 Lua 或
-//! 其他可选插件。当前提供一级简码词典(26 键,`xhup_flow_shortcuts`)、固定层
+//! fcitx5-macos、fcitx5-android 等);输入行为只依赖标准核心组件,Lua
+//! 简码提示为可选增强(librime-lua 缺失时自动降级为纯静态行为)。
+//! 当前提供一级简码词典(26 键,`xhup_flow_shortcuts`)、固定层
 //! 静态单字词典(2/3/4 码,`xhup_flow_chars`)、固定层静态高频词语词典
 //! (2~4 字词 4/6/8 键,`xhup_flow_words`)、顶层词典(`xhup_flow`)、方案
 //! (`xhup_flow`)与训练器数据集(`xhup_flow_trainer.json`)的纯内存生成:
@@ -23,6 +24,7 @@ mod analysis;
 mod char_codes;
 mod fixed_first_shortcuts;
 mod frequency;
+mod lua_hints;
 mod merged_ranking;
 mod package;
 mod rime;
@@ -61,6 +63,10 @@ pub use analysis::{
 pub use char_codes::{RimeCharCodeEntry, canonical_char_code_entries};
 pub use fixed_first_shortcuts::{
     CanonicalFixedFirstShortcutEntry, canonical_fixed_first_shortcut_entries,
+};
+pub use lua_hints::{
+    LUA_QUICK_HINT_DATA_FILENAME, LUA_QUICK_HINT_FILENAME, generate_lua_quick_hints_data,
+    lua_quick_hint_source,
 };
 pub use package::{RimeArtifact, generate_rime_artifacts};
 pub use rime::{
