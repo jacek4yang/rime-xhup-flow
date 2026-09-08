@@ -187,11 +187,8 @@ fn schema_semantics() {
         "learn translator 配置不符合学习语义"
     );
     // uniquifier:同一词在静态与动态层重合时去重,动态候选只追加在后。
-    assert!(
-        schema.contains("filters:\n    - uniquifier"),
-        "方案应含 uniquifier 过滤器"
-    );
-    // Lua 简码提示:filters 链 uniquifier → quick_hint;开关默认开(reset 1)。
+    // Lua 简码提示:filters 链 quick_hint → uniquifier(注解类 filter 在
+    // 前,text 级去重兜底在最后,见 schema 模板注释);开关默认开(reset 1)。
     let filter_entries: Vec<&str> = schema
         .lines()
         .skip_while(|line| *line != "  filters:")
@@ -201,8 +198,8 @@ fn schema_semantics() {
         .collect();
     assert_eq!(
         filter_entries,
-        ["    - uniquifier", "    - lua_filter@*xhup_flow.quick_hint"],
-        "filters 链应为 uniquifier → quick_hint"
+        ["    - lua_filter@*xhup_flow.quick_hint", "    - uniquifier"],
+        "filters 链应为 quick_hint → uniquifier"
     );
     assert!(
         schema.contains("- name: quick_hint\n    reset: 1"),
