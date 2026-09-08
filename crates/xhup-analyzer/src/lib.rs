@@ -32,6 +32,7 @@ pub mod replay;
 pub mod report;
 pub mod sweep;
 pub mod two_key_study;
+pub mod xhup_prior;
 
 pub use candidates::{
     CandidateEnumerationSpec, CandidateGrammar, EnumerationStats, Mode, ShortcutCandidate,
@@ -80,6 +81,7 @@ pub use sweep::{
     operating_points, robustness_map, run_normalized_grid, run_sweep,
 };
 pub use xhup_generator::{CharCodeAnalysisEntry, WordCodeAnalysisEntry};
+pub use xhup_prior::{NEUTRAL_PRIOR, XhupStylePrior};
 
 /// 一次性构建的不可变分析输入(occupancy / 候选 / 频率模型只构建一次,
 /// 全部 sweep 运行复用)。
