@@ -88,6 +88,7 @@ int main(int argc, char **argv) {
         return 2;
     }
     RIME_STRUCT(RimeTraits, traits);
+    traits.app_name = "rime.xhup-flow-lua-audit";
     traits.shared_data_dir = argv[1];
     traits.user_data_dir = argv[2];
     traits.distribution_name = "xhup-flow-lua-audit";
@@ -95,9 +96,15 @@ int main(int argc, char **argv) {
     traits.distribution_version = "0";
     rime->setup(&traits);
     rime->initialize(&traits);
+    /* 全新 user 目录的首次 initialize 会异步进入维护模式,必须等部署
+     * 线程完成再开会话,否则引擎未就绪,按键全部不被处理
+     * (与 runtime_flow_audit.c 的 open_session 同构)。 */
+    if (rime->is_maintenance_mode && rime->is_maintenance_mode()) {
+        rime->join_maintenance_thread();
+    }
     session = rime->create_session();
-    if (!session) {
-        fprintf(stderr, "会话创建失败\n");
+    if (!session || !rime->select_schema(session, "xhup_flow")) {
+        fprintf(stderr, "会话创建失败或无法选择 schema xhup_flow\n");
         return 2;
     }
 
