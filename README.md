@@ -20,6 +20,9 @@ v1 收口从 main 移除;既有版本仍可从 Releases 下载,文档见
    活动直到显式上屏,无自动提交。
 3. **本地学习**:上屏 Flow 组句会训练专用用户词典 `xhup_flow_user`,
    参与后续组句排序。学习数据只存本机,无账号、无遥测、无云端。
+4. **简码提示(可选)**:装有 librime-lua 的环境里,全码输入时候选会
+   标注更短的简码(如 `uijm` → 时间 `⚡uij`),帮助边用边记;可在
+   方案开关中关闭,无 librime-lua 的环境自动跳过、不影响输入。
 
 候选优先级契约(由 runtime 审计逐码断言):
 
@@ -67,8 +70,34 @@ XHUP 拥有的文件,不影响学习数据与你的其它 Rime 配置。
 
 ### 方式二:平台中立 Rime 源包(不装 Trainer)
 
-从 CI 产物获取 `xhup-flow-rime-vX.Y.Z.zip`(含 `INSTALL.md` 说明),
-把其中全部 `.yaml` 复制到上表的 Rime 用户目录,然后重新部署。
+从 Releases 下载 `xhup-flow-rime-vX.Y.Z.zip`:
+
+1. 找到上表所列的 Rime 用户数据目录;
+2. 把 ZIP 内容**直接解压到该目录**,允许覆盖同名的 XHUP Flow 文件
+   (`xhup_flow*.yaml` 与 `lua/xhup_flow/`);
+3. 重新部署 Rime(小狼毫:「开始菜单 → 小狼毫 → 重新部署」;鼠须管:
+   菜单栏图标 → Deploy;Fcitx5/IBus:托盘图标 → 重新部署/Restart);
+4. 在方案菜单中启用 XHUP Flow / XHUP Flow Static。
+
+ZIP 只包含 XHUP Flow 拥有的文件(方案、词典、Lua 模块、说明),
+**绝不包含也不会覆盖**:
+
+- `default.custom.yaml` / `default.yaml`(你的方案列表与全局设置);
+- `installation.yaml` / `user.yaml`(Rime 安装与状态文件);
+- 你的其它输入方案与词典;
+- 任何 `*.userdb`(你的学习/词频数据)与 `sync/` 同步数据。
+
+启用方案需在你的 `default.custom.yaml` 的 `schema_list` 中追加
+XHUP Flow(最小示例):
+
+```yaml
+patch:
+  schema_list/+:
+    - schema: xhup_flow
+    - schema: xhup_flow_static
+```
+
+Trainer 控制中心会自动完成这一步(幂等合并,可卸载还原)。
 
 ### 启用方案(两套方案同时安装)
 
@@ -100,7 +129,8 @@ Flow(组句学习)与 Static(纯静态)一起安装;在输入法的方案菜单�
 ## 卸载
 
 - Trainer 控制中心:**卸载**(明确列出将删除的文件;默认保留学习数据)。
-- 手动卸载:从 Rime 用户目录删除全部 `xhup_flow*.yaml` 方案/词典文件;
+- 手动卸载:从 Rime 用户目录删除全部 `xhup_flow*.yaml` 方案/词典文件
+  与 `lua/xhup_flow/` 目录;
   如确认不再需要学习数据,可自行删除 `xhup_flow_user.userdb`(普通卸载
   无必要)。
 
