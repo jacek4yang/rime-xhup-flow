@@ -21,6 +21,7 @@ pub mod cost;
 pub mod dynamic;
 pub mod evidence;
 pub mod frequency;
+pub mod mapping_v2;
 pub mod occupancy;
 pub mod optimize;
 pub mod optimizer_v2;
@@ -48,6 +49,7 @@ pub use cost::{CostBreakdown, CostModel};
 pub use dynamic::DynamicCandidateKind;
 pub use evidence::{Eligibility, EvidenceCoverage, LexicalEvidence, LexicalEvidenceSet};
 pub use frequency::{CharCodeUsage, FrequencyModel, FrequencyScale};
+pub use mapping_v2::{BaselineMassView, FanoutStats, MappingV2, MappingV2Entry, produce_mapping};
 pub use occupancy::{
     CandidateSource, CodeOccupancy, CollisionClass, ExistingCandidate, LayerAudit, LengthStats,
 };

@@ -101,6 +101,31 @@ impl LexicalEvidence {
     pub fn technical_frequency(&self) -> Option<f64> {
         self.technical_frequency
     }
+
+    /// 测试构造:显式给定各信号(仅供 synthetic 测试;对集成测试可见)。
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn for_test(
+        word: &str,
+        code: KeySequence,
+        wanxiang_score: u64,
+        normalized_frequency: f64,
+        sentence_coverage: Option<f64>,
+        context_diversity: Option<u32>,
+        conversation_frequency: Option<f64>,
+    ) -> Self {
+        LexicalEvidence {
+            word: word.to_string(),
+            code,
+            wanxiang_score,
+            normalized_frequency,
+            sentence_coverage,
+            context_diversity,
+            conversation_frequency,
+            formal_frequency: None,
+            technical_frequency: None,
+        }
+    }
 }
 
 /// 资格分类(Input Model v2 §2.1):四个相互独立的判定,替代
