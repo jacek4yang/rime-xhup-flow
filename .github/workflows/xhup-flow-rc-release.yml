@@ -20,9 +20,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "发布版本,例如 0.1.0-rc.1(RC)或 1.0.0(正式;core 必须与 workspace/tauri.conf 版本一致)"
+        description: "发布版本,例如 1.0.0-rc.1(RC)或 1.0.0(正式;core 必须与 workspace/tauri.conf 版本一致)"
         required: true
-        default: "0.1.0-rc.1"
+        default: "1.0.0-rc.1"
       publish:
         description: "发布(创建草稿 Pre-release;必须 main 分支)"
         required: true
@@ -69,7 +69,7 @@ jobs:
           set -euo pipefail
           version="$INPUT_VERSION"
           if ! [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-rc\.([1-9][0-9]*))?$ ]]; then
-            echo "::error::版本 '$version' 不合法,必须形如 0.1.0-rc.1(RC)或 1.0.0(正式),且不得复用 alpha 命名空间"
+            echo "::error::版本 '$version' 不合法,必须形如 1.0.0-rc.1(RC)或 1.0.0(正式),且不得复用 alpha 命名空间"
             exit 1
           fi
           core="${BASH_REMATCH[1]}"
