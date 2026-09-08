@@ -229,6 +229,42 @@ jobs:
           错题中心、统计)与输入法控制中心(安装 / 升级 / 修复 / 卸载 /
           重新部署 / 学习管理 / 诊断)。
 
+          ## 输入能力
+
+          - 小鹤双拼 + 音形全码(单字 2~4 键、词语 4/6/8 键);
+          - 一级简码(26 键冻结映射)与多级静态词语简码(固定优先级,
+            不受学习影响);
+          - Flow 连续组句:整句输入、逐键组句、句子级本地学习;
+          - Lua 简码提示:长码候选标注可用简码(支持 librime-lua 的平台
+            自动启用,无插件环境完整降级为纯静态行为);
+          - 两个方案:\`xhup_flow\`(默认,现代模式)与
+            \`xhup_flow_static\`(纯静态,无 Lua、无学习)。
+
+          ## 下载与安装
+
+          ### 桌面 / Android 训练器(含输入法管理)
+
+          按下表下载对应平台安装包,安装后打开「控制中心」可一键安装 /
+          修复 / 卸载 XHUP Flow 的 Rime 方案文件(安全合并,不破坏既有
+          配置)。
+
+          ### 仅使用 Rime 输入方案(已有 Rime 客户端)
+
+          1. 下载 \`xhup-flow-rime-v$CORE.zip\`;
+          2. 找到 Rime 用户数据目录(小狼毫: %%APPDATA%%\\Rime;
+             鼠须管: ~/Library/Rime;fcitx5: ~/.local/share/fcitx5/rime;
+             ibus: ~/.config/ibus/rime);
+          3. 把 ZIP 内容**直接解压到该目录**,允许覆盖同名文件
+             (ZIP 内只有 XHUP Flow 拥有的方案/词典/Lua 模块文件);
+          4. 重新部署(Deploy);
+          5. 在方案选单中启用 XHUP Flow。
+
+          该 ZIP **刻意不含** \`default.custom.yaml\`、
+          \`default.yaml\`、\`installation.yaml\`、\`user.yaml\`、
+          \`sync/\`、\`*.userdb\`,不会覆盖你的其他输入方案、用户词典、
+          同步数据与个人状态。启用方案需自行在 \`default.custom.yaml\` 的
+          \`schema_list\` 追加 \`xhup_flow\`(或用客户端的方案选单)。
+
           ## 产物与签名状态
 
           | 文件 | 平台 | 签名状态 |
