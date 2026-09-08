@@ -11,9 +11,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Trainer Alpha 版本,例如 0.1.0-alpha.1"
+        description: "Trainer Alpha 版本,例如 1.0.0-alpha.1(core 须与 tauri.conf.json 一致)"
         required: true
-        default: "0.1.0-alpha.1"
+        default: "1.0.0-alpha.1"
       android_version_code:
         description: "Android 单调递增 versionCode"
         required: true
@@ -65,7 +65,7 @@ jobs:
             # 手动触发一律走真实签名链路(含演练),保证 publish=true 前签名路径已验证
             sign_android="true"
             if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-alpha\.[1-9][0-9]*$ ]]; then
-              echo "::error::版本号 '$version' 不合法,必须形如 0.1.0-alpha.1(semver-alpha.N)"
+              echo "::error::版本号 '$version' 不合法,必须形如 1.0.0-alpha.1(semver-alpha.N,core 与 tauri.conf.json 一致)"
               exit 1
             fi
             if ! [[ "$vcode" =~ ^[1-9][0-9]*$ ]]; then
@@ -77,13 +77,16 @@ jobs:
               exit 1
             fi
           else
-            version="0.1.0-alpha.ci.${PR_NUMBER}"
+            # PR 预览:core 跟随 tauri.conf.json(产品版本唯一事实来源之一),
+            # 避免产品升版后 alpha 命名空间与包内嵌版本漂移。
+            alpha_core="$(node -p "JSON.parse(require('fs').readFileSync('trainer/src-tauri/tauri.conf.json','utf8')).version")"
+            version="${alpha_core}-alpha.ci.${PR_NUMBER}"
             vcode="1"
             sign_android="false"
             publish="false"
           fi
           # MSI/WiX 要求 prerelease 为纯数字,因此 Windows 打包使用派生版本:
-          # 0.1.0-alpha.1 -> 0.1.0-1;0.1.0-alpha.ci.18 -> 0.1.0-18
+          # 1.0.0-alpha.1 -> 1.0.0-1;1.0.0-alpha.ci.18 -> 1.0.0-18
           # 对外文件名与 Release 仍使用完整 Alpha 版本字符串。
           if [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-alpha\.([0-9]+)$ ]]; then
             win_version="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"

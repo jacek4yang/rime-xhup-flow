@@ -81,13 +81,14 @@ FROZEN STATIC  >  DYNAMIC USER LEARNING  >  SENTENCE COMPOSITION
 
 | 载体 | 当前值 | 含义 |
 | --- | --- | --- |
-| workspace `Cargo.toml` `version` | 0.1.0 | XHUP Flow 产品版本;Rime 源包内嵌版本(`{{VERSION}}` 模板) |
-| `trainer/src-tauri/tauri.conf.json` `version` | 0.1.0 | 桌面/移动安装包版本(测试强制与 workspace 一致) |
-| (已移除)legacy `VERSION` 文件 | — | 经典方案 `xhup_fullcode` 已于 v1 收口时从 main 移除(源码见 git 历史与既有 GitHub Releases);XHUP Flow 产品版本唯一真源 = workspace `Cargo.toml` |
+| workspace `Cargo.toml` `version` | 1.0.0 | XHUP Flow 产品版本唯一真源;Rime 源包内嵌版本(`{{VERSION}}` 模板) |
+| `trainer/src-tauri/tauri.conf.json` `version` | 1.0.0 | 桌面/移动安装包版本(测试强制与 workspace 一致) |
+| `trainer/package.json`、`miniapp/package.json`、`packages/trainer-core/package.json` `version` | 1.0.0 | 前端包元数据(测试强制与 workspace 一致) |
+| (已移除)legacy `VERSION` 文件 | — | 经典方案 `xhup_fullcode` 已于 v1 收口时从 main 移除(源码见 git 历史与既有 GitHub Releases) |
 
-Rime 包版本随生成器内嵌;桌面应用版本与 workspace 版本由
-`product_versions_are_synchronized` 测试兜底。正式 v1 发布时的统一
-升版(如 1.0.0-rc.1)是人工决策,见
+Rime 包版本随生成器内嵌;全部产品级版本来源由
+`product_versions_are_synchronized` 测试与发布管线
+(xhup-flow-rc-release.yml)的一致性门禁双重兜底。
 [docs/release-readiness.md](release-readiness.md)。
 
 ## 平台中立 Rime 源包

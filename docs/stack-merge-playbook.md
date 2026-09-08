@@ -39,8 +39,8 @@ merge 最低层 PR → CI 绿 → 验证下一层增量 diff → 下一层重建
 
 - **绝不直接整栈一次合并**:每层 PR 的 review 意义在增量 diff;
   squash 后逐层 rebase 才能保持每层可审。
-- **版本守卫**:合并全程 workspace `0.1.0` 不变;升版(如 `1.0.0-rc.1`)
-  在全部合并完成后单独执行(见 release-readiness.md)。
+- **版本守卫**:合并全程 workspace 版本不变;升版在全部合并完成后
+  单独执行(见 release-readiness.md)。
 - **冲突预期**:#44 与 #43 之间曾有一次分支指针整理
   (`page_no`/`ascii_composer` 修复先入 #44 再整理回 #43);
   rebase 时如遇这两处重复,以 #43 分支版本为准丢弃 #44 侧重复。

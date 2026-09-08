@@ -70,6 +70,6 @@ pnpm tauri build      # Tauri 桌面打包
 ## Alpha 测试
 
 Trainer 的 Windows x64 与 Android Alpha 预发布版通过 GitHub
-Pre-release 分发(手动触发,tag 形如 `trainer-v0.1.0-alpha.1`)。
+Pre-release 分发(手动触发,tag 形如 `trainer-v1.0.0-alpha.1`(core 随产品版本))。
 真人验收清单、结果汇报格式与 Android 签名密钥管理见
 [docs/testing/trainer-alpha-windows-android.md](../docs/testing/trainer-alpha-windows-android.md)。

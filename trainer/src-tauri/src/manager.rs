@@ -1219,15 +1219,23 @@ mod tests {
                     .map(|rest| rest.trim_end_matches('"').to_string())
             })
             .expect("workspace Cargo.toml 应包含 workspace version");
-        let conf = fs::read_to_string(manifest_dir.join("tauri.conf.json")).unwrap();
-        let conf: serde_json::Value = serde_json::from_str(&conf).unwrap();
-        let app_version = conf["version"]
-            .as_str()
-            .expect("tauri.conf.json 应包含 version");
-        assert_eq!(
-            workspace_version, app_version,
-            "workspace 与 tauri.conf.json 版本漂移"
-        );
+        // 全部产品级版本来源必须与 workspace 一致(与发布管线
+        // xhup-flow-rc-release.yml 的一致性门禁保持同一不变量)。
+        let json_sources = [
+            "tauri.conf.json",
+            "../package.json",
+            "../../miniapp/package.json",
+            "../../packages/trainer-core/package.json",
+        ];
+        for source in json_sources {
+            let text = fs::read_to_string(manifest_dir.join(source))
+                .unwrap_or_else(|e| panic!("读取 {source} 失败: {e}"));
+            let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+            let version = json["version"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{source} 应包含 version"));
+            assert_eq!(workspace_version, version, "workspace 与 {source} 版本漂移");
+        }
     }
 
     #[test]
