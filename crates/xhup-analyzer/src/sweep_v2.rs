@@ -112,9 +112,12 @@ pub struct SweepV2Input<'a> {
     pub baseline: &'a BaselineMassView,
     /// 回放语料来源。
     pub replay: ReplaySource<'a>,
-    /// 参考映射(本地提供,绝不入库);`None` 时兼容率指标显式缺失、
-    /// XHUP 先验全部中立。
+    /// 参考映射(本地提供,绝不入库);`None` 时兼容率指标显式缺失。
+    /// (XHUP 先验始终含 canonical 简码层,见 [`build_v2_prior`]。)
     pub reference: Option<&'a [ReferenceEntry]>,
+    /// canonical 生产简码层的 词 → 传统码(传统保底机制输入;
+    /// 见 [`tradition_map`])。
+    pub tradition: &'a BTreeMap<String, xhup_core::KeySequence>,
 }
 
 /// 回放指标(聚合统计近似回放时语义为近似,见模块文档)。
@@ -252,11 +255,48 @@ fn mapping_change_rate(prev: &MappingV2, current: &MappingV2) -> f64 {
     changed as f64 / words.len() as f64
 }
 
+/// v2 先验构建:canonical 生产简码层(ZR / FF / 二码,rank 1)+ 可选
+/// 本地参考映射。
+///
+/// canonical 简码层**始终**在内:v2 映射是这些层的替换候选,偏离它们
+/// 就是存量用户的肌肉记忆迁移成本(许可无关,是库内 canonical 数据)。
+/// 官方参考映射(本地,绝不入库)叠加在后;冲突时 canonical 层优先
+/// (生产迁移成本 > 官方对照)。这一合并也让 xhup_deviation 维度在无
+/// 参考映射时不再退化。
+pub fn build_v2_prior(reference: Option<&[ReferenceEntry]>) -> XhupStylePrior {
+    let mut entries: Vec<ReferenceEntry> = reference.map_or_else(Vec::new, <[_]>::to_vec);
+    for (word, code) in tradition_map() {
+        entries.push(ReferenceEntry {
+            text: word,
+            code: code.to_string(),
+            rank: 1,
+        });
+    }
+    XhupStylePrior::from_entries(entries)
+}
+
+/// canonical 生产简码层(ZR / FF / 二码)的 词 → 传统码 映射(BTreeMap
+/// 序,确定性;一词多层时 ZR > FF > 二码,先见者胜)。传统保底机制的输入。
+pub fn tradition_map() -> BTreeMap<String, xhup_core::KeySequence> {
+    let mut map = BTreeMap::new();
+    let mut push = |word: &str, code: &xhup_core::KeySequence| {
+        map.entry(word.to_string()).or_insert_with(|| code.clone());
+    };
+    for entry in xhup_generator::canonical_word_shortcut_entries() {
+        push(entry.word(), entry.shortcut_code());
+    }
+    for entry in xhup_generator::canonical_fixed_first_shortcut_entries() {
+        push(entry.word(), entry.shortcut_code());
+    }
+    for entry in xhup_generator::canonical_two_key_shortcut_entries() {
+        push(entry.word(), entry.shortcut_code());
+    }
+    map
+}
+
 /// 执行扫描:逐运行点产出映射并计算全部指标(网格序即输出序)。
 pub fn run_sweep_v2(input: &SweepV2Input, points: &[SweepV2Point]) -> Vec<SweepV2Row> {
-    let prior = input
-        .reference
-        .map(|r| XhupStylePrior::from_entries(r.to_vec()));
+    let prior = build_v2_prior(input.reference);
     // 质量尺度与兼容率 baseline 索引与参数无关,构建一次。
     let scale = MassScale::build(input.evidence);
     let compat_index = input.reference.map(|_| compat::build_baseline_index());
@@ -272,7 +312,8 @@ pub fn run_sweep_v2(input: &SweepV2Input, points: &[SweepV2Point]) -> Vec<SweepV
             input.baseline,
             &point.cost,
             &point.weights,
-            prior.as_ref(),
+            Some(&prior),
+            input.tradition,
         );
 
         // (a) 期望输入成本:回放(运行点自己的键/选择成本假设)。
@@ -595,6 +636,10 @@ mod tests {
         )
     }
 
+    fn empty_tradition() -> BTreeMap<String, xhup_core::KeySequence> {
+        BTreeMap::new()
+    }
+
     fn two_points() -> Vec<SweepV2Point> {
         vec![
             SweepV2Point {
@@ -626,12 +671,14 @@ mod tests {
     fn end_to_end_synthetic_produces_all_metrics() {
         let (targets, evidence, baseline) = fixture();
         let sentences = vec!["我们时间".to_string(), "什么时间".to_string()];
+        let tradition = empty_tradition();
         let input = SweepV2Input {
             targets: &targets,
             evidence: &evidence,
             baseline: &baseline,
             replay: ReplaySource::Sentences(&sentences),
             reference: None,
+            tradition: &tradition,
         };
         let rows = run_sweep_v2(&input, &two_points());
         assert_eq!(rows.len(), 2);
@@ -664,12 +711,14 @@ mod tests {
     fn sweep_is_byte_deterministic() {
         let (targets, evidence, baseline) = fixture();
         let sentences = vec!["我们时间".to_string()];
+        let tradition = empty_tradition();
         let input = SweepV2Input {
             targets: &targets,
             evidence: &evidence,
             baseline: &baseline,
             replay: ReplaySource::Sentences(&sentences),
             reference: None,
+            tradition: &tradition,
         };
         let first = render_tsv(&run_sweep_v2(&input, &two_points()));
         let second = render_tsv(&run_sweep_v2(&input, &two_points()));
@@ -680,12 +729,14 @@ mod tests {
     fn missing_reference_marks_compat_na() {
         let (targets, evidence, baseline) = fixture();
         let sentences = vec!["我们".to_string()];
+        let tradition = empty_tradition();
         let input = SweepV2Input {
             targets: &targets,
             evidence: &evidence,
             baseline: &baseline,
             replay: ReplaySource::Sentences(&sentences),
             reference: None,
+            tradition: &tradition,
         };
         let tsv = render_tsv(&run_sweep_v2(&input, &two_points()));
         let data_line = tsv.lines().nth(1).expect("应有数据行");
@@ -703,12 +754,14 @@ mod tests {
         // 基线行:canonical 全层映射走同一指标管线;参数列显式 NA。
         let (targets, evidence, baseline) = fixture();
         let sentences = vec!["我们时间".to_string()];
+        let tradition = empty_tradition();
         let input = SweepV2Input {
             targets: &targets,
             evidence: &evidence,
             baseline: &baseline,
             replay: ReplaySource::Sentences(&sentences),
             reference: None,
+            tradition: &tradition,
         };
         let row = baseline_row(&input);
         assert!(row.is_baseline);
@@ -749,17 +802,81 @@ mod tests {
             sentences: 5,
             tokens: 5,
         };
+        let tradition = empty_tradition();
         let input = SweepV2Input {
             targets: &targets,
             evidence: &evidence,
             baseline: &baseline,
             replay: ReplaySource::AggregateStats(&stats),
             reference: None,
+            tradition: &tradition,
         };
         let rows = run_sweep_v2(&input, &two_points());
         assert_eq!(rows.len(), 2);
         assert!(rows[0].replay.kspc > 0.0);
         assert!((0.0..=1.0).contains(&rows[0].replay.rank1_rate));
+    }
+
+    /// 真实 canonical 数据的回归守卫(2026-10 高频词简码丢失 P0):
+    /// canonical ZR/FF/二码层中频率 top 段的词,在 v2 映射里不得静默
+    /// 丢失简码分配。
+    #[test]
+    fn top_canonical_shortcut_words_keep_v2_assignment() {
+        let data = crate::build_analysis();
+        let targets = v2_targets(&data.words);
+        let evidence_set = crate::evidence::LexicalEvidenceSet::build(&data.words, &data.frequency);
+        let evidence = evidence_by_word(&evidence_set);
+        let scale = MassScale::build(&evidence);
+        let baseline = BaselineMassView::build(&data.occupancy);
+        let prior = build_v2_prior(None);
+        let tradition = tradition_map();
+        let mapping = crate::mapping_v2::produce_mapping(
+            &targets,
+            &evidence,
+            &scale,
+            &baseline,
+            &CostModelV2::default(),
+            &EvidenceWeights::default(),
+            Some(&prior),
+            &tradition,
+        );
+
+        // canonical 简码层(ZR/FF/二码)词集合 × 证据频率 top-100。
+        let mut shortcut_words: Vec<(String, u64)> = Vec::new();
+        let mut push = |word: &str| {
+            let score = evidence.get(word).map(|e| e.wanxiang_score()).unwrap_or(0);
+            shortcut_words.push((word.to_string(), score));
+        };
+        for entry in xhup_generator::canonical_word_shortcut_entries() {
+            push(entry.word());
+        }
+        for entry in xhup_generator::canonical_fixed_first_shortcut_entries() {
+            push(entry.word());
+        }
+        for entry in xhup_generator::canonical_two_key_shortcut_entries() {
+            push(entry.word());
+        }
+        shortcut_words.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        shortcut_words.dedup_by(|a, b| a.0 == b.0);
+        let top: Vec<&str> = shortcut_words
+            .iter()
+            .take(100)
+            .map(|(w, _)| w.as_str())
+            .collect();
+
+        let missing: Vec<&str> = top
+            .iter()
+            .copied()
+            .filter(|w| mapping.get(w).is_none())
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "canonical 简码 top-100 词在 v2 映射中静默丢失: {missing:?}"
+        );
+        // 语义哨兵:修复前被顶替的七个超高频词逐个在案。
+        for word in ["就是", "知道", "不是", "你们", "还是", "因为", "如果"] {
+            assert!(mapping.get(word).is_some(), "{word} 必须保留 v2 简码分配");
+        }
     }
 
     #[test]
@@ -769,12 +886,14 @@ mod tests {
         // 合成参考(非真实数据):我们 → wm 首选,与产出映射一致。
         let reference = compat::parse_reference_tsv("# 合成参考\n我们\twm\t1\n什么\tuf\t2\n")
             .expect("合成参考可解析");
+        let tradition = empty_tradition();
         let input = SweepV2Input {
             targets: &targets,
             evidence: &evidence,
             baseline: &baseline,
             replay: ReplaySource::Sentences(&sentences),
             reference: Some(&reference),
+            tradition: &tradition,
         };
         let rows = run_sweep_v2(&input, &two_points());
         for row in &rows {

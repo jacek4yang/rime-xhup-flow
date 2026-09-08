@@ -17,16 +17,22 @@
 //!   `NA`,XHUP 先验全部中立(xhup_deviation 维度退化,见 mapping_v2
 //!   模块文档「参数影响路径」);
 //! - `--dump-mapping` 导出每个已执行运行点的明细映射 TSV(词/码/rank/
-//!   效用分解/主导项),供人工审查与 compat 对照。
+//!   效用分解/主导项),供人工审查与 compat 对照;
+//! - `--explain <词>`(可重复):对指定词输出决策解释(候选码列表、决策
+//!   时点码内占用、逐候选效用分解、接纳/拒绝原因);与 --only 联用指定
+//!   运行点,缺省用默认参数点。explain 模式下不执行扫描。
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use xhup_analyzer::compat::parse_reference_tsv;
 use xhup_analyzer::corpus::CorpusStats;
+use xhup_analyzer::mapping_v2::render_explain;
 use xhup_analyzer::sweep_v2::{self, ReplaySource, SweepV2Input, render_summary, render_tsv};
-use xhup_analyzer::xhup_prior::XhupStylePrior;
-use xhup_analyzer::{BaselineMassView, LexicalEvidenceSet, MassScale, produce_mapping};
+use xhup_analyzer::{
+    BaselineMassView, CostModelV2, EvidenceWeights, LexicalEvidenceSet, MassScale, produce_mapping,
+    produce_mapping_explained,
+};
 
 /// 与 evidence.rs 同源的 KdConv 会话域聚合统计(默认回放语料)。
 const CONVERSATION_TSV: &str = include_str!("../../../../data/corpus/conversation_kdconv.tsv");
@@ -86,6 +92,7 @@ fn main() -> ExitCode {
     let mut limit: Option<usize> = None;
     let mut only: Option<String> = None;
     let mut dump_dir: Option<PathBuf> = None;
+    let mut explain_words: Vec<String> = Vec::new();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -102,6 +109,7 @@ fn main() -> ExitCode {
             "--dump-mapping" => {
                 dump_dir = Some(PathBuf::from(args.next().unwrap_or_else(|| usage())))
             }
+            "--explain" => explain_words.push(args.next().unwrap_or_else(|| usage())),
             _ => usage(),
         }
     }
@@ -149,12 +157,14 @@ fn main() -> ExitCode {
         eprintln!("[sweep-v2] 未提供 --reference,兼容率指标为 NA,XHUP 先验中立(x 维度退化)");
     }
 
+    let tradition = sweep_v2::tradition_map();
     let input = SweepV2Input {
         targets: &targets,
         evidence: &evidence,
         baseline: &baseline,
         replay,
         reference: reference.as_deref(),
+        tradition: &tradition,
     };
     let grid = sweep_v2::grid();
     let points: Vec<&sweep_v2::SweepV2Point> = if let Some(label) = &only {
@@ -170,6 +180,43 @@ fn main() -> ExitCode {
             .collect()
     };
     eprintln!("[sweep-v2] 运行点: {} / {}", points.len(), grid.len());
+
+    // explain 模式:对指定词输出决策解释(单点,--only 或默认参数点),不执行扫描。
+    if !explain_words.is_empty() {
+        let (label, cost, weights) = match &only {
+            Some(_) => {
+                let p = points[0];
+                (p.label.as_str(), p.cost, p.weights)
+            }
+            None => (
+                "default",
+                CostModelV2::default(),
+                EvidenceWeights::default(),
+            ),
+        };
+        let scale = MassScale::build(&evidence);
+        let prior = sweep_v2::build_v2_prior(reference.as_deref());
+        let word_refs: Vec<&str> = explain_words.iter().map(String::as_str).collect();
+        let (_, reports) = produce_mapping_explained(
+            &targets,
+            &evidence,
+            &scale,
+            &baseline,
+            &cost,
+            &weights,
+            Some(&prior),
+            &tradition,
+            &word_refs,
+        );
+        println!("# explain @ {label}");
+        for word in &explain_words {
+            match reports.get(word) {
+                Some(report) => print!("{}", render_explain(report)),
+                None => println!("词: {word}\t不在候选宇宙(无证据或无合法候选)"),
+            }
+        }
+        return ExitCode::SUCCESS;
+    }
 
     // 首行:canonical 基线(同一指标管线);随后网格运行点。
     let mut rows = vec![sweep_v2::baseline_row(&input)];
@@ -189,9 +236,7 @@ fn main() -> ExitCode {
     if let Some(dir) = &dump_dir {
         std::fs::create_dir_all(dir).expect("dump 目录可建");
         let scale = MassScale::build(&evidence);
-        let prior = reference
-            .as_deref()
-            .map(|r| XhupStylePrior::from_entries(r.to_vec()));
+        let prior = sweep_v2::build_v2_prior(reference.as_deref());
         for point in &points {
             let mapping = produce_mapping(
                 &targets,
@@ -200,7 +245,8 @@ fn main() -> ExitCode {
                 &baseline,
                 &point.cost,
                 &point.weights,
-                prior.as_ref(),
+                Some(&prior),
+                &tradition,
             );
             let file = dir.join(format!("{}.tsv", point.label.replace('|', "_")));
             std::fs::write(&file, mapping.to_detail_tsv()).expect("映射 TSV 可写");
