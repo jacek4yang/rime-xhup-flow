@@ -40,3 +40,37 @@
 - **域偏差说明**:KdConv 是任务导向对话(电影/音乐/旅游推荐),
   「知道/什么」类引导词高频而「我们」类主语词低频;它提供会话域
   证据但不代表移动聊天全貌,后续以 PTT(转简)等来源补充。
+
+## replay_fixture.txt(回放夹具,入库)
+
+- **用途**:CI 语料回放回归门禁的输入(见 `.github/workflows/ci.yml`
+  Rust job 的「语料回放回归门禁」步骤);全量 92,558 句太大不入库,
+  夹具取去重后按 (出现次数降序, 句子字典序) 的前 2000 句。
+- **生成命令**(可复现,字节级确定性;断句规则与 kdconv_to_sentences.py
+  同源,从该模块导入):
+
+  ```bash
+  python3 data/corpus/scripts/kdconv_replay_fixture.py <kdconv数据目录> \
+    data/corpus/replay_fixture.txt
+  ```
+
+- **行数**:2000;**SHA256**:
+  `b5441ed3f92e685b217f8656f9f554410731267c593d247e3280901e52a98d30`。
+
+## replay_baseline.json(回放基线,入库)
+
+- **用途**:replay-bench `--baseline` 的断言基准。含四项指标
+  (kspc / rank1_rate / top3_rate / fallback_rate)的基线值、
+  允许回退容差与改善方向;rate 类以百分点(pp)计,kspc 为键/字。
+- **再生成**(canonical 映射发生预期内变更时,需 PR 说明理由):
+
+  ```bash
+  cargo run --locked -p xhup-analyzer --bin replay-bench -- \
+    --input data/corpus/replay_fixture.txt \
+    --write-baseline data/corpus/replay_baseline.json
+  ```
+
+- **容差语义**:kspc +2%(相对基线值),rank1/top3 −0.5pp,
+  fallback +1pp;改善方向不限。当前基线实测:KSPC 2.090、
+  rank1 95.28%、rank≤3 99.76%、兜底 37.01%(夹具为高频句,
+  与全量 92,558 句基线 2.068/95.3%/99.4%/37.9% 略有差异属预期)。

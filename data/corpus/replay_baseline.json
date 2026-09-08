@@ -1,0 +1,9 @@
+{
+  "schema": "xhup-replay-baseline/v1",
+  "metrics": {
+    "kspc": { "value": 2.09, "tolerance": 0.0418, "direction": "lower" },
+    "rank1_rate": { "value": 95.2831, "tolerance": 0.5, "direction": "higher" },
+    "top3_rate": { "value": 99.7581, "tolerance": 0.5, "direction": "higher" },
+    "fallback_rate": { "value": 37.0093, "tolerance": 1, "direction": "lower" }
+  }
+}
