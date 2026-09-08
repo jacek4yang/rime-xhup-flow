@@ -63,10 +63,16 @@ engine:
     - table_translator@flow
     - table_translator@learn
   filters:
-    - uniquifier
     # 简码提示(可选增强):候选注释追加 ⚡<简码>,只追加不重排;
-    # librime-lua 缺失时 librime 跳过该组件,静态行为不变。
+    # librime-lua 缺失时 librime 跳过该组件,输入行为不变。
+    # 顺序约束:注解类 filter 必须在 uniquifier 之前(与 rime-ice 等
+    # 成熟方案一致)。实测(Ubuntu noble librime-lua git20230917):
+    # lua_filter 位于 uniquifier 之后时,其协程 translation 会把每个
+    # 菜单的末位候选额外回吐一次(uniquifier 按 text 去重,位于最后
+    # 可兜底消化该重复);次序颠倒不影响提示语义(每候选至多注解一次,
+    # 由本仓库 Lua 单测与 runtime 审计共同断言)。
     - lua_filter@*xhup_flow.quick_hint
+    - uniquifier
 
 speller:
   alphabet: zyxwvutsrqponmlkjihgfedcba
