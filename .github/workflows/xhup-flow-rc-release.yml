@@ -1,9 +1,8 @@
 name: XHUP Flow RC Release
 
-# XHUP Flow 产品 RC 发布管线(人工触发)。
+# XHUP Flow 产品发布管线(人工触发;RC 与正式版共用)。
 #
 # 标签命名空间(与既有管线严格分离,勿混用):
-# - `v<semver>`              → 经典方案 xhup_fullcode(release.yml,VERSION 文件)
 # - `trainer-v<...>-alpha.N` → Trainer Alpha(trainer-alpha.yml)
 # - `xhup-flow-v<version>`   → XHUP Flow 产品(本工作流;RC 与正式)
 #
@@ -11,20 +10,19 @@ name: XHUP Flow RC Release
 # - publish=false(演练):完整构建 + 校验 + 上传 workflow 产物;
 #   不打 tag、不建 Release;
 # - publish=true(发布):必须满足全部门禁(main 分支、版本一致、
-#   tag/Release 不存在),构建后创建 **草稿 Pre-release**(人工复核
-#   发布说明与各平台验收状态后手动发布)。
+#   tag/Release 不存在),构建后创建草稿 Release(RC 为 Pre-release,
+#   正式版非 prerelease),人工复核发布说明与各平台验收状态后发布。
 #
 # 签名如实标注:桌面产物未签名/未公证(仓库无相应凭据);Android 仅在
 # publish=true 时经既有密钥链路签名(密钥仅运行时注入,不入库)。
-# 本工作流绝不读写根目录 VERSION 文件(属经典方案管线)。
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "RC 版本,例如 0.1.0-rc.1(core 必须与 workspace/tauri.conf 版本一致)"
+        description: "发布版本,例如 1.0.0-rc.1(RC)或 1.0.0(正式;core 必须与 workspace/tauri.conf 版本一致)"
         required: true
-        default: "0.1.0-rc.1"
+        default: "1.0.0-rc.1"
       publish:
         description: "发布(创建草稿 Pre-release;必须 main 分支)"
         required: true
@@ -50,6 +48,7 @@ jobs:
     outputs:
       version: ${{ steps.meta.outputs.version }}
       core: ${{ steps.meta.outputs.core }}
+      is_rc: ${{ steps.meta.outputs.is_rc }}
       publish: ${{ steps.meta.outputs.publish }}
 
     steps:
@@ -69,33 +68,35 @@ jobs:
         run: |
           set -euo pipefail
           version="$INPUT_VERSION"
-          if ! [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-rc\.([1-9][0-9]*)$ ]]; then
-            echo "::error::版本 '$version' 不合法,必须形如 0.1.0-rc.1,且不得复用 alpha/正式命名空间"
+          if ! [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-rc\.([1-9][0-9]*))?$ ]]; then
+            echo "::error::版本 '$version' 不合法,必须形如 1.0.0-rc.1(RC)或 1.0.0(正式),且不得复用 alpha 命名空间"
             exit 1
           fi
           core="${BASH_REMATCH[1]}"
+          if [[ -n "${BASH_REMATCH[2]}" ]]; then is_rc=true; else is_rc=false; fi
           # 空 = 由打包工作流从版本确定性派生(单一事实来源);显式传入时须为正整数。
           if [[ -n "$INPUT_VCODE" ]] && ! [[ "$INPUT_VCODE" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::android_version_code '$INPUT_VCODE' 必须是 >= 1 的正整数,或留空自动派生"
             exit 1
           fi
-          # 版本一致性:RC core 必须同时等于 workspace 版本与桌面应用版本
-          # (Rime 源包版本 = workspace 版本,由生成器内嵌)。
+          # 版本一致性:core 必须同时等于全部产品级版本来源
+          # (Rime 源包版本 = workspace 版本,由生成器内嵌;
+          #  trainer/src-tauri 测试 product_versions_are_synchronized
+          #  在 CI 中强制同一不变量)。
           ws="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
-          app="$(node -p "JSON.parse(require('fs').readFileSync('trainer/src-tauri/tauri.conf.json','utf8')).version")"
-          if [[ "$core" != "$ws" ]]; then
-            echo "::error::RC core '$core' != workspace 版本 '$ws'(先统一升版,不得静默跳版)"
-            exit 1
-          fi
-          if [[ "$core" != "$app" ]]; then
-            echo "::error::RC core '$core' != tauri.conf.json 版本 '$app'"
-            exit 1
-          fi
-          # 绝不读写 VERSION 文件(经典方案管线);校验它未被本流程改动。
-          git diff --exit-code -- VERSION || {
-            echo "::error::VERSION 文件属经典方案管线,RC 发布不得改动"
-            exit 1
+          check_version() {
+            local label="$1" actual="$2"
+            if [[ "$core" != "$actual" ]]; then
+              echo "::error::core '$core' != $label '$actual'(先统一升版,不得静默跳版)"
+              exit 1
+            fi
           }
+          check_version "workspace 版本" "$ws"
+          for pkg in trainer/src-tauri/tauri.conf.json trainer/package.json \
+                     miniapp/package.json packages/trainer-core/package.json; do
+            actual="$(node -p "JSON.parse(require('fs').readFileSync('$pkg','utf8')).version")"
+            check_version "$pkg" "$actual"
+          done
           publish="$INPUT_PUBLISH"
           if [[ "$publish" == "true" ]]; then
             if [[ "$REF" != "refs/heads/main" ]]; then
@@ -104,7 +105,7 @@ jobs:
             fi
             tag="xhup-flow-v$version"
             if gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
-              echo "::error::tag 已存在: $tag(RC 版本不可变,请递增 rc 序号)"
+              echo "::error::tag 已存在: $tag(发布版本不可变;RC 请递增 rc 序号)"
               exit 1
             fi
             if gh release view "$tag" >/dev/null 2>&1; then
@@ -115,18 +116,20 @@ jobs:
           {
             echo "version=$version"
             echo "core=$core"
+            echo "is_rc=$is_rc"
             echo "publish=$publish"
             echo "android_version_code=$INPUT_VCODE"
           } >> "$GITHUB_OUTPUT"
           {
-            echo "### RC 发布元数据"
-            echo "- 版本: \`$version\`(core \`$core\`,workspace/app 一致)"
+            if [[ "$is_rc" == "true" ]]; then kind="RC(Pre-release)"; else kind="正式版(stable)"; fi
+            echo "### 发布元数据"
+            echo "- 版本: \`$version\`(core \`$core\`,$kind,workspace/app/前端包一致)"
             if [[ -n "$INPUT_VCODE" ]]; then
               echo "- Android versionCode: \`$INPUT_VCODE\`(显式覆盖)"
             else
               echo "- Android versionCode: 从版本确定性派生(单调递增)"
             fi
-            echo "- 发布: \`$publish\`(true = 草稿 Pre-release,人工复核后发布)"
+            echo "- 发布: \`$publish\`(true = 草稿 Release,人工复核后发布)"
             echo "- 桌面签名状态: UNSIGNED / UNNOTARIZED(仓库无相应凭据,如实标注)"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -141,10 +144,10 @@ jobs:
       version: ${{ needs.validate.outputs.version }}
       android_version_code: ${{ needs.validate.outputs.android_version_code }}
       sign_android: ${{ needs.validate.outputs.publish == 'true' }}
-      build_state: ${{ needs.validate.outputs.publish == 'true' && 'RC-PUBLISH' || 'RC-REHEARSAL' }}
+      build_state: ${{ needs.validate.outputs.publish != 'true' && 'RC-REHEARSAL' || (needs.validate.outputs.is_rc == 'true' && 'RC-PUBLISH' || 'RELEASE') }}
 
   publish:
-    name: 创建草稿 Pre-release
+    name: 创建草稿 Release
     needs: [validate, build]
     if: needs.validate.outputs.publish == 'true'
     runs-on: ubuntu-latest
@@ -156,6 +159,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.validate.outputs.version }}
       CORE: ${{ needs.validate.outputs.core }}
+      IS_RC: ${{ needs.validate.outputs.is_rc }}
 
     steps:
       - name: 下载全部产物
@@ -188,11 +192,35 @@ jobs:
         run: |
           set -euo pipefail
           notes="$RUNNER_TEMP/RELEASE-NOTES.md"
-          cat > "$notes" <<EOF
-          # XHUP Flow v$VERSION(Release Candidate)
+          if [[ "$IS_RC" == "true" ]]; then
+            title_suffix="(Release Candidate)"
+            banner="> **草稿 Pre-release**:各平台人工验收状态均为 UNVERIFIED,
+          > 人工复核本说明并更新验收状态后手动发布。"
+            acceptance="
+          ## 人工验收状态
 
-          > **草稿 Pre-release**:各平台人工验收状态均为 UNVERIFIED,
-          > 人工复核本说明并更新验收状态后手动发布。
+          - Windows: **UNVERIFIED**
+          - macOS: **UNVERIFIED**
+          - Linux: **UNVERIFIED**
+          - Android: **UNVERIFIED**
+          "
+          else
+            title_suffix=""
+            banner="> 首个正式稳定版本。各平台人工验收状态见下方,
+          > 人工复核本说明后发布(正式版,非 Pre-release)。"
+            acceptance="
+          ## 人工验收状态
+
+          - Windows: **UNVERIFIED**
+          - macOS: **UNVERIFIED**
+          - Linux: **UNVERIFIED**
+          - Android: **UNVERIFIED**
+          "
+          fi
+          cat > "$notes" <<EOF
+          # XHUP Flow v$VERSION$title_suffix
+
+          $banner
 
           ## 这是什么
 
@@ -219,14 +247,7 @@ jobs:
           - Windows 未签名:SmartScreen 可能提示「未知发布者」,属预期,
             请勿为此关闭系统安全防护。
           - macOS 未公证:首次打开需右键 → 打开,或在系统设置中放行。
-
-          ## 人工验收状态
-
-          - Windows: **UNVERIFIED**
-          - macOS: **UNVERIFIED**
-          - Linux: **UNVERIFIED**
-          - Android: **UNVERIFIED**
-
+          $acceptance
           ## 已知限制
 
           - 学习导出/导入依赖 librime 官方 \`rime_dict_manager\`(librime-bin)。
@@ -242,14 +263,18 @@ jobs:
           EOF
           echo "notes=$notes" >> "$GITHUB_ENV"
 
-      - name: 创建草稿 Pre-release(人工复核后发布)
+      - name: 创建草稿 Release(人工复核后发布)
         run: |
           set -euo pipefail
           cd artifacts
+          prerelease_flag=()
+          if [[ "$IS_RC" == "true" ]]; then
+            prerelease_flag=(--prerelease)
+          fi
           gh release create "xhup-flow-v$VERSION" \
             --title "XHUP Flow v$VERSION" \
             --notes-file "$RUNNER_TEMP/RELEASE-NOTES.md" \
-            --prerelease --draft \
+            "${prerelease_flag[@]}" --draft \
             --target "$GITHUB_SHA" \
             "xhup-flow-rime-v$CORE.zip" \
             "xhup-flow-trainer-v$VERSION-windows-x64-setup.exe" \
@@ -260,5 +285,5 @@ jobs:
             "xhup-flow-trainer-v$VERSION-android-universal.apk" \
             SHA256SUMS.txt CANONICAL-SHA256SUMS.txt BUILD-INFO.txt
           url="$(gh release view "xhup-flow-v$VERSION" --json url -q .url)"
-          echo "### 草稿 Pre-release 已创建" >> "$GITHUB_STEP_SUMMARY"
-          echo "- $url(人工复核发布说明与验收状态后手动发布)" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 草稿 Release 已创建" >> "$GITHUB_STEP_SUMMARY"
+          echo "- $url(人工复核发布说明与验收状态后发布)" >> "$GITHUB_STEP_SUMMARY"
