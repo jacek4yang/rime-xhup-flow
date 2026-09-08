@@ -52,7 +52,9 @@ pub struct InputPlan {
     pub expected_cost: f64,
 }
 
-/// 当前 canonical 映射的回放视图:词 → 最佳静态输入方案。
+/// 回放视图:词 → 最佳静态输入方案(canonical 映射,或经
+/// [`ReplayMapping::build_with_plans`] 叠加的任意评估映射)。
+#[derive(Clone)]
 pub struct ReplayMapping {
     plans: BTreeMap<String, InputPlan>,
 }
@@ -60,28 +62,60 @@ pub struct ReplayMapping {
 impl ReplayMapping {
     /// 从 canonical 数据构建(全码 + ZR + FF + 二码,按期望成本择优)。
     pub fn build(cost: &ReplayCostModel) -> Self {
-        let selection_cost =
-            |rank: usize| cost.rank_cost[rank.saturating_sub(1).min(cost.rank_cost.len() - 1)];
-        let mut plans: BTreeMap<String, InputPlan> = BTreeMap::new();
-        let mut offer = |word: &str, keys: usize, rank: usize, via: &'static str| {
-            let plan = InputPlan {
-                keys,
-                rank,
-                via,
-                expected_cost: keys as f64 * cost.key_cost + selection_cost(rank),
-            };
-            let better = match plans.get(word) {
-                None => true,
-                Some(existing) => plan.expected_cost < existing.expected_cost,
-            };
-            if better {
-                plans.insert(word.to_string(), plan);
-            }
-        };
+        let mut mapping = Self::build_full_code_layer(cost);
 
-        // 全码层:候选位 = 同码权重降序名次(词词典内;4 键碰撞码的字词
-        // 跨表合并由 merged_ranking 仲裁 —— 词侧相对次序不变,字侧竞争
-        // 已在 common_word_coverage 门禁中单独保证,回放按词词典视图)。
+        // 简码层:码位唯一映射,首选。
+        for entry in canonical_word_shortcut_entries() {
+            mapping.offer(
+                cost,
+                entry.word(),
+                entry.shortcut_code().len(),
+                1,
+                "zero-regression",
+            );
+        }
+        for entry in canonical_fixed_first_shortcut_entries() {
+            mapping.offer(
+                cost,
+                entry.word(),
+                entry.shortcut_code().len(),
+                1,
+                "fixed-first",
+            );
+        }
+        for entry in canonical_two_key_shortcut_entries() {
+            mapping.offer(
+                cost,
+                entry.word(),
+                entry.shortcut_code().len(),
+                1,
+                "two-key",
+            );
+        }
+        mapping
+    }
+
+    /// 从 canonical 全码层 + 调用方提供的词语映射构建(v2 扫描等任意
+    /// 映射评估用;docs/optimizer-v2.md §5)。
+    ///
+    /// 与 [`Self::build`] 的区别:**不含**已入库的 ZR/FF/二码简码层;
+    /// `plans` = (词, 键数, 预期候选位),与全码层按期望成本择优(同成本
+    /// 先到先得,输入须确定性有序)。
+    pub fn build_with_plans(cost: &ReplayCostModel, plans: &[(String, usize, usize)]) -> Self {
+        let mut mapping = Self::build_full_code_layer(cost);
+        for (word, keys, rank) in plans {
+            mapping.offer(cost, word, *keys, *rank, "v2-sweep");
+        }
+        mapping
+    }
+
+    /// 全码层:候选位 = 同码权重降序名次(词词典内;4 键碰撞码的字词
+    /// 跨表合并由 merged_ranking 仲裁 —— 词侧相对次序不变,字侧竞争
+    /// 已在 common_word_coverage 门禁中单独保证,回放按词词典视图)。
+    fn build_full_code_layer(cost: &ReplayCostModel) -> Self {
+        let mut mapping = ReplayMapping {
+            plans: BTreeMap::new(),
+        };
         let word_entries = canonical_word_code_entries();
         let mut by_code: BTreeMap<String, Vec<(u32, &str)>> = BTreeMap::new();
         for entry in &word_entries {
@@ -93,27 +127,36 @@ impl ReplayMapping {
         for (code, mut entries) in by_code {
             entries.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(b.1)));
             for (rank, (_, word)) in entries.iter().enumerate() {
-                offer(word, code.chars().count(), rank + 1, "full");
+                mapping.offer(cost, word, code.chars().count(), rank + 1, "full");
             }
         }
+        mapping
+    }
 
-        // 简码层:码位唯一映射,首选。
-        for entry in canonical_word_shortcut_entries() {
-            offer(
-                entry.word(),
-                entry.shortcut_code().len(),
-                1,
-                "zero-regression",
-            );
+    /// 提供一条方案:期望成本更低则替换现有方案。
+    fn offer(
+        &mut self,
+        cost: &ReplayCostModel,
+        word: &str,
+        keys: usize,
+        rank: usize,
+        via: &'static str,
+    ) {
+        let selection_cost =
+            |rank: usize| cost.rank_cost[rank.saturating_sub(1).min(cost.rank_cost.len() - 1)];
+        let plan = InputPlan {
+            keys,
+            rank,
+            via,
+            expected_cost: keys as f64 * cost.key_cost + selection_cost(rank),
+        };
+        let better = match self.plans.get(word) {
+            None => true,
+            Some(existing) => plan.expected_cost < existing.expected_cost,
+        };
+        if better {
+            self.plans.insert(word.to_string(), plan);
         }
-        for entry in canonical_fixed_first_shortcut_entries() {
-            offer(entry.word(), entry.shortcut_code().len(), 1, "fixed-first");
-        }
-        for entry in canonical_two_key_shortcut_entries() {
-            offer(entry.word(), entry.shortcut_code().len(), 1, "two-key");
-        }
-
-        ReplayMapping { plans }
     }
 
     /// 词的输入方案(未收录词 = None,调用方按逐字全码兜底)。
@@ -182,6 +225,15 @@ impl Replayer {
         }
     }
 
+    /// 以调用方提供的回放视图构建(v2 扫描等任意映射评估;
+    /// 分词仍与 canonical 词表同源)。
+    pub fn with_mapping(mapping: ReplayMapping) -> Self {
+        Replayer {
+            segmenter: Segmenter::build(),
+            mapping,
+        }
+    }
+
     /// 回放一个句子。
     pub fn replay_sentence(&self, sentence: &str) -> SentenceReplay {
         let mut result = SentenceReplay::default();
@@ -226,6 +278,29 @@ impl Replayer {
             report.totals.top3 += r.top3;
             report.totals.expected_cost += r.expected_cost;
             report.totals.fallback_tokens += r.fallback_tokens;
+        }
+        report
+    }
+
+    /// 回放加权词形流:聚合统计近似(无句子上下文,每个词形视作独立
+    /// 一句,按计数加权)。用于原始句子不可入库时从派生统计(CorpusStats)
+    /// 估计回放指标;指标语义与句子回放略有差异(无跨词分词交互),
+    /// 报告时必须标注为近似。
+    pub fn replay_weighted_words<'a>(
+        &self,
+        words: impl Iterator<Item = (&'a str, u64)>,
+    ) -> ReplayReport {
+        let mut report = ReplayReport::default();
+        for (word, count) in words {
+            let r = self.replay_sentence(word);
+            report.sentences += count;
+            report.totals.chars += r.chars * count as usize;
+            report.totals.tokens += r.tokens * count as usize;
+            report.totals.keys += r.keys * count as usize;
+            report.totals.rank1 += r.rank1 * count as usize;
+            report.totals.top3 += r.top3 * count as usize;
+            report.totals.expected_cost += r.expected_cost * count as f64;
+            report.totals.fallback_tokens += r.fallback_tokens * count as usize;
         }
         report
     }
@@ -286,5 +361,31 @@ mod tests {
         assert_eq!(report.sentences, 2);
         assert!(report.kspc() > 0.0 && report.kspc() <= 4.0);
         assert!(report.rank1_rate() > 0.0);
+    }
+
+    #[test]
+    fn build_with_plans_overlays_arbitrary_mapping() {
+        // v2 扫描路径:任意映射与全码层按期望成本择优。
+        let cost = ReplayCostModel::default();
+        let mapping = ReplayMapping::build_with_plans(&cost, &[("我们".to_string(), 2, 1)]);
+        let plan = mapping.plan("我们").expect("我们 应有方案");
+        assert_eq!(plan.keys, 2);
+        assert_eq!(plan.rank, 1);
+        assert_eq!(plan.via, "v2-sweep");
+        // 未覆盖的词仍走全码层。
+        let full = mapping.plan("时间").expect("时间 应有全码方案");
+        assert_eq!(full.via, "full");
+    }
+
+    #[test]
+    fn weighted_words_replay_scales_by_count() {
+        // 聚合统计近似回放 = 单词回放 × 计数。
+        let replayer = Replayer::new(&ReplayCostModel::default());
+        let single = replayer.replay_corpus(["我们"].into_iter());
+        let weighted = replayer.replay_weighted_words([("我们", 3)].into_iter());
+        assert_eq!(weighted.sentences, 3);
+        assert_eq!(weighted.totals.keys, single.totals.keys * 3);
+        assert_eq!(weighted.totals.chars, single.totals.chars * 3);
+        assert_eq!(weighted.totals.rank1, single.totals.rank1 * 3);
     }
 }

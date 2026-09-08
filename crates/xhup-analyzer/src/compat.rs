@@ -151,6 +151,49 @@ pub fn parse_reference_tsv(text: &str) -> Result<Vec<ReferenceEntry>, String> {
 /// 碰撞码字词跨表统一);各简码层(一级/ZR/FF/二码)的码位在各自词典
 /// 内唯一映射一个文本,排名恒 1。
 fn build_current_index() -> BTreeMap<String, Vec<(String, CurrentHit)>> {
+    let mut index = build_baseline_index();
+
+    // 词语简码层(ZR / FIXED_FIRST / 二码零冲突):码位唯一映射,rank 恒 1。
+    let shortcut_layers: [(&str, Vec<(String, String)>); 3] = [
+        (
+            "zero-regression",
+            canonical_word_shortcut_entries()
+                .iter()
+                .map(|e| (e.shortcut_code().to_string(), e.word().to_string()))
+                .collect(),
+        ),
+        (
+            "fixed-first",
+            canonical_fixed_first_shortcut_entries()
+                .iter()
+                .map(|e| (e.shortcut_code().to_string(), e.word().to_string()))
+                .collect(),
+        ),
+        (
+            "two-key",
+            canonical_two_key_shortcut_entries()
+                .iter()
+                .map(|e| (e.shortcut_code().to_string(), e.word().to_string()))
+                .collect(),
+        ),
+    ];
+    for (layer, entries) in shortcut_layers {
+        for (code, text) in entries {
+            index
+                .entry(code)
+                .or_default()
+                .push((text, CurrentHit { layer, rank: 1 }));
+        }
+    }
+    index
+}
+
+/// baseline 索引:静态全码层(单字 2/3/4 码 + 词语 4/6/8 码,同码按权重
+/// 降序)+ 一级简码层,**不含**已入库的词语简码层。
+///
+/// 供 v2 扫描等「任意映射」对照:在 baseline 上叠加调用方的简码层后
+/// 传入 [`compare_with_index`]。
+pub fn build_baseline_index() -> BTreeMap<String, Vec<(String, CurrentHit)>> {
     let mut index: BTreeMap<String, Vec<(String, CurrentHit)>> = BTreeMap::new();
 
     // 静态全码层:单字(2/3/4 码)+ 词(4/6/8 码),同码按权重降序排名。
@@ -195,39 +238,6 @@ fn build_current_index() -> BTreeMap<String, Vec<(String, CurrentHit)>> {
                 },
             ));
     }
-
-    // 词语简码层(ZR / FIXED_FIRST / 二码零冲突):码位唯一映射,rank 恒 1。
-    let shortcut_layers: [(&str, Vec<(String, String)>); 3] = [
-        (
-            "zero-regression",
-            canonical_word_shortcut_entries()
-                .iter()
-                .map(|e| (e.shortcut_code().to_string(), e.word().to_string()))
-                .collect(),
-        ),
-        (
-            "fixed-first",
-            canonical_fixed_first_shortcut_entries()
-                .iter()
-                .map(|e| (e.shortcut_code().to_string(), e.word().to_string()))
-                .collect(),
-        ),
-        (
-            "two-key",
-            canonical_two_key_shortcut_entries()
-                .iter()
-                .map(|e| (e.shortcut_code().to_string(), e.word().to_string()))
-                .collect(),
-        ),
-    ];
-    for (layer, entries) in shortcut_layers {
-        for (code, text) in entries {
-            index
-                .entry(code)
-                .or_default()
-                .push((text, CurrentHit { layer, rank: 1 }));
-        }
-    }
     index
 }
 
@@ -238,7 +248,17 @@ fn tier_bucket(code: &str) -> usize {
 
 /// 对照参考映射与当前 canonical 映射,产出兼容率报告。
 pub fn compare(reference: &[ReferenceEntry]) -> CompatibilityReport {
-    let index = build_current_index();
+    compare_with_index(reference, &build_current_index())
+}
+
+/// 对照参考映射与调用方提供的映射索引(v2 扫描等任意映射评估)。
+///
+/// 索引语义与 `build_current_index` 一致:码 → 各层 (文本, 层内排名);
+/// 同一 (码, 文本) 跨层命中取最小 rank。
+pub fn compare_with_index(
+    reference: &[ReferenceEntry],
+    index: &BTreeMap<String, Vec<(String, CurrentHit)>>,
+) -> CompatibilityReport {
     let mut tiers: BTreeMap<usize, TierCompat> = BTreeMap::new();
     let mut overall = TierCompat::default();
     let mut rows = Vec::with_capacity(reference.len());

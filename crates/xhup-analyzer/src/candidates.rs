@@ -234,6 +234,24 @@ impl WordTarget {
     pub fn retain_candidates(&mut self, mut keep: impl FnMut(&ShortcutCandidate) -> bool) {
         self.candidates.retain(|candidate| keep(candidate));
     }
+
+    /// 并入另一枚举规格下同一 (词, 全码) 的候选(按码去重,追加保序,
+    /// 确定性)。v2 评估管线的候选并集用;不改变任何枚举规格自身的
+    /// 冻结行为。
+    pub fn merge_candidates(&mut self, other: &WordTarget) {
+        assert_eq!(self.word, other.word, "并集要求同一词");
+        assert_eq!(self.full_code, other.full_code, "并集要求同一全码");
+        let existing: std::collections::BTreeSet<KeySequence> = self
+            .candidates
+            .iter()
+            .map(|c| c.shortcut_code.clone())
+            .collect();
+        for candidate in &other.candidates {
+            if !existing.contains(&candidate.shortcut_code) {
+                self.candidates.push(candidate.clone());
+            }
+        }
+    }
 }
 
 #[cfg(test)]
