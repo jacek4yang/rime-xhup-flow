@@ -1,7 +1,8 @@
 # Lua 运行时策略层架构(XHUP Flow)
 
-状态:**设计中**(v1.0.0 前置)。依据:docs/research-runtime-and-references.md
-(调研结论均标注已核实/待验证);本文只记录决策、权衡与不变量。
+状态:**quick_hint 已落地并经验证**(#59,CI librime runtime integration 全绿);
+其余模块按本文规划推进。依据:docs/research-runtime-and-references.md;
+本文只记录决策、权衡与不变量。
 
 ## 0. 定位
 
@@ -45,9 +46,19 @@ engine:
 | fcitx5-rime / ibus-rime | 依赖发行版 `librime-plugin-lua` 包(Debian/Ubuntu 有,红帽系常需手动) |
 
 降级语义:schema 引用 `lua_filter@*...` 而插件缺失时,librime 记录错误并
-跳过该组件,其余组件正常工作(**待验证**:真实客户端实测,CI 用
-Ubuntu noble `librime-plugin-lua` 覆盖有插件路径;无插件路径用
-`xhup_flow_static` 方案做对照)。
+跳过该组件,其余组件正常工作。**已验证**(CI librime job,#59):冒烟审计
+先在**无插件**环境跑完整 A/B(组件被跳过、全部输入行为完整),再安装
+`librime-plugin-lua` 跑 Lua 审计;`*module` 语法在 Ubuntu noble 的
+librime-lua(git20230917)可用。
+
+### 已验证的 filter 顺序不变量(#59 真机教训)
+
+`lua_filter` 必须排在 `uniquifier` **之前**(rime-ice 等同惯例)。
+librime-lua git20230917 的协程 translation 在 lua_filter 位于 uniquifier
+之后时,会把每个菜单的末位候选多回吐一次(91,782 个码出现 `[X^_X]`
+形态重复);librime 1.10 的 uniquifier 按 text-only 去重,无法消除位于其
+上游产生的重复。模板 `rime/templates/*.yaml.in` 已固化该顺序并注释依据,
+run-lua-audit.sh 断言 quick_hint 不改变候选次序作为回归守卫。
 
 产品形态:
 
@@ -73,15 +84,23 @@ lua/xhup_flow/
 
 ## 4. 各模块语义与不变量
 
-### 4.1 quick_hint(简码提示)
+### 4.1 quick_hint(简码提示)— 已落地(#59)
 
 用户键入较长码时,候选注释显示 `⚡<简码>`(如 `时间` 候选注释 `⚡uij`)。
 
-- 只写 candidate comment,**绝不**改变候选次序(与冻结契约兼容);
+- 只写 candidate comment,**绝不**改变候选次序(与冻结契约兼容;
+  run-lua-audit.sh 逐码断言次序不变);
 - 数据源:init 时从生成器产出的简码映射文件一次性加载为哈希表
-  (O(1) 查询),热路径零 IO;
+  (O(1) 查询),热路径零 IO;每候选恰好 yield 一次(重复候选问题
+  由 filter 顺序保证,不在 Lua 内去重 —— 见 §2 不变量);
 - 默认开启可配置(schema switch);Trainer 练习模式的答案泄露规则是
-  独立约束,正常输入提示不得影响练习测试。
+  独立约束,正常输入提示不得影响练习测试;
+- 纯逻辑单测 tests/lua/test_quick_hint.lua(lua5.4,不依赖 librime)+
+  模块级仿真 tests/lua/sim_quick_hint.lua(真实生成数据 + require 路径)。
+
+**行尾不变量**:`*.lua` 受 `.gitattributes` `text eol=lf` 约束 ——
+Trainer 打包用 `include_str!` 按字节嵌入 Lua 源,Windows autocrlf 转出的
+CRLF 会破坏该字节不变量(#59 修复链一环)。
 
 ### 4.2 candidate_control(本地候选控制)
 
