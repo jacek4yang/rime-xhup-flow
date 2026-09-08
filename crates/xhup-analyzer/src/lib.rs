@@ -33,6 +33,7 @@ pub mod production_two_key;
 pub mod replay;
 pub mod report;
 pub mod sweep;
+pub mod sweep_v2;
 pub mod two_key_study;
 pub mod xhup_prior;
 
@@ -85,6 +86,11 @@ pub use report::{Timings, render_report};
 pub use sweep::{
     OperatingPoint, OperatingPointId, Robustness, SweepRun, WordRobustness, classify, mixtures,
     operating_points, robustness_map, run_normalized_grid, run_sweep,
+};
+pub use sweep_v2::{
+    RankDistribution, ReplayMetrics, ReplaySource, SweepV2Input, SweepV2Point, SweepV2Row,
+    evidence_by_word, grid as sweep_v2_grid, render_summary as render_sweep_v2_summary,
+    render_tsv as render_sweep_v2_tsv, run_sweep_v2,
 };
 pub use xhup_generator::{CharCodeAnalysisEntry, WordCodeAnalysisEntry};
 pub use xhup_prior::{NEUTRAL_PRIOR, XhupStylePrior};
