@@ -83,7 +83,7 @@ FROZEN STATIC  >  DYNAMIC USER LEARNING  >  SENTENCE COMPOSITION
 | --- | --- | --- |
 | workspace `Cargo.toml` `version` | 0.1.0 | XHUP Flow 产品版本;Rime 源包内嵌版本(`{{VERSION}}` 模板) |
 | `trainer/src-tauri/tauri.conf.json` `version` | 0.1.0 | 桌面/移动安装包版本(测试强制与 workspace 一致) |
-| `VERSION` 文件 | 1.0.0 | 经典方案 `xhup_fullcode` 的发布版本(`release.yml` 使用),**不是** XHUP Flow 产品版本 |
+| (已移除)legacy `VERSION` 文件 | — | 经典方案 `xhup_fullcode` 已于 v1 收口时从 main 移除(源码见 git 历史与既有 GitHub Releases);XHUP Flow 产品版本唯一真源 = workspace `Cargo.toml` |
 
 Rime 包版本随生成器内嵌;桌面应用版本与 workspace 版本由
 `product_versions_are_synchronized` 测试兜底。正式 v1 发布时的统一

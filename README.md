@@ -4,8 +4,8 @@
 训练与装机工具。它在**冻结的静态肌肉记忆层**之上,提供连续组句与
 **纯本机**的学习能力,并保证静态层的每一次击键行为与既有习惯完全一致。
 
-本仓库同时维护一个早期发布的经典方案「小鹤音形·全码优先」
-(`xhup_fullcode`,冻结维护),其用户文档见
+早期发布的经典方案「小鹤音形·全码优先」(`xhup_fullcode`,冻结维护)已随
+v1 收口从 main 移除;既有版本仍可从 Releases 下载,文档见
 [docs/legacy-fullcode-scheme.md](docs/legacy-fullcode-scheme.md)。
 
 ## XHUP Flow 是什么?与普通小鹤/Rime 配置有何不同?

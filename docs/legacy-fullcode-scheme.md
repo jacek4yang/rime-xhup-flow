@@ -3,7 +3,9 @@
 > **说明**:本文档是「小鹤音形·全码优先」(`xhup_fullcode` 方案,仓库
 > 曾以 v1.0.0 发布)的原始用户文档,内容保持发布时原貌,供该方案的
 > 既有用户继续安装/更新/卸载使用。该方案处于**冻结维护**状态:行为
-> 不变,仅随发布流程重新打包。新的推荐产品是 **XHUP Flow** 方案
+> 不变。**自 XHUP Flow v1 收口起,该方案的根目录源文件与旧发布流程
+> (`release.yml`、`VERSION`)已从 main 移除**;既有版本仍可从 GitHub
+> Releases 下载,源文件见 git 历史。新的推荐产品是 **XHUP Flow** 方案
 > (`xhup_flow` / `xhup_flow_static`)+ Trainer 训练器,见仓库根目录
 > [README.md](../README.md)。
 
@@ -281,6 +283,9 @@ flypy_base.dict.yaml
 | `default.custom.yaml` | 新用户启用方案的参考配置 |
 | `NOTICE.md` | 上游来源与授权说明 |
 | `VERSION` | 当前发布版本 |
+
+> 上表是**发布时**的仓库文件布局(历史记录);这些文件已从 main 移除,
+> 仍以 v1.0.0 tag 与既有 Releases 为准。
 
 ## 隐私说明
 
