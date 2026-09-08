@@ -41,12 +41,12 @@ fn usage() -> ! {
 }
 
 /// 与 replay-bench 相同的语料文件收集(单文件或目录递归 .txt,路径序)。
-fn collect_txt_files(input: &PathBuf) -> Result<Vec<PathBuf>, String> {
+fn collect_txt_files(input: &std::path::Path) -> Result<Vec<PathBuf>, String> {
     let mut files = Vec::new();
     if input.is_file() {
-        files.push(input.clone());
+        files.push(input.to_path_buf());
     } else if input.is_dir() {
-        let mut stack = vec![input.clone()];
+        let mut stack = vec![input.to_path_buf()];
         while let Some(dir) = stack.pop() {
             let mut entries: Vec<_> = std::fs::read_dir(&dir)
                 .map_err(|e| format!("目录不可读 {}: {e}", dir.display()))?
