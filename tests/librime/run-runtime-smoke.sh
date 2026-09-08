@@ -108,6 +108,8 @@ echo "== priority preflight(initial_quality 栅栏机制) =="
 smoke_dir="$work/smoke"
 mkdir -p "$smoke_dir"
 cp "$PACKAGE_DIR"/*.yaml "$smoke_dir/"
+# 方案引用 lua_filter 时必须随包携带 lua/ 模块(见 run-flow-audit.sh)。
+if [[ -d "$PACKAGE_DIR/lua" ]]; then cp -r "$PACKAGE_DIR/lua" "$smoke_dir/"; fi
 cat > "$smoke_dir/default.custom.yaml" <<'EOF'
 patch:
   schema_list/+:
@@ -128,6 +130,8 @@ production_dir="$work/ff-production"
 for dir in "$control_dir" "$production_dir"; do
   mkdir -p "$dir"
   cp "$PACKAGE_DIR"/*.yaml "$dir/"
+  # 方案引用 lua_filter 时必须随包携带 lua/ 模块(见 run-flow-audit.sh)。
+  if [[ -d "$PACKAGE_DIR/lua" ]]; then cp -r "$PACKAGE_DIR/lua" "$dir/"; fi
 done
 # menu/page_size 500:测试枚举完整候选专用,不属于 production schema,
 # 也不代表真实前端 UI。
