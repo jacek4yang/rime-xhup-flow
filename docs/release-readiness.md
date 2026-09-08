@@ -55,16 +55,14 @@ CI 通过不等于发布就绪;本清单是人工控制点的权威列表。
 与 squash 合并操作顺序见 [stack-merge-playbook.md](stack-merge-playbook.md)。
 早期 #25–#37 系列如尚未合并,先按 release-readiness 历史顺序自底向上处理。
 
-### 4. v1.0.0-rc.1 发布决策(人工)
+### 4. v1.0.0 发布决策(人工)
 
-- [ ] 决定产品版本号(建议 `1.0.0-rc.1`;当前 workspace/tauri.conf 为
-  0.1.0;legacy `VERSION` 文件已随经典方案移除,见
-  [architecture.md](architecture.md) 版本模型一节)
-- [ ] 统一升版:workspace Cargo.toml ↔ tauri.conf.json(同步修改,
-  版本同步测试会强制);Rime 包版本随生成器自动内嵌
-- [ ] 打 tag、创建 GitHub Release(使用 product-packaging 产出的
-  SHA256SUMS / BUILD-INFO;发布路径可从 trainer-alpha 演进或独立,
-  由人工执行,自动化代理不发布)
+- [x] 产品版本统一为 `1.0.0`(workspace Cargo.toml ↔ tauri.conf.json ↔
+  trainer/miniapp/trainer-core package.json;`product_versions_are_synchronized`
+  测试与发布管线一致性门禁双重强制;Rime 包版本随生成器自动内嵌)
+- [ ] 打 tag、创建 GitHub Release(xhup-flow-rc-release.yml,
+  publish=true;正式版版本形如 `1.0.0`,创建非 prerelease 草稿,
+  人工复核后发布)
 - [ ] Release 说明包含:平台矩阵、签名状态、隐私声明、已知限制
   (人读短语码未达成、学习导出依赖 rime_dict_manager、Android 手动导入、
   小程序分片为高频子集)

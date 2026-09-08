@@ -32,7 +32,7 @@ on:
     # 人工 RC 演练入口(publish=false:不打 tag、不发 Release、不签名)。
     inputs:
       version:
-        description: "发布版本覆盖(semver,如 0.1.0-rc.1;空 = tauri.conf.json 版本)"
+        description: "发布版本覆盖(semver,如 1.0.0-rc.1;空 = tauri.conf.json 版本)"
         type: string
         required: false
         default: ""
@@ -56,7 +56,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: "发布版本覆盖(semver,如 0.1.0-rc.1;空 = tauri.conf.json 版本)"
+        description: "发布版本覆盖(semver,如 1.0.0-rc.1;空 = tauri.conf.json 版本)"
         type: string
         required: false
         default: ""
@@ -248,8 +248,8 @@ jobs:
           ver="${{ inputs.version }}"
           if [[ -z "$ver" ]]; then ver="$conf"; fi
           win_version="$ver"
-          # MSI/WiX 不接受 semver prerelease 字符串:0.1.0-rc.1 → 0.1.0-10001
-          # (rc 序号 + 10000;与 trainer-alpha 的 0.1.0-<N> 命名空间永不相交)。
+          # MSI/WiX 不接受 semver prerelease 字符串:1.0.0-rc.1 → 1.0.0-10001
+          # (rc 序号 + 10000;与 trainer-alpha 的 <core>-<N> 命名空间永不相交)。
           if [[ "$ver" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-rc\.([0-9]+)$ ]]; then
             win_version="${BASH_REMATCH[1]}-$((10#${BASH_REMATCH[2]} + 10000))"
           elif [[ "$ver" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-[^0-9] ]]; then
