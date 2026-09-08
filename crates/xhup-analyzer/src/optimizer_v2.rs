@@ -17,16 +17,23 @@ use crate::evidence::LexicalEvidence;
 /// 候选位资源:码 + 排名位。
 ///
 /// 码位不是空闲/占用二值:占用已有码的 rank 2 与占新码的 rank 1 是
-/// 不同的资源消耗。`existing_occupant_utility` 用于扰动成本(把既有
-/// 候选挤到更靠后位次的代价)。
+/// 不同的资源消耗。两个质量项语义不同、必须分开(2026-10 高频词简码
+/// 丢失根因:混用导致「没挤任何人也要付扰动费」的过度保守):
+///
+/// - `occupant_mass`:码内**全部**既有占用质量(竞争强度),放大选择成本;
+/// - `displaced_mass`:实际被挤到更靠后位次的占用质量(位次 ≥ 本槽位
+///   rank 的候选),只有它进入扰动成本(docs §1:扰动 = 被挤后排的既有
+///   候选的效用损失)。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CandidateSlot {
     /// 键数(码长)。
     pub key_len: usize,
     /// 目标候选位(1 = 首选)。
     pub rank: usize,
-    /// 该码位上被扰动的既有候选的效用密度(频率证据,0 = 空位)。
+    /// 码内全部既有占用质量(竞争强度;0 = 空码)。
     pub occupant_mass: f64,
+    /// 被本分配实际挤后的占用质量(0 = 无人被挤)。
+    pub displaced_mass: f64,
 }
 
 /// 成本模型 v2:全部参数集中、可扫描(docs/optimizer-v2.md §2)。
@@ -75,9 +82,9 @@ impl CostModelV2 {
         base + self.ambiguity_coeff * slot.occupant_mass
     }
 
-    /// 占用该候选位的扰动成本(把既有候选挤后的代价)。
+    /// 占用该候选位的扰动成本(只计实际被挤后的候选)。
     pub fn disruption_cost(&self, slot: &CandidateSlot) -> f64 {
-        self.disruption_coeff * slot.occupant_mass
+        self.disruption_coeff * slot.displaced_mass
     }
 
     /// 击键成本。
@@ -286,6 +293,7 @@ mod tests {
                 key_len: 3,
                 rank: 1,
                 occupant_mass: 0.0,
+                displaced_mass: 0.0,
             },
             &cost,
             &weights,
@@ -299,6 +307,7 @@ mod tests {
                 key_len: 4,
                 rank: 1,
                 occupant_mass: 0.0,
+                displaced_mass: 0.0,
             },
             &cost,
             &weights,
@@ -334,6 +343,7 @@ mod tests {
                 key_len: 2,
                 rank: 1,
                 occupant_mass: 0.0,
+                displaced_mass: 0.0,
             },
             &cost,
             &EvidenceWeights::default(),
@@ -349,22 +359,36 @@ mod tests {
     }
 
     #[test]
-    fn disruption_scales_with_occupant_mass() {
+    fn disruption_scales_with_displaced_mass() {
+        // 扰动只计被挤后的候选(displaced);竞争强度(occupant)放大选择成本。
         let cost = CostModelV2::default();
         let empty = CandidateSlot {
             key_len: 3,
             rank: 2,
             occupant_mass: 0.0,
+            displaced_mass: 0.0,
         };
-        let occupied = CandidateSlot {
+        let tailgated = CandidateSlot {
             key_len: 3,
             rank: 2,
             occupant_mass: 0.7,
+            displaced_mass: 0.0,
+        };
+        let displacing = CandidateSlot {
+            key_len: 3,
+            rank: 1,
+            occupant_mass: 0.7,
+            displaced_mass: 0.7,
         };
         assert_eq!(cost.disruption_cost(&empty), 0.0);
-        assert!(cost.disruption_cost(&occupied) > 0.0);
+        assert_eq!(
+            cost.disruption_cost(&tailgated),
+            0.0,
+            "跟排在占用者之后不挤人,扰动为零"
+        );
+        assert!(cost.disruption_cost(&displacing) > 0.0);
         assert!(
-            cost.selection_cost(&occupied) > cost.selection_cost(&empty),
+            cost.selection_cost(&tailgated) > cost.selection_cost(&empty),
             "占用质量应放大选择成本"
         );
     }
@@ -377,6 +401,7 @@ mod tests {
             key_len: 2,
             rank: 1,
             occupant_mass: 0.3,
+            displaced_mass: 0.0,
         };
         let a = evaluate_assignment(
             women,

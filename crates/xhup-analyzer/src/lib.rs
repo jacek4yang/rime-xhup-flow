@@ -51,8 +51,9 @@ pub use dynamic::DynamicCandidateKind;
 pub use evidence::{Eligibility, EvidenceCoverage, LexicalEvidence, LexicalEvidenceSet};
 pub use frequency::{CharCodeUsage, FrequencyModel, FrequencyScale};
 pub use mapping_v2::{
-    BaselineMassView, FanoutStats, MappingV2, MappingV2Entry, MassScale, dominant_term,
-    produce_mapping,
+    BaselineMassView, ExplainCandidate, ExplainReport, ExplainVerdict, FanoutStats, MappingV2,
+    MappingV2Entry, MassScale, dominant_term, produce_mapping, produce_mapping_explained,
+    render_explain,
 };
 pub use occupancy::{
     CandidateSource, CodeOccupancy, CollisionClass, ExistingCandidate, LayerAudit, LengthStats,

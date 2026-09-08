@@ -20,14 +20,16 @@
 //! 1. **评分**(静态):每个 (词, 候选码) 在 baseline 固定层占用上评估,
 //!    产出 (绝对效用, 词, 码) 全序短名单。候选码沿用 candidates.rs 枚举
 //!    管线(本模块不发明新编码规则)。
-//! 2. **状态依赖接纳**(动态):按短名单顺序遍历;每条的占用质量取**当时**
-//!    状态(baseline + 已分配 v2 词)的码内总质量(保守上界:扰动成本按
-//!    码内全部占用计费,不只被挤后的部分);候选位 = 码内质量混排的实际
-//!    位次。**候选位不回退守卫**:分配位次不得差于该词全码的真实组内
-//!    rank(否则回放按最小期望成本选路时,rank≥2 的便宜简码会挤掉全码
-//!    rank1 方案,首选命中崩塌);净效用 = 该槽位效用 − 该词「留在全码
-//!    真实 rank」的对照效用;净效用 ≤ 0 或位次越界则跳过(词的其他
-//!    候选码仍有机会)。
+//! 2. **状态依赖接纳**(动态):按短名单顺序遍历;每条按**当时**状态
+//!    (baseline + 已分配 v2 词)做码内质量混排分析:位次 = 实际候选位,
+//!    选择成本按码内总占用质量(竞争强度)放大,扰动成本只计**实际被挤
+//!    后**的候选质量(位次在该词之后的占用者;2026-10 高频词简码丢失
+//!    根因 —— 修复前扰动按总质量计,「没挤任何人也要付扰动费」,全码
+//!    首选的超高频词反而争不过全码次选词)。**候选位不回退守卫**:分配
+//!    位次不得差于该词全码的真实组内 rank(否则回放按最小期望成本选路
+//!    时,rank≥2 的便宜简码会挤掉全码 rank1 方案,首选命中崩塌);净
+//!    效用 = 该槽位效用 − 该词「留在全码真实 rank」的对照效用;净效用
+//!    ≤ 0 或位次越界则跳过(词的其他候选码仍有机会)。
 //! 3. **最终 rank 回填**:全部分配完成后按码内质量次序重排回填。
 //!
 //! ## 参数影响路径(哪些参数如何生效)
@@ -124,6 +126,11 @@ impl MassScale {
             coverage_ref,
             diversity_ref,
         }
+    }
+
+    /// 词域全局频率中位锚点(传统保底的 top 段阈值用)。
+    pub fn word_median(&self) -> f64 {
+        self.word_ref
     }
 
     /// 词的多信号质量:有效权重加权的 ln1p(信号/中位锚点) 之和。
@@ -414,12 +421,155 @@ struct ScoredAssignment {
     word: String,
     code: KeySequence,
     full_code: KeySequence,
+    /// 逐字投影模式(如 `FI`;explain 理由卡用)。
+    pattern: String,
     /// 绝对效用(跨词竞争排序键;含频率项)。
     utility: f64,
     /// 词的多信号质量(码内位次与占用质量)。
     mass: f64,
     /// 「留在全码真实 rank」的对照效用(每词一次,随记录携带)。
     baseline_total: f64,
+    /// 对照效用的分解(explain 用)。
+    baseline_breakdown: UtilityBreakdownV2,
+}
+
+/// 单个候选码在决策时点的判定(explain)。
+#[derive(Clone, Debug)]
+pub struct ExplainCandidate {
+    /// 候选码。
+    pub code: String,
+    /// 逐字投影模式(如 `FI`)。
+    pub pattern: String,
+    /// 决策时点的码内占用质量列表(baseline 候选在前 + 已分配 v2 词,
+    /// 各自组内次序;explain 时点快照)。
+    pub occupant_masses: Vec<f64>,
+    /// 质量混排位次(0 = 未评估:词已由更早候选码分配)。
+    pub position: usize,
+    /// 效用分解(None = 未到达效用评估:守卫/位次/跳过)。
+    pub breakdown: Option<UtilityBreakdownV2>,
+    /// 净效用(相对全码对照)。
+    pub net_utility: Option<f64>,
+    /// 判定。
+    pub verdict: ExplainVerdict,
+}
+
+/// 候选判定。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExplainVerdict {
+    /// 接纳。
+    Accepted,
+    /// 净效用 ≤ 0。
+    RejectedNetUtility,
+    /// 候选位不回退守卫(位次差于全码真实 rank)。
+    RejectedGuard,
+    /// 位次超出候选位上限。
+    RejectedMaxRank,
+    /// 词已由更早的候选码分配(未评估)。
+    SkippedWordAssigned,
+    /// 传统保底:常规贪心未接纳,按 canonical 生产别名尾部追加保留
+    /// (零扰动;回放期望成本不低于全码时首选命中不变)。
+    AcceptedTraditionFallback,
+}
+
+impl ExplainVerdict {
+    /// 报告用稳定标签。
+    pub fn label(self) -> &'static str {
+        match self {
+            ExplainVerdict::Accepted => "accepted",
+            ExplainVerdict::RejectedNetUtility => "rejected: 净效用≤0",
+            ExplainVerdict::RejectedGuard => "rejected: 候选位不回退守卫",
+            ExplainVerdict::RejectedMaxRank => "rejected: 位次超出上限",
+            ExplainVerdict::SkippedWordAssigned => "skipped: 词已分配",
+            ExplainVerdict::AcceptedTraditionFallback => "accepted: 传统保底(尾部追加)",
+        }
+    }
+}
+
+/// 单词级决策解释( docs/optimizer-v2.md §6 理由卡 + 逐候选拒绝原因)。
+#[derive(Clone, Debug)]
+pub struct ExplainReport {
+    /// 词语。
+    pub word: String,
+    /// 全码。
+    pub full_code: String,
+    /// 全码真实词域 rank。
+    pub full_code_rank: usize,
+    /// 多信号质量。
+    pub mass: f64,
+    /// 「留在全码」对照效用。
+    pub baseline_total: f64,
+    /// 「留在全码」对照的效用分解。
+    pub baseline_breakdown: UtilityBreakdownV2,
+    /// 逐候选判定(决策顺序 = 短名单序)。
+    pub candidates: Vec<ExplainCandidate>,
+    /// 最终分配 (码, rank);None = 未分配。
+    pub outcome: Option<(String, usize)>,
+}
+
+/// 渲染人类可读解释报告(确定性文本)。
+pub fn render_explain(report: &ExplainReport) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "词: {}\t全码: {}\t全码rank: {}\t质量: {:.4}\t全码对照效用: {:.4}\n",
+        report.word, report.full_code, report.full_code_rank, report.mass, report.baseline_total
+    ));
+    let b = &report.baseline_breakdown;
+    out.push_str(&format!(
+        "全码对照分解(频率/省键/先验/选择/扰动/击键/长尾): {:.3}/{:.1}/{:.3}/{:.3}/{:.3}/{:.1}/{:.3}
+",
+        b.frequency_utility,
+        b.keystrokes_saved,
+        b.xhup_prior,
+        b.selection_cost,
+        b.disruption_cost,
+        b.keystroke_cost,
+        b.rare_pollution
+    ));
+    match &report.outcome {
+        Some((code, rank)) => out.push_str(&format!("最终: 分配 {code} rank {rank}\n")),
+        None => out.push_str("最终: 未分配(留全码)\n"),
+    }
+    out.push_str("候选\t模式\t位次\t占用质量\t净效用\t判定\t主导项\t分解(频率/省键/先验/选择/扰动/击键/长尾)\n");
+    for c in &report.candidates {
+        let occupants = if c.occupant_masses.is_empty() {
+            "空".to_string()
+        } else {
+            c.occupant_masses
+                .iter()
+                .map(|m| format!("{m:.2}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        let (net, dominant, detail) = match (c.net_utility, &c.breakdown) {
+            (Some(net), Some(b)) => (
+                format!("{net:.4}"),
+                dominant_term(b).to_string(),
+                format!(
+                    "{:.3}/{:.1}/{:.3}/{:.3}/{:.3}/{:.1}/{:.3}",
+                    b.frequency_utility,
+                    b.keystrokes_saved,
+                    b.xhup_prior,
+                    b.selection_cost,
+                    b.disruption_cost,
+                    b.keystroke_cost,
+                    b.rare_pollution
+                ),
+            ),
+            _ => ("-".to_string(), "-".to_string(), "-".to_string()),
+        };
+        out.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            c.code,
+            c.pattern,
+            c.position,
+            occupants,
+            net,
+            c.verdict.label(),
+            dominant,
+            detail,
+        ));
+    }
+    out
 }
 
 /// 确定性贪心分配:词 → (码, 预期 rank)。
@@ -428,7 +578,10 @@ struct ScoredAssignment {
 /// - `evidence`:词 → 多信号词汇证据(缺失词不参与);
 /// - `scale`:多信号质量尺度(中位锚点);
 /// - `baseline`:固定层码位占用质量视图;
-/// - `prior`:XHUP 风格先验(无参考数据传 `None`,全部中立 0.5)。
+/// - `prior`:XHUP 风格先验(无参考数据传 `None`,全部中立 0.5);
+/// - `tradition`:canonical 生产简码层的 词 → 传统码(v2 是这些层的
+///   替换候选;传统保底机制的输入,见模块文档)。
+#[allow(clippy::too_many_arguments)]
 pub fn produce_mapping(
     targets: &[WordTarget],
     evidence: &BTreeMap<String, LexicalEvidence>,
@@ -437,7 +590,37 @@ pub fn produce_mapping(
     cost: &CostModelV2,
     weights: &EvidenceWeights,
     prior: Option<&XhupStylePrior>,
+    tradition: &BTreeMap<String, KeySequence>,
 ) -> MappingV2 {
+    produce_mapping_explained(
+        targets,
+        evidence,
+        scale,
+        baseline,
+        cost,
+        weights,
+        prior,
+        tradition,
+        &[],
+    )
+    .0
+}
+
+/// 同 [`produce_mapping`],额外对 `explain_words` 中的词产出决策解释
+/// (决策时点占用快照 + 逐候选效用分解与判定;不改变分配行为)。
+#[allow(clippy::too_many_arguments)]
+pub fn produce_mapping_explained(
+    targets: &[WordTarget],
+    evidence: &BTreeMap<String, LexicalEvidence>,
+    scale: &MassScale,
+    baseline: &BaselineMassView,
+    cost: &CostModelV2,
+    weights: &EvidenceWeights,
+    prior: Option<&XhupStylePrior>,
+    tradition: &BTreeMap<String, KeySequence>,
+    explain_words: &[&str],
+) -> (MappingV2, BTreeMap<String, ExplainReport>) {
+    let explain: BTreeSet<&str> = explain_words.iter().copied().collect();
     let prior_score = |word: &str, code: &KeySequence, rank: usize| {
         prior.map_or(NEUTRAL_PRIOR, |p| p.score(word, &code.to_string(), rank))
     };
@@ -451,51 +634,54 @@ pub fn produce_mapping(
         let mass = scale.mass(ev, weights);
         let full_len = target.full_code().len();
         // 「不分配」对照:留在全码,取真实组内 rank(非理想化 rank 1)。
-        let baseline_total = evaluate_assignment(
+        let baseline_breakdown = evaluate_assignment(
             ev,
             &crate::optimizer_v2::CandidateSlot {
                 key_len: full_len,
                 rank: baseline.full_code_rank(target.word()),
                 occupant_mass: 0.0,
+                displaced_mass: 0.0,
             },
             cost,
             weights,
             prior_score(target.word(), target.full_code(), 1),
             full_len,
             true,
-        )
-        .total();
+        );
+        // 全码对照不含先验项:v2 只**增加**简码别名,全码入口在两种选择下
+        // 都保留,其传统命中是恒定项,不参与对照(2026-10 根因:参考映射对
+        // 词只有全码层,先验给全码 +1、给简码 0.3,系统性拒绝高频词简码)。
+        let baseline_total = baseline_breakdown.total() - baseline_breakdown.xhup_prior;
 
         for candidate in target.candidates() {
             let code = candidate.shortcut_code();
             let pattern_consistent = target.full_code().as_slice().starts_with(code.as_slice());
-            let mut best_utility = f64::NEG_INFINITY;
-            for rank in 1..=(baseline.group(code).len() + 1).min(MAX_RANK) {
-                let breakdown = evaluate_assignment(
-                    ev,
-                    &crate::optimizer_v2::CandidateSlot {
-                        key_len: code.len(),
-                        rank,
-                        occupant_mass: baseline.total_mass(code),
-                    },
-                    cost,
-                    weights,
-                    prior_score(target.word(), code, rank),
-                    full_len,
-                    pattern_consistent,
-                );
-                best_utility = best_utility.max(breakdown.total());
-            }
-            if best_utility.is_finite() {
-                scored.push(ScoredAssignment {
-                    word: target.word().to_string(),
-                    code: code.clone(),
-                    full_code: target.full_code().clone(),
-                    utility: best_utility,
-                    mass,
-                    baseline_total,
-                });
-            }
+            let (position, displaced, total) =
+                slot_analysis(baseline.group(code), &[], mass, target.word());
+            let breakdown = evaluate_assignment(
+                ev,
+                &crate::optimizer_v2::CandidateSlot {
+                    key_len: code.len(),
+                    rank: position,
+                    occupant_mass: total,
+                    displaced_mass: displaced,
+                },
+                cost,
+                weights,
+                prior_score(target.word(), code, position),
+                full_len,
+                pattern_consistent,
+            );
+            scored.push(ScoredAssignment {
+                word: target.word().to_string(),
+                code: code.clone(),
+                full_code: target.full_code().clone(),
+                pattern: candidate.mode().pattern(),
+                utility: breakdown.total(),
+                mass,
+                baseline_total,
+                baseline_breakdown,
+            });
         }
     }
 
@@ -512,30 +698,100 @@ pub fn produce_mapping(
     // 码 → 已分配 v2 词 (质量, 词)(最终次序末尾重排)。
     let mut code_members: BTreeMap<KeySequence, Vec<(f64, String)>> = BTreeMap::new();
     let mut chosen: BTreeMap<String, (ScoredAssignment, UtilityBreakdownV2, f64)> = BTreeMap::new();
+    let mut reports: BTreeMap<String, ExplainReport> = BTreeMap::new();
     for candidate in scored {
+        let explain_this = explain.contains(candidate.word.as_str());
+        if explain_this {
+            reports
+                .entry(candidate.word.clone())
+                .or_insert_with(|| ExplainReport {
+                    word: candidate.word.clone(),
+                    full_code: candidate.full_code.to_string(),
+                    full_code_rank: baseline.full_code_rank(&candidate.word),
+                    mass: candidate.mass,
+                    baseline_total: candidate.baseline_total,
+                    baseline_breakdown: candidate.baseline_breakdown,
+                    candidates: Vec::new(),
+                    outcome: None,
+                });
+        }
         if assigned.contains(&candidate.word) {
+            if explain_this {
+                let report = reports.get_mut(&candidate.word).expect("报告已建");
+                report.candidates.push(ExplainCandidate {
+                    code: candidate.code.to_string(),
+                    pattern: candidate.pattern.clone(),
+                    occupant_masses: Vec::new(),
+                    position: 0,
+                    breakdown: None,
+                    net_utility: None,
+                    verdict: ExplainVerdict::SkippedWordAssigned,
+                });
+            }
             continue;
         }
         let members = code_members.entry(candidate.code.clone()).or_default();
-        let position = merged_position(
+        let (position, displaced, total) = slot_analysis(
             baseline.group(&candidate.code),
             members,
             candidate.mass,
             &candidate.word,
         );
+        // 决策时点占用快照(baseline 组内次序 + 已分配 v2 词记录序)。
+        let occupant_snapshot = |members: &Vec<(f64, String)>| -> Vec<f64> {
+            baseline
+                .group(&candidate.code)
+                .iter()
+                .copied()
+                .chain(members.iter().map(|(m, _)| *m))
+                .collect()
+        };
         if position > MAX_RANK {
+            if explain_this {
+                let report = reports.get_mut(&candidate.word).expect("报告已建");
+                report.candidates.push(ExplainCandidate {
+                    code: candidate.code.to_string(),
+                    pattern: candidate.pattern.clone(),
+                    occupant_masses: occupant_snapshot(members),
+                    position,
+                    breakdown: None,
+                    net_utility: None,
+                    verdict: ExplainVerdict::RejectedMaxRank,
+                });
+            }
             continue;
         }
-        // 候选位不回退守卫(与 v1 ZERO_REGRESSION 同源的产品约束):分配
-        // 不得把词的可达候选位排到其全码真实 rank 之后 —— 否则回放按最小
-        // 期望成本选路时,rank≥2 的便宜简码会挤掉全码 rank1 方案,首选
-        // 命中崩塌(2026-10 实测 rank1 回退 11~22pp 的根因之一)。
-        if position > baseline.full_code_rank(&candidate.word) {
-            continue;
+        // 候选位不回退守卫(精确版):只有当简码方案会在回放选路中**真正
+        // 挤掉**更优的全码方案(位次更差且期望成本严格更低)时才拒绝;
+        // 位次差但不更便宜的别名不影响首选命中 —— canonical FF 层「追加
+        // 在 baseline 之后」正是此形态(2026-10 修复前守卫过宽,把
+        // 传统尾部别名一并挡掉)。
+        let full_rank = baseline.full_code_rank(&candidate.word);
+        if position > full_rank {
+            let replay_rank_cost =
+                |rank: usize| cost.rank_cost[rank.saturating_sub(1).min(cost.rank_cost.len() - 1)];
+            let slot_cost =
+                candidate.code.len() as f64 * cost.key_cost + replay_rank_cost(position);
+            let full_cost =
+                candidate.full_code.len() as f64 * cost.key_cost + replay_rank_cost(full_rank);
+            if slot_cost < full_cost {
+                if explain_this {
+                    let report = reports.get_mut(&candidate.word).expect("报告已建");
+                    report.candidates.push(ExplainCandidate {
+                        code: candidate.code.to_string(),
+                        pattern: candidate.pattern.clone(),
+                        occupant_masses: occupant_snapshot(members),
+                        position,
+                        breakdown: None,
+                        net_utility: None,
+                        verdict: ExplainVerdict::RejectedGuard,
+                    });
+                }
+                continue;
+            }
         }
-        // 分配时点的真实占用质量:baseline + 已分配 v2 词(保守上界)。
-        let v2_mass: f64 = members.iter().map(|(m, _)| *m).sum();
-        let occupant_mass = baseline.total_mass(&candidate.code) + v2_mass;
+        // 分配时点的占用质量拆分:竞争强度 = 码内总质量(放大选择成本);
+        // 扰动 = 实际被挤后的候选质量(slot_analysis 已按位次拆分)。
         let Some(ev) = evidence.get(&candidate.word) else {
             continue;
         };
@@ -548,7 +804,8 @@ pub fn produce_mapping(
             &crate::optimizer_v2::CandidateSlot {
                 key_len: candidate.code.len(),
                 rank: position,
-                occupant_mass,
+                occupant_mass: total,
+                displaced_mass: displaced,
             },
             cost,
             weights,
@@ -558,7 +815,31 @@ pub fn produce_mapping(
         );
         let net_utility = breakdown.total() - candidate.baseline_total;
         if net_utility <= 0.0 {
+            if explain_this {
+                let report = reports.get_mut(&candidate.word).expect("报告已建");
+                report.candidates.push(ExplainCandidate {
+                    code: candidate.code.to_string(),
+                    pattern: candidate.pattern.clone(),
+                    occupant_masses: occupant_snapshot(members),
+                    position,
+                    breakdown: Some(breakdown),
+                    net_utility: Some(net_utility),
+                    verdict: ExplainVerdict::RejectedNetUtility,
+                });
+            }
             continue; // 词的其他候选码仍有机会(不标记 assigned)。
+        }
+        if explain_this {
+            let report = reports.get_mut(&candidate.word).expect("报告已建");
+            report.candidates.push(ExplainCandidate {
+                code: candidate.code.to_string(),
+                pattern: candidate.pattern.clone(),
+                occupant_masses: occupant_snapshot(members),
+                position,
+                breakdown: Some(breakdown),
+                net_utility: Some(net_utility),
+                verdict: ExplainVerdict::Accepted,
+            });
         }
         assigned.insert(candidate.word.clone());
         members.push((candidate.mass, candidate.word.clone()));
@@ -566,15 +847,19 @@ pub fn produce_mapping(
     }
 
     // 最终 rank 回填:全部分配完成后按码内质量次序重排。
-    let mut entries = BTreeMap::new();
+    let mut entries: BTreeMap<String, MappingV2Entry> = BTreeMap::new();
     for (word, (candidate, breakdown, net_utility)) in chosen {
         let members = &code_members[&candidate.code];
-        let rank = merged_position(
+        let rank = slot_analysis(
             baseline.group(&candidate.code),
             members,
             candidate.mass,
             &word,
-        );
+        )
+        .0;
+        if let Some(report) = reports.get_mut(&word) {
+            report.outcome = Some((candidate.code.to_string(), rank));
+        }
         entries.insert(
             word.clone(),
             MappingV2Entry {
@@ -586,23 +871,118 @@ pub fn produce_mapping(
             },
         );
     }
-    MappingV2 { entries }
+    // 传统保底(高频词简码丢失 P0 的结构性修复):持有 canonical 生产
+    // 简码别名(tradition)且频率在 top 段(≥ 词域中位锚点)的词,若常规
+    // 贪心未接纳任何候选,在其传统码**尾部追加**保留别名 —— 零扰动
+    // (不挤任何候选),回放期望成本不低于全码时首选命中不变,肌肉记忆
+    // 静默丢失被制度性杜绝。偏离传统仍需证据:词若已被贪心分配到其他
+    // 码,保底不触发。
+    for (word, code) in tradition {
+        if entries.contains_key(word) {
+            continue;
+        }
+        let Some(ev) = evidence.get(word) else {
+            continue;
+        };
+        if ev.normalized_frequency() < scale.word_median() {
+            continue; // top 段以外:常规规则,允许淘汰
+        }
+        let members = code_members.get(code).map(Vec::as_slice).unwrap_or(&[]);
+        let append_rank = baseline.group(code).len() + members.len() + 1;
+        let full_len = ev.code().len();
+        let baseline_total = evaluate_assignment(
+            ev,
+            &crate::optimizer_v2::CandidateSlot {
+                key_len: full_len,
+                rank: baseline.full_code_rank(word),
+                occupant_mass: 0.0,
+                displaced_mass: 0.0,
+            },
+            cost,
+            weights,
+            prior_score(word, ev.code(), 1),
+            full_len,
+            true,
+        );
+        let breakdown = evaluate_assignment(
+            ev,
+            &crate::optimizer_v2::CandidateSlot {
+                key_len: code.len(),
+                rank: append_rank,
+                occupant_mass: baseline.total_mass(code)
+                    + members.iter().map(|(m, _)| *m).sum::<f64>(),
+                displaced_mass: 0.0,
+            },
+            cost,
+            weights,
+            prior_score(word, code, append_rank),
+            full_len,
+            ev.code().as_slice().starts_with(code.as_slice()),
+        );
+        let net_utility = breakdown.total() - (baseline_total.total() - baseline_total.xhup_prior);
+        if let Some(report) = reports.get_mut(word) {
+            report.candidates.push(ExplainCandidate {
+                code: code.to_string(),
+                pattern: "tradition".to_string(),
+                occupant_masses: baseline
+                    .group(code)
+                    .iter()
+                    .copied()
+                    .chain(members.iter().map(|(m, _)| *m))
+                    .collect(),
+                position: append_rank,
+                breakdown: Some(breakdown),
+                net_utility: Some(net_utility),
+                verdict: ExplainVerdict::AcceptedTraditionFallback,
+            });
+            report.outcome = Some((code.to_string(), append_rank));
+        }
+        entries.insert(
+            word.clone(),
+            MappingV2Entry {
+                word: word.clone(),
+                code: code.clone(),
+                rank: append_rank,
+                net_utility,
+                breakdown,
+            },
+        );
+    }
+    (MappingV2 { entries }, reports)
 }
 
-/// 候选在码内合并次序中的 1 起始位次:baseline 质量 + v2 成员按质量降序
-/// 混排(同分 baseline 在前;v2 词同分按词形升序)。
-fn merged_position(baseline: &[f64], members: &[(f64, String)], mass: f64, word: &str) -> usize {
-    let before_baseline = baseline
-        .iter()
-        .filter(|m| m.total_cmp(&mass).is_gt())
-        .count();
-    let before_v2 = members
-        .iter()
-        .filter(|(m, w)| {
-            m.total_cmp(&mass).is_gt() || (m.total_cmp(&mass).is_eq() && w.as_str() < word)
-        })
-        .count();
-    before_baseline + before_v2 + 1
+/// 码内质量混排分析:(1 起始位次, 被挤后质量合计, 占用总质量)。
+///
+/// 次序规则:质量降序;同分 baseline 候选在前、v2 词按词形升序(确定性
+/// 兜底)。位次 ≤ 该词质量位次的候选不被挤动;只有位次之后的候选计入
+/// displaced(扰动成本只计真实被挤者 —— 高频词简码丢失根因修复:
+/// 修复前扰动按码内总质量计,「没挤任何人也要付扰动费」)。
+fn slot_analysis(
+    baseline: &[f64],
+    members: &[(f64, String)],
+    mass: f64,
+    word: &str,
+) -> (usize, f64, f64) {
+    let mut before = 0usize;
+    let mut displaced = 0.0;
+    let mut total = 0.0;
+    for m in baseline {
+        total += *m;
+        if m.total_cmp(&mass).is_gt() {
+            before += 1;
+        } else {
+            displaced += *m;
+        }
+    }
+    for (m, w) in members {
+        total += *m;
+        if m.total_cmp(&mass).is_gt() || (m.total_cmp(&mass).is_eq() && w.as_str() < word) {
+            before += 1;
+        } else {
+            displaced += *m;
+        }
+    }
+    (before + 1, displaced, total)
 }
 
 #[cfg(test)]
@@ -674,6 +1054,7 @@ mod tests {
                 &CostModelV2::default(),
                 &EvidenceWeights::default(),
                 None,
+                &BTreeMap::new(),
             )
             .to_tsv()
         };
@@ -702,6 +1083,7 @@ mod tests {
             &CostModelV2::default(),
             &EvidenceWeights::default(),
             None,
+            &BTreeMap::new(),
         );
         let women = mapping.get("我们").expect("我们 应被分配");
         let shijian = mapping.get("时间").expect("时间 应被分配");
@@ -733,6 +1115,7 @@ mod tests {
             &CostModelV2::default(),
             &EvidenceWeights::default(),
             None,
+            &BTreeMap::new(),
         );
         assert_eq!(mapping.get("我们").map(|e| e.rank), Some(1));
         assert!(
@@ -758,6 +1141,7 @@ mod tests {
             &cost,
             &EvidenceWeights::default(),
             None,
+            &BTreeMap::new(),
         );
         assert!(mapping.is_empty(), "净效用 ≤ 0 的分配必须丢弃");
     }
@@ -778,6 +1162,7 @@ mod tests {
             &CostModelV2::default(),
             &EvidenceWeights::default(),
             None,
+            &BTreeMap::new(),
         );
         let entry = mapping.get("我们").expect("我们 应被分配");
         assert_eq!(entry.rank, 2, "baseline 占用者应占据 rank 1");
@@ -785,12 +1170,33 @@ mod tests {
 
     #[test]
     fn heavy_occupant_rejects_crowding() {
-        // 质量尺度修复的回归锚点:重占用码(质量 5.0)的扰动/歧义定价
-        // 必须真实进入净效用并拒绝挤占(修复前 occupant_mass≈1e-5,
-        // disruption/ambiguity 系数结构性失效)。全码 rank 2 放行守卫,
-        // 由定价决定拒绝。
+        // 扰动定价只计真实被挤者:词质量 ln1p(100)≈4.62 > 占用者 3.0 →
+        // 占用者被挤后,disruption 生效并拒绝(全码 rank 2 放行守卫,
+        // 由定价决定拒绝)。
         let code: KeySequence = "wm".parse().unwrap();
-        let baseline = BaselineMassView::for_test(vec![(code, vec![5.0])], vec![("我们", 2)]);
+        let baseline = BaselineMassView::for_test(vec![(code, vec![3.0])], vec![("我们", 2)]);
+        let targets = vec![target("我们", "womf", &["wm"])];
+        let evidence = evidence_map(vec![word_evidence("我们", "womf", 1e-2)]);
+        let mapping = produce_mapping(
+            &targets,
+            &evidence,
+            &test_scale(),
+            &baseline,
+            &CostModelV2::default(),
+            &EvidenceWeights::default(),
+            None,
+            &BTreeMap::new(),
+        );
+        assert!(mapping.is_empty(), "挤动重占用者应被扰动定价拒绝");
+    }
+
+    #[test]
+    fn tailgating_light_word_pays_only_selection() {
+        // 跟在高占用者**之后**(不挤任何人)只付选择成本、不付扰动成本 —
+        // 占用/扰动拆分语义的对称锚点(2026-10 修复前此情形被误收扰动费,
+        // 是高频词简码丢失的根因)。
+        let code: KeySequence = "wm".parse().unwrap();
+        let baseline = BaselineMassView::for_test(vec![(code, vec![3.0])], vec![("我们", 2)]);
         let targets = vec![target("我们", "womf", &["wm"])];
         let evidence = evidence_map(vec![word_evidence("我们", "womf", 1e-4)]);
         let mapping = produce_mapping(
@@ -801,17 +1207,27 @@ mod tests {
             &CostModelV2::default(),
             &EvidenceWeights::default(),
             None,
+            &BTreeMap::new(),
         );
-        assert!(mapping.is_empty(), "重占用码的挤占应被扰动定价拒绝");
+        let entry = mapping.get("我们").expect("跟排不挤人,应被接纳");
+        assert_eq!(entry.rank, 2);
+        assert_eq!(
+            entry.breakdown.disruption_cost, 0.0,
+            "未被挤者不产生扰动成本"
+        );
+        assert!(
+            entry.breakdown.selection_cost > 0.0,
+            "竞争强度仍放大选择成本"
+        );
     }
 
     #[test]
     fn disruption_coeff_changes_decision() {
-        // 参数敏感性:同一中度占用码,disruption 0.5 接纳、4.0 拒绝。
+        // 参数敏感性:词挤动中度占用者(3.0),disruption 0.5 接纳、2.0 拒绝。
         let code: KeySequence = "wm".parse().unwrap();
-        let baseline = BaselineMassView::for_test(vec![(code, vec![1.5])], vec![("我们", 2)]);
+        let baseline = BaselineMassView::for_test(vec![(code, vec![3.0])], vec![("我们", 2)]);
         let targets = vec![target("我们", "womf", &["wm"])];
-        let evidence = evidence_map(vec![word_evidence("我们", "womf", 1e-4)]);
+        let evidence = evidence_map(vec![word_evidence("我们", "womf", 1e-2)]);
         let with = |disruption_coeff: f64| {
             produce_mapping(
                 &targets,
@@ -824,10 +1240,195 @@ mod tests {
                 },
                 &EvidenceWeights::default(),
                 None,
+                &BTreeMap::new(),
             )
             .len()
         };
         assert_eq!(with(0.5), 1, "低扰动系数应接纳");
-        assert_eq!(with(4.0), 0, "高扰动系数应拒绝");
+        assert_eq!(with(2.0), 0, "高扰动系数应拒绝");
+    }
+
+    #[test]
+    fn full_rank1_word_wins_scarce_slot_over_lower_rank_word() {
+        // 「就是 vs 九十 争 jqu」型回归锚点(2026-10 高频词简码丢失):
+        // 全码 rank1 的高频词在轻占用码上必须拿到 rank1;修复前扰动按码内
+        // 总质量计费 → 该词净效用为负被拒,码位被全码 rank2 的低频词拿走。
+        let code: KeySequence = "ab".parse().unwrap();
+        let baseline =
+            BaselineMassView::for_test(vec![(code, vec![0.6, 0.95])], vec![("甲", 1), ("乙", 2)]);
+        let targets = vec![target("甲", "abcd", &["ab"]), target("乙", "abce", &["ab"])];
+        let evidence = evidence_map(vec![
+            word_evidence("甲", "abcd", 1e-2), // 质量 ln1p(100) ≈ 4.62
+            word_evidence("乙", "abce", 1e-3), // 质量 ln1p(10) ≈ 2.40
+        ]);
+        let mapping = produce_mapping(
+            &targets,
+            &evidence,
+            &test_scale(),
+            &baseline,
+            &CostModelV2 {
+                rank_cost: [0.0, 1.0, 2.0, 4.0],
+                ambiguity_coeff: 0.25,
+                disruption_coeff: 0.5,
+                ..CostModelV2::default()
+            },
+            &EvidenceWeights::default(),
+            None,
+            &BTreeMap::new(),
+        );
+        let jia = mapping.get("甲").expect("全码 rank1 高频词必须拿到简码");
+        assert_eq!(jia.code, "ab".parse().unwrap());
+        assert_eq!(jia.rank, 1, "稀缺位必须归全码 rank1 的高频词");
+        // 乙 不被挤到自身全码 rank 之后:rank 2 接纳或留全码均可。
+        if let Some(yi) = mapping.get("乙") {
+            assert_eq!(yi.rank, 2);
+        }
+    }
+
+    #[test]
+    fn explain_reports_verdicts_and_state() {
+        // 两词竞争同一空码,时间 全码 rank 2:我们 先拿 wm rank1,
+        // 时间 的 wm 候选在决策时点应看到 我们 的占用质量并 accepted rank2;
+        // 时间 的 uj 候选(被 baseline 占用压低了短名单序)随后 skipped。
+        let targets = vec![
+            target("我们", "womf", &["wm"]),
+            target("时间", "uijm", &["wm", "uj"]),
+        ];
+        let evidence = evidence_map(vec![
+            word_evidence("我们", "womf", 1e-4),
+            word_evidence("时间", "uijm", 8e-5),
+        ]);
+        let baseline =
+            BaselineMassView::for_test(vec![("uj".parse().unwrap(), vec![1.0])], vec![("时间", 2)]);
+        let (mapping, reports) = produce_mapping_explained(
+            &targets,
+            &evidence,
+            &test_scale(),
+            &baseline,
+            &CostModelV2::default(),
+            &EvidenceWeights::default(),
+            None,
+            &BTreeMap::new(),
+            &["时间"],
+        );
+        let report = reports.get("时间").expect("应有解释报告");
+        assert_eq!(report.full_code_rank, 2);
+        assert!(report.mass > 0.0);
+        let wm = report
+            .candidates
+            .iter()
+            .find(|c| c.code == "wm")
+            .expect("wm 候选必有判定");
+        assert_eq!(wm.verdict, ExplainVerdict::Accepted);
+        assert_eq!(wm.position, 2);
+        assert!(
+            wm.occupant_masses.iter().any(|m| *m > 0.0),
+            "决策时点应看到先分配的 我们 的占用质量"
+        );
+        assert!(wm.net_utility.expect("已评估必有净效用") > 0.0);
+        // 词已分配后,后续候选标记 skipped。
+        let uj = report
+            .candidates
+            .iter()
+            .find(|c| c.code == "uj")
+            .expect("uj 候选必有判定");
+        assert_eq!(uj.verdict, ExplainVerdict::SkippedWordAssigned);
+        assert_eq!(report.outcome, Some(("wm".to_string(), 2)));
+        assert_eq!(mapping.get("时间").map(|e| e.rank), Some(2));
+        // 渲染确定性且包含关键列。
+        let text = render_explain(report);
+        assert!(text.contains("wm") && text.contains("accepted"));
+    }
+
+    #[test]
+    fn explain_guard_rejection_is_visible() {
+        // 守卫拒绝必须在解释中可见(不是静默消失)。
+        let targets = vec![
+            target("我们", "womf", &["wm"]),
+            target("时间", "uijm", &["wm"]),
+        ];
+        let evidence = evidence_map(vec![
+            word_evidence("我们", "womf", 1e-4),
+            word_evidence("时间", "uijm", 8e-5),
+        ]);
+        // 时间 全码 rank 1(默认)→ rank 2 槽位被守卫拒绝。
+        let (_, reports) = produce_mapping_explained(
+            &targets,
+            &evidence,
+            &test_scale(),
+            &empty_baseline(),
+            &CostModelV2::default(),
+            &EvidenceWeights::default(),
+            None,
+            &BTreeMap::new(),
+            &["时间"],
+        );
+        let report = reports.get("时间").expect("应有解释报告");
+        let wm = report.candidates.iter().find(|c| c.code == "wm").unwrap();
+        assert_eq!(wm.verdict, ExplainVerdict::RejectedGuard);
+        assert_eq!(report.outcome, None);
+    }
+
+    #[test]
+    fn tradition_fallback_preserves_top_frequency_alias() {
+        // 传统保底:词持有 canonical 别名(wm),常规贪心被重占用码拒绝
+        // (挤动 3.0 质量),频率 ≥ 中位锚点 → 尾部追加保留,零扰动。
+        let code: KeySequence = "wm".parse().unwrap();
+        let baseline =
+            BaselineMassView::for_test(vec![(code.clone(), vec![3.0])], vec![("我们", 2)]);
+        let targets = vec![target("我们", "womf", &["wm"])];
+        let evidence = evidence_map(vec![word_evidence("我们", "womf", 1e-2)]);
+        let mut tradition = BTreeMap::new();
+        tradition.insert("我们".to_string(), code);
+        let (mapping, reports) = produce_mapping_explained(
+            &targets,
+            &evidence,
+            &test_scale(),
+            &baseline,
+            &CostModelV2::default(),
+            &EvidenceWeights::default(),
+            None,
+            &tradition,
+            &["我们"],
+        );
+        let entry = mapping.get("我们").expect("传统保底必须保留别名");
+        assert_eq!(entry.code, "wm".parse().unwrap());
+        assert_eq!(entry.rank, 2, "尾部追加:既有占用者之后");
+        assert_eq!(entry.breakdown.disruption_cost, 0.0, "保底追加不挤任何候选");
+        let report = reports.get("我们").expect("应有解释报告");
+        assert!(
+            report
+                .candidates
+                .iter()
+                .any(|c| c.verdict == ExplainVerdict::AcceptedTraditionFallback),
+            "解释报告必须标明保底来源"
+        );
+        assert_eq!(report.outcome, Some(("wm".to_string(), 2)));
+    }
+
+    #[test]
+    fn tradition_fallback_skips_below_median_words() {
+        // 频率低于词域中位锚点的词不走保底(允许淘汰),也不占位。
+        let code: KeySequence = "wm".parse().unwrap();
+        // 全码 rank 1 → 守卫拒绝 rank 2 简码(便宜方案会 demote);
+        // 低频 → 保底不触发。
+        let baseline =
+            BaselineMassView::for_test(vec![(code.clone(), vec![3.0])], vec![("我们", 1)]);
+        let targets = vec![target("我们", "womf", &["wm"])];
+        // 锚点 1e-4,p = 1e-6 < 锚点 → 非 top 段。
+        let evidence = evidence_map(vec![word_evidence("我们", "womf", 1e-6)]);
+        let mut tradition = BTreeMap::new();
+        tradition.insert("我们".to_string(), code);
+        let mapping = produce_mapping(
+            &targets,
+            &evidence,
+            &test_scale(),
+            &baseline,
+            &CostModelV2::default(),
+            &EvidenceWeights::default(),
+            None,
+            &tradition,
+        );
+        assert!(mapping.is_empty(), "低频词不走传统保底");
     }
 }
