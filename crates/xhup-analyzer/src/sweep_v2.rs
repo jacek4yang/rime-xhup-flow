@@ -25,7 +25,7 @@ use crate::candidates::WordTarget;
 use crate::compat::{self, ReferenceEntry, TierCompat};
 use crate::corpus::CorpusStats;
 use crate::evidence::LexicalEvidence;
-use crate::mapping_v2::{BaselineMassView, FanoutStats, MappingV2, produce_mapping};
+use crate::mapping_v2::{BaselineMassView, FanoutStats, MappingV2, MassScale, produce_mapping};
 use crate::optimizer_v2::{CostModelV2, EvidenceWeights};
 use crate::replay::{ReplayCostModel, ReplayMapping, Replayer};
 use crate::xhup_prior::XhupStylePrior;
@@ -149,6 +149,8 @@ pub struct RankDistribution {
 pub struct SweepV2Row {
     /// 运行点。
     pub point: SweepV2Point,
+    /// 是否 canonical 基线行(参数列无意义,TSV 渲染为 NA)。
+    pub is_baseline: bool,
     /// 分配词数。
     pub assigned: usize,
     /// 回放指标。
@@ -175,6 +177,29 @@ pub fn evidence_by_word(
         .collect()
 }
 
+/// v2 评估管线的候选词集合:monotone-v2 与 legacy-v1 两枚举规格的候选
+/// **并集**(按 (词, 码) 去重;两规格自身的冻结行为不变)。
+///
+/// 动机(2026-10 实测):monotone 语法下 2 字词只有 FI(3 键)与 II(2 键)
+/// 两个候选,而 2/3 键空间被高频单字重占用,扰动定价后大量骨干词拿不到
+/// 可接纳的 rank 1 槽位;legacy 的 IF 等模式提供另一组 3 键候选,是与
+/// canonical 基线(同样含 legacy 候选产物)公平对照所需的候选空间。
+pub fn v2_targets(words: &[crate::WordCodeAnalysisEntry]) -> Vec<WordTarget> {
+    let (mut mono, _) = crate::candidates::enumerate_targets_with_spec(
+        words,
+        crate::candidates::CandidateEnumerationSpec::MONOTONE_V2_THEORETICAL,
+    );
+    let (legacy, _) = crate::candidates::enumerate_targets_with_spec(
+        words,
+        crate::candidates::CandidateEnumerationSpec::LEGACY_V1_FROZEN,
+    );
+    assert_eq!(mono.len(), legacy.len(), "两规格的 targets 应逐词对齐");
+    for (m, l) in mono.iter_mut().zip(legacy.iter()) {
+        m.merge_candidates(l);
+    }
+    mono
+}
+
 /// 词频排序口径:万象聚合分数降序,词形升序兜底(与 evidence/frequency
 /// 现有口径一致;确定性)。
 fn frequency_order(targets: &[WordTarget]) -> Vec<String> {
@@ -186,13 +211,15 @@ fn frequency_order(targets: &[WordTarget]) -> Vec<String> {
     ordered.into_iter().map(|(_, w)| w.to_string()).collect()
 }
 
-/// top-N 可达 rank 分布。
-fn rank_distribution(order: &[String], mapping: &MappingV2, n: usize) -> RankDistribution {
+/// top-N 可达 rank 分布:取**回放有效方案**(全码 + v2 映射按期望成本
+/// 择优后的 plan)的候选位 —— 与 baseline 行同口径(只看 v2 分配会
+/// 把「未分配但有全码首选」的词误计为不可达)。
+fn rank_distribution(order: &[String], mapping: &ReplayMapping, n: usize) -> RankDistribution {
     let mut dist = RankDistribution::default();
     for word in order.iter().take(n) {
-        match mapping.get(word) {
+        match mapping.plan(word) {
             None => dist.unassigned += 1,
-            Some(entry) => match entry.rank {
+            Some(plan) => match plan.rank {
                 1 => dist.rank1 += 1,
                 2 => dist.rank2 += 1,
                 3 => dist.rank3 += 1,
@@ -230,7 +257,8 @@ pub fn run_sweep_v2(input: &SweepV2Input, points: &[SweepV2Point]) -> Vec<SweepV
     let prior = input
         .reference
         .map(|r| XhupStylePrior::from_entries(r.to_vec()));
-    // 兼容率 baseline 索引与参数无关,构建一次(仅在有参考映射时)。
+    // 质量尺度与兼容率 baseline 索引与参数无关,构建一次。
+    let scale = MassScale::build(input.evidence);
     let compat_index = input.reference.map(|_| compat::build_baseline_index());
     let order = frequency_order(input.targets);
 
@@ -240,6 +268,7 @@ pub fn run_sweep_v2(input: &SweepV2Input, points: &[SweepV2Point]) -> Vec<SweepV
         let mapping = produce_mapping(
             input.targets,
             input.evidence,
+            &scale,
             input.baseline,
             &point.cost,
             &point.weights,
@@ -251,24 +280,12 @@ pub fn run_sweep_v2(input: &SweepV2Input, points: &[SweepV2Point]) -> Vec<SweepV
             key_cost: point.cost.key_cost,
             rank_cost: point.cost.rank_cost,
         };
-        let replayer = Replayer::with_mapping(ReplayMapping::build_with_plans(
-            &replay_cost,
-            &mapping.replay_plans(),
-        ));
-        let report = match input.replay {
-            ReplaySource::AggregateStats(stats) => replayer
-                .replay_weighted_words(stats.words.iter().map(|(w, s)| (w.as_str(), s.count))),
-            ReplaySource::Sentences(sentences) => {
-                replayer.replay_corpus(sentences.iter().map(String::as_str))
-            }
-        };
-        let replay = ReplayMetrics {
-            kspc: report.kspc(),
-            rank1_rate: report.rank1_rate(),
-            top3_rate: report.top3_rate(),
-            expected_cost_per_char: report.totals.expected_cost
-                / (report.totals.chars.max(1)) as f64,
-        };
+        let replay_mapping = ReplayMapping::build_with_plans(&replay_cost, &mapping.replay_plans());
+        let report = replay_report(
+            &Replayer::with_mapping(replay_mapping.clone()),
+            &input.replay,
+        );
+        let replay = replay_metrics(&report);
 
         // (b) XHUP 兼容率:baseline 层 + v2 映射叠加(不含已入库简码层)。
         let compat = input.reference.map(|reference| {
@@ -294,10 +311,11 @@ pub fn run_sweep_v2(input: &SweepV2Input, points: &[SweepV2Point]) -> Vec<SweepV
             .map(|prev| mapping_change_rate(prev, &mapping));
 
         rows.push(SweepV2Row {
+            is_baseline: false,
             fanout: mapping.fanout_stats(),
             assigned: mapping.len(),
-            top100: rank_distribution(&order, &mapping, 100),
-            top1000: rank_distribution(&order, &mapping, 1000),
+            top100: rank_distribution(&order, &replay_mapping, 100),
+            top1000: rank_distribution(&order, &replay_mapping, 1000),
             point: point.clone(),
             replay,
             compat,
@@ -306,6 +324,68 @@ pub fn run_sweep_v2(input: &SweepV2Input, points: &[SweepV2Point]) -> Vec<SweepV
         previous = Some(mapping);
     }
     rows
+}
+
+/// 按回放语料来源执行回放。
+fn replay_report(replayer: &Replayer, source: &ReplaySource) -> crate::replay::ReplayReport {
+    match source {
+        ReplaySource::AggregateStats(stats) => {
+            replayer.replay_weighted_words(stats.words.iter().map(|(w, s)| (w.as_str(), s.count)))
+        }
+        ReplaySource::Sentences(sentences) => {
+            replayer.replay_corpus(sentences.iter().map(String::as_str))
+        }
+    }
+}
+
+/// 回放报告 → 指标行。
+fn replay_metrics(report: &crate::replay::ReplayReport) -> ReplayMetrics {
+    ReplayMetrics {
+        kspc: report.kspc(),
+        rank1_rate: report.rank1_rate(),
+        top3_rate: report.top3_rate(),
+        expected_cost_per_char: report.totals.expected_cost / (report.totals.chars.max(1)) as f64,
+    }
+}
+
+/// canonical 基线行:当前 production 映射(全码 + ZR + FF + 二码,经
+/// [`ReplayMapping::build`])走同一指标管线,供运行点对照选型。
+///
+/// 成本假设取 [`ReplayCostModel::default`](与 replay-bench 基线一致);
+/// top-N rank 分布取每词最佳方案的候选位;fanout 为 canonical 简码层
+/// 条目数(码位唯一,恒无共享)。
+pub fn baseline_row(input: &SweepV2Input) -> SweepV2Row {
+    let mapping = ReplayMapping::build(&ReplayCostModel::default());
+    let report = replay_report(&Replayer::with_mapping(mapping.clone()), &input.replay);
+    let order = frequency_order(input.targets);
+    let assigned = input
+        .targets
+        .iter()
+        .filter(|t| mapping.plan(t.word()).is_some_and(|p| p.via != "full"))
+        .count();
+    let shortcut_entries = xhup_generator::canonical_word_shortcut_entries().len()
+        + xhup_generator::canonical_fixed_first_shortcut_entries().len()
+        + xhup_generator::canonical_two_key_shortcut_entries().len();
+    SweepV2Row {
+        point: SweepV2Point {
+            label: "baseline".to_string(),
+            cost: CostModelV2::default(),
+            weights: EvidenceWeights::default(),
+        },
+        is_baseline: true,
+        assigned,
+        replay: replay_metrics(&report),
+        compat: input.reference.map(|r| compat::compare(r).tiers),
+        top100: rank_distribution(&order, &mapping, 100),
+        top1000: rank_distribution(&order, &mapping, 1000),
+        fanout: FanoutStats {
+            codes_used: shortcut_entries,
+            shared_codes: 0,
+            mean: 1.0,
+            max: 1,
+        },
+        change_rate: None,
+    }
 }
 
 /// TSV 列(表头与数据行共用此顺序)。
@@ -374,9 +454,11 @@ pub fn render_tsv(rows: &[SweepV2Row]) -> String {
                 d.unassigned.to_string(),
             ]
         };
-        let fields: Vec<String> = [
+        // baseline 行无扫描参数,参数列显式 NA(与缺失指标同规约)。
+        let params: Vec<String> = if row.is_baseline {
+            vec!["NA".to_string(); 14]
+        } else {
             vec![
-                row.point.label.clone(),
                 c.key_cost.to_string(),
                 c.rank_cost[0].to_string(),
                 c.rank_cost[1].to_string(),
@@ -391,6 +473,12 @@ pub fn render_tsv(rows: &[SweepV2Row]) -> String {
                 w.conversation_share.to_string(),
                 w.sentence_coverage_weight.to_string(),
                 w.context_diversity_weight.to_string(),
+            ]
+        };
+        let fields: Vec<String> = [
+            vec![row.point.label.clone()],
+            params,
+            vec![
                 row.assigned.to_string(),
                 format!("{:.6}", row.replay.kspc),
                 format!("{:.6}", row.replay.rank1_rate),
@@ -500,7 +588,11 @@ mod tests {
         .into_iter()
         .map(|e| (e.word().to_string(), e))
         .collect();
-        (targets, evidence, BaselineMassView::for_test(Vec::new()))
+        (
+            targets,
+            evidence,
+            BaselineMassView::for_test(Vec::new(), Vec::new()),
+        )
     }
 
     fn two_points() -> Vec<SweepV2Point> {
@@ -604,6 +696,38 @@ mod tests {
             .position(|c| *c == "compat1_preserved")
             .unwrap();
         assert_eq!(fields[compat_col], "NA", "缺失参考映射应显式 NA");
+    }
+
+    #[test]
+    fn baseline_row_uses_canonical_mapping() {
+        // 基线行:canonical 全层映射走同一指标管线;参数列显式 NA。
+        let (targets, evidence, baseline) = fixture();
+        let sentences = vec!["我们时间".to_string()];
+        let input = SweepV2Input {
+            targets: &targets,
+            evidence: &evidence,
+            baseline: &baseline,
+            replay: ReplaySource::Sentences(&sentences),
+            reference: None,
+        };
+        let row = baseline_row(&input);
+        assert!(row.is_baseline);
+        assert_eq!(row.point.label, "baseline");
+        assert!(row.replay.kspc > 0.0 && row.replay.kspc <= 4.0);
+        assert!(
+            (0.0..=1.0).contains(&row.replay.rank1_rate),
+            "基线 rank1 率应 ∈ [0,1]"
+        );
+        assert_eq!(
+            row.top100.unassigned, 0,
+            "canonical 词在 canonical 映射中必有方案"
+        );
+        assert!(row.change_rate.is_none());
+        let tsv = render_tsv(std::slice::from_ref(&row));
+        let fields: Vec<&str> = tsv.lines().nth(1).unwrap().split('\t').collect();
+        assert_eq!(fields.len(), TSV_COLUMNS.len());
+        assert_eq!(fields[0], "baseline");
+        assert_eq!(fields[1], "NA", "基线行参数列应为 NA");
     }
 
     #[test]

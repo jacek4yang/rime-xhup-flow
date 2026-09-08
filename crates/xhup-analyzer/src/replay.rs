@@ -54,6 +54,7 @@ pub struct InputPlan {
 
 /// 回放视图:词 → 最佳静态输入方案(canonical 映射,或经
 /// [`ReplayMapping::build_with_plans`] 叠加的任意评估映射)。
+#[derive(Clone)]
 pub struct ReplayMapping {
     plans: BTreeMap<String, InputPlan>,
 }

@@ -50,7 +50,10 @@ pub use cost::{CostBreakdown, CostModel};
 pub use dynamic::DynamicCandidateKind;
 pub use evidence::{Eligibility, EvidenceCoverage, LexicalEvidence, LexicalEvidenceSet};
 pub use frequency::{CharCodeUsage, FrequencyModel, FrequencyScale};
-pub use mapping_v2::{BaselineMassView, FanoutStats, MappingV2, MappingV2Entry, produce_mapping};
+pub use mapping_v2::{
+    BaselineMassView, FanoutStats, MappingV2, MappingV2Entry, MassScale, dominant_term,
+    produce_mapping,
+};
 pub use occupancy::{
     CandidateSource, CodeOccupancy, CollisionClass, ExistingCandidate, LayerAudit, LengthStats,
 };
@@ -89,8 +92,8 @@ pub use sweep::{
 };
 pub use sweep_v2::{
     RankDistribution, ReplayMetrics, ReplaySource, SweepV2Input, SweepV2Point, SweepV2Row,
-    evidence_by_word, grid as sweep_v2_grid, render_summary as render_sweep_v2_summary,
-    render_tsv as render_sweep_v2_tsv, run_sweep_v2,
+    baseline_row, evidence_by_word, grid as sweep_v2_grid,
+    render_summary as render_sweep_v2_summary, render_tsv as render_sweep_v2_tsv, run_sweep_v2,
 };
 pub use xhup_generator::{CharCodeAnalysisEntry, WordCodeAnalysisEntry};
 pub use xhup_prior::{NEUTRAL_PRIOR, XhupStylePrior};
