@@ -33,20 +33,35 @@ mkdir -p "$deploy_dir"
 cp "$PACKAGE_DIR"/*.yaml "$deploy_dir/"
 # 方案引用 lua_filter 时必须随包携带 lua/ 模块(见 run-flow-audit.sh)。
 if [[ -d "$PACKAGE_DIR/lua" ]]; then cp -r "$PACKAGE_DIR/lua" "$deploy_dir/"; fi
-# 注意:部署目录必须提供一份只含 XHUP 方案的 default.yaml,而不能靠
-# default.custom.yaml 叠加共享目录的 default.yaml —— CI 环境只装
-# rime-prelude(共享 default.yaml 引用 luna_pinyin 等 schema 但对应文件在
-# 独立数据包中、并未安装),--build 会因 missing input schema 整体退出非零。
-# 真实用户的共享数据目录装有完整方案集,不受此限;这里用最小 default.yaml
-# 让 --build 聚焦验证 XHUP 方案自身的 dependency graph。
-cat > "$deploy_dir/default.yaml" <<'EOF'
+
+# 共享数据目录准备:复制真实 rime-prelude,但把其 default.yaml 的
+# schema_list 换成仅 XHUP 两个方案。
+#
+# 为什么不用用户目录 default.custom.yaml 叠加:CI 只装 rime-prelude,
+# 其 default.yaml 的 schema_list 引用 luna_pinyin 等 schema,但对应文件
+# 在独立数据包中并未安装;WorkspaceUpdate 对列表内缺失 schema 记
+# failure 并使 --build 整体退出非零。真实用户的共享数据目录装有完整
+# 方案集,不受此限。
+# 为什么不在用户目录放最小 default.yaml:ConfigFileUpdate 会把
+# config_version 落后于共享版本的用户副本当过期文件移入 trash;且
+# 最小 default.yaml 会屏蔽 prelude 的 punctuation/recognizer 等段,
+# 破坏 import_preset: default 的运行时行为。
+shared_dir="$work/shared"
+cp -r "$SHARED_DATA_DIR" "$shared_dir"
+awk '
+  /^schema_list:/ {in_block=1; next}
+  in_block && /^[^[:space:]#]/ {in_block=0}
+  !in_block {print}
+' "$shared_dir/default.yaml" > "$work/default.yaml"
+mv "$work/default.yaml" "$shared_dir/default.yaml"
+cat >> "$shared_dir/default.yaml" <<'EOF'
 schema_list:
   - schema: xhup_flow
   - schema: xhup_flow_static
 EOF
 
 echo "== 真实部署路径(rime_deployer --build,无手工词典编译) =="
-rime_deployer --build "$deploy_dir" "$SHARED_DATA_DIR" >/dev/null
+rime_deployer --build "$deploy_dir" "$shared_dir" >/dev/null
 
 fail=0
 for dict in \
@@ -66,4 +81,4 @@ done
 cc $CFLAGS -o "$work/runtime_smoke" "$SCRIPT_DIR/runtime_smoke.c" \
   $(pkg-config --cflags --libs rime)
 echo "== 对 --build 部署的 runtime 冒烟 =="
-"$work/runtime_smoke" "$SHARED_DATA_DIR" "$deploy_dir"
+"$work/runtime_smoke" "$shared_dir" "$deploy_dir"
