@@ -52,7 +52,8 @@ pub struct InputPlan {
     pub expected_cost: f64,
 }
 
-/// 当前 canonical 映射的回放视图:词 → 最佳静态输入方案。
+/// 回放视图:词 → 最佳静态输入方案(canonical 映射,或经
+/// [`ReplayMapping::build_with_plans`] 叠加的任意评估映射)。
 pub struct ReplayMapping {
     plans: BTreeMap<String, InputPlan>,
 }
@@ -340,5 +341,31 @@ mod tests {
         assert_eq!(report.sentences, 2);
         assert!(report.kspc() > 0.0 && report.kspc() <= 4.0);
         assert!(report.rank1_rate() > 0.0);
+    }
+
+    #[test]
+    fn build_with_plans_overlays_arbitrary_mapping() {
+        // v2 扫描路径:任意映射与全码层按期望成本择优。
+        let cost = ReplayCostModel::default();
+        let mapping = ReplayMapping::build_with_plans(&cost, &[("我们".to_string(), 2, 1)]);
+        let plan = mapping.plan("我们").expect("我们 应有方案");
+        assert_eq!(plan.keys, 2);
+        assert_eq!(plan.rank, 1);
+        assert_eq!(plan.via, "v2-sweep");
+        // 未覆盖的词仍走全码层。
+        let full = mapping.plan("时间").expect("时间 应有全码方案");
+        assert_eq!(full.via, "full");
+    }
+
+    #[test]
+    fn weighted_words_replay_scales_by_count() {
+        // 聚合统计近似回放 = 单词回放 × 计数。
+        let replayer = Replayer::new(&ReplayCostModel::default());
+        let single = replayer.replay_corpus(["我们"].into_iter());
+        let weighted = replayer.replay_weighted_words([("我们", 3)].into_iter());
+        assert_eq!(weighted.sentences, 3);
+        assert_eq!(weighted.totals.keys, single.totals.keys * 3);
+        assert_eq!(weighted.totals.chars, single.totals.chars * 3);
+        assert_eq!(weighted.totals.rank1, single.totals.rank1 * 3);
     }
 }

@@ -598,6 +598,38 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_stats_replay_path_produces_metrics() {
+        // 默认回放路径(无 --input):聚合统计近似,逐词形按计数加权。
+        let (targets, evidence, baseline) = fixture();
+        let stats = CorpusStats {
+            words: [(
+                "我们".to_string(),
+                crate::corpus::WordCorpusStats {
+                    count: 5,
+                    sentence_count: 5,
+                    left_contexts: 1,
+                    right_contexts: 1,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            sentences: 5,
+            tokens: 5,
+        };
+        let input = SweepV2Input {
+            targets: &targets,
+            evidence: &evidence,
+            baseline: &baseline,
+            replay: ReplaySource::AggregateStats(&stats),
+            reference: None,
+        };
+        let rows = run_sweep_v2(&input, &two_points());
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].replay.kspc > 0.0);
+        assert!((0.0..=1.0).contains(&rows[0].replay.rank1_rate));
+    }
+
+    #[test]
     fn synthetic_reference_yields_compat_rates() {
         let (targets, evidence, baseline) = fixture();
         let sentences = vec!["我们".to_string()];
