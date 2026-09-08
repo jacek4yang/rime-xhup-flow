@@ -7,8 +7,11 @@
 //! 信号来源分层:
 //!
 //! - **已有**(万象提取子集):聚合频率分数 → 词 domain 归一化概率;
-//! - **待语料统计管线**:句子覆盖度、上下文多样性、分域频率(会话/正式/
-//!   技术)。在这些信号落地前,优化目标函数不得把它们当作已测量值;
+//! - **已有**(KdConv 会话域派生统计,data/corpus):句子覆盖度、上下文
+//!   多样性、会话域频率 —— 只覆盖语料中实际出现的词,未出现的词保持
+//!   `None`(未见 ≠ 零);
+//! - **待更多语料域**:正式/技术域频率(见 docs/data-pipeline.md 来源表)。
+//!   在信号落地前,优化目标函数不得把它们当作已测量值;
 //! - **永不持久化**的可推导字段(词长、码长)由访问器现算。
 //!
 //! [`EvidenceCoverage`] 是证据完整性审计:每个信号的全库覆盖率必须显式
@@ -18,7 +21,12 @@
 use xhup_core::KeySequence;
 use xhup_generator::WordCodeAnalysisEntry;
 
+use crate::corpus::CorpusStats;
 use crate::frequency::FrequencyModel;
+
+/// 会话域派生统计(KdConv,data/corpus/README.md 记 provenance),
+/// 与 canonical 数据同法嵌入,是证据视图的语料信号来源。
+const CONVERSATION_TSV: &str = include_str!("../../../data/corpus/conversation_kdconv.tsv");
 
 /// 一条 canonical 词语关系的词汇证据。
 #[derive(Clone, Debug, PartialEq)]
@@ -154,20 +162,33 @@ pub struct LexicalEvidenceSet {
 
 impl LexicalEvidenceSet {
     /// 从 generator 分析投影 + 频率模型构建证据视图。
+    ///
+    /// 语料信号填充规则(只填测量值,未见保持 None):
+    /// - `conversation_frequency` = 会话域计数 / 语料 token 总数(域内概率);
+    /// - `sentence_coverage` = 句子覆盖 / 语料句子总数(0..=1);
+    /// - `context_diversity` = 独立左上下文数 + 独立右上下文数。
     pub fn build(words: &[WordCodeAnalysisEntry], frequency: &FrequencyModel) -> Self {
+        let corpus = CorpusStats::from_tsv(CONVERSATION_TSV).expect("嵌入的语料统计必须可解析");
+        let corpus_tokens = corpus.tokens.max(1) as f64;
+        let corpus_sentences = corpus.sentences.max(1) as f64;
         let entries = words
             .iter()
-            .map(|entry| LexicalEvidence {
-                word: entry.word().to_string(),
-                code: entry.code().clone(),
-                wanxiang_score: entry.frequency_score(),
-                normalized_frequency: frequency.word_probability(entry.frequency_score()),
-                // 语料统计管线尚未落地:全部显式缺失(见模块文档)。
-                sentence_coverage: None,
-                context_diversity: None,
-                conversation_frequency: None,
-                formal_frequency: None,
-                technical_frequency: None,
+            .map(|entry| {
+                let observed = corpus.words.get(entry.word());
+                LexicalEvidence {
+                    word: entry.word().to_string(),
+                    code: entry.code().clone(),
+                    wanxiang_score: entry.frequency_score(),
+                    normalized_frequency: frequency.word_probability(entry.frequency_score()),
+                    sentence_coverage: observed.map(|s| s.sentence_count as f64 / corpus_sentences),
+                    context_diversity: observed.map(|s| {
+                        u32::try_from(s.left_contexts + s.right_contexts).unwrap_or(u32::MAX)
+                    }),
+                    conversation_frequency: observed.map(|s| s.count as f64 / corpus_tokens),
+                    // 正式/技术域:来源待导入(docs/data-pipeline.md)。
+                    formal_frequency: None,
+                    technical_frequency: None,
+                }
             })
             .collect();
         LexicalEvidenceSet { entries }
@@ -263,14 +284,41 @@ mod tests {
         let (_, set) = evidence_set();
         let coverage = set.coverage();
         assert_eq!(coverage.total, set.entries().len());
-        // 已有信号:万象分数 100%。
+        // 已有信号:万象分数 100%;会话域语料信号部分覆盖(只见于语料的词)。
         assert_eq!(coverage.wanxiang_score, 1.0);
-        // 待语料管线信号:显式 0%(缺失 ≠ 零;语料落地时本断言必须更新)。
-        assert_eq!(coverage.sentence_coverage, 0.0);
-        assert_eq!(coverage.context_diversity, 0.0);
-        assert_eq!(coverage.conversation_frequency, 0.0);
+        for rate in [
+            coverage.sentence_coverage,
+            coverage.context_diversity,
+            coverage.conversation_frequency,
+        ] {
+            assert!(rate > 0.1, "会话域信号应有实质覆盖,实际 {rate}");
+            assert!(rate < 1.0, "未见语料的词必须保持缺失,实际 {rate}");
+        }
+        // 待导入信号:显式 0%(缺失 ≠ 零;来源导入时本断言必须更新)。
         assert_eq!(coverage.formal_frequency, 0.0);
         assert_eq!(coverage.technical_frequency, 0.0);
+    }
+
+    #[test]
+    fn observed_words_carry_real_corpus_values() {
+        // 语料信号语义哨兵:「知道」是 KdConv 高强度词,三个语料字段必须
+        // 同时出现且内部一致;「社会主义」未在语料出现则全部缺失。
+        let (_, set) = evidence_set();
+        let zhidao = set
+            .entries()
+            .iter()
+            .find(|e| e.word() == "知道")
+            .expect("知道 应有证据");
+        let coverage = zhidao.sentence_coverage().expect("知道 应有句子覆盖");
+        assert!(coverage > 0.01, "知道 的句子覆盖应显著,实际 {coverage}");
+        assert!(zhidao.conversation_frequency().unwrap() > 0.0);
+        assert!(zhidao.context_diversity().unwrap() >= 2, "左右上下文应多样");
+        let shehui = set
+            .entries()
+            .iter()
+            .find(|e| e.word() == "社会主义")
+            .expect("社会主义 应有证据");
+        assert_eq!(shehui.sentence_coverage(), None, "未见语料的词保持缺失");
     }
 
     #[test]
