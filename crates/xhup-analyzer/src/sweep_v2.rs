@@ -410,7 +410,8 @@ pub fn render_tsv(rows: &[SweepV2Row]) -> String {
                 row.fanout.shared_codes.to_string(),
                 format!("{:.6}", row.fanout.mean),
                 row.fanout.max.to_string(),
-                row.change_rate.map_or("NA".to_string(), |r| format!("{r:.6}")),
+                row.change_rate
+                    .map_or("NA".to_string(), |r| format!("{r:.6}")),
             ],
         ]
         .concat();
@@ -457,7 +458,15 @@ mod tests {
     use crate::candidates::ShortcutCandidate;
 
     fn word_evidence(word: &str, code: &str, normalized: f64) -> LexicalEvidence {
-        LexicalEvidence::for_test(word, code.parse().unwrap(), 1000, normalized, None, None, None)
+        LexicalEvidence::for_test(
+            word,
+            code.parse().unwrap(),
+            1000,
+            normalized,
+            None,
+            None,
+            None,
+        )
     }
 
     fn target(word: &str, full: &str, score: u64, candidates: &[&str]) -> WordTarget {

@@ -280,13 +280,11 @@ pub fn produce_mapping(
                 );
                 let better = match &best {
                     None => true,
-                    Some((best_rank, best_breakdown)) => {
-                        breakdown
-                            .total()
-                            .total_cmp(&best_breakdown.total())
-                            .then(best_rank.cmp(&rank))
-                            .is_gt()
-                    }
+                    Some((best_rank, best_breakdown)) => breakdown
+                        .total()
+                        .total_cmp(&best_breakdown.total())
+                        .then(best_rank.cmp(&rank))
+                        .is_gt(),
                 };
                 if better {
                     best = Some((rank, breakdown));
@@ -358,7 +356,11 @@ pub fn produce_mapping(
 
 /// 候选在码内合并次序中的 1 起始位次:baseline 质量 + v2 成员按质量降序
 /// 混排(同分 baseline 在前;v2 词同分按词形升序)。
-fn merged_position(baseline: &[f64], members: &[(f64, String)], candidate: &ScoredAssignment) -> usize {
+fn merged_position(
+    baseline: &[f64],
+    members: &[(f64, String)],
+    candidate: &ScoredAssignment,
+) -> usize {
     let before_baseline = baseline
         .iter()
         .filter(|m| m.total_cmp(&candidate.mass).is_gt())
@@ -379,11 +381,22 @@ mod tests {
     use crate::candidates::ShortcutCandidate;
 
     fn evidence_map(entries: Vec<LexicalEvidence>) -> BTreeMap<String, LexicalEvidence> {
-        entries.into_iter().map(|e| (e.word().to_string(), e)).collect()
+        entries
+            .into_iter()
+            .map(|e| (e.word().to_string(), e))
+            .collect()
     }
 
     fn word_evidence(word: &str, code: &str, normalized: f64) -> LexicalEvidence {
-        LexicalEvidence::for_test(word, code.parse().unwrap(), 1000, normalized, None, None, None)
+        LexicalEvidence::for_test(
+            word,
+            code.parse().unwrap(),
+            1000,
+            normalized,
+            None,
+            None,
+            None,
+        )
     }
 
     fn target(word: &str, full: &str, candidates: &[&str]) -> WordTarget {

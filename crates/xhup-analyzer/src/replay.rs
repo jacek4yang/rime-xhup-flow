@@ -74,10 +74,22 @@ impl ReplayMapping {
             );
         }
         for entry in canonical_fixed_first_shortcut_entries() {
-            mapping.offer(cost, entry.word(), entry.shortcut_code().len(), 1, "fixed-first");
+            mapping.offer(
+                cost,
+                entry.word(),
+                entry.shortcut_code().len(),
+                1,
+                "fixed-first",
+            );
         }
         for entry in canonical_two_key_shortcut_entries() {
-            mapping.offer(cost, entry.word(), entry.shortcut_code().len(), 1, "two-key");
+            mapping.offer(
+                cost,
+                entry.word(),
+                entry.shortcut_code().len(),
+                1,
+                "two-key",
+            );
         }
         mapping
     }
@@ -121,7 +133,14 @@ impl ReplayMapping {
     }
 
     /// 提供一条方案:期望成本更低则替换现有方案。
-    fn offer(&mut self, cost: &ReplayCostModel, word: &str, keys: usize, rank: usize, via: &'static str) {
+    fn offer(
+        &mut self,
+        cost: &ReplayCostModel,
+        word: &str,
+        keys: usize,
+        rank: usize,
+        via: &'static str,
+    ) {
         let selection_cost =
             |rank: usize| cost.rank_cost[rank.saturating_sub(1).min(cost.rank_cost.len() - 1)];
         let plan = InputPlan {

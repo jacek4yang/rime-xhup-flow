@@ -115,9 +115,8 @@ fn main() -> ExitCode {
     let aggregate = CorpusStats::from_tsv(CONVERSATION_TSV).expect("嵌入的语料统计必须可解析");
 
     // 分析输入(构建一次,全部运行点复用)。
-    let data = xhup_analyzer::build_analysis_with_spec(
-        CandidateEnumerationSpec::MONOTONE_V2_THEORETICAL,
-    );
+    let data =
+        xhup_analyzer::build_analysis_with_spec(CandidateEnumerationSpec::MONOTONE_V2_THEORETICAL);
     let evidence_set = LexicalEvidenceSet::build(&data.words, &data.frequency);
     let evidence = sweep_v2::evidence_by_word(&evidence_set);
     let baseline = BaselineMassView::build(&data.occupancy);
@@ -145,7 +144,11 @@ fn main() -> ExitCode {
         Some(n) => &points[..n.min(points.len())],
         None => &points[..],
     };
-    eprintln!("[sweep-v2] 运行点: {} / {}", points.len(), sweep_v2::grid().len());
+    eprintln!(
+        "[sweep-v2] 运行点: {} / {}",
+        points.len(),
+        sweep_v2::grid().len()
+    );
     let rows = run_sweep_v2(&input, points);
 
     let tsv = render_tsv(&rows);
