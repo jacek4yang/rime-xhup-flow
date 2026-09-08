@@ -87,6 +87,14 @@ jobs:
       - name: cargo test
         run: cargo test --workspace --all-targets --locked
 
+      # 语料回放回归门禁:canonical 映射变更导致回放指标回退超容差即红
+      # (夹具与基线见 data/corpus/README.md;断言语义见 replay-bench)。
+      - name: 语料回放回归门禁
+        run: >
+          cargo run --locked -p xhup-analyzer --bin replay-bench --
+          --input data/corpus/replay_fixture.txt
+          --baseline data/corpus/replay_baseline.json
+
   trainer:
     name: trainer 前端
     runs-on: ubuntu-latest
