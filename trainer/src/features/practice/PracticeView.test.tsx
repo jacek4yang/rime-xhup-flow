@@ -162,6 +162,10 @@ describe("PracticeView", () => {
   beforeEach(() => {
     localStorage.clear();
     resetTrainerStore();
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      get: () => false,
+    });
   });
 
   it("正确的键推进码位格", () => {
@@ -248,11 +252,13 @@ describe("PracticeView", () => {
 
   // 后台不计时:WebView 不可见自动暂停,回前台自动恢复。
   function setHidden(hidden: boolean) {
-    Object.defineProperty(document, "hidden", {
-      configurable: true,
-      get: () => hidden,
+    act(() => {
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        get: () => hidden,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
     });
-    document.dispatchEvent(new Event("visibilitychange"));
   }
 
   it("切后台自动暂停,回前台自动恢复(后台时长不计入练习)", async () => {
@@ -279,7 +285,7 @@ describe("PracticeView", () => {
       expect(screen.getByText("已暂停")).toBeInTheDocument(),
     );
     // 还原可见性,避免串扰后续用例。
-    setHidden(true);
+    setHidden(false);
   });
 
   it("提示方式:始终显示时直接显示编码", () => {
