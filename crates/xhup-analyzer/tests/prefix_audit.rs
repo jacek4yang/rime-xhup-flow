@@ -2,25 +2,22 @@
 
 use xhup_analyzer::occupancy::CodeOccupancy;
 use xhup_analyzer::prefix::audit_prefix_topology;
-use xhup_generator::canonical_word_shortcut_entries;
+use xhup_generator::{canonical_fixed_first_shortcut_entries, canonical_primary_shortcut_entries};
 
 #[test]
 fn prefix_topology_counts_match_frozen_audit() {
-    // 回归锚点:数值来自 frozen canonical data 的全量静态审计(PR #22)。
+    // 回归锚点:数值来自 optimizer v2 canonical data 的全量静态审计。
     let baseline = CodeOccupancy::build_baseline_fixed();
     let audit = audit_prefix_topology(&baseline);
     assert_eq!(
         audit.shortcut_count,
-        canonical_word_shortcut_entries().len()
+        canonical_primary_shortcut_entries().len() + canonical_fixed_first_shortcut_entries().len()
     );
-    assert_eq!(audit.shortcut_count, 44_518);
-    // 碰撞共存修复(ZR 44,448→44,518 / FF 2,380→2,366 / 词层重接纳碰撞
-    // 二字词并逐出尾部低频词)改变了 baseline 词层与简码集合 membership,
-    // 以下计数随之整体更新(碰撞共存 PR,人工 review)。
-    assert_eq!(audit.shortcut_prefix_of_baseline_pairs, 32_014);
-    assert_eq!(audit.shortcuts_prefixing_baseline, 5_796);
-    assert_eq!(audit.baseline_prefix_of_shortcut_pairs, 94_450);
-    assert_eq!(audit.shortcut_to_shortcut_pairs, 20_627);
+    assert_eq!(audit.shortcut_count, 68_842);
+    assert_eq!(audit.shortcut_prefix_of_baseline_pairs, 82_879);
+    assert_eq!(audit.shortcuts_prefixing_baseline, 9_770);
+    assert_eq!(audit.baseline_prefix_of_shortcut_pairs, 138_747);
+    assert_eq!(audit.shortcut_to_shortcut_pairs, 61_460);
 }
 
 #[test]
@@ -28,7 +25,7 @@ fn per_length_sentinels_are_deterministic_and_wellformed() {
     let baseline = CodeOccupancy::build_baseline_fixed();
     let first = audit_prefix_topology(&baseline);
     let second = audit_prefix_topology(&baseline);
-    assert_eq!(first.lengths.len(), 5, "覆盖 3~7 键五层");
+    assert_eq!(first.lengths.len(), 4, "覆盖 2~5 键四层");
     for (a, b) in first.lengths.iter().zip(second.lengths.iter()) {
         assert_eq!(a.length, b.length);
         assert_eq!(a.rows, b.rows);
@@ -85,29 +82,27 @@ fn per_length_sentinels_are_deterministic_and_wellformed() {
 fn sentinel_frozen_values() {
     let baseline = CodeOccupancy::build_baseline_fixed();
     let audit = audit_prefix_topology(&baseline);
-    let frozen: [(usize, &str, &str, &str); 3] = [
+    let frozen: [(usize, &str, &str, &str); 4] = [
+        (2, "暗部", "anbu", "ab"),
         (3, "啊啊啊", "aaaaaa", "aaa"),
         (4, "安安静静", "ananjkjk", "aajj"),
         (5, "阿卜杜拉", "aabodula", "aabdl"),
     ];
     for (length, word, full, shortcut) in frozen {
-        let slot = &audit.lengths[length - 3];
+        let slot = &audit.lengths[length - 2];
         let lex = slot.lex_first.as_ref().expect("层非空");
         assert_eq!(lex.word, word);
         assert_eq!(lex.full_code.to_string(), full);
         assert_eq!(lex.shortcut_code.to_string(), shortcut);
     }
-    assert_eq!(audit.lengths[3].rows, 0, "6-key 层为空");
-    assert_eq!(audit.lengths[4].rows, 0, "7-key 层为空");
-    // 每层高频哨兵(PR #22 runtime 冒烟的高频代表;碰撞共存修复后 5 键层
-    // 高频哨兵从「这就是 vejqu」变为「实际上」,因 ZR membership 变化)。
-    let top: [(usize, &str, &str); 3] = [
+    let top: [(usize, &str, &str); 4] = [
+        (2, "一个", "yg"),
         (3, "就是", "jqu"),
         (4, "这样的", "veyd"),
         (5, "实际上", "uijiu"),
     ];
     for (length, word, shortcut) in top {
-        let slot = &audit.lengths[length - 3];
+        let slot = &audit.lengths[length - 2];
         let sentinel = slot.top_frequency.as_ref().expect("层非空");
         assert_eq!(sentinel.word, word);
         assert_eq!(sentinel.shortcut_code.to_string(), shortcut);

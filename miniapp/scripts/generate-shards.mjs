@@ -4,7 +4,7 @@
  *
  * 唯一事实来源仍是 Rust(`pnpm -C trainer generate:data` 的产物);
  * 本脚本只做确定性切片,绝不手写/猜测任何编码、读音或词码。
- * 输出:src/data/generated/dataset.json(schemaVersion 2,可被
+ * 输出:src/data/generated/dataset.json(schemaVersion 3,可被
  * @xhup/trainer-core 的 validateTrainerDataset 完整校验)。
  */
 
@@ -22,8 +22,8 @@ const outPath = resolve(here, "..", "src", "data", "generated", "dataset.json");
 const raw = readFileSync(sourcePath, "utf8");
 const dataset = JSON.parse(raw);
 
-if (dataset.schemaVersion !== 2) {
-  throw new Error(`期望规范数据 schemaVersion 2,实际 ${dataset.schemaVersion}`);
+if (dataset.schemaVersion !== 3) {
+  throw new Error(`期望规范数据 schemaVersion 3,实际 ${dataset.schemaVersion}`);
 }
 
 // 频率降序为唯一排序键;相同分数保持原始顺序(稳定切片)。
@@ -44,9 +44,11 @@ const shard = {
   ],
   words: [...dataset.words].sort(byWeight).slice(0, 8),
   level1Shortcuts: dataset.level1Shortcuts,
-  wordShortcuts: [...dataset.wordShortcuts].sort(byWeight).slice(0, 20),
+  primaryShortcuts: [
+    ...dataset.primaryShortcuts.filter((entry) => entry.shortcutCode.length > 2).slice(0, 20),
+    ...dataset.primaryShortcuts.filter((entry) => entry.shortcutCode.length === 2).slice(0, 10),
+  ],
   fixedFirstShortcuts: [...dataset.fixedFirstShortcuts].sort(byWeight).slice(0, 5),
-  twoKeyShortcuts: [...dataset.twoKeyShortcuts].sort(byWeight).slice(0, 10),
   sentences: dataset.sentences,
   doublePinyin: dataset.doublePinyin,
 };
@@ -58,7 +60,7 @@ const bytes = statSync(outPath).size;
 console.log(
   `miniapp dataset shard: ${bytes} bytes ` +
     `(entries=${shard.entries.length} words=${shard.words.length} ` +
-    `wordShortcuts=${shard.wordShortcuts.length} sentences=${shard.sentences.length})`,
+    `primaryShortcuts=${shard.primaryShortcuts.length} sentences=${shard.sentences.length})`,
 );
 if (bytes > 200 * 1024) {
   throw new Error(`启动分片超过 200KB 上限:${bytes} bytes`);

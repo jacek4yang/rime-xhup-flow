@@ -28,14 +28,16 @@ const ENTRIES: TrainerEntry[] = [
 
 function fixtureIndex(): TrainerIndex {
   return buildTrainerIndex({
-    schemaVersion: 2,
+    schemaVersion: 3,
     packageVersion: "0.1.0",
     entries: ENTRIES,
     words: [{ word: "我们", code: "womf", length: 4, charCount: 2, rimeWeight: 9 }],
     level1Shortcuts: [{ key: "q", char: "去" }],
-    wordShortcuts: [{ word: "时间", fullCode: "uijm", shortcutCode: "uij", mode: "FF" }],
+    primaryShortcuts: [
+      { word: "时间", fullCode: "uijm", shortcutCode: "uij", rank: 1, mergedRank: 1 },
+      { word: "记得", fullCode: "jide", shortcutCode: "jd", rank: 1, mergedRank: 1 },
+    ],
     fixedFirstShortcuts: [{ word: "发展", fullCode: "favj", shortcutCode: "faj", mode: "FFI" }],
-    twoKeyShortcuts: [{ word: "记得", fullCode: "jide", shortcutCode: "jd", mode: "II" }],
     sentences: [{ text: "我们时间", code: "womfuijm", components: ["我们", "时间"] }],
     doublePinyin: { initials: [], finals: [], zeroInitials: [] },
   });
@@ -140,9 +142,9 @@ describe("PracticeSetupView", () => {
       "全码",
       "单字综合",
       "一级简码",
-      "二码词简码",
-      "零冲突词简码",
-      "固定首码词简码",
+      "PRIMARY 二码",
+      "PRIMARY 词简码",
+      "FIXED_FIRST 词简码",
       "固定词",
       "组句",
       "简码综合",

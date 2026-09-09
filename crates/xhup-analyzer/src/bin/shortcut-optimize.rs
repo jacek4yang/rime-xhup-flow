@@ -1,7 +1,8 @@
 //! `shortcut-optimize`:XHUP Flow 词语简码分析/优化模拟命令行工具。
 //!
 //! 纯分析工具:不修改任何 production 产物;转储文件由调用方指定路径,
-//! 不写入仓库。
+//! 不写入仓库。`--dump-production-*` 是为复现 v1 保留的历史 flag,
+//! 输出仅能作为 legacy/research fixture。
 
 use std::process::ExitCode;
 use std::time::Instant;
@@ -26,18 +27,18 @@ fn usage() -> ! {
          \x20 --grammar <legacy-any-fi-v1|monotone-suffix-initials-v2>\n\
          \x20                     候选枚举语法(仅影响通用报告/转储路径;\n\
          \x20                     默认 legacy-any-fi-v1,保持历史输出可比)。\n\
-         \x20                     production 导出命令固定语法,不受本选项影响:\n\
+         \x20                     legacy v1 导出命令固定语法,不受本选项影响:\n\
          \x20                     --dump-production-zero-regression 恒为 legacy,\n\
          \x20                     --dump-production-fixed-first 恒为 monotone。\n\
          \x20 --format <text|tsv>   stdout 输出格式(默认 text 报告;tsv = 推荐表)\n\
          \x20 --dump-candidates <path>     转储全部候选 TSV(balanced 模型)\n\
          \x20 --dump-recommendations <path> 转储推荐结果 TSV(含稳健性)\n\
          \x20 --dump-production-zero-regression <path>\n\
-         \x20                     导出 production ZERO_REGRESSION 简码 canonical TSV\n\
+         \x20                     导出 legacy v1 ZERO_REGRESSION research fixture\n\
          \x20                     (policy zero-regression-high-v1;grammar 固定\n\
          \x20                     legacy-any-fi-v1;只跑 ZR 主网格,导出后退出)\n\
          \x20 --dump-production-fixed-first <path>\n\
-         \x20                     导出 production FIXED_FIRST 简码 canonical TSV\n\
+         \x20                     导出 legacy v1 FIXED_FIRST research fixture\n\
          \x20                     (policy fixed-first-high-v1;grammar 固定\n\
          \x20                     monotone-suffix-initials-v2;incremental universe\n\
          \x20                     上跑 30 次 normalized 主网格,导出后退出)\n\
@@ -47,8 +48,8 @@ fn usage() -> ! {
          \x20 --audit-prefix        词语简码层 prefix 拓扑全量静态审计\n\
          \x20                     (含各码长 runtime 哨兵;打印后退出)\n\
          \n\
-         production 导出是 canonical 生产数据:入库需 diff review 与 policy review。\n\
-         其余分析产物不进入码表;请输出到临时路径,不要 commit。"
+         全部 v1 导出与分析产物只能输出到临时路径;当前 production canonical\n\
+         只能由 export-v2-canonical 导出。"
     );
     std::process::exit(2);
 }
@@ -581,7 +582,7 @@ fn zr_production_keys_saved(data: &AnalysisData) -> f64 {
         .iter()
         .map(|entry| ((entry.word(), entry.code()), entry.frequency_score()))
         .collect();
-    xhup_generator::canonical_word_shortcut_entries()
+    xhup_generator::legacy_v1_word_shortcut_entries()
         .iter()
         .map(|entry| {
             let score = scores

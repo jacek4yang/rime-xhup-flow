@@ -33,7 +33,7 @@ function freshStatus(): ProductStatusDto {
       user_data_dir: USER_DIR,
       client: "Fcitx5",
       installed_files: 0,
-      total_files: 11,
+      total_files: 14,
       missing_files: [],
       schemas: [],
       installed_version: null,
@@ -97,7 +97,7 @@ describe("ControlCenterView", () => {
         });
       }
       if (command === "product_execute") {
-        return Promise.resolve({ done: 11, redeploy_guidance: "重启 Fcitx5。" });
+        return Promise.resolve({ done: 14, redeploy_guidance: "重启 Fcitx5。" });
       }
       return Promise.reject(new Error(`unexpected command: ${command}`));
     });
@@ -111,7 +111,7 @@ describe("ControlCenterView", () => {
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("product_execute", { kind: "install" }),
     );
-    expect(await screen.findByText(/完成 11 项操作/)).toBeInTheDocument();
+    expect(await screen.findByText(/完成 14 项操作/)).toBeInTheDocument();
   });
 
   it("卸载需要显式确认,确认后只执行 uninstall", async () => {
@@ -119,7 +119,7 @@ describe("ControlCenterView", () => {
     const status = freshStatus();
     status.install = {
       ...status.install!,
-      installed_files: 11,
+      installed_files: 14,
       installed_version: "1.0.0",
       schemas: ["xhup_flow", "xhup_flow_static"],
       integrity: [],
@@ -128,13 +128,13 @@ describe("ControlCenterView", () => {
     invokeMock.mockImplementation((command: string) => {
       if (command === "product_status") return Promise.resolve(status);
       if (command === "product_execute") {
-        return Promise.resolve({ done: 11, redeploy_guidance: "重启 Fcitx5。" });
+        return Promise.resolve({ done: 14, redeploy_guidance: "重启 Fcitx5。" });
       }
       return Promise.reject(new Error(`unexpected command: ${command}`));
     });
     render(<ControlCenterView />);
     await user.click(await screen.findByRole("button", { name: "卸载" }));
-    expect(await screen.findByText(/只删除 XHUP 拥有的 11 个方案文件/)).toBeInTheDocument();
+    expect(await screen.findByText(/只删除 XHUP 拥有的 14 个方案文件/)).toBeInTheDocument();
     // Radix Dialog 打开时会把页面内容 aria-hidden 并切换 pointer-events;
     // 用 role="dialog" 作用域定位弹窗内按钮,fireEvent 触发保证稳定。
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "卸载" }));

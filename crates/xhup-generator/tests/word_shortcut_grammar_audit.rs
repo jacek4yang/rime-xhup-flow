@@ -1,10 +1,8 @@
-//! PR #22 ZERO_REGRESSION canonical 层的候选语法审计(只读,不修改数据)。
+//! legacy v1 ZERO_REGRESSION fixture 的候选语法审计(只读)。
 //!
-//! `word_zero_regression.tsv` 由冻结的 legacy-any-fi-v1 语法生成,其中
-//! 包含大量非单调模式(如 `IF`/`IFI`/`IIF`);新 production policy
-//! (monotone-suffix-initials-v2)不再生成这些形式。本审计把它们按模式
-//! 分类计数,作为技术债文档:这些是 legacy-v1 冻结映射,保持支持,
-//! 不是无效数据。
+//! `legacy/word_zero_regression_v1.tsv` 由冻结的 legacy-any-fi-v1 语法生成,其中
+//! 包含大量非单调模式(如 `IF`/`IFI`/`IIF`)。本审计把它们按模式
+//! 分类计数,只用于历史复现;production v2 映射另有独立完整性门禁。
 //!
 //! 此处不引入 analyzer 依赖;单调性判定与 analyzer 的
 //! `CandidateGrammar::MonotoneSuffixInitialsV2` 是同一小不变式的独立
@@ -12,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use xhup_generator::canonical_word_shortcut_entries;
+use xhup_generator::legacy_v1_word_shortcut_entries;
 
 /// 模式是否为单调后缀缩写 `F* I*` 且至少一个 I。
 fn is_monotone_suffix(mode: &str) -> bool {
@@ -35,7 +33,7 @@ fn is_monotone_suffix(mode: &str) -> bool {
 /// (碰撞共存修复重生成 ZR 后锚点整体更新:44,448 → 44,518;分布见下行断言。)
 #[test]
 fn zero_regression_pattern_audit() {
-    let entries = canonical_word_shortcut_entries();
+    let entries = legacy_v1_word_shortcut_entries();
     assert_eq!(entries.len(), 44_518, "ZR 行数锚点(碰撞共存修复后)");
 
     let mut monotone = 0usize;

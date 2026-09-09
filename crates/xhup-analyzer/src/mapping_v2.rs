@@ -181,6 +181,7 @@ impl BaselineMassView {
                     }
                     CandidateSource::FixedWord
                     | CandidateSource::WordShortcut
+                    | CandidateSource::PrimaryWordShortcut
                     | CandidateSource::FixedFirstWordShortcut => {
                         word_total += candidate.frequency_score();
                         word_scores.push(candidate.frequency_score() as f64);
@@ -196,6 +197,7 @@ impl BaselineMassView {
                 CandidateSource::CharCode => (char_total, char_ref),
                 CandidateSource::FixedWord
                 | CandidateSource::WordShortcut
+                | CandidateSource::PrimaryWordShortcut
                 | CandidateSource::FixedFirstWordShortcut => (word_total, word_ref),
                 CandidateSource::Level1Shortcut => (0, 1.0),
             };

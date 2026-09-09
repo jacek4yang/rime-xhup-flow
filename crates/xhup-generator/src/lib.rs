@@ -27,11 +27,11 @@ mod frequency;
 mod lua_hints;
 mod merged_ranking;
 mod package;
+mod primary_shortcuts;
 mod rime;
 mod rime_fixed_first_shortcuts;
 mod rime_flow;
 mod rime_shortcuts;
-mod rime_two_key_shortcuts;
 mod rime_word_shortcuts;
 mod rime_words;
 mod shortcuts;
@@ -43,12 +43,16 @@ mod words;
 
 /// 各简码层的原始 TSV 词/码集合(纯文本扫描,**不经过校验管线**)。
 ///
-/// 仅供跨层引导与 canonical 再生成流程使用:再生成某一简码层时,磁盘上的
+/// PRIMARY/FIXED_FIRST 项仅供跨层引导与 canonical 再生成流程使用;
+/// zero_regression/two_key 项是 legacy v1 research-only fixture。再生成某一简码层时,磁盘上的
 /// 兄弟层 TSV 可能处于与新数据不一致的中间态,校验管线会按设计 panic;
 /// 原始文本扫描永远可用。生产逻辑应使用 canonical 投影(经完整校验)。
 pub mod raw_shortcuts {
     pub use crate::fixed_first_shortcuts::{
         raw_shortcut_codes as fixed_first_codes, raw_words as fixed_first_words,
+    };
+    pub use crate::primary_shortcuts::{
+        raw_shortcut_codes as primary_codes, raw_words as primary_words,
     };
     pub use crate::two_key_shortcuts::raw_words as two_key_words;
     pub use crate::word_shortcuts::{
@@ -63,12 +67,14 @@ pub use analysis::{
 pub use char_codes::{RimeCharCodeEntry, canonical_char_code_entries};
 pub use fixed_first_shortcuts::{
     CanonicalFixedFirstShortcutEntry, canonical_fixed_first_shortcut_entries,
+    legacy_v1_fixed_first_shortcut_entries,
 };
 pub use lua_hints::{
     LUA_QUICK_HINT_DATA_FILENAME, LUA_QUICK_HINT_FILENAME, generate_lua_quick_hints_data,
     lua_quick_hint_source,
 };
 pub use package::{RimeArtifact, generate_rime_artifacts};
+pub use primary_shortcuts::{CanonicalPrimaryShortcutEntry, canonical_primary_shortcut_entries};
 pub use rime::{
     RIME_CHAR_DICTIONARY_FILENAME, RimeCharEntry, canonical_char_entries,
     generate_rime_char_dictionary,
@@ -81,15 +87,12 @@ pub use rime_flow::{
     flow_encoder_yaml, generate_rime_flow_dictionary, generate_rime_learn_dictionary,
 };
 pub use rime_shortcuts::{RIME_SHORTCUT_DICTIONARY_FILENAME, generate_rime_shortcut_dictionary};
-pub use rime_two_key_shortcuts::{
-    RIME_TWO_KEY_SHORTCUT_DICTIONARY_FILENAME, generate_rime_two_key_shortcut_dictionary,
-};
 pub use rime_word_shortcuts::{
     RIME_WORD_SHORTCUT_DICTIONARY_FILENAME, generate_rime_word_shortcut_dictionary,
 };
 pub use rime_words::{RIME_WORD_DICTIONARY_FILENAME, generate_rime_word_dictionary};
 pub use shortcuts::{Level1ShortcutEntry, canonical_level1_shortcuts};
 pub use trainer::{TRAINER_DATA_FILENAME, generate_trainer_dataset};
-pub use two_key_shortcuts::{CanonicalTwoKeyShortcutEntry, canonical_two_key_shortcut_entries};
+pub use two_key_shortcuts::{LegacyV1TwoKeyShortcutEntry, legacy_v1_two_key_shortcut_entries};
 pub use word_codes::{RimeWordCodeEntry, canonical_word_code_entries};
-pub use word_shortcuts::{CanonicalWordShortcutEntry, canonical_word_shortcut_entries};
+pub use word_shortcuts::{LegacyV1WordShortcutEntry, legacy_v1_word_shortcut_entries};

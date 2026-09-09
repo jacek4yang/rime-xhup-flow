@@ -10,11 +10,9 @@
 
 use std::collections::BTreeMap;
 
-use xhup_generator::{
-    canonical_fixed_first_shortcut_entries, canonical_level1_shortcuts,
-    canonical_two_key_shortcut_entries, canonical_word_shortcut_entries,
-};
+use xhup_generator::canonical_level1_shortcuts;
 
+use crate::occupancy::CodeOccupancy;
 use crate::{CharCodeAnalysisEntry, WordCodeAnalysisEntry};
 
 /// 当前映射中的一条命中:所在层 + 该层内排名(1 = 首选)。
@@ -147,43 +145,27 @@ pub fn parse_reference_tsv(text: &str) -> Result<Vec<ReferenceEntry>, String> {
 
 /// 当前 canonical 映射的统一视图:码 → 各层 (文本, 层内排名) 列表。
 ///
-/// 层内排名:静态全码层按显式 Rime 权重降序(merged_ranking 已保证
-/// 碰撞码字词跨表统一);各简码层(一级/ZR/FF/二码)的码位在各自词典
-/// 内唯一映射一个文本,排名恒 1。
+/// 名次来自当前 production occupancy,即统一 static translator 的真实
+/// merged ranking;不能把 PRIMARY/FIXED_FIRST 当作互相独立的 rank-1 层。
 fn build_current_index() -> BTreeMap<String, Vec<(String, CurrentHit)>> {
-    let mut index = build_baseline_index();
-
-    // 词语简码层(ZR / FIXED_FIRST / 二码零冲突):码位唯一映射,rank 恒 1。
-    let shortcut_layers: [(&str, Vec<(String, String)>); 3] = [
-        (
-            "zero-regression",
-            canonical_word_shortcut_entries()
-                .iter()
-                .map(|e| (e.shortcut_code().to_string(), e.word().to_string()))
-                .collect(),
-        ),
-        (
-            "fixed-first",
-            canonical_fixed_first_shortcut_entries()
-                .iter()
-                .map(|e| (e.shortcut_code().to_string(), e.word().to_string()))
-                .collect(),
-        ),
-        (
-            "two-key",
-            canonical_two_key_shortcut_entries()
-                .iter()
-                .map(|e| (e.shortcut_code().to_string(), e.word().to_string()))
-                .collect(),
-        ),
-    ];
-    for (layer, entries) in shortcut_layers {
-        for (code, text) in entries {
-            index
-                .entry(code)
-                .or_default()
-                .push((text, CurrentHit { layer, rank: 1 }));
-        }
+    let occupancy = CodeOccupancy::build_current_production();
+    let mut index = BTreeMap::new();
+    for code in occupancy.occupied_codes() {
+        let entries = occupancy
+            .group(code)
+            .expect("occupied_codes 产出的码必须有候选组")
+            .iter()
+            .map(|candidate| {
+                (
+                    candidate.text().to_string(),
+                    CurrentHit {
+                        layer: candidate.source().label(),
+                        rank: candidate.rank() as usize,
+                    },
+                )
+            })
+            .collect();
+        index.insert(code.to_string(), entries);
     }
     index
 }
@@ -360,9 +342,10 @@ mod tests {
 
     #[test]
     fn identical_reference_scores_perfect_compatibility() {
-        // 参考 = 当前 ZR 简码层自身 → 该层全部条目必须 100% 首选保留。
-        let reference: Vec<ReferenceEntry> = canonical_word_shortcut_entries()
+        // 参考 = 当前 PRIMARY 中 optimizer 预期 rank-1 的条目。
+        let reference: Vec<ReferenceEntry> = xhup_generator::canonical_primary_shortcut_entries()
             .iter()
+            .filter(|entry| entry.merged_rank() == 1)
             .take(200)
             .map(|e| ReferenceEntry {
                 text: e.word().to_string(),
@@ -389,23 +372,22 @@ mod tests {
 
     #[test]
     fn fixed_first_layer_hit_reports_layer_identity() {
-        // 层身份哨兵:FF 简码「时间 uij」必须在 fixed-first 层命中
-        // (runtime 审计锚点:uij 铈→鼫→时间,FF 词典内唯一)。
+        // 层身份哨兵:FF 简码「时间 uij」必须在统一 static 菜单中命中。
         let reference = parse_reference_tsv("时间\tuij\t1\n").unwrap();
         let report = compare(&reference);
         let hit = report.rows[0].current.expect("时间 uij 应命中");
-        assert_eq!(hit.layer, "fixed-first");
+        assert_eq!(hit.layer, "fixed_first_word_shortcut");
         assert_eq!(hit.rank, 1);
     }
 
     #[test]
     fn full_code_collision_ranking_is_visible() {
-        // 碰撞共存哨兵:参考「什么 ufme」首选 → 当前 full 层 rank 1
+        // 碰撞共存哨兵:参考「什么 ufme」首选 → 当前 fixed-word 层 rank 1
         // (merged_ranking:什么 3 > 甚么 2 > 𬳽 1)。
         let reference = parse_reference_tsv("什么\tufme\t1\n").unwrap();
         let report = compare(&reference);
         let hit = report.rows[0].current.expect("什么 ufme 应命中");
-        assert_eq!(hit.layer, "full");
+        assert_eq!(hit.layer, "fixed_word");
         assert_eq!(hit.rank, 1);
     }
 

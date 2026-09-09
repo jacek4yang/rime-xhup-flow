@@ -30,9 +30,6 @@ use crate::rime_flow::{
     generate_rime_learn_dictionary,
 };
 use crate::rime_shortcuts::{RIME_SHORTCUT_DICTIONARY_FILENAME, generate_rime_shortcut_dictionary};
-use crate::rime_two_key_shortcuts::{
-    RIME_TWO_KEY_SHORTCUT_DICTIONARY_FILENAME, generate_rime_two_key_shortcut_dictionary,
-};
 use crate::rime_word_shortcuts::{
     RIME_WORD_SHORTCUT_DICTIONARY_FILENAME, generate_rime_word_shortcut_dictionary,
 };
@@ -48,8 +45,6 @@ const RIME_SCHEMA_FILENAME: &str = "xhup_flow.schema.yaml";
 const RIME_STATIC_SCHEMA_FILENAME: &str = "xhup_flow_static.schema.yaml";
 
 /// 辅助词典的「编译 wrapper」schema(见 generate_rime_artifacts 文档)。
-const RIME_FIXED_FIRST_WRAPPER_SCHEMA_FILENAME: &str =
-    "xhup_flow_fixed_first_shortcuts.schema.yaml";
 const RIME_FLOW_WRAPPER_SCHEMA_FILENAME: &str = "xhup_flow_flow.schema.yaml";
 const RIME_LEARN_WRAPPER_SCHEMA_FILENAME: &str = "xhup_flow_learn.schema.yaml";
 
@@ -64,11 +59,11 @@ const STATIC_SCHEMA_TEMPLATE: &str =
     include_str!("../../../rime/templates/xhup_flow_static.schema.yaml.in");
 
 /// 编译 wrapper schema 模板:librime 部署只编译「默认 translator 命名
-/// 空间」的词典;`table_translator@fixed_first` / `@flow` / `@learn`
+/// 空间」的词典;`table_translator@flow` / `@learn`
 /// 引用的词典必须各自有一个同名 wrapper schema(经主方案的
 /// `schema/dependencies` 官方机制参与部署),Weasel / rime_deployer
-/// 才会为它们生成 table.bin。真机部署验收发现:缺失时 FIXED_FIRST
-/// 简码、Flow 组句与本地学习全部静默失效。wrapper 不进入任何
+/// 才会为它们生成 table.bin。真机部署验收发现:缺失时 Flow 组句与
+/// 本地学习会静默失效。wrapper 不进入任何
 /// schema_list,不可被用户选择。
 const DICT_COMPILE_WRAPPER_TEMPLATE: &str = r#"# Rime schema
 # encoding: utf-8
@@ -135,12 +130,10 @@ fn render_template(template: &str, name: &str) -> String {
 /// 生成完整的便携 Rime 源包产物集合。
 ///
 /// 产物顺序固定且面向输入层级:一级简码词典(1 键)→ 单字全码词典
-/// (2/3/4 码)→ 词语简码词典(高稳健零冲突别名,3~7 键)→ 二码零冲突
-/// 词语简码词典(2 键空码别名)→ 固定层词语词典(4/6/8 键)→ 顶层词典
-/// (导入前五者)→ FIXED_FIRST 词语简码词典(高稳健重码别名,3/4/6 键,
-/// 由方案中独立的第二 table_translator 加载,不被顶层词典导入)→
+/// (2/3/4 码)→ PRIMARY 词语简码词典(2~5 键)→ FIXED_FIRST 词语简码
+/// 词典(3~5 键)→ 固定层词语词典(4/6/8 键)→ 顶层词典(导入前五者)→
 /// Flow 词典(组句/学习专用,canonical 全码关系,无简码别名,由
-/// table_translator@flow 加载,不被顶层词典导入)→ 三个辅助词典的编译
+/// table_translator@flow 加载,不被顶层词典导入)→ 两个辅助词典的编译
 /// wrapper schema → Lua 简码提示模块与数据(librime-lua `*module` 组件,
 /// 可选增强,缺失时主方案降级为纯静态行为)→ 主方案(Flow 引擎)→
 /// 静态兼容方案(无 Flow translator 的回退)。同一规范数据、生成器
@@ -168,10 +161,6 @@ pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
             contents: generate_rime_word_shortcut_dictionary(),
         },
         RimeArtifact {
-            filename: RIME_TWO_KEY_SHORTCUT_DICTIONARY_FILENAME,
-            contents: generate_rime_two_key_shortcut_dictionary(),
-        },
-        RimeArtifact {
             filename: RIME_WORD_DICTIONARY_FILENAME,
             contents: generate_rime_word_dictionary(),
         },
@@ -190,10 +179,6 @@ pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
         RimeArtifact {
             filename: RIME_LEARN_DICTIONARY_FILENAME,
             contents: generate_rime_learn_dictionary(),
-        },
-        RimeArtifact {
-            filename: RIME_FIXED_FIRST_WRAPPER_SCHEMA_FILENAME,
-            contents: render_dict_compile_wrapper("xhup_flow_fixed_first_shortcuts"),
         },
         RimeArtifact {
             filename: RIME_FLOW_WRAPPER_SCHEMA_FILENAME,

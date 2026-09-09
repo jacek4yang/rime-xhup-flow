@@ -1,102 +1,71 @@
-# XHUP Flow v1 发布就绪报告
+# XHUP Flow v1.0.0 发布就绪记录
 
-本文件记录 v1.0.0-rc.1 发布决策前**尚未完成、需要人工执行**的事项。
-CI 通过不等于发布就绪;本清单是人工控制点的权威列表。
+状态:**stable 1.0.0 发布基线**。本文档不再保留 RC-era 人工合并清单;
+最终证据以 `main` required checks、`XHUP Flow RC Release` 正式工作流
+及 GitHub Release 附件为准。当前无已知 P0/P1 blocker。
 
-状态截至:PR #46(chore/cross-platform-final-audit)+ RC 稳定性收口
-( chore/rc-stabilization)。v1 阶段的 #25–#30 清单已由 #41–#46 跨平台
-栈全面接替;本文件反映当前实测状态,不重复已自动化证据。
+## Canonical v2
 
-## 已由 CI 覆盖(不再重复人工验证)
+- production 词语简码唯一事实来源:
+  `word_shortcuts_primary.tsv` + `word_fixed_first.tsv`;
+- selected point:`rk-steep|a0.25|d0.5|x1|e-conversation`;
+- 68,842 条 = 65,909 PRIMARY + 2,933 FIXED_FIRST,并集内容承诺测试无
+  重复、无遗漏、无额外映射;
+- PRIMARY 的 relative rank 和 merged rank 均由严格 parser 验证;
+  baseline/PRIMARY/FIXED_FIRST 以唯一连续整数 Rime weight 在同一
+  translator 内混排;
+- `就是=jqu`、`知道=vdc`、`不是=buu`、`你们=nim`、`还是=hdu`、
+  `因为=yww`、`如果=rgo` 由 generator、occupancy 与 librime session 门禁
+  共同锁定为 runtime rank1;
+- legacy v1 ZR/FIXED_FIRST/二码文件只留在
+  `data/shortcuts/legacy/` 供 research-only 重放,不进入产品包。
 
-- Rust 工作区:fmt / check / clippy(-D warnings)/ 全部测试;
-- Trainer 前端:vitest 全套 + 构建(tsc 严格模式);
-- librime runtime 回归:137,872 静态 exact 码审计、FIXED_FIRST 2366/2366、
-  占用二码 405/405、二码 ZR 246/246、Flow 全静态等值 / 组句 / 学习持久化
-  / 学习管理审计、冻结哨兵(`uij`/`uijm`/`uj`/`ujm`);
-- 日常输入控制运行时验收(#43):ASCII 切换 / 中文标点 / 数字选择 /
-  =- 翻页 / Escape / Enter / 空格;
-- 真实部署路径守卫:临时目录 schema_list + `rime_deployer --build`,
-  断言 FIXED_FIRST/Flow/Learn 三个 table.bin 由 schema/dependencies
-  产出(打包 CI,防 #43 缺陷回归);
-- 共享核心平台纯度守卫(node 环境,任何 DOM 依赖进核心即失败);
-- 微信小程序:语义测试 + 实际 weapp 构建 + 主包/单 chunk 体积门槛;
-- 跨平台产物构建与校验(product-packaging 工作流,PR 审阅产物);
-- 规范数据确定性哈希(CANONICAL-SHA256SUMS.txt 跨机可比对);
-- 版本同步守卫(workspace ↔ tauri.conf.json,单测强制)。
+## 可机械验证的发布门禁
 
-## 发布前必须人工完成
+- Rust:`fmt` / `check` / `clippy -D warnings` / workspace 全测试;
+- replay:KdConv top-2000 基线 KSPC 1.8971、rank1 96.9544%、
+  rank≤3 99.9120%、fallback 37.0093%;
+- Rime:140,664 个静态 exact code 菜单全量审计,涉及干净 userdb、
+  学习后静态保护、无重复、Flow 组句/持久化/导入导出;
+- runtime 哨兵:2–5 键、传统别名、legacy IF、prefix continuation、
+  PRIMARY + FIXED_FIRST + baseline 精确混排菜单;
+- 真实部署:`rime_deployer --build` 必须自然产出主词典与
+  Flow/Learn table.bin;
+- Trainer / trainer-core / miniapp:语义测试、严格 TypeScript 构建、
+  weapp 构建与体积门禁;
+- generation:双跑字节相等;Rime/Trainer 规范文件哈希写入
+  `CANONICAL-SHA256SUMS.txt`;
+- packaging:Windows NSIS + MSI、macOS universal DMG、Linux deb + rpm、
+  Android universal APK、Rime ZIP、`SHA256SUMS.txt`、`BUILD-INFO.txt`;
+- privacy:发布包禁止 `installation.yaml`、`user.yaml`、`sync/`、
+  `*.userdb`、密钥与本机状态。
 
-### 1. 真机冒烟(CI 无法替代)
+## 签名与真机状态
 
-- [x] **Windows 11 方案部署与运行时**(2026-09-06,#43 实机完成):
-  Weasel 0.17.4 检出 → PM dry-run 仅含拥有文件 → install 14/14 Healthy →
-  `WeaselDeployer /deploy` 成功 → `rime_probe` 26/26(一级简码 / 固定词 /
-  FIXED_FIRST uij 铈→鼫→时间 / 组句「我们时间」/ 数字键穿透);
-  辅助词典编译缺陷已修复并以两层回归守卫固化;
-- [ ] **Windows 11 桌面应用安装流**:NSIS 安装 → 控制中心 GUI 操作 →
-  学习导出/导入 → 卸载(确认 userdb 保留)—— 纯 GUI 流程仍需人工走一遍
-- [ ] **macOS(arm64 与 Intel 各一)**:universal DMG 同上
-- [ ] **Linux**:deb 与 rpm 各一(Fcitx5 与 IBus 各一);AppImage 未构建
-- [ ] **Android**:未签名 APK 侧载(或使用 trainer-alpha 已签名产物)
-  → 方案导入 fcitx5-android → 基本输入验证
+- Windows NSIS/MSI:**UNSIGNED**;SmartScreen 可能显示未知发布者;
+- macOS universal DMG:**UNSIGNED / UNNOTARIZED**;Gatekeeper 可能需要
+  右键打开或在系统设置中放行;
+- Android stable publish 使用 GitHub Actions 既有 keystore secret chain,
+  并在工作流中用 `apksigner verify` 验证;
+- Windows 11 + Weasel 0.17.4 方案部署曾完成真机验收;
+  本次 canonical v2 的 macOS/Linux/Android 真机状态仍是
+  **UNVERIFIED**,不由 CI 产物构建冒充真机验证。
 
-### 2. 签名与公证(可选,但发布前必须显式决策)
+## 已知非阻塞限制
 
-- [ ] Windows:Authenticode 证书是否采购;不签名则发布说明必须保留
-  SmartScreen 提示文字
-- [ ] macOS:Developer ID 签名 + 公证,或明示「未签名,需右键打开」
-- [ ] Android:发布签名走 trainer-alpha 既有密钥链路;PR 产物仅供审阅
-- [ ] Linux:无需签名(deb/rpm)
+- 学习导出/导入依赖 librime 官方 `rime_dict_manager`;
+- 学习短语码是 librime 内部派生,不读作人可读 XHUP 语义;
+- Android 需手动导入平台中立 Rime 包;
+- AppImage 不在 v1.0.0 产物矩阵内;
+- 微信小程序由仓库构建产物交给 DevTools,不在 GitHub Release
+  附件中发布。
 
-### 3. 人工评审与合并顺序
+## Stable 发布契约
 
-当前活动栈 #41–#46(+RC 稳定性 PR):逐层增量提交数 / 文件数 / CI 状态
-与 squash 合并操作顺序见 [stack-merge-playbook.md](stack-merge-playbook.md)。
-早期 #25–#37 系列如尚未合并,先按 release-readiness 历史顺序自底向上处理。
+`.github/workflows/xhup-flow-rc-release.yml` 以 `version=1.0.0` 运行:
 
-### 4. v1.0.0 发布决策(人工)
-
-- [x] 产品版本统一为 `1.0.0`(workspace Cargo.toml ↔ tauri.conf.json ↔
-  trainer/miniapp/trainer-core package.json;`product_versions_are_synchronized`
-  测试与发布管线一致性门禁双重强制;Rime 包版本随生成器自动内嵌)
-- [ ] 打 tag、创建 GitHub Release(xhup-flow-rc-release.yml,
-  publish=true;正式版版本形如 `1.0.0`,创建非 prerelease 草稿,
-  人工复核后发布)
-- [ ] Release 说明包含:平台矩阵、签名状态、隐私声明、已知限制
-  (人读短语码未达成、学习导出依赖 rime_dict_manager、Android 手动导入、
-  小程序分片为高频子集)
-- [ ] 微信小程序发布物形态决策:源码仓库构建 → DevTools 上传(当前),
-  或接入 CI 产出 miniprogram-ci 上传(需上传私钥,人工决策)
-
-### 5. 文档最终核对
-
-- [ ] README 各安装路径在真机上按文档走一遍
-- [ ] `docs/legacy-fullcode-scheme.md`(冻结方案)链接可达
-- [ ] NOTICE.md / LICENSE 与实际分发内容一致(尤其第三方词典授权边界)
-
-## 明确不做(非阻塞项)
-
-- 人读学习短语码(如 `我们时间 → wmuj`):保持 bounded research,
-  不阻塞 v1;
-- AppImage:外部 linuxdeploy 网络约束,deb/rpm 覆盖主流场景;
-- 部署自动化按平台能力区分:Weasel/Squirrel/Fcitx5(dbus)/IBus 的
-  官方机制被检测到时可自动执行,否则显示官方手动指引;
-- Android 桌面端自动安装:待安全集成设计,当前仅包导出。
-
-## 微信小程序(新增,#41–#42)
-
-- [x] 实际 weapp 构建绿(CI 强制)+ 主包/单 chunk 体积门槛
-- [x] 共享核心消费 + 数据分片(Rust 唯一来源)+ 本地进度持久化
-- [ ] WeChat DevTools 视觉走查(键盘几何 / 会话滚动 / 分享文案)
-- [ ] 真机预览(需测试号或个人 AppID,人工)
-
-## 已验证 vs 待人工验证(截至 RC 稳定性)
-
-**已自动化/实机验证**:Rust 全门禁、librime 全量运行时审计 + 日常输入
-控制、Rime 源包 + 真实部署路径守卫、桌面/小程序全部测试与构建、
-Windows 方案部署 + probe 26/26(#43)、桌面/小程序迁移与损坏容错。
-
-**仍需人工/真机**:Windows 桌面应用 GUI 安装流、macOS 真机冒烟、
-Linux deb/rpm + Fcitx5/IBus 真机、Android 真机复测(#45 UI 改动后)、
-WeChat DevTools/真机预览、签名与公证决策、升版与发布决策。
+1. `publish=false` 完成全平台 packaging rehearsal,不建 tag/Release;
+2. `publish=true` 只允许从通过所有门禁的 `main` 运行,创建
+   `xhup-flow-v1.0.0` 草稿;
+3. 校验附件、SHA256、构建来源和本文档所述签名/验收状态后,
+   发布为非 draft、非 prerelease 的 stable Release。

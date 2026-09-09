@@ -255,7 +255,7 @@ fn mapping_change_rate(prev: &MappingV2, current: &MappingV2) -> f64 {
     changed as f64 / words.len() as f64
 }
 
-/// v2 先验构建:canonical 生产简码层(ZR / FF / 二码,rank 1)+ 可选
+/// v2 先验构建:canonical production PRIMARY/FIXED_FIRST 映射 + 可选
 /// 本地参考映射。
 ///
 /// canonical 简码层**始终**在内:v2 映射是这些层的替换候选,偏离它们
@@ -275,20 +275,17 @@ pub fn build_v2_prior(reference: Option<&[ReferenceEntry]>) -> XhupStylePrior {
     XhupStylePrior::from_entries(entries)
 }
 
-/// canonical 生产简码层(ZR / FF / 二码)的 词 → 传统码 映射(BTreeMap
-/// 序,确定性;一词多层时 ZR > FF > 二码,先见者胜)。传统保底机制的输入。
+/// canonical production 简码层(PRIMARY / FIXED_FIRST)的 词 → 传统码
+/// 映射(BTreeMap 序,确定性)。传统保底机制的输入。
 pub fn tradition_map() -> BTreeMap<String, xhup_core::KeySequence> {
     let mut map = BTreeMap::new();
     let mut push = |word: &str, code: &xhup_core::KeySequence| {
         map.entry(word.to_string()).or_insert_with(|| code.clone());
     };
-    for entry in xhup_generator::canonical_word_shortcut_entries() {
+    for entry in xhup_generator::canonical_primary_shortcut_entries() {
         push(entry.word(), entry.shortcut_code());
     }
     for entry in xhup_generator::canonical_fixed_first_shortcut_entries() {
-        push(entry.word(), entry.shortcut_code());
-    }
-    for entry in xhup_generator::canonical_two_key_shortcut_entries() {
         push(entry.word(), entry.shortcut_code());
     }
     map
@@ -389,7 +386,7 @@ fn replay_metrics(report: &crate::replay::ReplayReport) -> ReplayMetrics {
     }
 }
 
-/// canonical 基线行:当前 production 映射(全码 + ZR + FF + 二码,经
+/// canonical 基线行:当前 production 映射(全码 + PRIMARY + FIXED_FIRST,经
 /// [`ReplayMapping::build`])走同一指标管线,供运行点对照选型。
 ///
 /// 成本假设取 [`ReplayCostModel::default`](与 replay-bench 基线一致);
@@ -404,9 +401,8 @@ pub fn baseline_row(input: &SweepV2Input) -> SweepV2Row {
         .iter()
         .filter(|t| mapping.plan(t.word()).is_some_and(|p| p.via != "full"))
         .count();
-    let shortcut_entries = xhup_generator::canonical_word_shortcut_entries().len()
-        + xhup_generator::canonical_fixed_first_shortcut_entries().len()
-        + xhup_generator::canonical_two_key_shortcut_entries().len();
+    let shortcut_entries = xhup_generator::canonical_primary_shortcut_entries().len()
+        + xhup_generator::canonical_fixed_first_shortcut_entries().len();
     SweepV2Row {
         point: SweepV2Point {
             label: "baseline".to_string(),
@@ -817,11 +813,11 @@ mod tests {
         assert!((0.0..=1.0).contains(&rows[0].replay.rank1_rate));
     }
 
-    /// 真实 canonical 数据的回归守卫(2026-10 高频词简码丢失 P0):
-    /// canonical ZR/FF/二码层中频率 top 段的词,在 v2 映射里不得静默
+    /// legacy v1 reference 数据的回归守卫(2026-10 高频词简码丢失 P0):
+    /// v1 ZR/FF/二码层中频率 top 段的词,在 v2 映射里不得静默
     /// 丢失简码分配。
     #[test]
-    fn top_canonical_shortcut_words_keep_v2_assignment() {
+    fn top_legacy_v1_shortcut_words_keep_v2_assignment() {
         let data = crate::build_analysis();
         let targets = v2_targets(&data.words);
         let evidence_set = crate::evidence::LexicalEvidenceSet::build(&data.words, &data.frequency);
@@ -847,13 +843,13 @@ mod tests {
             let score = evidence.get(word).map(|e| e.wanxiang_score()).unwrap_or(0);
             shortcut_words.push((word.to_string(), score));
         };
-        for entry in xhup_generator::canonical_word_shortcut_entries() {
+        for entry in xhup_generator::legacy_v1_word_shortcut_entries() {
             push(entry.word());
         }
         for entry in xhup_generator::canonical_fixed_first_shortcut_entries() {
             push(entry.word());
         }
-        for entry in xhup_generator::canonical_two_key_shortcut_entries() {
+        for entry in xhup_generator::legacy_v1_two_key_shortcut_entries() {
             push(entry.word());
         }
         shortcut_words.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));

@@ -202,6 +202,7 @@ impl FrequencyModel {
                 }
                 CandidateSource::FixedWord
                 | CandidateSource::WordShortcut
+                | CandidateSource::PrimaryWordShortcut
                 | CandidateSource::FixedFirstWordShortcut => {
                     (1.0 - char_share) * self.word_probability(score)
                 }

@@ -239,14 +239,14 @@ fn section_occupancy(out: &mut String, data: &AnalysisData) {
     }
     writeln!(out).unwrap();
 
-    // 当前真实生产占用:baseline + 已入库词语简码层(ZERO_REGRESSION 与
-    // FIXED_FIRST)。后续优化与碰撞审计必须能看到这些已占用码位,
+    // 当前真实生产占用:baseline + optimizer v2 PRIMARY/FIXED_FIRST。
+    // 后续优化与碰撞审计必须能看到这些已占用码位,
     // 不能假装它们仍为空。
     let production = CodeOccupancy::build_current_production();
     let production_audit = production.layer_audit();
     writeln!(
         out,
-        "## 当前生产 code-space 占用(baseline + ZERO_REGRESSION + FIXED_FIRST 简码层)"
+        "## 当前生产 code-space 占用(baseline + canonical v2 PRIMARY/FIXED_FIRST)"
     )
     .unwrap();
     writeln!(out).unwrap();

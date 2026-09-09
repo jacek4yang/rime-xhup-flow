@@ -7,7 +7,7 @@ use xhup_analyzer::two_key_study::{
     self, TwoKeyCharDomain, TwoKeyPlacement, TwoKeyStudyRun, TwoKeyUniverse,
 };
 use xhup_core::KeySequence;
-use xhup_generator::canonical_two_key_shortcut_entries;
+use xhup_generator::legacy_v1_two_key_shortcut_entries;
 
 /// 共享 fixture(每个测试进程最多跑一次 30 次研究网格)。
 fn universe() -> &'static TwoKeyUniverse {
@@ -163,7 +163,8 @@ fn two_key_production_is_empty_code_only() {
 fn canonical_tsv_byte_reproduction() {
     // 入库 canonical TSV 必须能由 selection API 字节级复现。
     let (selected, _) = production_two_key::select_two_key_production(universe(), runs());
-    let canonical = include_str!("../../../data/shortcuts/word_two_key_zero_regression.tsv");
+    let canonical =
+        include_str!("../../../data/shortcuts/legacy/word_two_key_zero_regression_v1.tsv");
     assert_eq!(
         production_two_key::serialize_two_key_tsv(&selected),
         canonical,
@@ -175,7 +176,7 @@ fn canonical_tsv_byte_reproduction() {
 fn tsv_matches_parsed_canonical_entries() {
     // analyzer 选择集与 generator 解析投影逐条一致(词/码/完整码/模式)。
     let (selected, _) = production_two_key::select_two_key_production(universe(), runs());
-    let parsed = canonical_two_key_shortcut_entries();
+    let parsed = legacy_v1_two_key_shortcut_entries();
     assert_eq!(selected.len(), parsed.len());
     for (selection, entry) in selected.iter().zip(parsed.iter()) {
         assert_eq!(selection.word, entry.word());

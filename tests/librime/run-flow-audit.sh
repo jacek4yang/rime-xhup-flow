@@ -4,7 +4,7 @@
 #
 # 用法: run-flow-audit.sh <生成包目录> <全静态菜单 manifest> [xhup-cli 路径]
 #
-# 生成包目录必须含 xhup-cli generate rime 的全部产物(11 个 yaml,含
+# 生成包目录必须含 xhup-cli generate rime 的全部产物(12 个 yaml,含
 # xhup_flow_static.schema.yaml 与 Flow 组句/学习词典);manifest 由
 # xhup-analyzer 的 --dump-static-menu-manifest 导出(全部 distinct 静态
 # exact code 及其完整有序菜单);xhup-cli 传入时执行学习管理
@@ -19,15 +19,20 @@
 #      断言句子候选出现且无 auto commit;
 #   3. 学习会话:提交 Flow 组句句子,训练 xhup_flow_user;
 #   4. 重启持久化:全新进程断言学习状态仍在(动态候选可观察);
-#   5. 学习后静态审计:全部 140k 静态 exact code 逐码断言既有候选
+#   5. 学习后静态审计:全部 140,664 个静态 exact code
+#      逐码断言既有候选
 #      原次序、原 top1、无可见重复(动态候选只允许追加在静态组后);
 #   6. 学习管理端到端(提供 xhup-cli 时):export → reset → 学习行为
 #      消失 → import 到全新部署 → 学习行为恢复。
 #
-# 部署说明:rime_deployer --compile 只编译默认 translator 命名空间的
-# 词典;FIXED_FIRST/组句/学习词典按词典在独立目录编译后拷入部署 build/
+# 部署说明:PRIMARY/FIXED_FIRST 是主词典 import table,已由默认
+# translator 统一编译。rime_deployer --compile 只编译默认 translator
+# 命名空间的词典;Flow/学习词典按词典在独立目录编译后拷入部署 build/
 # (同目录连续 wrapper 编译会相互干扰)。menu/page_size: 500 只存在于
 # 测试 default.custom.yaml,不写入 production schema。
+# v2 统一主词典使 Flow translator 的单进程全量查询明显变慢;两遍静态
+# 审计把同一 manifest 确定性拆成两个互斥 shard,各自在隔离部署副本上
+# 并行执行。分片前后数据行数必须严格相等,不减少任何 exact code 覆盖。
 #
 # 依赖: rime_deployer、rime_dict_manager(librime-bin)、pkg-config、
 # librime 开发头文件(librime-dev)、C 编译器。共享数据目录可用
@@ -97,22 +102,63 @@ EOF
 # ---------- 1. 全静态等值审计(干净 userdb,两趟独立进程) ----------
 static_dir=$work/static
 prepare_deploy "$static_dir" xhup_flow_static
-compile_dict_isolated xhup_flow_fixed_first_shortcuts "$static_dir"
 
 flow_dir=$work/flow
 prepare_deploy "$flow_dir" xhup_flow
-for dict in xhup_flow_fixed_first_shortcuts xhup_flow_flow xhup_flow_learn; do
+for dict in xhup_flow_flow xhup_flow_learn; do
   compile_dict_isolated "$dict" "$flow_dir"
 done
 
 cc $CFLAGS -o "$work/audit" "$SCRIPT_DIR/runtime_flow_audit.c" \
   $(pkg-config --cflags --libs rime)
 
+AUDIT_SHARDS=2
+manifest_rows=$(grep -vc '^#' "$MANIFEST")
+manifest_shards=()
+for ((i = 0; i < AUDIT_SHARDS; ++i)); do
+  shard="$work/static-manifest-$i"
+  : > "$shard"
+  manifest_shards+=("$shard")
+done
+awk -v n="$AUDIT_SHARDS" -v prefix="$work/static-manifest-" '
+  /^#/ { next }
+  { print > (prefix ((rows++) % n)) }
+' "$MANIFEST"
+shard_rows=0
+for shard in "${manifest_shards[@]}"; do
+  rows=$(wc -l < "$shard")
+  shard_rows=$((shard_rows + rows))
+done
+[[ "$shard_rows" -eq "$manifest_rows" ]] || {
+  echo "静态 manifest 分片丢行:原始 $manifest_rows / 分片 $shard_rows" >&2
+  exit 2
+}
+
 echo "== 全静态等值审计(干净 userdb;STATIC 捕获 → FLOW 对照) =="
-"$work/audit" baseline-capture "$SHARED_DATA_DIR" "$static_dir" "$MANIFEST" \
-  "$work/static.capture"
-"$work/audit" baseline-compare "$SHARED_DATA_DIR" "$flow_dir" "$MANIFEST" \
-  "$work/static.capture"
+audit_pids=()
+audit_logs=()
+for ((i = 0; i < AUDIT_SHARDS; ++i)); do
+  static_clone="$work/static-clean-$i"
+  flow_clone="$work/flow-clean-$i"
+  capture="$work/static-$i.capture"
+  log="$work/static-clean-$i.log"
+  cp -a "$static_dir" "$static_clone"
+  cp -a "$flow_dir" "$flow_clone"
+  (
+    "$work/audit" baseline-capture "$SHARED_DATA_DIR" "$static_clone" \
+      "${manifest_shards[$i]}" "$capture"
+    "$work/audit" baseline-compare "$SHARED_DATA_DIR" "$flow_clone" \
+      "${manifest_shards[$i]}" "$capture"
+  ) > "$log" 2>&1 &
+  audit_pids+=("$!")
+  audit_logs+=("$log")
+done
+audit_status=0
+for pid in "${audit_pids[@]}"; do
+  if ! wait "$pid"; then audit_status=1; fi
+done
+for log in "${audit_logs[@]}"; do cat "$log"; done
+[[ "$audit_status" -eq 0 ]] || exit 1
 
 # ---------- 2. 组句审计(fixtures 机械拼接自组句词典) ----------
 flow_dict=$PACKAGE_DIR/xhup_flow_flow.dict.yaml
@@ -177,8 +223,25 @@ echo "== 重启持久化(全新进程;动态码 $learned_code) =="
 
 # ---------- 5. 学习后静态审计(全部静态 exact code) ----------
 echo "== 学习后静态审计(manifest 全量) =="
-"$work/audit" static-baseline-learned "$SHARED_DATA_DIR" "$flow_dir" \
-  "$MANIFEST"
+audit_pids=()
+audit_logs=()
+for ((i = 0; i < AUDIT_SHARDS; ++i)); do
+  learned_clone="$work/flow-learned-$i"
+  log="$work/static-learned-$i.log"
+  cp -a "$flow_dir" "$learned_clone"
+  (
+    "$work/audit" static-baseline-learned "$SHARED_DATA_DIR" \
+      "$learned_clone" "${manifest_shards[$i]}"
+  ) > "$log" 2>&1 &
+  audit_pids+=("$!")
+  audit_logs+=("$log")
+done
+audit_status=0
+for pid in "${audit_pids[@]}"; do
+  if ! wait "$pid"; then audit_status=1; fi
+done
+for log in "${audit_logs[@]}"; do cat "$log"; done
+[[ "$audit_status" -eq 0 ]] || exit 1
 
 # ---------- 6. 学习管理端到端(提供 xhup-cli 时) ----------
 if [ -n "$XHUP_CLI" ]; then

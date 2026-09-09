@@ -1,8 +1,28 @@
 # Optimizer v2:候选位资源、XHUP 先验与参数扫描
 
-状态:**设计中**。前置阅读:docs/input-model-v2.md(目标与证据模型)、
-docs/data-pipeline.md(证据来源)、docs/lua-runtime.md(运行时边界)。
-现有实现:crates/xhup-analyzer(v1 优化器,保留并扩展,不重写)。
+状态:**已完成并切换为 production canonical**。前置阅读:
+docs/input-model-v2.md(目标与证据模型)、docs/data-pipeline.md(证据来源)、
+docs/lua-runtime.md(运行时边界)。v1 selector 保留为 research-only 重放路径,
+不再决定 production mapping。
+
+## Production 选型记录
+
+- selected operating point:
+  `rk-steep|a0.25|d0.5|x1|e-conversation`;
+- 108 个参数点扫描后选定,兼顾会话域成本、rank 命中、XHUP 先验与
+  相邻工作点稳定性;
+- canonical mapping:68,842 条(2,933 FIXED_FIRST + 65,909 PRIMARY);
+- KdConv top-2000 replay:KSPC 1.8971、rank1 96.9544%、
+  rank≤3 99.9120%(旧 canonical 基线 2.090 / 95.2831% / 99.7581%);
+- selected dump SHA256:
+  `a451bce1187efba0edbd7d3d02bc17331fb3da9dc903625e57c3dc310b6c60ea`;
+- canonical mapping content SHA256:
+  `a8ab5f6deae91f28e02f790153cfba9ab493605ee9e84aad0abea5a660012cdc`。
+
+确定性导出工具将 selected dump 分区为
+`data/shortcuts/word_fixed_first.tsv` 与
+`data/shortcuts/word_shortcuts_primary.tsv`。PRIMARY 保留 v2 绝对
+`merged_rank`,因此 2 键及 legacy `IF` 传统别名不需要伪装为单调模式。
 
 ## 0. v1 的缺口
 

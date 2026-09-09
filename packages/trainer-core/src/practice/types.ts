@@ -18,15 +18,15 @@ export type PracticeMode =
   | "mixed"
   /** 一级简码(备用合法码 = 该字全码)。 */
   | "level1"
-  /** 二码零冲突词语简码。 */
+  /** optimizer v2 PRIMARY 二码词语简码。 */
   | "two-key-word"
-  /** ZERO_REGRESSION 词语简码。 */
+  /** optimizer v2 PRIMARY 三至五码词语简码(持久化 ID 保持兼容)。 */
   | "zero-regression"
   /** FIXED_FIRST 词语简码。 */
   | "fixed-first"
   /** 固定词全码(2/3/4 字词轮换)。 */
   | "fixed-word"
-  /** 简码综合(三个生产简码层轮换)。 */
+  /** 简码综合(PRIMARY 二码/其余 + FIXED_FIRST 轮换)。 */
   | "mixed-shortcut"
   /** 组句(连续输入整句拼接码)。 */
   | "sentence"
@@ -107,14 +107,14 @@ export const MODE_POOL_ROTATION: Record<PracticeMode, readonly PoolId[]> = {
   full: ["char-4"],
   mixed: ["char-2", "char-3", "char-4"],
   level1: ["level1"],
-  "two-key-word": ["shortcut-two-key-zero-regression"],
-  "zero-regression": ["shortcut-zero-regression"],
+  "two-key-word": ["shortcut-primary-two-key"],
+  "zero-regression": ["shortcut-primary"],
   "fixed-first": ["shortcut-fixed-first"],
   "fixed-word": ["word-4", "word-6", "word-8"],
   "mixed-shortcut": [
-    "shortcut-zero-regression",
+    "shortcut-primary",
     "shortcut-fixed-first",
-    "shortcut-two-key-zero-regression",
+    "shortcut-primary-two-key",
   ],
   sentence: ["sentence"],
   "mixed-all": [
@@ -122,9 +122,9 @@ export const MODE_POOL_ROTATION: Record<PracticeMode, readonly PoolId[]> = {
     "char-3",
     "char-4",
     "level1",
-    "shortcut-zero-regression",
+    "shortcut-primary",
     "shortcut-fixed-first",
-    "shortcut-two-key-zero-regression",
+    "shortcut-primary-two-key",
     "word-4",
     "word-6",
     "word-8",

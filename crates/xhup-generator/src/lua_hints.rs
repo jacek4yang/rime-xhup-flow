@@ -1,14 +1,13 @@
 //! Lua 简码提示数据(`lua/xhup_flow/data/quick_hints.lua`)的确定性生成。
 //!
-//! 提示视图 = canonical 简码映射(二码零冲突 + ZERO_REGRESSION +
-//! FIXED_FIRST)按词聚合:每词保留最简码(键数最小,平手取字典序最小,
+//! 提示视图 = canonical v2 简码映射(PRIMARY + FIXED_FIRST)按词聚合:
+//! 每词保留最简码(键数最小,平手取字典序最小,
 //! 确定性)。只收录**严格短于该词全码**的简码 —— 不省键的「简码」没有
 //! 提示价值。模块源文件(quick_hint.lua)是入库源码,经 include_str!
 //! 嵌入;数据文件由本模块生成。两者都由生成器拥有产物身份。
 
 use crate::fixed_first_shortcuts::canonical_fixed_first_shortcut_entries;
-use crate::two_key_shortcuts::canonical_two_key_shortcut_entries;
-use crate::word_shortcuts::canonical_word_shortcut_entries;
+use crate::primary_shortcuts::canonical_primary_shortcut_entries;
 
 /// 简码提示模块产物文件名(入库源码,相对包根)。
 pub const LUA_QUICK_HINT_FILENAME: &str = "lua/xhup_flow/quick_hint.lua";
@@ -52,7 +51,7 @@ pub fn generate_lua_quick_hints_data() -> String {
             entry.0 = shortcut.to_string();
         }
     }
-    for entry in canonical_word_shortcut_entries() {
+    for entry in canonical_primary_shortcut_entries() {
         consider(
             &mut best,
             entry.word(),
@@ -61,14 +60,6 @@ pub fn generate_lua_quick_hints_data() -> String {
         );
     }
     for entry in canonical_fixed_first_shortcut_entries() {
-        consider(
-            &mut best,
-            entry.word(),
-            &entry.shortcut_code().to_string(),
-            entry.full_code().len(),
-        );
-    }
-    for entry in canonical_two_key_shortcut_entries() {
         consider(
             &mut best,
             entry.word(),
@@ -114,7 +105,7 @@ mod tests {
     #[test]
     fn data_carries_known_shortcuts() {
         let data = generate_lua_quick_hints_data();
-        // 时间 的 ZR 简码 uij(3 键 < 全码 uijm 4 键)。
+        // 时间 的 canonical v2 FIXED_FIRST 简码 uij(3 键 < 全码 uijm 4 键)。
         assert!(data.contains("[\"时间\"] = \"uij\""), "应含 时间 → uij");
         // 全码桶检查:每条提示码都严格短于对应全码由生成逻辑保证;
         // 抽查条数与层规模一致(三层合计去重后 ≥ 各层最小值)。

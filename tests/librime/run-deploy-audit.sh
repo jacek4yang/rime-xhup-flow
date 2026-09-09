@@ -6,8 +6,9 @@
 # 与其它审计脚本的差别:其它脚本用 rime_deployer --compile + 手工编译
 # 辅助词典搭建部署目录(聚焦 runtime 行为);本脚本模拟普通用户的真实
 # 部署路径 —— 把生成包放入干净目录后执行 `rime_deployer --build`,
-# 断言 xhup_flow 方案的 schema/dependencies 机制让全部四个词典
-# (主词典 + FIXED_FIRST / Flow / Learn 辅助词典)自然产出 .table.bin,
+# 断言 xhup_flow 方案的 schema/dependencies 机制让三个 runtime 词典
+# (包含 PRIMARY/FIXED_FIRST 的主词典 + Flow / Learn 辅助词典)自然产出
+# .table.bin,
 # 再用 runtime_smoke 对该部署跑真实输入冒烟。
 #
 # 这是「辅助词典必须经真实 Rime deployment graph 编译」的回归守卫:
@@ -33,6 +34,12 @@ mkdir -p "$deploy_dir"
 cp "$PACKAGE_DIR"/*.yaml "$deploy_dir/"
 # 方案引用 lua_filter 时必须随包携带 lua/ 模块(见 run-flow-audit.sh)。
 if [[ -d "$PACKAGE_DIR/lua" ]]; then cp -r "$PACKAGE_DIR/lua" "$deploy_dir/"; fi
+# runtime_smoke 会逐项断言完整 exact-code 菜单;仅在隔离测试目录把页长
+# 提高到 500,避免默认 5 项分页截断(不修改 production schema)。
+cat > "$deploy_dir/default.custom.yaml" <<'EOF'
+patch:
+  menu/page_size: 500
+EOF
 
 # 共享数据目录准备:复制真实 rime-prelude,但把其 default.yaml 的
 # schema_list 换成仅 XHUP 两个方案。
@@ -66,7 +73,6 @@ rime_deployer --build "$deploy_dir" "$shared_dir" >/dev/null
 fail=0
 for dict in \
   xhup_flow \
-  xhup_flow_fixed_first_shortcuts \
   xhup_flow_flow \
   xhup_flow_learn; do
   if [[ -f "$deploy_dir/build/$dict.table.bin" ]]; then

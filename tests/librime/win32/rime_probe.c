@@ -5,7 +5,7 @@
  * 绝不写用户学习数据**(组合一律以 clear_composition 结束)。
  *
  * 覆盖仓库既有哨兵(与 tests/librime/runtime_smoke.c 同源语义):
- * 一级简码、固定词、ZR/FIXED_FIRST 简码序(时间系)、二码层,以及
+ * 一级简码、固定词、canonical v2 PRIMARY/FIXED_FIRST 候选序,以及
  * 部署健康检查(build 产物与三方案可选)。
  *
  * 用法: rime_probe.exe <user_data_dir> [rime_dll]
@@ -205,11 +205,21 @@ int main(int argc, char **argv) {
     expect_menu("womf", "我们", 1);
     expect_menu("uurufa", "输入法", 1);
 
-    /* ---- 词语简码哨兵(与 runtime_smoke.c 同源语义) ---- */
-    expect_menu("jd", "记得", 1);      /* 二码层 */
-    expect_menu("jqu", "就是", 1);     /* ZR 简码 */
+    /* ---- canonical v2 词语简码哨兵(与 runtime_smoke.c 同源语义) ---- */
+    expect_menu("jqu", "就是", 1);
+    expect_menu("vdc", "知道", 1);
+    expect_menu("buu", "不是", 1);
+    expect_menu("nim", "你们", 1);
+    expect_menu("hdu", "还是", 1);
+    expect_menu("yww", "因为", 1);
+    expect_menu("rgo", "如果", 1);
     expect_menu("uijm", "时间", 1);    /* 完整码 */
-    expect_menu("uij", "时间", 3);     /* FIXED_FIRST:铈 → 鼫 → 时间 */
+    expect_menu("uij", "时间", 1);
+    expect_menu("uij", "史记", 2);
+    expect_menu("uij", "实践", 3);
+    expect_menu("uij", "事迹", 4);
+    expect_menu("uij", "铈", 5);
+    expect_menu("uij", "鼫", 6);
     expect_absent("ujm", "时间");      /* ujm 不加入时间 */
     expect_menu("uj", "山", 1);        /* uj 首位山,且不含时间 */
     {

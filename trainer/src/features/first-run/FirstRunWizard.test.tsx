@@ -33,7 +33,7 @@ function status(overrides: Partial<ProductStatusDto> = {}): ProductStatusDto {
       user_data_dir: USER_DIR,
       client: "Weasel",
       installed_files: 0,
-      total_files: 11,
+      total_files: 14,
       missing_files: [],
       schemas: [],
       installed_version: null,
@@ -49,9 +49,9 @@ function status(overrides: Partial<ProductStatusDto> = {}): ProductStatusDto {
 
 const PLAN = {
   actions: [{ kind: "write" as const, file: "xhup_flow.schema.yaml" }],
-  notes: ["写入 11 个文件"],
+  notes: ["写入 14 个文件"],
 };
-const RESULT = { done: 11, redeploy_guidance: "右键任务栏图标 → 重新部署。" };
+const RESULT = { done: 14, redeploy_guidance: "右键任务栏图标 → 重新部署。" };
 
 /** 默认命令路由:全新安装全流程(执行后状态转健康,模拟真实时序)。 */
 function mockFullInstall() {
@@ -64,7 +64,7 @@ function mockFullInstall() {
             ? status({
                 health: "healthy",
                 update_available: false,
-                install: { ...status().install!, installed_files: 11, installed_version: "1.0.0" },
+                install: { ...status().install!, installed_files: 14, installed_version: "1.0.0" },
               })
             : status(),
         );
@@ -126,7 +126,7 @@ describe("FirstRunWizard", () => {
 
     // 部署 → 验证 → 试打。
     await screen.findByText("试打一下");
-    expect(screen.getByText(/11\/11 个文件校验一致/)).toBeInTheDocument();
+    expect(screen.getByText(/14\/14 个文件校验一致/)).toBeInTheDocument();
     expect(screen.getByText("womf → 我们")).toBeInTheDocument();
     expect(screen.getByText("uijm → 时间")).toBeInTheDocument();
 
@@ -181,7 +181,7 @@ describe("FirstRunWizard", () => {
         return Promise.resolve(
           status({
             health: "healthy",
-            install: { ...status().install!, installed_files: 11, installed_version: "1.0.0" },
+            install: { ...status().install!, installed_files: 14, installed_version: "1.0.0" },
           }),
         );
       }
@@ -206,7 +206,7 @@ describe("FirstRunWizard", () => {
           status({
             health: "update_available",
             update_available: true,
-            install: { ...status().install!, installed_files: 11, installed_version: "0.9.0" },
+            install: { ...status().install!, installed_files: 14, installed_version: "0.9.0" },
           }),
         );
       }

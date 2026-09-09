@@ -170,12 +170,12 @@ int main(int argc, char **argv) {
     report(!key_handled('1', 0) && !has_active_composition(),
            "空组合下数字键 '1' 穿透", NULL);
 
-    /* ---- 4. 数字选择候选(uij 哨兵:铈 / 鼫 / 时间) ---- */
+    /* ---- 4. 数字选择候选(canonical v2 uij:时间 / 史记 / …) ---- */
     type_keys("uij");
     report(has_active_composition(), "uij 组合活动", NULL);
     (void)key_handled('2', 0);
     take_commit(commit, sizeof(commit));
-    report(strcmp(commit, "鼫") == 0, "uij + 数字 2 → 第 2 候选「鼫」上屏", commit);
+    report(strcmp(commit, "史记") == 0, "uij + 数字 2 → 第 2 候选「史记」上屏", commit);
 
     /* ---- 5. 翻页(key_binder 预设 paging_with_minus_equal) ---- */
     type_keys("uj");

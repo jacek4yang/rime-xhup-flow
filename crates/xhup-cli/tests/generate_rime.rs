@@ -115,18 +115,16 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
             "xhup_flow.schema.yaml",
             "xhup_flow_chars.dict.yaml",
             "xhup_flow_fixed_first_shortcuts.dict.yaml",
-            "xhup_flow_fixed_first_shortcuts.schema.yaml",
             "xhup_flow_flow.dict.yaml",
             "xhup_flow_flow.schema.yaml",
             "xhup_flow_learn.dict.yaml",
             "xhup_flow_learn.schema.yaml",
             "xhup_flow_shortcuts.dict.yaml",
             "xhup_flow_static.schema.yaml",
-            "xhup_flow_two_key_shortcuts.dict.yaml",
             "xhup_flow_word_shortcuts.dict.yaml",
             "xhup_flow_words.dict.yaml",
         ],
-        "输出应为且仅为 14 个 Rime 源文件(含 3 个词典编译 wrapper schema)+ 2 个 Lua 简码提示文件"
+        "输出应为且仅为 12 个 Rime 源文件(含 2 个词典编译 wrapper schema)+ 2 个 Lua 简码提示文件"
     );
     for filename in &filenames {
         assert!(
@@ -148,16 +146,16 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
         "顶层词典应导入词语简码词典"
     );
     assert!(
-        top.contains("  - xhup_flow_two_key_shortcuts"),
-        "顶层词典应导入二码零冲突简码词典"
+        top.contains("  - xhup_flow_fixed_first_shortcuts"),
+        "顶层词典应导入 FIXED_FIRST 简码词典"
     );
     assert!(
         top.contains("  - xhup_flow_words"),
         "顶层词典应导入词语词典"
     );
     assert!(
-        !top.contains("xhup_flow_fixed_first_shortcuts"),
-        "顶层词典不得导入 FIXED_FIRST 简码词典(由独立第二 table_translator 加载)"
+        !top.contains("xhup_flow_two_key_shortcuts"),
+        "PRIMARY 已包含二码简码,不得保留旧二码零冲突词典"
     );
     assert!(
         !top.contains("xhup_flow_flow") && !top.contains("xhup_flow_learn"),

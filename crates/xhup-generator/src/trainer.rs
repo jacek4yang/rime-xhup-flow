@@ -1,17 +1,16 @@
-//! 训练器规范数据集的 JSON 投影(V2)。
+//! 训练器规范数据集的 JSON 投影(V3)。
 //!
 //! 训练器不维护任何自己的双拼映射、汉字编码、词码、简码策略或频率表:
 //! 本模块把生成器的全部最终化 canonical 数据(单字、固定词、一级简码、
-//! 三个生产简码层、组句 fixtures)与 `xhup-core` 的规范双拼布局投影为
+//! optimizer v2 两个生产简码层、组句 fixtures)与 `xhup-core` 的规范双拼布局投影为
 //! 版本化 JSON 文档,与 Rime 词典共享同一份最终化数据(不存在第二份
 //! 推导/排名实现)。
 //!
-//! V2 契约(相对 V1 新增,见 `schemaVersion = 2`):
+//! V3 契约(见 `schemaVersion = 3`):
 //! - `words`:固定词全码(按 Rime 权重降序取前 [`TRAINER_WORD_LIMIT`]
 //!   条;训练无需全部 10 万词,截断保持数据集体积与加载校验可控);
-//! - `level1Shortcuts` / `wordShortcuts`(ZERO_REGRESSION)/
-//!   `fixedFirstShortcuts` / `twoKeyShortcuts`:全部生产简码层完整收录
-//!   (不做截断;简码是生产策略集合,条数即策略条数);
+//! - `level1Shortcuts` / `primaryShortcuts` / `fixedFirstShortcuts`:全部
+//!   production 简码完整收录;PRIMARY 同时携带相对 rank 与 merged rank;
 //! - `sentences`:组句练习 fixtures——语义组件列表(词),输入码由
 //!   组件 canonical 全码机械拼接,不手写任何码串;组件无法全部解析的
 //!   fixture 整条跳过(确定性)。
@@ -27,16 +26,15 @@ use xhup_core::DoublePinyinLayout;
 
 use crate::char_codes::finalized_char_code_entries;
 use crate::fixed_first_shortcuts::canonical_fixed_first_shortcut_entries;
+use crate::primary_shortcuts::canonical_primary_shortcut_entries;
 use crate::shortcuts::canonical_level1_shortcuts;
-use crate::two_key_shortcuts::canonical_two_key_shortcut_entries;
 use crate::word_codes::canonical_word_code_entries;
-use crate::word_shortcuts::canonical_word_shortcut_entries;
 
 /// 训练器数据集产物文件名(生成器拥有的产物标识,调用方不得自行命名)。
 pub const TRAINER_DATA_FILENAME: &str = "xhup_flow_trainer.json";
 
-/// 数据集契约版本(V2)。
-pub const TRAINER_SCHEMA_VERSION: u32 = 2;
+/// 数据集契约版本(V3:canonical optimizer v2 shortcuts)。
+pub const TRAINER_SCHEMA_VERSION: u32 = 3;
 
 /// 固定词收录上限(按 Rime 权重降序截断;0 表示不截断)。
 pub const TRAINER_WORD_LIMIT: usize = 20_000;
@@ -53,12 +51,10 @@ struct TrainerDataset {
     words: Vec<TrainerWord>,
     /// 一级简码(26 条,完整)。
     level1_shortcuts: Vec<TrainerLevel1Shortcut>,
-    /// ZERO_REGRESSION 词语简码(完整)。
-    word_shortcuts: Vec<TrainerShortcut>,
+    /// optimizer v2 PRIMARY 词语简码(完整)。
+    primary_shortcuts: Vec<TrainerPrimaryShortcut>,
     /// FIXED_FIRST 词语简码(完整)。
     fixed_first_shortcuts: Vec<TrainerShortcut>,
-    /// 二码零冲突词语简码(完整)。
-    two_key_shortcuts: Vec<TrainerShortcut>,
     /// 组句练习 fixtures(组件全码机械拼接)。
     sentences: Vec<TrainerSentence>,
     double_pinyin: DoublePinyinReference,
@@ -110,6 +106,17 @@ struct TrainerShortcut {
     shortcut_code: String,
     /// F/I 投影模式(如 `FI` / `II`)。
     mode: String,
+}
+
+/// 一条 PRIMARY 词语简码关系(相对与绝对候选位均来自 selected dump)。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrainerPrimaryShortcut {
+    word: String,
+    full_code: String,
+    shortcut_code: String,
+    rank: usize,
+    merged_rank: usize,
 }
 
 /// 一条组句练习 fixture:语义组件 + 机械拼接的全码。
@@ -258,15 +265,15 @@ pub fn generate_trainer_dataset() -> String {
         })
         .collect();
 
-    let shortcut = |entry: &crate::word_shortcuts::CanonicalWordShortcutEntry| TrainerShortcut {
-        word: entry.word().to_string(),
-        full_code: entry.full_code().to_string(),
-        shortcut_code: entry.shortcut_code().to_string(),
-        mode: entry.mode().to_string(),
-    };
-    let word_shortcuts = canonical_word_shortcut_entries()
+    let primary_shortcuts = canonical_primary_shortcut_entries()
         .iter()
-        .map(shortcut)
+        .map(|entry| TrainerPrimaryShortcut {
+            word: entry.word().to_string(),
+            full_code: entry.full_code().to_string(),
+            shortcut_code: entry.shortcut_code().to_string(),
+            rank: entry.rank(),
+            merged_rank: entry.merged_rank(),
+        })
         .collect();
     let fixed_first_shortcuts = canonical_fixed_first_shortcut_entries()
         .iter()
@@ -277,16 +284,6 @@ pub fn generate_trainer_dataset() -> String {
             mode: entry.mode().to_string(),
         })
         .collect();
-    let two_key_shortcuts = canonical_two_key_shortcut_entries()
-        .iter()
-        .map(|entry| TrainerShortcut {
-            word: entry.word().to_string(),
-            full_code: entry.full_code().to_string(),
-            shortcut_code: entry.shortcut_code().to_string(),
-            mode: entry.mode().to_string(),
-        })
-        .collect();
-
     let sentences = build_sentence_fixtures();
 
     let layout = DoublePinyinLayout::canonical();
@@ -296,9 +293,8 @@ pub fn generate_trainer_dataset() -> String {
         entries,
         words,
         level1_shortcuts,
-        word_shortcuts,
+        primary_shortcuts,
         fixed_first_shortcuts,
-        two_key_shortcuts,
         sentences,
         double_pinyin: DoublePinyinReference {
             initials: layout
@@ -375,10 +371,9 @@ mod tests {
     use super::*;
     use crate::char_codes::finalized_char_code_entries;
     use crate::fixed_first_shortcuts::canonical_fixed_first_shortcut_entries;
+    use crate::primary_shortcuts::canonical_primary_shortcut_entries;
     use crate::shortcuts::canonical_level1_shortcuts;
-    use crate::two_key_shortcuts::canonical_two_key_shortcut_entries;
     use crate::word_codes::canonical_word_code_entries;
-    use crate::word_shortcuts::canonical_word_shortcut_entries;
 
     fn parse() -> serde_json::Value {
         serde_json::from_str(&generate_trainer_dataset()).expect("应为合法 JSON")
@@ -387,14 +382,13 @@ mod tests {
     #[test]
     fn top_level_contract() {
         let doc = parse();
-        assert_eq!(doc["schemaVersion"], 2);
+        assert_eq!(doc["schemaVersion"], 3);
         assert_eq!(doc["packageVersion"], env!("CARGO_PKG_VERSION"));
         assert!(doc["entries"].is_array());
         assert!(doc["words"].is_array());
         assert!(doc["level1Shortcuts"].is_array());
-        assert!(doc["wordShortcuts"].is_array());
+        assert!(doc["primaryShortcuts"].is_array());
         assert!(doc["fixedFirstShortcuts"].is_array());
-        assert!(doc["twoKeyShortcuts"].is_array());
         assert!(doc["sentences"].is_array());
         assert!(doc["doublePinyin"].is_object());
         // 无时间戳等易变字段
@@ -480,17 +474,10 @@ mod tests {
     #[test]
     fn shortcut_layers_complete_and_shape_valid() {
         let doc = parse();
-        let cases = [
-            ("wordShortcuts", canonical_word_shortcut_entries().len()),
-            (
-                "fixedFirstShortcuts",
-                canonical_fixed_first_shortcut_entries().len(),
-            ),
-            (
-                "twoKeyShortcuts",
-                canonical_two_key_shortcut_entries().len(),
-            ),
-        ];
+        let cases = [(
+            "fixedFirstShortcuts",
+            canonical_fixed_first_shortcut_entries().len(),
+        )];
         for (key, expected) in cases {
             let rows = doc[key].as_array().unwrap();
             assert_eq!(rows.len(), expected, "{key} 应完整收录生产层");
@@ -504,11 +491,14 @@ mod tests {
                 assert!(!row["mode"].as_str().unwrap().is_empty());
             }
         }
-        // 具体规模与生产集合一致(ZR / FF / 二码)。
-        // (碰撞共存修复后:44,518 / 2,366 / 246)
-        assert_eq!(doc["wordShortcuts"].as_array().unwrap().len(), 44_518);
-        assert_eq!(doc["fixedFirstShortcuts"].as_array().unwrap().len(), 2_366);
-        assert_eq!(doc["twoKeyShortcuts"].as_array().unwrap().len(), 246);
+        let primary = doc["primaryShortcuts"].as_array().unwrap();
+        assert_eq!(primary.len(), canonical_primary_shortcut_entries().len());
+        assert_eq!(primary.len(), 65_909);
+        for row in primary {
+            assert!(row["rank"].as_u64().unwrap() >= 1);
+            assert!(row["mergedRank"].as_u64().unwrap() >= row["rank"].as_u64().unwrap());
+        }
+        assert_eq!(doc["fixedFirstShortcuts"].as_array().unwrap().len(), 2_933);
     }
 
     #[test]

@@ -12,7 +12,7 @@ runner 噪声太大);本文件记录可复现的测量方法与一次本机基�
 cargo build --release -p xhup-cli --locked
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 
-# 1. Rime 源生成(11 个 YAML,~6.4 MB)
+# 1. Rime 源生成(12 个 YAML + 2 个 Lua)
 time target/release/xhup-cli generate rime --output "$work/rime"
 
 # 2. Trainer 规范数据集(~7.3 MB JSON)

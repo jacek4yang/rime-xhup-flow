@@ -1,6 +1,8 @@
-//! Production FIXED_FIRST 简码选择:在 ZERO_REGRESSION 层(PR #22)之上,
-//! 把「与 baseline fixed exact code 重码、但分析表明仍值得使用」的高稳健
-//! 词语简码固化为第二层 canonical 生产数据。
+//! legacy v1 FIXED_FIRST selector 的冻结重放实现。
+//!
+//! 只用于历史再现、兼容研究与 fixture 字节复制;它不再导出当前
+//! production canonical。当前 FIXED_FIRST 是 selected optimizer v2 mapping
+//! 的格式可表达 rank1 子集。
 //!
 //! policy `fixed-first-high-v1`(冻结):
 //!
@@ -41,7 +43,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use xhup_core::KeySequence;
-use xhup_generator::{canonical_word_shortcut_entries, raw_shortcuts};
+use xhup_generator::{legacy_v1_word_shortcut_entries, raw_shortcuts};
 
 use crate::AnalysisData;
 use crate::candidates::{CandidateEnumerationSpec, CandidateGrammar, WordTarget};
@@ -97,7 +99,7 @@ pub struct FixedFirstUniverseStats {
 pub fn build_fixed_first_universe(
     data: &AnalysisData,
 ) -> (Vec<WordTarget>, FixedFirstUniverseStats) {
-    let zr_words: BTreeSet<&str> = canonical_word_shortcut_entries()
+    let zr_words: BTreeSet<&str> = legacy_v1_word_shortcut_entries()
         .iter()
         .map(|entry| entry.word())
         .collect();
@@ -314,11 +316,11 @@ pub fn select_fixed_first_production(
 ) -> FixedFirstProductionSelection {
     use FixedFirstExclusionReason as Reason;
 
-    let zr_words: BTreeSet<&str> = canonical_word_shortcut_entries()
+    let zr_words: BTreeSet<&str> = legacy_v1_word_shortcut_entries()
         .iter()
         .map(|entry| entry.word())
         .collect();
-    let zr_codes: BTreeSet<KeySequence> = canonical_word_shortcut_entries()
+    let zr_codes: BTreeSet<KeySequence> = legacy_v1_word_shortcut_entries()
         .iter()
         .map(|entry| entry.shortcut_code().clone())
         .collect();

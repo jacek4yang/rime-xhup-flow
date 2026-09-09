@@ -1,16 +1,15 @@
-//! 二码零冲突词语简码层:canonical TSV 的解析与硬不变量校验。
+//! legacy v1 二码零冲突词语简码 fixture 的解析与硬不变量校验。
 //!
-//! 入库 TSV `data/shortcuts/word_two_key_zero_regression.tsv` 经
-//! `include_str!` 嵌入,是二码词语简码层的唯一事实来源。它由
-//! xhup-analyzer 的 production selection policy
+//! 冻结 TSV `data/shortcuts/legacy/word_two_key_zero_regression_v1.tsv`
+//! 经 `include_str!` 嵌入。它由 xhup-analyzer 的 historical selection policy
 //! (`two-key-zero-regression-v1`,见 `xhup_analyzer::production_two_key`)
 //! 从万象词语/频率证据确定性导出:**仅使用 2 键 exact-code 空间完全
 //! 空闲的 `II` 理论候选**(candidate grammar
 //! monotone-suffix-initials-v2;每 2 键码恰一词,整数 4/5 稳定票)。
 //! 空码意味着新词是该码唯一的 exact 候选(rank 1),严格零冲突;
 //! 占用码(char fanout > 0)不在本层。数据经 diff review 与 policy review
-//! 后入库;一旦发布即属于稳定的用户肌肉记忆兼容接口(见
-//! `data/shortcuts/README.md`)。
+//! 导出。它仅供 analyzer 重放 v1 选择器和兼容研究;
+//! production generator 只读 PRIMARY + FIXED_FIRST canonical v2。
 //!
 //! 解析时的硬不变量(损坏即 panic,不修改数据迎合代码):
 //!
@@ -22,7 +21,7 @@
 //! - shortcut 码在 baseline fixed exact-code 集合(一级简码 + 单字 2/3/4
 //!   码 + 固定词 4/6/8 键)中必须**完全空闲**(fanout == 0)—— 二码
 //!   零冲突语义由 generator 独立重验,不盲信 analyzer 输出;
-//! - 词不得持有 ZERO_REGRESSION / FIXED_FIRST production 简码(一词
+//! - 词不得持有 legacy v1 ZERO_REGRESSION / FIXED_FIRST fixture 简码(一词
 //!   最多一条简码);shortcut 码不得与两层的任何 production 码冲突;
 //! - 词、shortcut 码、`(词, 完整码)` 各自唯一。
 //!
@@ -33,9 +32,9 @@ use std::sync::OnceLock;
 
 use xhup_core::{KeySequence, XhupHanzi};
 
-/// 入库的二码零冲突词语简码 TSV(唯一事实来源)。
+/// 冻结的 legacy v1 二码零冲突词语简码 TSV。
 const TWO_KEY_SHORTCUTS_TSV: &str =
-    include_str!("../../../data/shortcuts/word_two_key_zero_regression.tsv");
+    include_str!("../../../data/shortcuts/legacy/word_two_key_zero_regression_v1.tsv");
 
 /// 二码层的原始词集合(纯文本扫描,不经过本层校验管线)。
 ///
@@ -49,15 +48,15 @@ pub fn raw_words() -> BTreeSet<&'static str> {
         .collect()
 }
 
-/// 一条 canonical 二码词语简码关系:一个 2 字词的一个 2 键别名。
-pub struct CanonicalTwoKeyShortcutEntry {
+/// 一条 legacy v1 二码词语简码关系。
+pub struct LegacyV1TwoKeyShortcutEntry {
     word: String,
     full_code: KeySequence,
     shortcut_code: KeySequence,
     mode: String,
 }
 
-impl CanonicalTwoKeyShortcutEntry {
+impl LegacyV1TwoKeyShortcutEntry {
     /// 词语(恰 2 字)。
     pub fn word(&self) -> &str {
         &self.word
@@ -79,12 +78,16 @@ impl CanonicalTwoKeyShortcutEntry {
     }
 }
 
-/// 全部 canonical 二码词语简码关系(进程内共享,解析一次;canonical
-/// 序列化顺序)。
-pub fn canonical_two_key_shortcut_entries() -> &'static [CanonicalTwoKeyShortcutEntry] {
-    static ENTRIES: OnceLock<Vec<CanonicalTwoKeyShortcutEntry>> = OnceLock::new();
+/// 全部 legacy v1 二码词语简码关系(仅历史研究)。
+pub fn legacy_v1_two_key_shortcut_entries() -> &'static [LegacyV1TwoKeyShortcutEntry] {
+    static ENTRIES: OnceLock<Vec<LegacyV1TwoKeyShortcutEntry>> = OnceLock::new();
     ENTRIES
-        .get_or_init(|| parse_tsv(TWO_KEY_SHORTCUTS_TSV, "word_two_key_zero_regression.tsv"))
+        .get_or_init(|| {
+            parse_tsv(
+                TWO_KEY_SHORTCUTS_TSV,
+                "legacy/word_two_key_zero_regression_v1.tsv",
+            )
+        })
         .as_slice()
 }
 
@@ -105,7 +108,7 @@ fn baseline_fixed_codes() -> BTreeSet<KeySequence> {
 }
 
 /// 解析内嵌 TSV 并验证全部硬不变量。
-fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalTwoKeyShortcutEntry> {
+fn parse_tsv(text: &'static str, name: &str) -> Vec<LegacyV1TwoKeyShortcutEntry> {
     // 固定词层的 (词, 完整码) 成员资格与 baseline 码集合。
     let word_codes: BTreeSet<(String, String)> = crate::canonical_word_code_entries()
         .iter()
@@ -124,7 +127,7 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalTwoKeyShortcutEntry
         .chain(crate::fixed_first_shortcuts::raw_shortcut_codes())
         .collect();
 
-    let mut entries: Vec<CanonicalTwoKeyShortcutEntry> = Vec::new();
+    let mut entries: Vec<LegacyV1TwoKeyShortcutEntry> = Vec::new();
     let mut words: BTreeSet<&str> = BTreeSet::new();
     let mut codes: BTreeSet<KeySequence> = BTreeSet::new();
     let mut word_full_codes: BTreeSet<(String, String)> = BTreeSet::new();
@@ -222,7 +225,7 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalTwoKeyShortcutEntry
             "{name} 第 {row_number} 行 (词, 完整码) 重复: {line:?}"
         );
 
-        entries.push(CanonicalTwoKeyShortcutEntry {
+        entries.push(LegacyV1TwoKeyShortcutEntry {
             word: word.to_string(),
             full_code,
             shortcut_code,
@@ -234,7 +237,7 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalTwoKeyShortcutEntry
     // canonical 序列化顺序:码 → 词 → 完整码(全部 2 键,长度无差异)。
     for pair in entries.windows(2) {
         let (a, b) = (&pair[0], &pair[1]);
-        let key = |e: &CanonicalTwoKeyShortcutEntry| {
+        let key = |e: &LegacyV1TwoKeyShortcutEntry| {
             (e.shortcut_code.clone(), e.word.clone(), e.full_code.clone())
         };
         assert!(
@@ -253,11 +256,11 @@ mod tests {
 
     #[test]
     fn entries_are_parsed_and_nonempty() {
-        let entries = canonical_two_key_shortcut_entries();
+        let entries = legacy_v1_two_key_shortcut_entries();
         assert!(!entries.is_empty(), "二码零冲突层应有数据");
         // 层规模应显著小于 ZR 层(空码是稀缺空间)。
         assert!(
-            entries.len() < crate::canonical_word_shortcut_entries().len(),
+            entries.len() < crate::legacy_v1_word_shortcut_entries().len(),
             "二码层应显著小于 ZERO_REGRESSION 层"
         );
     }

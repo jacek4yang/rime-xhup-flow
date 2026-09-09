@@ -27,25 +27,31 @@ fn rows_match_canonical_entry_count() {
 }
 
 #[test]
-fn every_row_is_word_code_weight_one() {
+fn every_row_has_its_merged_ranking_weight() {
     let dict = generate_rime_fixed_first_shortcut_dictionary();
-    let canonical: BTreeSet<(String, String)> = canonical_fixed_first_shortcut_entries()
+    let canonical: BTreeSet<(String, String, u32)> = canonical_fixed_first_shortcut_entries()
         .iter()
-        .map(|e| (e.word().to_string(), e.shortcut_code().to_string()))
+        .map(|e| {
+            (
+                e.word().to_string(),
+                e.shortcut_code().to_string(),
+                e.rime_weight(),
+            )
+        })
         .collect();
     let mut seen_words = BTreeSet::new();
     let mut seen_codes = BTreeSet::new();
     for row in body_rows(&dict) {
         let fields: Vec<&str> = row.split('\t').collect();
         assert_eq!(fields.len(), 3, "每行 词<TAB>码<TAB>权重: {row}");
-        assert_eq!(fields[2], "1", "权重恒为 1: {row}");
+        let weight: u32 = fields[2].parse().expect("权重应为整数");
         assert!(
             fields[1].chars().all(|c| c.is_ascii_lowercase()),
             "码为纯小写 a-z: {row}"
         );
-        assert!((3..=7).contains(&fields[1].len()), "码长度在 3..=7: {row}");
+        assert!((3..=5).contains(&fields[1].len()), "码长度在 3..=5: {row}");
         assert!(
-            canonical.contains(&(fields[0].to_string(), fields[1].to_string())),
+            canonical.contains(&(fields[0].to_string(), fields[1].to_string(), weight)),
             "行必须来自 canonical 集合: {row}"
         );
         assert!(seen_words.insert(fields[0]), "词重复: {row}");
@@ -55,11 +61,15 @@ fn every_row_is_word_code_weight_one() {
 
 #[test]
 fn time_word_row_is_present() {
-    // 时间哨兵:词典含 `时间 uij 1`,不含 `时间 ujm`。
+    // 时间哨兵:词典含 `时间 uij`,且 merged rank 为 1。
     let dict = generate_rime_fixed_first_shortcut_dictionary();
+    let entry = canonical_fixed_first_shortcut_entries()
+        .iter()
+        .find(|entry| entry.word() == "时间")
+        .expect("时间应在 FIXED_FIRST");
     assert!(
-        dict.contains("时间\tuij\t1\n"),
-        "词典应含 时间<TAB>uij<TAB>1"
+        dict.contains(&format!("时间\tuij\t{}\n", entry.rime_weight())),
+        "词典应含 时间<TAB>uij<TAB>merged weight"
     );
     assert!(!dict.contains("时间\tujm"), "词典不得含 时间<TAB>ujm");
 }

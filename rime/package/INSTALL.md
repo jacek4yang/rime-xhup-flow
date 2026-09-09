@@ -19,12 +19,11 @@ clients: Weasel (Windows), Squirrel (macOS), Fcitx5-Rime / IBus-Rime
 | `xhup_flow.dict.yaml` | 顶层词典(导入下列词典) |
 | `xhup_flow_chars.dict.yaml` | 单字全码(2/3/4 码) |
 | `xhup_flow_words.dict.yaml` | 固定词语层(4/6/8 键) |
-| `xhup_flow_shortcuts.dict.yaml` | 词语简码(3~7 键零冲突别名) |
-| `xhup_flow_two_key_shortcuts.dict.yaml` | 二码零冲突词语简码 |
-| `xhup_flow_fixed_first_shortcuts.dict.yaml` | FIXED_FIRST 词语简码 |
+| `xhup_flow_shortcuts.dict.yaml` | 26 个一级简码 |
+| `xhup_flow_word_shortcuts.dict.yaml` | canonical v2 PRIMARY 词语简码(显式合并候选位) |
+| `xhup_flow_fixed_first_shortcuts.dict.yaml` | canonical v2 FIXED_FIRST 词语简码 |
 | `xhup_flow_flow.dict.yaml` | Flow 组句词典 |
 | `xhup_flow_learn.dict.yaml` | Flow 学习词典 |
-| `xhup_flow_fixed_first_shortcuts.schema.yaml` | 词典编译 wrapper(部署器编译辅助词典用,不可选择) |
 | `xhup_flow_flow.schema.yaml` | 词典编译 wrapper(同上) |
 | `xhup_flow_learn.schema.yaml` | 词典编译 wrapper(同上) |
 | `lua/xhup_flow/quick_hint.lua` | 简码提示模块(可选增强,需 librime-lua) |
@@ -38,11 +37,10 @@ quick_hint filter 会给有可用简码的候选追加 `⚡<简码>` 注释(默�
 本包不携带 `rime.lua`,也不触碰用户 `lua/` 目录下 `lua/xhup_flow/`
 以外的任何文件。
 
-**为什么有 wrapper schema**:librime 部署只编译默认 translator 命名空间的
-词典;FIXED_FIRST / Flow / Learn 词典经主方案 `schema/dependencies` 指向
-同名 wrapper schema,部署器(Weasel / rime_deployer)才会为它们生成
-table.bin。缺失时 FIXED_FIRST 简码、组句与本地学习会静默失效。
-wrapper 不在任何 `schema_list` 中,不可被用户选择。
+**为什么有 wrapper schema**:PRIMARY 与 FIXED_FIRST 是主词典的导入表；
+Flow / Learn 独立词典则经主方案 `schema/dependencies` 指向同名 wrapper
+schema，部署器(Weasel / rime_deployer)才会为它们生成 table.bin。缺失时
+组句与本地学习会静默失效。wrapper 不在任何 `schema_list` 中,不可被用户选择。
 
 两套方案同时安装;在输入法的方案菜单中选择 Flow 或 Static。
 
@@ -53,7 +51,7 @@ wrapper 不在任何 `schema_list` 中,不可被用户选择。
 
 - Windows 小狼毫:`%APPDATA%\Rime`
 - macOS 鼠须管:`~/Library/Rime`
-- Linux Fcitx5:`~/.config/fcitx5/rime`(或 `$XDG_CONFIG_HOME/fcitx5/rime`)
+- Linux Fcitx5:`~/.local/share/fcitx5/rime`(或 `$XDG_DATA_HOME/fcitx5/rime`)
 - Linux IBus:`~/.config/ibus/rime`(部分发行版为 `~/.config/ibus/rime`)
 - fcitx5-android:把文件放入应用可访问的 Rime 目录(应用内「部署」)
 

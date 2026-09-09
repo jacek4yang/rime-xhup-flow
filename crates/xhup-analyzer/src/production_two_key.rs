@@ -1,5 +1,7 @@
-//! Production 二码零冲突词语简码:仅对 2 键 exact-code 空间**完全空闲**
-//! 的 `II` 理论候选建立生产层(`two-key-zero-regression-v1`)。
+//! legacy v1 二码零冲突 selector 的冻结重放实现。
+//!
+//! 仅供历史再现与二码研究。当前 production 二码映射位于 optimizer v2
+//! PRIMARY,不存在独立二码 production layer。
 //!
 //! policy `two-key-zero-regression-v1`:
 //!
