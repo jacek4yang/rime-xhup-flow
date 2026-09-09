@@ -685,6 +685,9 @@ jobs:
         run: |
           set -euo pipefail
           cd artifacts
+          # 三个清单文件必须拥有同一 artifact 根目录。否则 upload-artifact
+          # 会保留 `artifacts/` 子目录，而发布工作流合并下载后找不到顶层清单。
+          mv "$GITHUB_WORKSPACE/CANONICAL-SHA256SUMS.txt" CANONICAL-SHA256SUMS.txt
           apk="xhup-flow-trainer-v$APP_VERSION-android-universal-UNSIGNED.apk"
           if [[ "$ANDROID_SIGNED" == "true" ]]; then
             apk="xhup-flow-trainer-v$APP_VERSION-android-universal.apk"
@@ -739,7 +742,7 @@ jobs:
           path: |
             artifacts/SHA256SUMS.txt
             artifacts/BUILD-INFO.txt
-            CANONICAL-SHA256SUMS.txt
+            artifacts/CANONICAL-SHA256SUMS.txt
           retention-days: 7
 
       - name: 构建摘要
