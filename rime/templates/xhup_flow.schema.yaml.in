@@ -8,7 +8,7 @@ schema:
   author:
     - XHUP Flow
   # librime 部署只编译默认 translator 命名空间的词典;Flow / Learn
-  # 两个辅助词典必须经官方 schema/dependencies 机制
+  # 三个辅助词典必须经官方 schema/dependencies 机制
   # 声明,Weasel / rime_deployer 才会为它们生成 table.bin。
   dependencies:
     - xhup_flow_flow
@@ -16,15 +16,15 @@ schema:
   description: |
     XHUP Flow 的跨平台小鹤音形方案,输入行为仅使用标准 librime 核心组件
     (Lua 简码提示为可选增强,插件缺失时自动降级);
-    当前版本提供 26 个一级简码字、规范单字(二至四码)、
-    canonical v2 词语简码(别名,不替换完整码)与高频固定词语
-    (二至四字)输入;
+    当前版本提供 26 个一级简码字、core + attested 输入字符(二至四码)、
+    canonical v2 词语简码(别名,不替换完整码)、hot 固定词语与完整 pinned
+    secondary 词汇层；逐字两键原语保证词表外文本可参与组句;
     一级简码只提供一键精确候选,不会自动上屏;
-    词语按逐字双拼两码拼接,二字词仅收录不与规范四码单字冲突者;
+    词语按逐字双拼两码拼接，二字词与四码单字碰撞时合法共存;
     PRIMARY 与 FIXED_FIRST 同主词典候选按 canonical v2 merged rank
     映射为唯一整数权重,不依赖文件导入顺序;
-    Flow 引擎提供连续组句与本地用户词学习(独立后续 translator,
-    initial_quality 0,严格排在全部静态候选之后;用户数据仅存本地)。
+    Flow 引擎提供开放连续组句与本地用户词学习(独立后续 translator,
+    严格排在全部静态候选之后;用户数据仅存本地)。
 
 switches:
   - name: ascii_mode
@@ -85,10 +85,11 @@ translator:
   initial_quality: 1000000
 
 # Flow translator:连续组句 + 句子词条学习。专用组句词典
-# xhup_flow_flow 仅含词条 canonical 全码(无单字、无简码别名):句子
-# 只由词组成,分段质量高,不产生逐字退化句子。携带共享用户词典
+# xhup_flow_flow 包含 hot/extended 词条与逐字两键音码原语:词汇证据
+# 改善排名，单字确保词表外组合与语气字路径不中断。携带共享用户词典
 # xhup_flow_user(句子候选属于用户词典语言,提交时 Memorize 学习
-# 其词条元素);initial_quality 0 保证候选永远位于全部静态候选之后。
+# 其词条元素);initial_quality 100 与 primary 的 1000000 质量栅栏保证
+# 开放候选位于全部静态候选之后。
 flow:
   dictionary: xhup_flow_flow
   user_dict: xhup_flow_user
@@ -96,7 +97,7 @@ flow:
   enable_sentence: true
   sentence_over_completion: true
   enable_user_dict: true
-  initial_quality: 0
+  initial_quality: 100
 
 # learn translator:学习短语编码(encoder)。学习词典 xhup_flow_learn
 # 含单字 + 词条全码(单字是规则式短语编码原语);enable_sentence
@@ -115,7 +116,7 @@ learn:
   encode_commit_history: true
   max_phrase_length: 20
   max_homographs: 1
-  initial_quality: 0
+  initial_quality: 1000
 
 # 中英文切换不依赖客户端共享数据里的 default.yaml(部分平台的共享
 # 数据没有 ascii_composer 配置,Shift 切换会静默失效):在方案内显式

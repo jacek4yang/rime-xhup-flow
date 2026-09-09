@@ -24,7 +24,7 @@ use std::sync::OnceLock;
 
 use xhup_core::{HanziReading, KeySequence};
 
-use crate::words::canonical_word_entries;
+use crate::words::{canonical_extended_word_entries, canonical_word_entries};
 
 /// 一条最终化的静态词语编码关系(模块内投影的事实来源)。
 ///
@@ -78,6 +78,29 @@ pub struct RimeWordCodeEntry {
     weight: u32,
 }
 
+/// 扩展词层的 exact 编码关系。它不进入冻结静态主词典，频率分数直接供
+/// Flow translator 排名与组句。
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct RimeExtendedWordCodeEntry {
+    word: String,
+    code: KeySequence,
+    frequency_score: u64,
+}
+
+impl RimeExtendedWordCodeEntry {
+    pub fn word(&self) -> &str {
+        &self.word
+    }
+
+    pub fn code(&self) -> &KeySequence {
+        &self.code
+    }
+
+    pub fn frequency_score(&self) -> u64 {
+        self.frequency_score
+    }
+}
+
 impl RimeWordCodeEntry {
     /// 该条目对应的词语。
     pub fn word(&self) -> &str {
@@ -110,6 +133,42 @@ pub fn canonical_word_code_entries() -> Vec<RimeWordCodeEntry> {
             weight: entry.rime_weight(),
         })
         .collect()
+}
+
+/// 全部扩展词 exact 关系，按码长、码、分数降序、词排序。
+pub fn canonical_extended_word_code_entries() -> &'static [RimeExtendedWordCodeEntry] {
+    static ENTRIES: OnceLock<Vec<RimeExtendedWordCodeEntry>> = OnceLock::new();
+    ENTRIES
+        .get_or_init(|| {
+            let mut aggregated: BTreeMap<(&'static str, KeySequence), u64> = BTreeMap::new();
+            for entry in canonical_extended_word_entries() {
+                let code = derive_code(entry.readings());
+                let score = aggregated.entry((entry.word(), code)).or_default();
+                *score = score
+                    .checked_add(entry.frequency_score())
+                    .expect("扩展词聚合分数 u64 溢出");
+            }
+            let mut entries: Vec<_> = aggregated
+                .into_iter()
+                .map(
+                    |((word, code), frequency_score)| RimeExtendedWordCodeEntry {
+                        word: word.to_string(),
+                        code,
+                        frequency_score,
+                    },
+                )
+                .collect();
+            entries.sort_by(|a, b| {
+                a.code
+                    .len()
+                    .cmp(&b.code.len())
+                    .then(a.code.cmp(&b.code))
+                    .then(b.frequency_score.cmp(&a.frequency_score))
+                    .then(a.word.cmp(&b.word))
+            });
+            entries
+        })
+        .as_slice()
 }
 
 /// 由一条 semantic entry 推导精确 XHUP 词码:逐字双拼两键按字序拼接。
@@ -265,6 +324,30 @@ mod tests {
                 entry.code()
             );
         }
+    }
+
+    #[test]
+    fn extended_word_code_pairs_are_unique_and_outside_hot_relation_set() {
+        let extended = canonical_extended_word_code_entries();
+        assert!(!extended.is_empty());
+        let mut seen = BTreeSet::new();
+        for entry in extended {
+            assert!(seen.insert((entry.word(), entry.code())));
+        }
+        let hot: BTreeSet<_> = canonical_word_code_entries()
+            .into_iter()
+            .map(|entry| (entry.word().to_string(), entry.code().clone()))
+            .collect();
+        assert!(
+            extended
+                .iter()
+                .all(|entry| { !hot.contains(&(entry.word().to_string(), entry.code().clone())) })
+        );
+        assert!(
+            extended.iter().any(|entry| {
+                entry.word() == "提示词" && entry.code().to_string() == "tiuici"
+            })
+        );
     }
 
     #[test]

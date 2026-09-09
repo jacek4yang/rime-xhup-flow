@@ -28,6 +28,7 @@ mod lua_hints;
 mod merged_ranking;
 mod package;
 mod primary_shortcuts;
+mod reachability;
 mod rime;
 mod rime_fixed_first_shortcuts;
 mod rime_flow;
@@ -64,7 +65,10 @@ pub use analysis::{
     CharCodeAnalysisEntry, WordCodeAnalysisEntry, char_code_analysis_entries,
     word_code_analysis_entries,
 };
-pub use char_codes::{RimeCharCodeEntry, canonical_char_code_entries};
+pub use char_codes::{
+    RimeCharCodeEntry, RimeInputCharCodeEntry, canonical_char_code_entries,
+    canonical_input_char_code_entries,
+};
 pub use fixed_first_shortcuts::{
     CanonicalFixedFirstShortcutEntry, canonical_fixed_first_shortcut_entries,
     legacy_v1_fixed_first_shortcut_entries,
@@ -75,9 +79,10 @@ pub use lua_hints::{
 };
 pub use package::{RimeArtifact, generate_rime_artifacts};
 pub use primary_shortcuts::{CanonicalPrimaryShortcutEntry, canonical_primary_shortcut_entries};
+pub use reachability::{Reachability, classify_reachability, preferred_open_composition_code};
 pub use rime::{
-    RIME_CHAR_DICTIONARY_FILENAME, RimeCharEntry, canonical_char_entries,
-    generate_rime_char_dictionary,
+    RIME_CHAR_DICTIONARY_FILENAME, RimeCharEntry, RimeInputCharEntry, canonical_char_entries,
+    canonical_input_char_entries, generate_rime_char_dictionary,
 };
 pub use rime_fixed_first_shortcuts::{
     RIME_FIXED_FIRST_SHORTCUT_DICTIONARY_FILENAME, generate_rime_fixed_first_shortcut_dictionary,
@@ -94,5 +99,8 @@ pub use rime_words::{RIME_WORD_DICTIONARY_FILENAME, generate_rime_word_dictionar
 pub use shortcuts::{Level1ShortcutEntry, canonical_level1_shortcuts};
 pub use trainer::{TRAINER_DATA_FILENAME, generate_trainer_dataset};
 pub use two_key_shortcuts::{LegacyV1TwoKeyShortcutEntry, legacy_v1_two_key_shortcut_entries};
-pub use word_codes::{RimeWordCodeEntry, canonical_word_code_entries};
+pub use word_codes::{
+    RimeExtendedWordCodeEntry, RimeWordCodeEntry, canonical_extended_word_code_entries,
+    canonical_word_code_entries,
+};
 pub use word_shortcuts::{LegacyV1WordShortcutEntry, legacy_v1_word_shortcut_entries};

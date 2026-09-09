@@ -76,6 +76,14 @@ fn build() -> Overrides {
         .into_iter()
         .chain(word_codes::scored_all_entries())
         .collect();
+    let extension_entries = char_codes::scored_extension_entries();
+    let mut extensions_by_code: BTreeMap<KeySequence, Vec<(u64, String)>> = BTreeMap::new();
+    for entry in &extension_entries {
+        extensions_by_code
+            .entry(entry.code.clone())
+            .or_default()
+            .push((entry.score, entry.text.clone()));
+    }
     let mut baseline_by_code: BTreeMap<KeySequence, Vec<(u64, String)>> = BTreeMap::new();
     for entry in &baseline_entries {
         baseline_by_code
@@ -89,12 +97,12 @@ fn build() -> Overrides {
         v2_entries.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
         let mut baseline = baseline_by_code.get(&code).cloned().unwrap_or_default();
         baseline.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
-        let total = v2_entries.len() + baseline.len();
-        let mut slots: Vec<Option<String>> = vec![None; total];
+        let legacy_total = v2_entries.len() + baseline.len();
+        let mut slots: Vec<Option<String>> = vec![None; legacy_total];
         for (merged_rank, _, word) in v2_entries {
             assert!(
-                (1..=total).contains(&merged_rank),
-                "v2 码 {code} 的绝对位次 {merged_rank} 超出候选总数 {total}: {word}"
+                (1..=legacy_total).contains(&merged_rank),
+                "v2 码 {code} 的绝对位次 {merged_rank} 超出旧候选总数 {legacy_total}: {word}"
             );
             let slot = &mut slots[merged_rank - 1];
             assert!(
@@ -114,8 +122,21 @@ fn build() -> Overrides {
             "baseline 候选应全部填入绝对位次空位"
         );
 
-        for (index, text) in slots.into_iter().enumerate() {
-            let text = text.expect("全部绝对位次均应填满");
+        let mut ranked: Vec<String> = slots
+            .into_iter()
+            .map(|slot| slot.expect("全部绝对位次均应填满"))
+            .collect();
+        let mut extensions = extensions_by_code.get(&code).cloned().unwrap_or_default();
+        extensions.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        for (_, text) in extensions {
+            assert!(
+                !ranked.contains(&text),
+                "v2 码 {code} 的 attested 扩展候选与旧候选重复: {text}"
+            );
+            ranked.push(text);
+        }
+        let total = ranked.len();
+        for (index, text) in ranked.into_iter().enumerate() {
             let weight = u32::try_from(total - index).expect("同码候选数超出 u32");
             assert!(
                 weights
@@ -128,9 +149,13 @@ fn build() -> Overrides {
 
     // ---- B. 无 v2 条目的 4 键字词碰撞码(原语义,不变) ----
     let chars = char_codes::scored_four_key_entries();
+    let extension_chars: Vec<ScoredEntry> = extension_entries
+        .into_iter()
+        .filter(|entry| entry.code.len() == 4)
+        .collect();
     let words = word_codes::scored_four_key_entries();
     let mut char_codes_present = std::collections::BTreeSet::new();
-    for entry in &chars {
+    for entry in chars.iter().chain(extension_chars.iter()) {
         char_codes_present.insert(entry.code.clone());
     }
     let mut collided: Vec<KeySequence> = Vec::new();
@@ -151,6 +176,12 @@ fn build() -> Overrides {
         let mut ranked: Vec<&ScoredEntry> = group.clone();
         // 合并排名:聚合分数降序,文本 Unicode 标量升序为最终决胜。
         ranked.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.text.cmp(&b.text)));
+        let mut extensions: Vec<&ScoredEntry> = extension_chars
+            .iter()
+            .filter(|entry| entry.code == *code)
+            .collect();
+        extensions.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.text.cmp(&b.text)));
+        ranked.extend(extensions);
         let group_size = ranked.len();
         for (rank, entry) in ranked.iter().enumerate() {
             let weight = u32::try_from(group_size - rank).expect("同码候选数超出 u32");

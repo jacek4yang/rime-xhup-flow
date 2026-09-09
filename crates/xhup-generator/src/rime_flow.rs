@@ -1,10 +1,9 @@
 //! Flow 引擎词典的确定性序列化(两个专用词典)。
 //!
-//! - **组句词典 `xhup_flow_flow`**(仅词条):供 `table_translator@flow`
-//!   (enable_sentence)使用。连续输入的句子只由**词**组成 —— 高质量
-//!   分段、rank-1 质量;若含单字,`enable_sentence` 会对任意键序列产生
-//!   逐字退化分段句子(如 4 键全码被拆成 4 个单字),污染全部静态
-//!   exact 菜单。
+//! - **组句词典 `xhup_flow_flow`**:供隔离的 `table_translator@flow`
+//!   (enable_sentence)使用。它包含 hot / extended 词汇证据和全部两键单字
+//!   音码原语：已知词改善分段排名，单字保证词表外组合、结构助词与语气字
+//!   不会令句子路径中断。primary 静态 translator 的高质量栅栏保护冻结菜单。
 //! - **学习词典 `xhup_flow_learn`**(单字 + 词条):供
 //!   `table_translator@learn`(enable_sentence **false**、user_dict、
 //!   enable_encoder)使用。单字是规则式短语编码的原语(TableEncoder
@@ -12,7 +11,7 @@
 //!   其单字/词条 exact 查询与 primary 静态层完全重合,经 uniquifier
 //!   去重后不可见(零冲突)。
 //!
-//! 两个词典都只含 canonical 全码关系,**显式排除全部简码别名**
+//! 两个词典都只含 canonical 完整关系,**显式排除全部简码别名**
 //! (一级简码 / canonical v2 PRIMARY + FIXED_FIRST):简码别名是肌肉记忆
 //! 入口路由,不应成为组句/学习编码原语。
 //!
@@ -22,8 +21,9 @@
 //! 别名;≥ 5 字的键数 = 字数,与固定词全码键数(4/6/8)天然错开,
 //! 4 字组合词可能与 4 键码位重合但受优先级栅栏保护(见 flow_encoder_yaml)。
 //!
-//! 组句词典的权重列携带**万象聚合频率分数**(原始证据,非排名输出表示):
-//! librime `dict_compiler` 建表时对词典权重取 log,`table_translator` 候选
+//! 组句词典的词条权重列携带**万象聚合频率分数**；官网 attested 单字码
+//! 在组句语言内获得独立高置信权重（不改写 linguistic reading，也不改变
+//! primary 静态排名）。librime `dict_compiler` 建表时对权重取 log，
 //! quality 再 exp 还原,组句(`poet`)按句子权重总和比较分段路径 —— 只有
 //! 真实频率证据才能让常用词路径压倒垃圾分段路径;排名权重(组内名次
 //! 1..N)在同码组间不可比,无法区分高频词与生僻词。学习词典仍沿用各最终化
@@ -34,10 +34,11 @@
 //! 下字节级一致。
 
 use crate::analysis::word_code_analysis_entries;
-use crate::char_codes::canonical_char_code_entries;
+use crate::char_codes::{canonical_input_char_code_entries, finalized_char_code_entries};
+use crate::word_codes::canonical_extended_word_code_entries;
 use crate::word_codes::canonical_word_code_entries;
 
-/// 词典名称(组句词典:仅词条,无单字)。
+/// 词典名称(组句词典:词条 + 两键单字音码原语)。
 const DICTIONARY_NAME: &str = "xhup_flow_flow";
 
 /// 生成的 Flow 组句词典文件名(生成器拥有的产物标识,调用方不得自行命名)。
@@ -58,7 +59,8 @@ pub const RIME_LEARN_DICTIONARY_FILENAME: &str = "xhup_flow_learn.dict.yaml";
 /// - 4 字:组合词(如 我们+时间 → 我们时间,码 = 四字首键 4 键)。
 ///   固定词层只收录单词条,组合出的 4 字短语不在其中;其 4 键码可能
 ///   命中既有 4 键码位(单字全码 / 2 字词),但 learn translator 的
-///   initial_quality 0 保证静态候选次序不变,用户短语只追加在后
+///   低于 primary 的 initial_quality 栅栏保证静态候选次序不变，用户短语
+///   只追加在后
 ///   (与 FIXED_FIRST 同构的追加语义);
 /// - ≥ 5 字:超出固定词层长度,键数 = 字数,与固定词全码键数
 ///   (4/6/8)天然错开。
@@ -99,15 +101,39 @@ pub fn flow_encoder_yaml() -> String {
     out
 }
 
-/// 生成完整的 Flow 组句 Rime 源词典文本(仅词条全码,无单字)。
+/// 生成完整的 Flow 组句 Rime 源词典文本。
 ///
-/// 语义见模块文档:供 `table_translator@flow`(enable_sentence)使用;
-/// 句子只由词组成,杜绝逐字退化分段。权重列为万象聚合频率分数
-/// (经 librime log/exp 往返后原值还原为候选 quality),使组句按
-/// 真实频率证据选择分段路径。
+/// hot / extended 词条携带万象聚合频率，逐字两键音码原语补齐词表外
+/// 组合与语气字路径。该 translator 由 `initial_quality` 与 primary 静态层
+/// 隔离，因此开放组句只追加候选，不改变冻结 static exact 前缀。
 pub fn generate_rime_flow_dictionary() -> String {
     let mut rows: Vec<(String, String, u32)> = Vec::new();
+    for entry in finalized_char_code_entries()
+        .iter()
+        .filter(|entry| entry.code().len() == 2)
+    {
+        let base = u32::try_from(entry.frequency_score())
+            .unwrap_or(u32::MAX / 2)
+            .max(1);
+        let weight = if entry.is_official() {
+            10_000_000u32.saturating_add(base)
+        } else {
+            base
+        };
+        rows.push((
+            entry.hanzi().as_char().to_string(),
+            entry.code().to_string(),
+            weight,
+        ));
+    }
     for entry in word_code_analysis_entries() {
+        rows.push((
+            entry.word().to_string(),
+            entry.code().to_string(),
+            u32::try_from(entry.frequency_score()).unwrap_or(u32::MAX),
+        ));
+    }
+    for entry in canonical_extended_word_code_entries() {
         rows.push((
             entry.word().to_string(),
             entry.code().to_string(),
@@ -134,7 +160,7 @@ pub fn generate_rime_flow_dictionary() -> String {
 /// exact 查询与 primary 静态单字完全重合,经 uniquifier 去重后不可见。
 pub fn generate_rime_learn_dictionary() -> String {
     let mut rows: Vec<(String, String, u32)> = Vec::new();
-    for entry in canonical_char_code_entries() {
+    for entry in canonical_input_char_code_entries() {
         rows.push((
             entry.hanzi().as_char().to_string(),
             entry.code().to_string(),
@@ -211,6 +237,59 @@ mod tests {
         );
     }
 
+    #[test]
+    fn flow_dictionary_contains_all_two_key_character_primitives() {
+        let flow = generate_rime_flow_dictionary();
+        let rows: Vec<_> = flow
+            .lines()
+            .skip_while(|line| *line != "...")
+            .skip(1)
+            .filter(|line| {
+                line.split('\t')
+                    .next()
+                    .is_some_and(|text| text.chars().count() == 1)
+            })
+            .collect();
+        assert_eq!(rows.len(), 9_254);
+        for line in &rows {
+            let fields: Vec<_> = line.split('\t').collect();
+            assert_eq!(fields.len(), 3);
+            assert_eq!(fields[0].chars().count(), 1);
+            assert_eq!(fields[1].len(), 2);
+            assert!(fields[2].parse::<u32>().unwrap() > 0);
+        }
+        assert!(flow.lines().any(|line| line.starts_with("嗯\tog\t")));
+        assert!(flow.lines().any(|line| line.starts_with("诶\tei\t")));
+    }
+
+    #[test]
+    fn flow_rows_are_complete_unique_and_include_old_top_n_tail() {
+        let flow = generate_rime_flow_dictionary();
+        let rows: Vec<_> = flow
+            .lines()
+            .skip_while(|line| *line != "...")
+            .skip(1)
+            .collect();
+        assert_eq!(
+            rows.len(),
+            9_254
+                + word_code_analysis_entries().len()
+                + canonical_extended_word_code_entries().len()
+        );
+        let relations: std::collections::BTreeSet<_> = rows
+            .iter()
+            .map(|line| {
+                let mut fields = line.split('\t');
+                (fields.next().unwrap(), fields.next().unwrap())
+            })
+            .collect();
+        assert_eq!(relations.len(), rows.len(), "Flow 不得有重复 (text, code)");
+        assert!(
+            relations.contains(&("提示词", "tiuici")),
+            "旧三字 Top-N 外来源词必须由完整 secondary tier 保留"
+        );
+    }
+
     /// 组句词典权重携带万象频率分数(而非排名输出权重):逐条与分析投影
     /// 一致。这是组句质量的根基 —— librime 经 log/exp 往返后以词典权重
     /// 原值作为候选 quality,句权重 = 路径分数之和,频率证据决定分段胜负。
@@ -224,6 +303,16 @@ mod tests {
                     .unwrap_or_else(|| panic!("词条不在组句词典: {}", entry.word())),
                 entry.frequency_score(),
                 "组句词典权重应等于万象频率分数: {}",
+                entry.word()
+            );
+        }
+        for entry in canonical_extended_word_code_entries() {
+            assert_eq!(
+                *weights
+                    .get(entry.word())
+                    .unwrap_or_else(|| panic!("扩展词条不在组句词典: {}", entry.word())),
+                entry.frequency_score(),
+                "扩展词典权重应等于万象频率分数: {}",
                 entry.word()
             );
         }
@@ -270,8 +359,8 @@ mod tests {
             .collect()
     }
 
-    /// Flow 词典排除全部简码别名:不含一级简码行(1 键),行数 = 单字关系
-    /// + 固定词关系;抽查典型简码词条目不在词典中。
+    /// Flow 词典排除全部简码别名；两键行只能是单字 sound primitive，
+    /// 词条仍只使用逐字双拼完整码。
     #[test]
     fn excludes_shortcut_aliases() {
         let dict = generate_rime_flow_dictionary();
@@ -291,30 +380,39 @@ mod tests {
             !dict.contains("记得\tjd\t"),
             "二码零冲突别名不得进入 Flow 词典"
         );
-        // 全部数据行码长 ∈ {4,6,8}(仅词条全码;无单字,无简码别名)。
+        // 全部数据行码长 ∈ {2,4,6,8}(2 键仅单字；其余仅词条全码)。
         for line in dict.lines().skip_while(|l| *l != "...").skip(1) {
             let fields: Vec<&str> = line.split('\t').collect();
             assert_eq!(fields.len(), 3, "每行 词<TAB>码<TAB>权重: {line}");
             let code_len = fields[1].chars().count();
             assert!(
-                matches!(code_len, 4 | 6 | 8),
-                "Flow 词典码长应 ∈ {{4,6,8}},实际 {code_len}: {line}"
+                matches!(code_len, 2 | 4 | 6 | 8),
+                "Flow 词典码长应 ∈ {{2,4,6,8}},实际 {code_len}: {line}"
             );
+            assert_eq!(fields[0].chars().count() * 2, code_len, "逐字两键: {line}");
         }
     }
 
-    /// Flow 词典不含单字条目(架构决策:防止逐字退化分段句子)。
+    /// 单字原语完整进入隔离的 Flow translator，解除固定词表边界。
     #[test]
-    fn excludes_char_entries() {
+    fn includes_all_sound_primitives_without_short_codes() {
         let dict = generate_rime_flow_dictionary();
-        // 数据行的词字段不得是单字(恰一个汉字)。
-        for line in dict.lines().skip_while(|l| *l != "...").skip(1) {
-            let word = line.split('\t').next().expect("词字段存在");
-            assert!(
-                word.chars().count() >= 2,
-                "单字条目不得进入组句词典: {word}"
-            );
-        }
+        let char_rows = dict
+            .lines()
+            .skip_while(|line| *line != "...")
+            .skip(1)
+            .filter(|line| {
+                line.split('\t')
+                    .next()
+                    .is_some_and(|text| text.chars().count() == 1)
+            })
+            .count();
+        assert_eq!(char_rows, 9_254);
+        assert!(
+            !dict
+                .lines()
+                .any(|line| line.split('\t').nth(1).is_some_and(|code| code.len() == 1))
+        );
     }
 
     /// 学习词典:单字 + 词条,含 encoder 段。

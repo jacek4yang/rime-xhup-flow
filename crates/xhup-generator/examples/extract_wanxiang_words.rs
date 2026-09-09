@@ -31,7 +31,7 @@ use std::fs;
 use std::process::ExitCode;
 
 use xhup_core::{HanziReading, XhupHanzi};
-use xhup_generator::canonical_char_entries;
+use xhup_generator::{canonical_char_entries, canonical_word_code_entries};
 
 #[path = "common/wanxiang.rs"]
 mod wanxiang;
@@ -40,7 +40,6 @@ use wanxiang::normalize_reading;
 
 /// 各词长的 top-N 选择目标(词长 → 数量)。
 const TARGETS: [(usize, usize); 3] = [(2, 50_000), (3, 30_000), (4, 20_000)];
-
 /// 输出 TSV 的注释头(行数行在写出前追加)。
 const HEADER: &str = "\
 # XHUP Flow 规范高频词语数据:万象 / RIME-LMDG 基础词库的规范子集
@@ -65,6 +64,19 @@ const HEADER: &str = "\
 #   前 50000 / 30000 / 20000 条(含保护递补);合法候选不足目标即失败,不静默缩水
 # serialization: 词长升序 → 词 Unicode 升序 → 读音序列升序
 ";
+
+const EXTENDED_HEADER: &str = "\
+# XHUP Flow 扩展词语数据:万象 / RIME-LMDG 基础词库的次级高质量层\n\
+# source_repo: amzxyz/rime-wanxiang\n\
+# source_commit: 4618d67a978ff4f41b165c10b35558d38e333ab1\n\
+# source_path: dicts/jichu.dict.yaml\n\
+# source_blob_sha: a0f66e2fc6130f3f1c9b2e5109644c8b893477b0\n\
+# source_license: CC-BY-4.0\n\
+# selection: 对各词长应用 hot 层完整选择/简码保护后，保留其余全部通过\n\
+#   canonical 校验的 semantic entry；不再用另一个 Top-N 截断词汇可达性\n\
+# role: pinned 万象词汇证据的完整 secondary tier；真正不存在于来源中的合法\n\
+#   组合仍由 open composer 可达\n\
+# serialization: 词长升序 → 词 Unicode 升序 → 读音序列升序\n";
 
 /// 一条通过规范校验的 semantic entry:词形 + 逐字规范读音 + 聚合分数。
 #[derive(Debug)]
@@ -246,13 +258,21 @@ fn main() -> ExitCode {
     let program = args.next().unwrap_or_default();
     let Some(path) = args.next() else {
         eprintln!(
-            "用法: {} <本地 jichu.dict.yaml 路径> > wanxiang_base_words.tsv",
+            "用法: {} <本地 jichu.dict.yaml 路径> [--extended]",
             program.to_string_lossy()
         );
         return ExitCode::from(2);
     };
+    let extended = match args.next() {
+        None => false,
+        Some(flag) if flag == "--extended" => true,
+        Some(_) => {
+            eprintln!("可选第二参数只能是 --extended");
+            return ExitCode::from(2);
+        }
+    };
     if args.next().is_some() {
-        eprintln!("只接受一个参数:本地 jichu.dict.yaml 路径");
+        eprintln!("参数过多");
         return ExitCode::from(2);
     }
 
@@ -331,12 +351,17 @@ fn main() -> ExitCode {
     // 词层占用者必然入选,必要时从频率尾部逐出等量未受保护条目;受保护
     // (词, 完整码) 在池中无匹配即失败(简码悬空)。
     let protection = load_shortcut_protection();
+    let committed_hot_relations: BTreeSet<(String, String)> = canonical_word_code_entries()
+        .into_iter()
+        .map(|entry| (entry.word().to_string(), entry.code().to_string()))
+        .collect();
     eprintln!(
         "简码保护:宿主 (词, 完整码) {} 条,FIXED_FIRST 目标码 {} 个",
         protection.word_codes.len(),
         protection.target_codes.len()
     );
     let mut selected: Vec<SemanticEntry> = Vec::new();
+    let mut extended_selected: Vec<SemanticEntry> = Vec::new();
     for (index, &(len, target)) in TARGETS.iter().enumerate() {
         let mut pool = std::mem::take(&mut pools[index]);
         eprintln!("{len} 字词: 合法候选 {} 条,目标 {target} 条", pool.len());
@@ -403,11 +428,16 @@ fn main() -> ExitCode {
         }
         eprintln!("{len} 字词: 保护递补 {reinstated} 条(逐出等量尾部条目)");
 
-        selected.extend(
-            pool.into_iter()
-                .zip(chosen)
-                .filter_map(|(entry, keep)| keep.then_some(entry)),
-        );
+        let mut extended_count = 0usize;
+        for (entry, keep) in pool.into_iter().zip(chosen) {
+            if keep {
+                selected.push(entry);
+            } else if !committed_hot_relations.contains(&(entry.word.clone(), entry.code())) {
+                extended_selected.push(entry);
+                extended_count += 1;
+            }
+        }
+        eprintln!("{len} 字词: extended 完整尾部 {extended_count} 条");
     }
 
     // canonical serialization:词长升序 → 词 Unicode 升序 → 读音序列升序。
@@ -418,9 +448,21 @@ fn main() -> ExitCode {
             .then_with(|| a.readings.cmp(&b.readings))
     });
 
-    print!("{HEADER}");
-    println!("# rows: {}", selected.len());
-    for entry in &selected {
+    extended_selected.sort_by(|a, b| {
+        a.word_len()
+            .cmp(&b.word_len())
+            .then_with(|| a.word.cmp(&b.word))
+            .then_with(|| a.readings.cmp(&b.readings))
+    });
+
+    let output = if extended {
+        &extended_selected
+    } else {
+        &selected
+    };
+    print!("{}", if extended { EXTENDED_HEADER } else { HEADER });
+    println!("# rows: {}", output.len());
+    for entry in output {
         let readings = entry
             .readings
             .iter()
@@ -429,6 +471,10 @@ fn main() -> ExitCode {
             .join(" ");
         println!("{}\t{}\t{}", entry.word, readings, entry.score);
     }
-    eprintln!("输出 semantic entries: {}", selected.len());
+    eprintln!(
+        "输出 {} semantic entries: {}",
+        if extended { "extended" } else { "hot" },
+        output.len()
+    );
     ExitCode::SUCCESS
 }

@@ -54,8 +54,12 @@ impl CharCodeAnalysisEntry {
 pub fn char_code_analysis_entries() -> Vec<CharCodeAnalysisEntry> {
     finalized_char_code_entries()
         .iter()
+        .filter(|entry| entry.is_core_derived())
         .map(|entry| CharCodeAnalysisEntry {
-            hanzi: entry.hanzi(),
+            hanzi: entry
+                .hanzi()
+                .core_standard()
+                .expect("core-derived 关系必然属于规范核心"),
             code: entry.code().clone(),
             frequency_score: entry.frequency_score(),
             rime_weight: entry.rime_weight(),

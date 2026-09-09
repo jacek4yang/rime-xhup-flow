@@ -21,7 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
-use xhup_core::{HanziReading, KeySequence, XhupHanzi};
+use xhup_core::{HanziReading, InputHanzi, KeySequence, XhupHanzi};
 
 use crate::frequency::reading_score;
 
@@ -30,18 +30,26 @@ use crate::frequency::reading_score;
 /// 字段对 crate 内只读;公共 API 只暴露 [`RimeCharCodeEntry`] 投影,
 /// 不暴露万象来源概念或内部排名结构。
 pub(crate) struct FinalizedCharCodeEntry {
-    hanzi: XhupHanzi,
+    hanzi: InputHanzi,
     code: KeySequence,
     /// 贡献该 `(汉字, 码)` 关系的唯一规范读音(字典序升序)。
     readings: Box<[HanziReading]>,
     /// 贡献读音的万象聚合分数(u64,可为 0 = 无频率证据)。
     frequency_score: u64,
+    /// `true` 表示关系来自原有规范读音 × 规范形码推导；扩展关系始终排在其后。
+    core_derived: bool,
+    /// 是否至少有一份小鹤官网 oracle 证据。
+    official: bool,
+    /// 贡献来源标识，字典序升序。
+    sources: Box<[&'static str]>,
+    /// 贡献来源状态，字典序升序。
+    statuses: Box<[&'static str]>,
     /// 显式 Rime 权重(组内排名 N..1;正数、同码唯一、越大越靠前)。
     rime_weight: u32,
 }
 
 impl FinalizedCharCodeEntry {
-    pub(crate) fn hanzi(&self) -> XhupHanzi {
+    pub(crate) fn hanzi(&self) -> InputHanzi {
         self.hanzi
     }
 
@@ -55,6 +63,22 @@ impl FinalizedCharCodeEntry {
 
     pub(crate) fn frequency_score(&self) -> u64 {
         self.frequency_score
+    }
+
+    pub(crate) fn is_core_derived(&self) -> bool {
+        self.core_derived
+    }
+
+    pub(crate) fn is_official(&self) -> bool {
+        self.official
+    }
+
+    pub(crate) fn sources(&self) -> &[&'static str] {
+        &self.sources
+    }
+
+    pub(crate) fn statuses(&self) -> &[&'static str] {
+        &self.statuses
     }
 
     pub(crate) fn rime_weight(&self) -> u32 {
@@ -79,6 +103,53 @@ pub struct RimeCharCodeEntry {
     hanzi: XhupHanzi,
     code: KeySequence,
     weight: u32,
+}
+
+/// 生产输入字符编码投影：包含规范 core 与有来源的扩展关系。
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct RimeInputCharCodeEntry {
+    hanzi: InputHanzi,
+    code: KeySequence,
+    weight: u32,
+    frequency_score: u64,
+    core_derived: bool,
+    official: bool,
+    sources: Box<[&'static str]>,
+    statuses: Box<[&'static str]>,
+}
+
+impl RimeInputCharCodeEntry {
+    pub fn hanzi(&self) -> InputHanzi {
+        self.hanzi
+    }
+
+    pub fn code(&self) -> &KeySequence {
+        &self.code
+    }
+
+    pub fn weight(&self) -> u32 {
+        self.weight
+    }
+
+    pub fn frequency_score(&self) -> u64 {
+        self.frequency_score
+    }
+
+    pub fn is_core_derived(&self) -> bool {
+        self.core_derived
+    }
+
+    pub fn is_official(&self) -> bool {
+        self.official
+    }
+
+    pub fn sources(&self) -> &[&'static str] {
+        &self.sources
+    }
+
+    pub fn statuses(&self) -> &[&'static str] {
+        &self.statuses
+    }
 }
 
 impl RimeCharCodeEntry {
@@ -108,19 +179,50 @@ impl RimeCharCodeEntry {
 pub fn canonical_char_code_entries() -> Vec<RimeCharCodeEntry> {
     finalized_char_code_entries()
         .iter()
+        .filter(|entry| entry.is_core_derived())
         .map(|entry| RimeCharCodeEntry {
-            hanzi: entry.hanzi(),
+            hanzi: entry
+                .hanzi()
+                .core_standard()
+                .expect("core-derived 关系必然属于规范核心"),
             code: entry.code().clone(),
             weight: entry.rime_weight(),
         })
         .collect()
 }
 
+/// 全部生产输入字符编码关系（规范 core + attested 扩展）。
+pub fn canonical_input_char_code_entries() -> Vec<RimeInputCharCodeEntry> {
+    finalized_char_code_entries()
+        .iter()
+        .map(|entry| RimeInputCharCodeEntry {
+            hanzi: entry.hanzi(),
+            code: entry.code().clone(),
+            weight: entry.rime_weight(),
+            frequency_score: entry.frequency_score(),
+            core_derived: entry.is_core_derived(),
+            official: entry.is_official(),
+            sources: entry.sources().into(),
+            statuses: entry.statuses().into(),
+        })
+        .collect()
+}
+
+#[derive(Default)]
+struct Contribution {
+    readings: BTreeSet<HanziReading>,
+    source_weight: u32,
+    official: bool,
+    sources: BTreeSet<&'static str>,
+    statuses: BTreeSet<&'static str>,
+}
+
 /// 推导原始关系并按 `(汉字, 码)` 归并贡献读音。
-fn derive_contributions() -> BTreeMap<(XhupHanzi, KeySequence), BTreeSet<HanziReading>> {
-    let mut contributions: BTreeMap<(XhupHanzi, KeySequence), BTreeSet<HanziReading>> =
-        BTreeMap::new();
+fn derive_core_contributions() -> BTreeMap<(InputHanzi, KeySequence), Contribution> {
+    let mut contributions: BTreeMap<(InputHanzi, KeySequence), Contribution> = BTreeMap::new();
     for &hanzi in XhupHanzi::all() {
+        let input = InputHanzi::try_from(hanzi.as_char())
+            .expect("attested 输入字符层必须覆盖全部规范核心字");
         for &reading in hanzi.readings() {
             let Some(syllable) = reading.to_input_syllable() else {
                 continue;
@@ -132,8 +234,9 @@ fn derive_contributions() -> BTreeMap<(XhupHanzi, KeySequence), BTreeSet<HanziRe
             // 2 码:完整双拼音码(每个可编码规范读音)。
             let two = KeySequence::from_keys(&[s0, s1]).expect("两键非空");
             contributions
-                .entry((hanzi, two))
+                .entry((input, two))
                 .or_default()
+                .readings
                 .insert(reading);
 
             for &shape in hanzi.shape_codes() {
@@ -141,17 +244,45 @@ fn derive_contributions() -> BTreeMap<(XhupHanzi, KeySequence), BTreeSet<HanziRe
                 // 3 码:双拼音码 + 首形键。
                 let three = KeySequence::from_keys(&[s0, s1, shape_keys[0]]).expect("三键非空");
                 contributions
-                    .entry((hanzi, three))
+                    .entry((input, three))
                     .or_default()
+                    .readings
                     .insert(reading);
                 // 4 码:规范全码(音码 + 形码)。
                 let full = xhup_core::FullCode::from_parts(sound, shape);
                 let four = KeySequence::from_keys(full.as_slice()).expect("四键非空");
                 contributions
-                    .entry((hanzi, four))
+                    .entry((input, four))
                     .or_default()
+                    .readings
                     .insert(reading);
             }
+        }
+    }
+    contributions
+}
+
+/// 在旧 core 关系之上合入有来源编码。关系合并不做读音反推；每份 evidence
+/// 只产生自身的 2/3/4 键路径，不对音码和形码做笛卡尔积。
+fn derive_contributions() -> BTreeMap<(InputHanzi, KeySequence), Contribution> {
+    let mut contributions = derive_core_contributions();
+    for evidence in xhup_core::AttestedXhupCode::all() {
+        let sound = evidence.sound_code();
+        let shape = evidence.shape_code();
+        let sound_keys = sound.as_slice();
+        let shape_keys = shape.as_slice();
+        let codes = [
+            KeySequence::from_keys(sound_keys).expect("事实音码恰好两键"),
+            KeySequence::from_keys(&[sound_keys[0], sound_keys[1], shape_keys[0]])
+                .expect("事实三码恰好三键"),
+            KeySequence::from_keys(evidence.full_code().as_slice()).expect("事实全码恰好四键"),
+        ];
+        for code in codes {
+            let contribution = contributions.entry((evidence.hanzi(), code)).or_default();
+            contribution.source_weight = contribution.source_weight.max(evidence.source_weight());
+            contribution.official |= evidence.is_official();
+            contribution.sources.insert(evidence.source());
+            contribution.statuses.insert(evidence.status());
         }
     }
     contributions
@@ -165,6 +296,8 @@ fn finalize() -> Vec<FinalizedCharCodeEntry> {
     entries.sort_by(|a, b| {
         a.code
             .cmp(&b.code)
+            .then(b.core_derived.cmp(&a.core_derived))
+            .then(b.official.cmp(&a.official))
             .then(b.frequency_score.cmp(&a.frequency_score))
             .then(a.hanzi.cmp(&b.hanzi))
     });
@@ -204,31 +337,62 @@ fn finalize() -> Vec<FinalizedCharCodeEntry> {
 }
 
 /// 聚合频率后的未加权条目(rime_weight 占位 0)。
-fn scored_entries() -> Vec<FinalizedCharCodeEntry> {
-    derive_contributions()
+fn score_contributions(
+    contributions: BTreeMap<(InputHanzi, KeySequence), Contribution>,
+) -> Vec<FinalizedCharCodeEntry> {
+    contributions
         .into_iter()
-        .map(|((hanzi, code), readings)| {
+        .map(|((hanzi, code), contribution)| {
             // 频率证据属于读音:同一读音只计一次,多形路径塌缩不重复计分。
-            let frequency_score = readings.iter().fold(0u64, |sum, &reading| {
-                sum.checked_add(reading_score(hanzi, reading))
-                    .expect("聚合分数 u64 溢出")
-            });
+            let core_derived = !contribution.readings.is_empty();
+            let frequency_score = if core_derived {
+                let core = hanzi
+                    .core_standard()
+                    .expect("有规范读音贡献的关系必然属于 core");
+                contribution.readings.iter().fold(0u64, |sum, &reading| {
+                    sum.checked_add(reading_score(core, reading))
+                        .expect("聚合分数 u64 溢出")
+                })
+            } else {
+                u64::from(contribution.source_weight)
+            };
             FinalizedCharCodeEntry {
                 hanzi,
                 code,
-                readings: readings.into_iter().collect(),
+                readings: contribution.readings.into_iter().collect(),
                 frequency_score,
+                core_derived,
+                official: contribution.official,
+                sources: contribution.sources.into_iter().collect(),
+                statuses: contribution.statuses.into_iter().collect(),
                 rime_weight: 0, // 排名后回填
             }
         })
         .collect()
 }
 
+fn scored_entries() -> Vec<FinalizedCharCodeEntry> {
+    score_contributions(derive_contributions())
+}
+
 /// 全部未加权条目快照,供 merged_ranking 重建 baseline 组。
 /// 不触发最终化/权重逻辑,因此不会形成 OnceLock 初始化环。
 pub(crate) fn scored_all_entries() -> Vec<crate::merged_ranking::ScoredEntry> {
+    score_contributions(derive_core_contributions())
+        .into_iter()
+        .map(|entry| crate::merged_ranking::ScoredEntry {
+            code: entry.code,
+            text: entry.hanzi.as_char().to_string(),
+            score: entry.frequency_score,
+        })
+        .collect()
+}
+
+/// 仅 attested 新增关系的未加权快照；merged ranking 将其追加到旧菜单之后。
+pub(crate) fn scored_extension_entries() -> Vec<crate::merged_ranking::ScoredEntry> {
     scored_entries()
         .into_iter()
+        .filter(|entry| !entry.core_derived)
         .map(|entry| crate::merged_ranking::ScoredEntry {
             code: entry.code,
             text: entry.hanzi.as_char().to_string(),
@@ -260,23 +424,39 @@ mod tests {
             .collect()
     }
 
+    fn core_codes_of(ch: char) -> BTreeSet<String> {
+        finalized_char_code_entries()
+            .iter()
+            .filter(|entry| entry.hanzi().as_char() == ch && entry.is_core_derived())
+            .map(|entry| entry.code().to_string())
+            .collect()
+    }
+
     #[test]
     fn relation_counts_match_audit() {
         let entries = finalized_char_code_entries();
-        assert_eq!(entries.len(), 26753);
-        for (len, expected) in [(2, 8573), (3, 9022), (4, 9158)] {
+        assert_eq!(entries.len(), 28_851);
+        for (len, expected) in [(2, 9_254), (3, 9_724), (4, 9_873)] {
             assert_eq!(
                 entries.iter().filter(|e| e.code().len() == len).count(),
                 expected,
                 "{len} 码关系数"
             );
         }
+        assert_eq!(canonical_char_code_entries().len(), 26_753);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| !entry.is_core_derived())
+                .count(),
+            2_098
+        );
     }
 
     #[test]
     fn distinct_code_counts_match_audit() {
         let entries = finalized_char_code_entries();
-        for (len, expected) in [(2, 405), (3, 4812), (4, 8416)] {
+        for (len, expected) in [(2, 414), (3, 5_013), (4, 9_027)] {
             let codes: BTreeSet<&KeySequence> = entries
                 .iter()
                 .filter(|e| e.code().len() == len)
@@ -289,7 +469,7 @@ mod tests {
     #[test]
     fn fanout_sentinels_match_audit() {
         let entries = finalized_char_code_entries();
-        for (code, expected) in [("yi", 136), ("jid", 14), ("jumk", 5)] {
+        for (code, expected) in [("yi", 147), ("jid", 14), ("jumk", 5)] {
             assert_eq!(
                 entries
                     .iter()
@@ -299,13 +479,21 @@ mod tests {
                 "{code} 扇出"
             );
         }
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.code().to_string() == "yi" && entry.is_core_derived())
+                .count(),
+            136,
+            "core yi 扇出保持迁移前不变"
+        );
     }
 
     #[test]
     fn domain_sentinel_code_sets() {
         // 行:三读音 × 单形
         assert_eq!(
-            codes_of('行'),
+            core_codes_of('行'),
             BTreeSet::from([
                 "hg".to_string(),
                 "hh".to_string(),
@@ -319,10 +507,10 @@ mod tests {
             ])
         );
         // 长:两读音
-        assert!(codes_of('长').contains("ihp") && codes_of('长').contains("vhp"));
+        assert!(core_codes_of('长').contains("ihp") && core_codes_of('长').contains("vhp"));
         // 贯:三个形码首形键不同,3 码不塌缩(grg/grt/grv)
         assert_eq!(
-            codes_of('贯'),
+            core_codes_of('贯'),
             BTreeSet::from([
                 "gr".to_string(),
                 "grg".to_string(),
@@ -335,7 +523,7 @@ mod tests {
         );
         // 咯:lo/luo 通用塌缩(四读音 × 单形码 kk → 3+3+3)
         assert_eq!(
-            codes_of('咯'),
+            core_codes_of('咯'),
             BTreeSet::from([
                 "ge".to_string(),
                 "ka".to_string(),
@@ -348,9 +536,27 @@ mod tests {
                 "lokk".to_string(),
             ])
         );
-        // 呣/嗯:无可编码读音,零条目
-        assert!(codes_of('呣').is_empty());
-        assert!(codes_of('嗯').is_empty());
+        // core 语言学读音仍不可机械编码；attested 输入事实独立恢复可达性。
+        assert!(core_codes_of('呣').is_empty());
+        assert!(core_codes_of('嗯').is_empty());
+        assert_eq!(
+            codes_of('嗯'),
+            BTreeSet::from([
+                "en".to_string(),
+                "enk".to_string(),
+                "enkx".to_string(),
+                "ng".to_string(),
+                "ngk".to_string(),
+                "ngkx".to_string(),
+                "og".to_string(),
+                "ogk".to_string(),
+                "ogkx".to_string(),
+                "on".to_string(),
+                "onk".to_string(),
+                "onkx".to_string(),
+            ])
+        );
+        assert!(codes_of('诶').contains("eiyu"));
     }
 
     #[test]
@@ -411,11 +617,15 @@ mod tests {
         let entries = finalized_char_code_entries();
         let mut group: Vec<&FinalizedCharCodeEntry> = entries
             .iter()
-            .filter(|e| e.code().to_string() == "yi")
+            .filter(|e| e.code().to_string() == "yi" && e.is_core_derived())
             .collect();
         group.sort_by_key(|a| std::cmp::Reverse(a.rime_weight()));
         // 组首应是万象分数最高的候选,且权重 = 组大小(万象:以 > 一)
-        assert_eq!(group[0].rime_weight() as usize, group.len());
+        assert_eq!(
+            group[0].rime_weight(),
+            147,
+            "扩展候选追加后旧 core 组首仍保持全组最高权重"
+        );
         assert_eq!(group[0].hanzi().as_char(), '以');
         assert_eq!(group[1].hanzi().as_char(), '一');
         // 同组内权重降序 ⟺ 分数降序(tie 时 Unicode 升序)
@@ -425,6 +635,20 @@ mod tests {
                 assert!(pair[0].hanzi() < pair[1].hanzi());
             }
         }
+        let all_group: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.code().to_string() == "yi")
+            .collect();
+        let first_extension = all_group
+            .iter()
+            .position(|entry| !entry.is_core_derived())
+            .expect("yi 应有 attested 新增候选");
+        assert!(
+            all_group[..first_extension]
+                .iter()
+                .all(|entry| entry.is_core_derived()),
+            "新增候选只能追加在旧 core 菜单之后"
+        );
     }
 
     #[test]

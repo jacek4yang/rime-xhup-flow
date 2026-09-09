@@ -1,9 +1,10 @@
 //! 规范高频词语数据(万象 / RIME-LMDG 提取子集)的解析与校验。
 //!
-//! 入库 TSV `data/words/wanxiang_base_words.tsv` 经 `include_str!` 嵌入,是
-//! 固定高频词语层的唯一事实来源(来源、提取/选择/碰撞过滤规则与覆盖审计见该
-//! 目录 README)。本模块不读写文件、不访问网络;TSV 损坏属于仓库不变量被破坏,
-//! 解析时 panic 并给出精确行号。
+//! 入库 TSV `data/words/wanxiang_base_words.tsv`（hot）与
+//! `wanxiang_extended_words.tsv`（pinned 来源中其余合法关系）经
+//! `include_str!` 嵌入，是两层词汇证据的事实来源。来源、提取/选择规则与
+//! 覆盖审计见目录 README。本模块不读写文件、不访问网络；TSV 损坏会在
+//! 解析时 fail-fast 并给出精确行号。
 //!
 //! 词语数据按 `(词, 规范读音序列)` semantic entry 组织:同一词形的不同合法
 //! 读音序列是独立条目,各有独立聚合分数。词码不在此层出现——编码推导与排名
@@ -15,6 +16,7 @@ use xhup_core::{HanziReading, XhupHanzi};
 
 /// 入库的规范词语 TSV(唯一事实来源;由仓库自带提取器可复现生成)。
 const WORDS_TSV: &str = include_str!("../../../data/words/wanxiang_base_words.tsv");
+const EXTENDED_WORDS_TSV: &str = include_str!("../../../data/words/wanxiang_extended_words.tsv");
 
 /// 一条规范词语 semantic entry:`(词, 规范读音序列)` + 万象聚合分数。
 ///
@@ -50,6 +52,15 @@ pub(crate) fn canonical_word_entries() -> &'static [CanonicalWordEntry] {
     static ENTRIES: OnceLock<Vec<CanonicalWordEntry>> = OnceLock::new();
     ENTRIES
         .get_or_init(|| parse_tsv(WORDS_TSV, "wanxiang_base_words.tsv"))
+        .as_slice()
+}
+
+/// pinned 万象快照中未进入 hot 层的完整次级词语层；它提供 exact 候选与
+/// 组句分段证据，但仍不是输入边界（来源外组合由逐字音码原语承接）。
+pub(crate) fn canonical_extended_word_entries() -> &'static [CanonicalWordEntry] {
+    static ENTRIES: OnceLock<Vec<CanonicalWordEntry>> = OnceLock::new();
+    ENTRIES
+        .get_or_init(|| parse_tsv(EXTENDED_WORDS_TSV, "wanxiang_extended_words.tsv"))
         .as_slice()
 }
 
@@ -148,6 +159,31 @@ mod tests {
                 "{len} 字 semantic entries"
             );
         }
+    }
+
+    #[test]
+    fn extended_semantic_counts_and_hot_disjointness_match_audit() {
+        let entries = canonical_extended_word_entries();
+        assert_eq!(entries.len(), 1_301_434);
+        for (len, expected) in [(2, 108_394), (3, 567_275), (4, 625_765)] {
+            assert_eq!(
+                entries
+                    .iter()
+                    .filter(|entry| entry.readings().len() == len)
+                    .count(),
+                expected
+            );
+        }
+        let hot: std::collections::BTreeSet<_> = canonical_word_entries()
+            .iter()
+            .map(|entry| (entry.word(), entry.readings()))
+            .collect();
+        assert!(
+            entries
+                .iter()
+                .all(|entry| !hot.contains(&(entry.word(), entry.readings())))
+        );
+        assert!(entries.iter().any(|entry| entry.word() == "提示词"));
     }
 
     #[test]
