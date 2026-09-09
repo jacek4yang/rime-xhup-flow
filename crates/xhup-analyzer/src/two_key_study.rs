@@ -12,8 +12,8 @@
 //! - **候选全集**:2 字词 × Monotone V2 语法 × `II` 模式 × 2 键码。
 //!   每个规范 2 字词恰有一个 II 理论候选(语法保证,硬断言);3/4 字词
 //!   不属于本研究对象(无长度 2 的单调候选)。
-//! - **当前最优静态路径**:每词从 full code / ZR 简码 / FIXED_FIRST
-//!   简码三条现有静态路径中,按真实有效成本(rank/fanout/selection/
+//! - **legacy v1 最优静态路径**:每词从 full code / ZR 简码 / FIXED_FIRST
+//!   简码三条冻结路径中,按真实有效成本(rank/fanout/selection/
 //!   ambiguity)取最小。不假设更短必然更优。
 //! - **2 键单字 domain**:独立的 2 码单字归一化频率域(Σ P = 1)。
 //!   现有 3 码 domain 语义(`frequency.rs`)不动。

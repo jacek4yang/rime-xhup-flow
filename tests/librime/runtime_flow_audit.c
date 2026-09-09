@@ -26,7 +26,8 @@
  *        产生目标句子候选;报告名次与分段。
  *
  * 静态保护不变量(全部模式强制):
- *   uij → [铈,鼫,时间];uijm → 时间 top1;uj/ujm 不含 时间;
+ *   uij → [时间,史记,实践,事迹,铈,鼫];uijm → 时间 top1;
+ *   uj/ujm 不含 时间;
  *   q → 去;wo → 我。任何模式下违反即 FAIL。
  */
 
@@ -184,9 +185,10 @@ static void verify_frozen_sentinels(RimeSessionId session) {
     type_keys(session, "uij");
     capture_menu(session, menu, sizeof(menu));
     snprintf(detail, sizeof(detail), "menu=[%.96s]", menu);
-    report(menu_rank(menu, "铈") == 1 && menu_rank(menu, "鼫") == 2 &&
-               menu_rank(menu, "时间") == 3,
-           "冻结哨兵 uij → [铈,鼫,时间]", detail);
+    report(menu_rank(menu, "时间") == 1 && menu_rank(menu, "史记") == 2 &&
+               menu_rank(menu, "实践") == 3 && menu_rank(menu, "事迹") == 4 &&
+               menu_rank(menu, "铈") == 5 && menu_rank(menu, "鼫") == 6,
+           "canonical v2 哨兵 uij 精确候选序", detail);
     reset_composition(session);
 
     type_keys(session, "uijm");

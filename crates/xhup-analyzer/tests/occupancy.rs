@@ -148,7 +148,13 @@ fn primary_layer_reaches_optimizer_merged_ranks() {
 #[test]
 fn current_production_layer_audit_counts_shortcuts() {
     let baseline = CodeOccupancy::build_baseline_fixed().layer_audit();
-    let production = CodeOccupancy::build_current_production().layer_audit();
+    let production_occupancy = CodeOccupancy::build_current_production();
+    assert_eq!(
+        production_occupancy.occupied_codes().count(),
+        140_664,
+        "current production distinct exact code 数"
+    );
+    let production = production_occupancy.layer_audit();
     let shortcut_count = canonical_primary_shortcut_entries().len();
     let fixed_first_count = canonical_fixed_first_shortcut_entries().len();
     assert_eq!(production.word_shortcut_rows(), shortcut_count);

@@ -290,7 +290,7 @@ jobs:
 
           - KdConv top-2000 replay:KSPC 1.8971,rank1 96.9544%,
             rank≤3 99.9120%;
-          - 140,666 个静态 exact code 逐菜单 librime 审计;
+          - 140,664 个静态 exact code 逐菜单 librime 审计;
           - 传统别名 `就是=jqu`、`知道=vdc`、`不是=buu`、
             `你们=nim`、`还是=hdu`、`因为=yww`、`如果=rgo`
             由 runtime rank1 哨兵锁定。

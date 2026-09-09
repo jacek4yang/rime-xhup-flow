@@ -92,7 +92,7 @@ describe("typeKey", () => {
 describe("简码路线(B5)", () => {
   const index = makeIndex();
   const shortcutItem = index.pools["shortcut-primary"][0];
-  // fixture:时间 ZR 简码 uij(主)/ 全码 uijm(备用,非前缀分歧路径)
+  // fixture:时间 canonical v2 简码 uij(主)/ 全码 uijm(备用,非前缀分歧路径)
   it("主练码(简码)完成 = perfect,routeUsed = primary", () => {
     const pool = buildPool("shortcut-primary", [shortcutItem]);
     const config: SessionConfig = { mode: "zero-regression", targetLength: 1, pools: [pool] };

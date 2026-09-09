@@ -83,12 +83,13 @@ fn main() -> ExitCode {
     // 占用:baseline + optimizer v2 PRIMARY + FIXED_FIRST)。独立快速路径。
     if let Some(path) = dump_static_menu_manifest_path {
         let occupancy = xhup_analyzer::occupancy::CodeOccupancy::build_current_production();
+        let exact_code_count = occupancy.occupied_codes().count();
         let manifest = static_menu_manifest(&occupancy);
         if let Err(error) = std::fs::write(&path, manifest) {
             eprintln!("写入 {path} 失败:{error}");
             return ExitCode::FAILURE;
         }
-        eprintln!("全静态菜单 manifest → {path}");
+        eprintln!("全静态菜单 manifest({exact_code_count} exact codes) → {path}");
         return ExitCode::SUCCESS;
     }
 
@@ -827,6 +828,7 @@ fn static_menu_manifest(occupancy: &xhup_analyzer::occupancy::CodeOccupancy) -> 
     }
     let mut out = String::new();
     writeln!(out, "# XHUP Flow full static exact-code menu manifest.").unwrap();
+    writeln!(out, "# exact codes: {}", codes.len()).unwrap();
     writeln!(
         out,
         "# layers: level1 + chars + fixed words + optimizer-v2 PRIMARY + FIXED_FIRST"

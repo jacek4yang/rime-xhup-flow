@@ -813,11 +813,11 @@ mod tests {
         assert!((0.0..=1.0).contains(&rows[0].replay.rank1_rate));
     }
 
-    /// 真实 canonical 数据的回归守卫(2026-10 高频词简码丢失 P0):
-    /// canonical ZR/FF/二码层中频率 top 段的词,在 v2 映射里不得静默
+    /// legacy v1 reference 数据的回归守卫(2026-10 高频词简码丢失 P0):
+    /// v1 ZR/FF/二码层中频率 top 段的词,在 v2 映射里不得静默
     /// 丢失简码分配。
     #[test]
-    fn top_canonical_shortcut_words_keep_v2_assignment() {
+    fn top_legacy_v1_shortcut_words_keep_v2_assignment() {
         let data = crate::build_analysis();
         let targets = v2_targets(&data.words);
         let evidence_set = crate::evidence::LexicalEvidenceSet::build(&data.words, &data.frequency);

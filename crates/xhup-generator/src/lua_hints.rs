@@ -105,7 +105,7 @@ mod tests {
     #[test]
     fn data_carries_known_shortcuts() {
         let data = generate_lua_quick_hints_data();
-        // 时间 的 ZR 简码 uij(3 键 < 全码 uijm 4 键)。
+        // 时间 的 canonical v2 FIXED_FIRST 简码 uij(3 键 < 全码 uijm 4 键)。
         assert!(data.contains("[\"时间\"] = \"uij\""), "应含 时间 → uij");
         // 全码桶检查:每条提示码都严格短于对应全码由生成逻辑保证;
         // 抽查条数与层规模一致(三层合计去重后 ≥ 各层最小值)。

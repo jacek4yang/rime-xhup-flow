@@ -25,7 +25,7 @@
 - Rust:`fmt` / `check` / `clippy -D warnings` / workspace 全测试;
 - replay:KdConv top-2000 基线 KSPC 1.8971、rank1 96.9544%、
   rank≤3 99.9120%、fallback 37.0093%;
-- Rime:140,666 个静态 exact code 菜单全量审计,涉及干净 userdb、
+- Rime:140,664 个静态 exact code 菜单全量审计,涉及干净 userdb、
   学习后静态保护、无重复、Flow 组句/持久化/导入导出;
 - runtime 哨兵:2–5 键、传统别名、legacy IF、prefix continuation、
   PRIMARY + FIXED_FIRST + baseline 精确混排菜单;

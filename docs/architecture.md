@@ -46,7 +46,7 @@ FROZEN STATIC  >  DYNAMIC USER LEARNING  >  SENTENCE COMPOSITION
 ```
 
 - Flow 引擎绝不改变任何静态候选的相对次序与 top1。runtime 审计对全部
-  140,666 个静态 exact 码逐码断言(干净 userdb 与学习后两种状态):
+  140,664 个静态 exact 码逐码断言(干净 userdb 与学习后两种状态):
   菜单逐项同序相等、无可见重复,动态候选只允许追加在静态组之后。
 - 冻结哨兵(永久有效):
   `uij → [时间, 史记, 实践, 事迹, 铈, 鼫]` 精确序、`uijm → 时间`

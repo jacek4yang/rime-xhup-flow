@@ -31,7 +31,7 @@ XHUP Flow 首个稳定版本。
 
 - KdConv top-2000 replay 基线:KSPC 1.8971、rank1 96.9544%、
   rank≤3 99.9120%;
-- librime 全量验证 140,666 个静态 exact code,并覆盖组句、学习、
+- librime 全量验证 140,664 个静态 exact code,并覆盖组句、学习、
   持久化、真实 deployment graph、Lua 与日常输入控制;
 - 所有 Rime/Trainer canonical 产物可重复生成,发布包附
   `SHA256SUMS.txt`、`CANONICAL-SHA256SUMS.txt` 和 `BUILD-INFO.txt`;

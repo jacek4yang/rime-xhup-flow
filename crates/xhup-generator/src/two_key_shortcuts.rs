@@ -21,7 +21,7 @@
 //! - shortcut 码在 baseline fixed exact-code 集合(一级简码 + 单字 2/3/4
 //!   码 + 固定词 4/6/8 键)中必须**完全空闲**(fanout == 0)—— 二码
 //!   零冲突语义由 generator 独立重验,不盲信 analyzer 输出;
-//! - 词不得持有 ZERO_REGRESSION / FIXED_FIRST production 简码(一词
+//! - 词不得持有 legacy v1 ZERO_REGRESSION / FIXED_FIRST fixture 简码(一词
 //!   最多一条简码);shortcut 码不得与两层的任何 production 码冲突;
 //! - 词、shortcut 码、`(词, 完整码)` 各自唯一。
 //!
