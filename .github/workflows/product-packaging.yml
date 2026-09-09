@@ -116,12 +116,11 @@ jobs:
         run: |
           set -euo pipefail
           cargo run -p xhup-cli --locked -- generate rime --output build/rime-package
-          # 结构校验:恰好 14 个顶层拥有文件(11 数据/方案 + 3 词典编译
-          # wrapper)+ lua/ 子目录(简码提示模块与数据);全部非空、
-          # 两套方案齐备、版本内嵌
+          # 结构校验:恰好 12 个顶层 YAML + lua/ 子目录(内含 2 个文件),
+          # 即递归共 14 个拥有文件;全部非空、两套方案齐备、版本内嵌。
           files="$(ls build/rime-package)"
           count="$(echo "$files" | wc -l)"
-          [[ "$count" -eq 15 ]] || { echo "::error::期望 14 个源文件 + lua/ 目录,实际 $count:$files"; exit 1; }
+          [[ "$count" -eq 13 ]] || { echo "::error::期望 12 个顶层 YAML + lua/ 目录,实际 $count:$files"; exit 1; }
           for f in build/rime-package/*.yaml \
                    build/rime-package/lua/xhup_flow/quick_hint.lua \
                    build/rime-package/lua/xhup_flow/data/quick_hints.lua; do
