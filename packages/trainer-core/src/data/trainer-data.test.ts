@@ -24,7 +24,7 @@ function makeEntry(overrides: Partial<TrainerEntry> = {}): TrainerEntry {
 
 function makeDataset(overrides: Partial<TrainerDataset> = {}): TrainerDataset {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     packageVersion: "0.1.0",
     entries: [makeEntry()],
     words: [{ word: "我们", code: "womf", length: 4, charCount: 2, rimeWeight: 9 }],
@@ -32,11 +32,13 @@ function makeDataset(overrides: Partial<TrainerDataset> = {}): TrainerDataset {
       key: "abcdefghijklmnopqrstuvwxyz"[index] ?? "a",
       char: `甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥甲乙丙丁戊`[index] ?? "甲",
     })),
-    wordShortcuts: [{ word: "时间", fullCode: "uijm", shortcutCode: "uij", mode: "FF" }],
+    primaryShortcuts: [
+      { word: "时间", fullCode: "uijm", shortcutCode: "uij", rank: 1, mergedRank: 1 },
+      { word: "记得", fullCode: "jide", shortcutCode: "jd", rank: 1, mergedRank: 1 },
+    ],
     fixedFirstShortcuts: [
       { word: "发展", fullCode: "favj", shortcutCode: "faj", mode: "FFI" },
     ],
-    twoKeyShortcuts: [{ word: "记得", fullCode: "jide", shortcutCode: "jd", mode: "II" }],
     sentences: [{ text: "我们时间", code: "womfuijm", components: ["我们", "时间"] }],
     doublePinyin: {
       initials: [{ initial: "sh", key: "u" }],
@@ -48,21 +50,21 @@ function makeDataset(overrides: Partial<TrainerDataset> = {}): TrainerDataset {
 }
 
 describe("validateTrainerDataset", () => {
-  it("接受合法的 V2 数据集", () => {
+  it("接受合法的 V3 数据集", () => {
     const dataset = validateTrainerDataset(makeDataset());
-    expect(dataset.schemaVersion).toBe(2);
+    expect(dataset.schemaVersion).toBe(3);
     expect(dataset.entries).toHaveLength(1);
     expect(dataset.words).toHaveLength(1);
     expect(dataset.level1Shortcuts).toHaveLength(26);
     expect(dataset.sentences).toHaveLength(1);
   });
 
-  it("拒绝 V1 与未知 schemaVersion", () => {
+  it("拒绝旧版与未知 schemaVersion", () => {
     expect(() =>
       validateTrainerDataset({ ...makeDataset(), schemaVersion: 1 }),
-    ).toThrow(/版本应为 2/);
+    ).toThrow(/版本应为 3/);
     expect(() =>
-      validateTrainerDataset({ ...makeDataset(), schemaVersion: 3 }),
+      validateTrainerDataset({ ...makeDataset(), schemaVersion: 4 }),
     ).toThrow(TrainerDataError);
   });
 
@@ -147,8 +149,8 @@ describe("validateTrainerDataset", () => {
     expect(() =>
       validateTrainerDataset(
         makeDataset({
-          wordShortcuts: [
-            { word: "时间", fullCode: "uijm", shortcutCode: "uijm", mode: "FF" },
+          primaryShortcuts: [
+            { word: "时间", fullCode: "uijm", shortcutCode: "uijm", rank: 1, mergedRank: 1 },
           ],
         }),
       ),

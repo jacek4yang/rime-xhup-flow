@@ -185,7 +185,7 @@ describe("pickNext", () => {
 
   it("简码层模式在对应池中选题", () => {
     const shortcutPools = [
-      buildPool("shortcut-zero-regression", [
+      buildPool("shortcut-primary", [
         { ...charItem(makeEntry("时间", "uijm")), id: "shortcut:时间:uij", primaryCode: "uij" },
       ]),
     ];

@@ -138,7 +138,7 @@ pub fn all_shortcut_metadata() -> Vec<ShortcutMetadata> {
         });
     }
     // ZR / FF / 2-key:canonical TSV 已解析的条目直读。
-    for entry in xhup_generator::canonical_word_shortcut_entries() {
+    for entry in xhup_generator::legacy_v1_word_shortcut_entries() {
         out.push(ShortcutMetadata::word_shortcut(
             entry.word(),
             &entry.full_code().to_string(),
@@ -157,7 +157,7 @@ pub fn all_shortcut_metadata() -> Vec<ShortcutMetadata> {
         ));
     }
     // 二码零冲突层:generator canonical TSV 解析投影直读。
-    for entry in xhup_generator::canonical_two_key_shortcut_entries() {
+    for entry in xhup_generator::legacy_v1_two_key_shortcut_entries() {
         out.push(ShortcutMetadata::word_shortcut(
             entry.word(),
             &entry.full_code().to_string(),

@@ -1,11 +1,10 @@
-//! 高稳健零冲突词语简码层:canonical TSV 的解析与硬不变量校验。
+//! legacy v1 高稳健零冲突词语简码 fixture 的解析与硬不变量校验。
 //!
-//! 入库 TSV `data/shortcuts/word_zero_regression.tsv` 经 `include_str!` 嵌入,
-//! 是这层词语简码的唯一事实来源。它由 xhup-analyzer 的 production selection
+//! 冻结 TSV `data/shortcuts/legacy/word_zero_regression_v1.tsv` 经
+//! `include_str!` 嵌入。它由 xhup-analyzer 的 historical production selection
 //! policy(`zero-regression-high-v1`,见 `xhup_analyzer::production`)从万象
-//! 词语/频率证据确定性导出,经 diff review 与 policy review 后入库;一旦发布
-//! 即属于稳定的用户肌肉记忆兼容接口,不随 analyzer 算法演进静默重生成
-//! (数据性质与 provenance 见 `data/shortcuts/README.md`)。
+//! 词语/频率证据确定性导出。它仅供 analyzer 重放 v1 选择器和兼容研究;
+//! production generator 只读 PRIMARY + FIXED_FIRST canonical v2,不读本模块。
 //!
 //! 解析时的硬不变量(损坏即 panic,不修改数据迎合代码):
 //!
@@ -26,8 +25,9 @@ use std::sync::OnceLock;
 
 use xhup_core::{KeySequence, XhupHanzi};
 
-/// 入库的词语简码 TSV(唯一事实来源)。
-const WORD_SHORTCUTS_TSV: &str = include_str!("../../../data/shortcuts/word_zero_regression.tsv");
+/// 冻结的 legacy v1 零冲突词语简码 TSV。
+const WORD_SHORTCUTS_TSV: &str =
+    include_str!("../../../data/shortcuts/legacy/word_zero_regression_v1.tsv");
 
 /// ZR 层的原始词/shortcut 码集合(纯文本扫描,不经过本层校验管线)。
 ///
@@ -60,15 +60,15 @@ pub fn raw_shortcut_codes() -> BTreeSet<KeySequence> {
         .collect()
 }
 
-/// 一条 canonical 词语简码关系:一个词的一个 shortcut 别名。
-pub struct CanonicalWordShortcutEntry {
+/// 一条 legacy v1 零冲突词语简码关系。
+pub struct LegacyV1WordShortcutEntry {
     word: String,
     full_code: KeySequence,
     shortcut_code: KeySequence,
     mode: String,
 }
 
-impl CanonicalWordShortcutEntry {
+impl LegacyV1WordShortcutEntry {
     /// 词语(2~4 个规范汉字)。
     pub fn word(&self) -> &str {
         &self.word
@@ -90,11 +90,11 @@ impl CanonicalWordShortcutEntry {
     }
 }
 
-/// 全部 canonical 词语简码关系(进程内共享,解析一次;canonical 序列化顺序)。
-pub fn canonical_word_shortcut_entries() -> &'static [CanonicalWordShortcutEntry] {
-    static ENTRIES: OnceLock<Vec<CanonicalWordShortcutEntry>> = OnceLock::new();
+/// 全部 legacy v1 零冲突词语简码关系(仅历史研究)。
+pub fn legacy_v1_word_shortcut_entries() -> &'static [LegacyV1WordShortcutEntry] {
+    static ENTRIES: OnceLock<Vec<LegacyV1WordShortcutEntry>> = OnceLock::new();
     ENTRIES
-        .get_or_init(|| parse_tsv(WORD_SHORTCUTS_TSV, "word_zero_regression.tsv"))
+        .get_or_init(|| parse_tsv(WORD_SHORTCUTS_TSV, "legacy/word_zero_regression_v1.tsv"))
         .as_slice()
 }
 
@@ -136,7 +136,7 @@ fn baseline_fixed_codes() -> BTreeSet<KeySequence> {
 }
 
 /// 解析内嵌 TSV 并验证全部硬不变量。
-fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalWordShortcutEntry> {
+fn parse_tsv(text: &'static str, name: &str) -> Vec<LegacyV1WordShortcutEntry> {
     // 固定词层的 (词, 完整码) 成员资格与 baseline 码集合。
     let word_codes: BTreeSet<(String, String)> = crate::canonical_word_code_entries()
         .iter()
@@ -144,7 +144,7 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalWordShortcutEntry> 
         .collect();
     let baseline_codes = baseline_fixed_codes();
 
-    let mut entries: Vec<CanonicalWordShortcutEntry> = Vec::new();
+    let mut entries: Vec<LegacyV1WordShortcutEntry> = Vec::new();
     let mut words: BTreeSet<&str> = BTreeSet::new();
     let mut codes: BTreeSet<KeySequence> = BTreeSet::new();
     let mut word_full_codes: BTreeSet<(String, String)> = BTreeSet::new();
@@ -232,7 +232,7 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalWordShortcutEntry> 
             "{name} 第 {row_number} 行 (词, 完整码) 重复: {line:?}"
         );
 
-        entries.push(CanonicalWordShortcutEntry {
+        entries.push(LegacyV1WordShortcutEntry {
             word: word.to_string(),
             full_code,
             shortcut_code,
@@ -244,7 +244,7 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalWordShortcutEntry> 
     // canonical 序列化顺序:shortcut 长度 → 码 → 词 → 完整码 → 模式。
     for pair in entries.windows(2) {
         let (a, b) = (&pair[0], &pair[1]);
-        let key = |e: &CanonicalWordShortcutEntry| {
+        let key = |e: &LegacyV1WordShortcutEntry| {
             (
                 e.shortcut_code.len(),
                 e.shortcut_code.clone(),
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn entries_are_parsed_and_nonempty() {
-        let entries = canonical_word_shortcut_entries();
+        let entries = legacy_v1_word_shortcut_entries();
         assert!(entries.len() > 40_000, "production 简码层应有数万条");
     }
 }

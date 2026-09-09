@@ -1,14 +1,9 @@
-//! 高稳健 FIXED_FIRST 词语简码层:canonical TSV 的解析与硬不变量校验。
+//! optimizer v2 FIXED_FIRST 词语简码层:canonical TSV 解析与硬不变量校验。
 //!
 //! 入库 TSV `data/shortcuts/word_fixed_first.tsv` 经 `include_str!` 嵌入,
-//! 是第二层词语简码的唯一事实来源。它由 xhup-analyzer 的 production
-//! selection policy(`fixed-first-high-v1`,见
-//! `xhup_analyzer::production_fixed_first`)在 ZERO_REGRESSION 层之上的
-//! incremental universe 中确定性导出:与 baseline fixed exact code 重码、
-//! 但频率/输入成本分析表明仍值得使用的高稳健候选,作为新增候选追加到既有
-//! 固定候选之后(名次 = baseline fanout + 1,既有次序绝对不变)。数据经
-//! diff review 与 policy review 后入库;一旦发布即属于稳定的用户肌肉记忆
-//! 兼容接口,不随 analyzer 算法演进静默重生成(见 `data/shortcuts/README.md`)。
+//! 是 v2 映射中「baseline 占用码上绝对 rank 1 且满足单调 F/I 格式」
+//! 的子集;其余 v2 映射位于 PRIMARY。两层由同一 selected dump 确定性
+//! 导出并共同构成唯一 production mapping。
 //!
 //! 解析时的硬不变量(损坏即 panic,不修改数据迎合代码):
 //!
@@ -21,14 +16,11 @@
 //!   monotone-suffix-initials-v2;一旦 I 出现,后续不得再 F —— 与
 //!   analyzer 的 `CandidateGrammar::MonotoneSuffixInitialsV2` 是同一
 //!   不变式的独立实现,generator 不依赖 analyzer);
-//! - 词不得持有 ZERO_REGRESSION production 简码(一词最多一条简码);
-//! - shortcut 码不得与 ZERO_REGRESSION production 码冲突(与 ZR 层全量
-//!   不相交);
+//! - 词不得同时出现在 PRIMARY(跨层一词一码);
 //! - shortcut 码必须命中 baseline fixed exact-code 集合(一级简码 + 单字
 //!   2/3/4 码 + 固定词 4/6/8 键)—— FIXED_FIRST 语义本身就是「与固定候选
 //!   重码」,由 generator 独立重验,不盲信 analyzer 输出;
-//! - 同一 `(词, shortcut 码)` 不得已是 baseline exact 关系(否则第二
-//!   translator 会制造重复候选);
+//! - 同一 `(词, shortcut 码)` 不得已是 baseline exact 关系;
 //! - 词、shortcut 码、`(词, 完整码)` 各自唯一。
 //!
 //! 本模块不读写文件、不访问网络。
@@ -41,6 +33,10 @@ use xhup_core::{KeySequence, XhupHanzi};
 /// 入库的 FIXED_FIRST 词语简码 TSV(唯一事实来源)。
 const FIXED_FIRST_SHORTCUTS_TSV: &str =
     include_str!("../../../data/shortcuts/word_fixed_first.tsv");
+
+/// v1 selector 的冻结 FIXED_FIRST fixture,仅供 analyzer 历史研究重放。
+const LEGACY_V1_FIXED_FIRST_SHORTCUTS_TSV: &str =
+    include_str!("../../../data/shortcuts/legacy/word_fixed_first_v1.tsv");
 
 /// FF 层的原始词集合(纯文本扫描,不经过本层校验管线)。
 ///
@@ -68,6 +64,25 @@ pub fn raw_shortcut_codes() -> BTreeSet<KeySequence> {
                 .expect("FF 数据行应有 shortcut 字段")
                 .parse()
                 .expect("FF shortcut 码应可解析")
+        })
+        .collect()
+}
+
+/// 初始化安全的 merged-ranking 原始视图:`(词, shortcut, 绝对 rank=1)`。
+/// 不调用 canonical 单字/词层,避免最终化过程中的 OnceLock 初始化环。
+pub(crate) fn raw_ranking_entries() -> Vec<(String, KeySequence, usize)> {
+    FIXED_FIRST_SHORTCUTS_TSV
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .map(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            let word = fields.first().expect("FIXED_FIRST 应有词字段").to_string();
+            let code = fields
+                .get(2)
+                .expect("FIXED_FIRST 应有 shortcut 字段")
+                .parse()
+                .expect("FIXED_FIRST shortcut 应合法");
+            (word, code, 1)
         })
         .collect()
 }
@@ -100,6 +115,12 @@ impl CanonicalFixedFirstShortcutEntry {
     pub fn mode(&self) -> &str {
         &self.mode
     }
+
+    /// Rime 静态同码全组的唯一整数权重(本层绝对 rank 恒为 1)。
+    pub fn rime_weight(&self) -> u32 {
+        crate::merged_ranking::merged_weight(&self.shortcut_code, &self.word)
+            .expect("FIXED_FIRST 条目必须参与 merged ranking")
+    }
 }
 
 /// 全部 canonical FIXED_FIRST 词语简码关系(进程内共享,解析一次;
@@ -107,8 +128,36 @@ impl CanonicalFixedFirstShortcutEntry {
 pub fn canonical_fixed_first_shortcut_entries() -> &'static [CanonicalFixedFirstShortcutEntry] {
     static ENTRIES: OnceLock<Vec<CanonicalFixedFirstShortcutEntry>> = OnceLock::new();
     ENTRIES
-        .get_or_init(|| parse_tsv(FIXED_FIRST_SHORTCUTS_TSV, "word_fixed_first.tsv"))
+        .get_or_init(|| {
+            parse_tsv(
+                FIXED_FIRST_SHORTCUTS_TSV,
+                "word_fixed_first.tsv",
+                DatasetKind::CurrentV2,
+            )
+        })
         .as_slice()
+}
+
+/// v1 selector 的冻结 FIXED_FIRST 关系。
+///
+/// 仅供 analyzer 的 legacy/research-only 重放;production generator 绝不读取。
+pub fn legacy_v1_fixed_first_shortcut_entries() -> &'static [CanonicalFixedFirstShortcutEntry] {
+    static ENTRIES: OnceLock<Vec<CanonicalFixedFirstShortcutEntry>> = OnceLock::new();
+    ENTRIES
+        .get_or_init(|| {
+            parse_tsv(
+                LEGACY_V1_FIXED_FIRST_SHORTCUTS_TSV,
+                "legacy/word_fixed_first_v1.tsv",
+                DatasetKind::LegacyV1,
+            )
+        })
+        .as_slice()
+}
+
+#[derive(Clone, Copy)]
+enum DatasetKind {
+    CurrentV2,
+    LegacyV1,
 }
 
 /// 极小 F/I 投影验证器:完整码每两键一个字,F 取两键、I 取首键。
@@ -181,20 +230,38 @@ fn baseline_fixed_groups() -> std::collections::BTreeMap<KeySequence, BTreeSet<S
 }
 
 /// 解析内嵌 TSV 并验证全部硬不变量。
-fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalFixedFirstShortcutEntry> {
-    // 固定词层的 (词, 完整码) 成员资格、baseline 组与 ZR 词/码集合。
+fn parse_tsv(
+    text: &'static str,
+    name: &str,
+    dataset_kind: DatasetKind,
+) -> Vec<CanonicalFixedFirstShortcutEntry> {
+    // 固定词层的 (词, 完整码) 成员资格与 baseline 组。
     let word_codes: BTreeSet<(String, String)> = crate::canonical_word_code_entries()
         .iter()
         .map(|entry| (entry.word().to_string(), entry.code().to_string()))
         .collect();
     let baseline_groups = baseline_fixed_groups();
-    // 跨层集合一律来自兄弟层的原始 TSV 文本扫描:校验管线经 OnceLock
-    // 延迟初始化,兄弟层(two_key)反向引用本层,互相调用校验管线会形成
-    // 循环初始化死锁。「一词一简码」由本层(ZR/二码词)与二码层(ZR/FF 词)
-    // 两侧分别断言。
-    let zr_words: BTreeSet<&str> = crate::word_shortcuts::raw_words();
-    let zr_codes: BTreeSet<KeySequence> = crate::word_shortcuts::raw_shortcut_codes();
-    let two_key_words: BTreeSet<&str> = crate::two_key_shortcuts::raw_words();
+    // 跨层集合只做原始文本扫描,避免兄弟 OnceLock 循环初始化。
+    let (forbidden_words, forbidden_codes, forbidden_layer): (
+        BTreeSet<&str>,
+        BTreeSet<KeySequence>,
+        &str,
+    ) = match dataset_kind {
+        DatasetKind::CurrentV2 => (
+            crate::primary_shortcuts::raw_words(),
+            BTreeSet::new(),
+            "PRIMARY",
+        ),
+        DatasetKind::LegacyV1 => {
+            let mut words = crate::word_shortcuts::raw_words();
+            words.extend(crate::two_key_shortcuts::raw_words());
+            (
+                words,
+                crate::word_shortcuts::raw_shortcut_codes(),
+                "legacy ZERO_REGRESSION/二码",
+            )
+        }
+    };
 
     let mut entries: Vec<CanonicalFixedFirstShortcutEntry> = Vec::new();
     let mut words: BTreeSet<&str> = BTreeSet::new();
@@ -216,7 +283,7 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalFixedFirstShortcutE
             panic!("{name} 第 {row_number} 行应为四个 TAB 分隔字段: {line:?}");
         };
 
-        // 词:2~4 个规范汉字(逐字经 XhupHanzi 语义验证);不得已有 ZR 简码。
+        // 词:2~4 个规范汉字;不得同时持有 PRIMARY 简码。
         let char_count = word.chars().count();
         assert!(
             (2..=4).contains(&char_count),
@@ -229,12 +296,8 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalFixedFirstShortcutE
             );
         }
         assert!(
-            !zr_words.contains(word),
-            "{name} 第 {row_number} 行词已持有 ZERO_REGRESSION 简码: {word:?}"
-        );
-        assert!(
-            !two_key_words.contains(word),
-            "{name} 第 {row_number} 行词已持有二码简码: {word:?}"
+            !forbidden_words.contains(word),
+            "{name} 第 {row_number} 行词已持有 {forbidden_layer} 简码: {word:?}"
         );
 
         // 完整码:可解析,长度为字数两倍,且 (词, 完整码) 属于固定词层。
@@ -251,7 +314,7 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalFixedFirstShortcutE
             "{name} 第 {row_number} 行 (词, 完整码) 不在固定词层: {line:?}"
         );
 
-        // shortcut:纯小写 a-z,长度 ≥ 3 且小于完整码;不与 ZR 码冲突。
+        // shortcut:纯小写 a-z,长度 ≥ 3 且小于完整码。
         let shortcut_code: KeySequence = shortcut_field
             .parse()
             .unwrap_or_else(|_| panic!("{name} 第 {row_number} 行 shortcut 码非法: {line:?}"));
@@ -260,10 +323,9 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalFixedFirstShortcutE
             "{name} 第 {row_number} 行 shortcut 长度应在 [3, 完整码) 内: {line:?}"
         );
         assert!(
-            !zr_codes.contains(&shortcut_code),
-            "{name} 第 {row_number} 行 shortcut 与 ZERO_REGRESSION 码冲突: {line:?}"
+            !forbidden_codes.contains(&shortcut_code),
+            "{name} 第 {row_number} 行 shortcut 与 {forbidden_layer} 码冲突: {line:?}"
         );
-
         // FIXED_FIRST 语义独立重验:必须与 baseline fixed 码重码,
         // 且同码不得已有同名候选(否则第二 translator 产生重复候选)。
         let baseline_texts = baseline_groups.get(&shortcut_code).unwrap_or_else(|| {
@@ -362,8 +424,8 @@ mod tests {
         let entries = canonical_fixed_first_shortcut_entries();
         assert!(!entries.is_empty(), "production FIXED_FIRST 层应有数据");
         assert!(
-            entries.len() < crate::canonical_word_shortcut_entries().len(),
-            "FIXED_FIRST 层应显著小于 ZERO_REGRESSION 层"
+            entries.len() < crate::canonical_primary_shortcut_entries().len(),
+            "FIXED_FIRST 层应显著小于 PRIMARY 层"
         );
     }
 }

@@ -15,8 +15,8 @@
 use std::collections::BTreeMap;
 
 use xhup_generator::{
-    canonical_fixed_first_shortcut_entries, canonical_two_key_shortcut_entries,
-    canonical_word_code_entries, canonical_word_shortcut_entries,
+    canonical_fixed_first_shortcut_entries, canonical_primary_shortcut_entries,
+    canonical_word_code_entries,
 };
 
 use crate::corpus::Segmenter;
@@ -46,7 +46,7 @@ pub struct InputPlan {
     pub keys: usize,
     /// 预期候选位(1 = 首选)。
     pub rank: usize,
-    /// 经由层(full / zero-regression / fixed-first / two-key)。
+    /// 经由层(full / primary / fixed-first)。
     pub via: &'static str,
     /// 期望成本(键 + 选择)。
     pub expected_cost: f64,
@@ -60,18 +60,17 @@ pub struct ReplayMapping {
 }
 
 impl ReplayMapping {
-    /// 从 canonical 数据构建(全码 + ZR + FF + 二码,按期望成本择优)。
+    /// 从 canonical 数据构建(全码 + PRIMARY + FIXED_FIRST,按期望成本择优)。
     pub fn build(cost: &ReplayCostModel) -> Self {
         let mut mapping = Self::build_full_code_layer(cost);
 
-        // 简码层:码位唯一映射,首选。
-        for entry in canonical_word_shortcut_entries() {
+        for entry in canonical_primary_shortcut_entries() {
             mapping.offer(
                 cost,
                 entry.word(),
                 entry.shortcut_code().len(),
-                1,
-                "zero-regression",
+                entry.merged_rank(),
+                "primary",
             );
         }
         for entry in canonical_fixed_first_shortcut_entries() {
@@ -81,15 +80,6 @@ impl ReplayMapping {
                 entry.shortcut_code().len(),
                 1,
                 "fixed-first",
-            );
-        }
-        for entry in canonical_two_key_shortcut_entries() {
-            mapping.offer(
-                cost,
-                entry.word(),
-                entry.shortcut_code().len(),
-                1,
-                "two-key",
             );
         }
         mapping

@@ -1,13 +1,14 @@
 /**
  * 测试共享 fixture:构造规范形状的训练条目/索引/进度。
- * 仅测试使用;生产数据一律来自 Rust 生成的 V2 数据集。
+ * 仅测试使用;生产数据一律来自 Rust 生成的 V3 数据集。
  */
 
 import type {
   TrainerDataset,
   TrainerEntry,
   TrainerSentence,
-  TrainerShortcut,
+  TrainerFixedFirstShortcut,
+  TrainerPrimaryShortcut,
   TrainerWord,
 } from "../data/trainer-data";
 import { buildTrainerIndex, type TrainerIndex } from "../data/trainer-index";
@@ -39,8 +40,18 @@ export function makeShortcut(
   fullCode: string,
   shortcutCode: string,
   mode = "FI",
-): TrainerShortcut {
+): TrainerFixedFirstShortcut {
   return { word, fullCode, shortcutCode, mode };
+}
+
+export function makePrimaryShortcut(
+  word: string,
+  fullCode: string,
+  shortcutCode: string,
+  rank = 1,
+  mergedRank = rank,
+): TrainerPrimaryShortcut {
+  return { word, fullCode, shortcutCode, rank, mergedRank };
 }
 
 export function makeSentence(text: string, code: string): TrainerSentence {
@@ -51,10 +62,10 @@ export function makeSentence(text: string, code: string): TrainerSentence {
   return { text, code, components };
 }
 
-/** 最小合法 V2 数据集(全部 11 个池至少可构建)。 */
+/** 最小合法 V3 数据集(全部 11 个池至少可构建)。 */
 export function makeDataset(overrides: Partial<TrainerDataset> = {}): TrainerDataset {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     packageVersion: "0.0.0-test",
     entries: [
       makeEntry("行", "xk", 90),
@@ -77,9 +88,11 @@ export function makeDataset(overrides: Partial<TrainerDataset> = {}): TrainerDat
       { key: "q", char: "去" },
       { key: "w", char: "我" },
     ],
-    wordShortcuts: [makeShortcut("时间", "uijm", "uij")],
+    primaryShortcuts: [
+      makePrimaryShortcut("时间", "uijm", "uij"),
+      makePrimaryShortcut("记得", "jide", "jd"),
+    ],
     fixedFirstShortcuts: [makeShortcut("发展", "favj", "faj")],
-    twoKeyShortcuts: [makeShortcut("记得", "jide", "jd", "II")],
     sentences: [
       makeSentence("我们时间", "womfuijm"),
       makeSentence("时间发展", "uijmfavj"),

@@ -4,7 +4,7 @@
 #
 # 用法: run-flow-audit.sh <生成包目录> <全静态菜单 manifest> [xhup-cli 路径]
 #
-# 生成包目录必须含 xhup-cli generate rime 的全部产物(11 个 yaml,含
+# 生成包目录必须含 xhup-cli generate rime 的全部产物(12 个 yaml,含
 # xhup_flow_static.schema.yaml 与 Flow 组句/学习词典);manifest 由
 # xhup-analyzer 的 --dump-static-menu-manifest 导出(全部 distinct 静态
 # exact code 及其完整有序菜单);xhup-cli 传入时执行学习管理
@@ -19,13 +19,15 @@
 #      断言句子候选出现且无 auto commit;
 #   3. 学习会话:提交 Flow 组句句子,训练 xhup_flow_user;
 #   4. 重启持久化:全新进程断言学习状态仍在(动态候选可观察);
-#   5. 学习后静态审计:全部 140k 静态 exact code 逐码断言既有候选
+#   5. 学习后静态审计:全部 140,666 个静态 exact code
+#      逐码断言既有候选
 #      原次序、原 top1、无可见重复(动态候选只允许追加在静态组后);
 #   6. 学习管理端到端(提供 xhup-cli 时):export → reset → 学习行为
 #      消失 → import 到全新部署 → 学习行为恢复。
 #
-# 部署说明:rime_deployer --compile 只编译默认 translator 命名空间的
-# 词典;FIXED_FIRST/组句/学习词典按词典在独立目录编译后拷入部署 build/
+# 部署说明:PRIMARY/FIXED_FIRST 是主词典 import table,已由默认
+# translator 统一编译。rime_deployer --compile 只编译默认 translator
+# 命名空间的词典;Flow/学习词典按词典在独立目录编译后拷入部署 build/
 # (同目录连续 wrapper 编译会相互干扰)。menu/page_size: 500 只存在于
 # 测试 default.custom.yaml,不写入 production schema。
 #
@@ -97,11 +99,10 @@ EOF
 # ---------- 1. 全静态等值审计(干净 userdb,两趟独立进程) ----------
 static_dir=$work/static
 prepare_deploy "$static_dir" xhup_flow_static
-compile_dict_isolated xhup_flow_fixed_first_shortcuts "$static_dir"
 
 flow_dir=$work/flow
 prepare_deploy "$flow_dir" xhup_flow
-for dict in xhup_flow_fixed_first_shortcuts xhup_flow_flow xhup_flow_learn; do
+for dict in xhup_flow_flow xhup_flow_learn; do
   compile_dict_isolated "$dict" "$flow_dir"
 done
 

@@ -24,7 +24,7 @@ on:
         required: true
         default: "1.0.0-rc.1"
       publish:
-        description: "发布(创建草稿 Pre-release;必须 main 分支)"
+        description: "发布(创建草稿 Release;正式版非 prerelease;必须 main 分支)"
         required: true
         type: boolean
         default: false
@@ -181,7 +181,7 @@ jobs:
             "xhup-flow-trainer-v$VERSION-linux-amd64.deb" \
             "xhup-flow-trainer-v$VERSION-linux-x86_64.rpm" \
             "xhup-flow-trainer-v$VERSION-android-universal.apk" \
-            SHA256SUMS.txt BUILD-INFO.txt; do
+            SHA256SUMS.txt CANONICAL-SHA256SUMS.txt BUILD-INFO.txt; do
             [[ -s "$f" ]] || { echo "::error::缺少发布资产或为 0 字节: $f"; exit 1; }
           done
           # 完整性自检:SHA256SUMS 与现盘产物一致。
@@ -232,8 +232,10 @@ jobs:
           ## 输入能力
 
           - 小鹤双拼 + 音形全码(单字 2~4 键、词语 4/6/8 键);
-          - 一级简码(26 键冻结映射)与多级静态词语简码(固定优先级,
-            不受学习影响);
+          - 一级简码(26 键冻结映射)与 canonical v2 词语简码
+            (68,842 条 = 65,909 PRIMARY + 2,933 FIXED_FIRST);
+          - baseline / PRIMARY / FIXED_FIRST 同码候选以显式 merged rank
+            的唯一整数权重排序,不受学习或词典导入顺序影响;
           - Flow 连续组句:整句输入、逐键组句、句子级本地学习;
           - Lua 简码提示:长码候选标注可用简码(支持 librime-lua 的平台
             自动启用,无插件环境完整降级为纯静态行为);
@@ -283,6 +285,15 @@ jobs:
           - Windows 未签名:SmartScreen 可能提示「未知发布者」,属预期,
             请勿为此关闭系统安全防护。
           - macOS 未公证:首次打开需右键 → 打开,或在系统设置中放行。
+
+          ## Canonical v2 验证
+
+          - KdConv top-2000 replay:KSPC 1.8971,rank1 96.9544%,
+            rank≤3 99.9120%;
+          - 140,666 个静态 exact code 逐菜单 librime 审计;
+          - 传统别名 `就是=jqu`、`知道=vdc`、`不是=buu`、
+            `你们=nim`、`还是=hdu`、`因为=yww`、`如果=rgo`
+            由 runtime rank1 哨兵锁定。
           $acceptance
           ## 已知限制
 

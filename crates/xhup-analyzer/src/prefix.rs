@@ -1,6 +1,6 @@
 //! 词语简码层的 prefix 拓扑全量静态审计。
 //!
-//! 已入库的词语简码占据原本空闲的 3~7 键 exact-code 空间,其中部分码会是
+//! optimizer v2 词语简码占据 2~5 键 exact-code 空间,其中部分码会是
 //! 更长合法码的 strict prefix。这些关系本身不是错误(table_translator
 //! 天然支持 exact 候选与更长输入共存),但 runtime 冒烟测试不可能覆盖
 //! 数万条简码,因此这里做全量静态审计,并按确定性规则导出每层的
@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use xhup_core::KeySequence;
 use xhup_generator::{
-    canonical_fixed_first_shortcut_entries, canonical_word_shortcut_entries,
+    canonical_fixed_first_shortcut_entries, canonical_primary_shortcut_entries,
     word_code_analysis_entries,
 };
 
@@ -32,7 +32,7 @@ pub struct PrefixSentinel {
     pub frequency_score: u64,
 }
 
-/// 单个简码码长层(3~7 键)的哨兵选择。
+/// 单个简码码长层(2~5 键)的哨兵选择。
 pub struct LengthSentinels {
     /// 码长。
     pub length: usize,
@@ -60,7 +60,7 @@ pub struct PrefixAudit {
     pub baseline_prefix_of_shortcut_pairs: usize,
     /// C/D:shortcut 互为 strict prefix 的对数(方向唯一:短者 → 长者)。
     pub shortcut_to_shortcut_pairs: usize,
-    /// 3~7 键各层哨兵(无该层的码长 rows 为 0)。
+    /// 2~5 键各层哨兵(无该层的码长 rows 为 0)。
     pub lengths: Vec<LengthSentinels>,
 }
 
@@ -73,9 +73,34 @@ fn is_strict_prefix(prefix: &KeySequence, code: &KeySequence) -> bool {
 ///
 /// `baseline` 必须是 baseline fixed occupancy(不含简码层本身)。
 pub fn audit_prefix_topology(baseline: &CodeOccupancy) -> PrefixAudit {
-    let entries = canonical_word_shortcut_entries();
+    // PRIMARY 与 FIXED_FIRST 是同一 selected v2 mapping 的两个确定性投影;
+    // 合并排序后再选哨兵,不依赖两个 TSV 的载入/遍历顺序。
+    let mut entries: Vec<(&str, &KeySequence, &KeySequence, String)> = Vec::with_capacity(
+        canonical_primary_shortcut_entries().len() + canonical_fixed_first_shortcut_entries().len(),
+    );
+    entries.extend(canonical_primary_shortcut_entries().iter().map(|entry| {
+        (
+            entry.word(),
+            entry.full_code(),
+            entry.shortcut_code(),
+            format!("PRIMARY:{}/{}", entry.rank(), entry.merged_rank()),
+        )
+    }));
+    entries.extend(
+        canonical_fixed_first_shortcut_entries()
+            .iter()
+            .map(|entry| {
+                (
+                    entry.word(),
+                    entry.full_code(),
+                    entry.shortcut_code(),
+                    format!("FIXED_FIRST:{}", entry.mode()),
+                )
+            }),
+    );
+    entries.sort_by(|a, b| (a.2.len(), a.2, a.0, a.1, &a.3).cmp(&(b.2.len(), b.2, b.0, b.1, &b.3)));
     let shortcut_set: std::collections::BTreeSet<&KeySequence> =
-        entries.iter().map(|e| e.shortcut_code()).collect();
+        entries.iter().map(|entry| entry.2).collect();
     let baseline_set: std::collections::BTreeSet<&KeySequence> =
         baseline.occupied_codes().collect();
 
@@ -104,8 +129,8 @@ pub fn audit_prefix_topology(baseline: &CodeOccupancy) -> PrefixAudit {
     // B 与 C/D:枚举每个 shortcut 的全部 strict prefix。
     let mut baseline_prefix_of_shortcut_pairs = 0usize;
     let mut shortcut_to_shortcut_pairs = 0usize;
-    for entry in entries {
-        let keys = entry.shortcut_code().as_slice();
+    for entry in &entries {
+        let keys = entry.2.as_slice();
         for k in 1..keys.len() {
             let prefix = KeySequence::from_keys(&keys[..k]).expect("prefix 非空");
             if baseline_set.contains(&prefix) {
@@ -119,7 +144,7 @@ pub fn audit_prefix_topology(baseline: &CodeOccupancy) -> PrefixAudit {
 
     // 每层哨兵:canonical 顺序即 (码长, 码字典序, …),遍历一次取首条;
     // 高频哨兵按频率分数降序(同分取字典序靠前者,确定)。
-    let mut lengths: Vec<LengthSentinels> = (3..=7)
+    let mut lengths: Vec<LengthSentinels> = (2..=5)
         .map(|length| LengthSentinels {
             length,
             rows: 0,
@@ -129,24 +154,24 @@ pub fn audit_prefix_topology(baseline: &CodeOccupancy) -> PrefixAudit {
             non_prefix_lex_first: None,
         })
         .collect();
-    for entry in entries {
-        let length = entry.shortcut_code().len();
-        let slot = &mut lengths[length - 3];
+    for entry in &entries {
+        let length = entry.2.len();
+        let slot = &mut lengths[length - 2];
         slot.rows += 1;
         let sentinel = |frequency_score: u64| PrefixSentinel {
-            word: entry.word().to_string(),
-            full_code: entry.full_code().clone(),
-            shortcut_code: entry.shortcut_code().clone(),
-            mode: entry.mode().to_string(),
+            word: entry.0.to_string(),
+            full_code: entry.1.clone(),
+            shortcut_code: entry.2.clone(),
+            mode: entry.3.clone(),
             frequency_score,
         };
         let frequency_score = *word_scores
-            .get(&(entry.word(), entry.full_code()))
+            .get(&(entry.0, entry.1))
             .expect("词语简码的 (词, 完整码) 必须存在于固定词层");
         if slot.lex_first.is_none() {
             slot.lex_first = Some(sentinel(frequency_score));
         }
-        let is_own_prefix = is_strict_prefix(entry.shortcut_code(), entry.full_code());
+        let is_own_prefix = is_strict_prefix(entry.2, entry.1);
         if is_own_prefix && slot.prefix_lex_first.is_none() {
             slot.prefix_lex_first = Some(sentinel(frequency_score));
         }
@@ -205,25 +230,25 @@ pub struct FixedFirstLengthSentinel {
 pub struct FixedFirstPrefixAudit {
     /// production FIXED_FIRST 简码总数。
     pub shortcut_count: usize,
-    /// A:FF shortcut 是某更长合法码(baseline / ZR / FF)strict prefix 的
+    /// A:FF shortcut 是某更长合法码(baseline / PRIMARY / FF)strict prefix 的
     /// (shortcut, 更长码) 对数。
     pub shortcut_prefix_of_longer_pairs: usize,
     /// A 中涉及的 distinct FF shortcut 数。
     pub shortcuts_prefixing_longer: usize,
-    /// B:更短合法码(baseline / ZR / FF)是某 FF shortcut strict prefix 的对数。
+    /// B:更短合法码(baseline / PRIMARY / FF)是某 FF shortcut strict prefix 的对数。
     pub shorter_prefix_of_shortcut_pairs: usize,
     /// C/D:FF shortcut 互为 strict prefix 的对数(方向唯一:短者 → 长者)。
     pub shortcut_to_shortcut_pairs: usize,
     /// reverse prefix runtime 代表案例:(更短合法码, FF shortcut, 词)。
     pub reverse_example: Option<(KeySequence, KeySequence, String)>,
-    /// 3~7 键各层 continuation 哨兵。
+    /// 3~5 键各层 continuation 哨兵。
     pub lengths: Vec<FixedFirstLengthSentinel>,
 }
 
 /// 对全部 production FIXED_FIRST 简码做 prefix 拓扑审计,并按层导出
 /// deterministic runtime continuation 哨兵。
 ///
-/// `current` 必须是 current production occupancy(baseline + ZR + FF,
+/// `current` 必须是 current production occupancy(baseline + PRIMARY + FF,
 /// 即「更长/更短合法码」的全集)。
 pub fn audit_fixed_first_prefix_topology(current: &CodeOccupancy) -> FixedFirstPrefixAudit {
     let entries = canonical_fixed_first_shortcut_entries();
@@ -272,7 +297,7 @@ pub fn audit_fixed_first_prefix_topology(current: &CodeOccupancy) -> FixedFirstP
 
     // 每层 continuation 哨兵:canonical 顺序遍历,首个有更长扩展的条目,
     // 更长码取字典序最小者。
-    let mut lengths: Vec<FixedFirstLengthSentinel> = (3..=7)
+    let mut lengths: Vec<FixedFirstLengthSentinel> = (3..=5)
         .map(|length| FixedFirstLengthSentinel {
             length,
             rows: 0,

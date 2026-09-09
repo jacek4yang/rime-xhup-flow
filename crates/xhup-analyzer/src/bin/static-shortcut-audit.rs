@@ -1,9 +1,7 @@
-//! `static-shortcut-audit`:静态简码体系审计 + 二码研究 + 二码零冲突
-//! 生产导出的命令行工具。
+//! `static-shortcut-audit`:当前静态体系审计 + legacy v1 二码研究。
 //!
-//! 纯分析与导出编排:研究部分不修改任何 production 产物;production
-//! 导出(`--dump-production-two-key-zero-regression`)输出 canonical TSV,
-//! 入库需 diff review 与 policy review。
+//! `--dump-static-menu-manifest` 导出当前 canonical v2 runtime 审计数据;
+//! 二码 selector/report/export 选项只重放 legacy v1 research fixture。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::process::ExitCode;
@@ -24,17 +22,19 @@ fn usage() -> ! {
          \x20 --dump-candidates <path> 二码研究候选 TSV(全部 II 候选;研究产物,\n\
          \x20                           不入库)\n\
          \x20 --dump-production-two-key-zero-regression <path>\n\
-         \x20                           导出二码零冲突生产 canonical TSV\n\
-         \x20                           (policy two-key-zero-regression-v1;仅空码;\n\
+         \x20                           导出 legacy v1 二码零冲突 research fixture\n\
+         \x20                           (historical policy two-key-zero-regression-v1;仅空码;\n\
          \x20                           导出后退出)\n\
          \x20 --dump-two-key-audit-manifest <path>\n\
          \x20                           导出二码 runtime 审计 manifest\n\
          \x20                           (全部占用 2 键码的既有菜单 + 全部选定映射;\n\
-         \x20                           供 tests/librime 的 C 审计使用)\n\
+         \x20                           仅供历史对照)\n\
          \x20 --static-report          静态多级简码体系全量报告(码长 × 来源层)\n\
+         \x20 --dump-static-menu-manifest <path>\n\
+         \x20                           导出当前 canonical v2 完整有序菜单\n\
          \n\
-         研究产物请输出到临时路径,不要 commit。production 导出是 canonical\n\
-         生产数据:入库需 diff review 与 policy review。"
+         legacy 研究产物请输出到临时路径,不要 commit;production canonical\n\
+         只能由 export-v2-canonical 导出。"
     );
     std::process::exit(2);
 }
@@ -80,7 +80,7 @@ fn main() -> ExitCode {
 
     // ── 全静态菜单 manifest(Flow 引擎等值审计用) ──
     // 全部 distinct 静态 exact code 及其完整有序菜单(current production
-    // 占用:baseline + ZR + FF + 二码零冲突)。独立快速路径。
+    // 占用:baseline + optimizer v2 PRIMARY + FIXED_FIRST)。独立快速路径。
     if let Some(path) = dump_static_menu_manifest_path {
         let occupancy = xhup_analyzer::occupancy::CodeOccupancy::build_current_production();
         let manifest = static_menu_manifest(&occupancy);
@@ -699,7 +699,7 @@ fn zr_raw_saving(data: &AnalysisData) -> f64 {
         .iter()
         .map(|entry| ((entry.word(), entry.code()), entry.frequency_score()))
         .collect();
-    xhup_generator::canonical_word_shortcut_entries()
+    xhup_generator::legacy_v1_word_shortcut_entries()
         .iter()
         .map(|entry| {
             let score = scores
@@ -808,7 +808,7 @@ fn dump_candidates_tsv(
 fn static_menu_manifest(occupancy: &xhup_analyzer::occupancy::CodeOccupancy) -> String {
     use std::fmt::Write as _;
     // CodeOccupancy 没有公开全码迭代器;通过各 canonical 层枚举全部
-    // distinct 码再查组。层 = 一级简码 + 单字 + 固定词 + ZR + FF + 二码。
+    // distinct 码再查组。层 = 一级简码 + 单字 + 固定词 + PRIMARY + FF。
     let mut codes: BTreeSet<String> = BTreeSet::new();
     for entry in xhup_generator::canonical_level1_shortcuts() {
         codes.insert(entry.key().as_char().to_string());
@@ -819,20 +819,17 @@ fn static_menu_manifest(occupancy: &xhup_analyzer::occupancy::CodeOccupancy) -> 
     for entry in xhup_generator::canonical_word_code_entries() {
         codes.insert(entry.code().to_string());
     }
-    for entry in xhup_generator::canonical_word_shortcut_entries() {
+    for entry in xhup_generator::canonical_primary_shortcut_entries() {
         codes.insert(entry.shortcut_code().to_string());
     }
     for entry in xhup_generator::canonical_fixed_first_shortcut_entries() {
-        codes.insert(entry.shortcut_code().to_string());
-    }
-    for entry in xhup_generator::canonical_two_key_shortcut_entries() {
         codes.insert(entry.shortcut_code().to_string());
     }
     let mut out = String::new();
     writeln!(out, "# XHUP Flow full static exact-code menu manifest.").unwrap();
     writeln!(
         out,
-        "# layers: level1 + chars + fixed words + ZR + FIXED_FIRST + two-key-ZR"
+        "# layers: level1 + chars + fixed words + optimizer-v2 PRIMARY + FIXED_FIRST"
     )
     .unwrap();
     for code in &codes {

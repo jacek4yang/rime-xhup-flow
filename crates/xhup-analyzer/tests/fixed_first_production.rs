@@ -19,7 +19,7 @@ use xhup_analyzer::{
     build_analysis_with_spec, production,
 };
 use xhup_core::KeySequence;
-use xhup_generator::{canonical_word_code_entries, canonical_word_shortcut_entries};
+use xhup_generator::{canonical_word_code_entries, legacy_v1_word_shortcut_entries};
 
 /// 共享 fixture:分析输入 + 增量证据 + 选择结果。
 ///
@@ -108,7 +108,7 @@ fn reference_policy_is_typed_and_frozen() {
 fn universe_is_incremental_and_colliding_only() {
     let fixture = fixture();
     let (targets, stats) = production_fixed_first::build_fixed_first_universe(&fixture.data);
-    let zr_words: BTreeSet<&str> = canonical_word_shortcut_entries()
+    let zr_words: BTreeSet<&str> = legacy_v1_word_shortcut_entries()
         .iter()
         .map(|entry| entry.word())
         .collect();
@@ -121,7 +121,7 @@ fn universe_is_incremental_and_colliding_only() {
         "incremental universe 不得包含任何 ZR production 词"
     );
     // 一词一简码:已有二码简码的词同样在优化前被移除。
-    let two_key_words: BTreeSet<&str> = xhup_generator::canonical_two_key_shortcut_entries()
+    let two_key_words: BTreeSet<&str> = xhup_generator::legacy_v1_two_key_shortcut_entries()
         .iter()
         .map(|entry| entry.word())
         .collect();
@@ -279,11 +279,11 @@ fn audit_arithmetic_is_complete() {
 #[test]
 fn selection_satisfies_hard_invariants() {
     let fixture = fixture();
-    let zr_words: BTreeSet<&str> = canonical_word_shortcut_entries()
+    let zr_words: BTreeSet<&str> = legacy_v1_word_shortcut_entries()
         .iter()
         .map(|entry| entry.word())
         .collect();
-    let zr_codes: BTreeSet<String> = canonical_word_shortcut_entries()
+    let zr_codes: BTreeSet<String> = legacy_v1_word_shortcut_entries()
         .iter()
         .map(|entry| entry.shortcut_code().to_string())
         .collect();
@@ -449,7 +449,7 @@ fn serialization_is_deterministic_and_canonical() {
 fn canonical_tsv_byte_reproduction() {
     // 入库 canonical TSV 必须能由 production selection API 字节级复现。
     let fixture = fixture();
-    let canonical = include_str!("../../../data/shortcuts/word_fixed_first.tsv");
+    let canonical = include_str!("../../../data/shortcuts/legacy/word_fixed_first_v1.tsv");
     assert_eq!(
         production_fixed_first::serialize_fixed_first_tsv(&fixture.selection.selected),
         canonical,
@@ -465,14 +465,14 @@ fn zr_word_is_removed_before_optimization() {
     let fixture = fixture();
     let a = "就是";
     assert!(
-        canonical_word_shortcut_entries()
+        legacy_v1_word_shortcut_entries()
             .iter()
             .any(|entry| entry.word() == a),
         "测试前提:{a} 必须是 ZR production 词"
     );
     let b = "时间";
     assert!(
-        !canonical_word_shortcut_entries()
+        !legacy_v1_word_shortcut_entries()
             .iter()
             .any(|entry| entry.word() == b),
         "测试前提:{b} 不得是 ZR production 词"

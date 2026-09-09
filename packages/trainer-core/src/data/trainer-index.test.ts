@@ -7,7 +7,7 @@ import {
 } from "./trainer-index";
 import { makeDataset, makeEntry } from "../testing/fixtures";
 
-describe("buildTrainerIndex(V2)", () => {
+describe("buildTrainerIndex(V3)", () => {
   const index = buildTrainerIndex(makeDataset());
 
   it("全部池 ID 都被构建且非空", () => {
@@ -22,9 +22,8 @@ describe("buildTrainerIndex(V2)", () => {
       index.dataset.entries.length +
       index.dataset.words.length +
       index.dataset.level1Shortcuts.length +
-      index.dataset.wordShortcuts.length +
+      index.dataset.primaryShortcuts.length +
       index.dataset.fixedFirstShortcuts.length +
-      index.dataset.twoKeyShortcuts.length +
       index.dataset.sentences.length;
     expect(index.byId.size).toBe(expected);
   });
@@ -53,7 +52,7 @@ describe("buildTrainerIndex(V2)", () => {
   });
 
   it("简码条目:主练码 = 简码,备用码 = 全码", () => {
-    const item = index.pools["shortcut-zero-regression"][0];
+    const item = index.pools["shortcut-primary"][0];
     expect(item).toMatchObject({
       kind: "shortcut",
       target: "时间",

@@ -13,10 +13,10 @@ Rust 生成器(xhup-generator,唯一语义来源)
 ┌──────────────────────────┬─────────────────────────────┐
 │ 静态 Rime 源文件           │ Trainer 规范数据集            │
 │ xhup-cli generate rime   │ xhup-cli generate trainer    │
-│ (11 个 YAML:方案+词典)    │ xhup_flow_trainer.json (V2)  │
+│ (12 个 YAML + 2 Lua)     │ xhup_flow_trainer.json (V3)  │
 └────────────┬─────────────┴──────────────┬──────────────┘
              ↓                            ↓
-      Static Engine                Trainer 前端(V2 契约校验)
+      Static Engine                Trainer 前端(V3 契约校验)
       (xhup_flow_static)                  ↓
              ↓                       练习/错题/统计(本地)
       Flow Engine(xhup_flow)
@@ -30,7 +30,7 @@ Rust 生成器(xhup-generator,唯一语义来源)
 核心边界:
 
 - **Rust 是唯一语义来源**。React/TypeScript 不维护任何码表;前端只校验
-  与消费生成的规范数据集(`schemaVersion: 2` 契约,构建期重新生成,
+  与消费生成的规范数据集(`schemaVersion: 3` 契约,构建期重新生成,
   不回退过期数据)。
 - **生成是确定性的**:同一规范数据 + 同一生成器源码(含版本)+ 同一
   模板 ⇒ 字节级一致的产物(有测试兜底;CI 生成 `CANONICAL-SHA256SUMS.txt`)。
@@ -46,21 +46,23 @@ FROZEN STATIC  >  DYNAMIC USER LEARNING  >  SENTENCE COMPOSITION
 ```
 
 - Flow 引擎绝不改变任何静态候选的相对次序与 top1。runtime 审计对全部
-  137,872 个静态 exact 码逐码断言(干净 userdb 与学习后两种状态):
+  140,666 个静态 exact 码逐码断言(干净 userdb 与学习后两种状态):
   菜单逐项同序相等、无可见重复,动态候选只允许追加在静态组之后。
-- 冻结哨兵(永久有效):`uij → [铈, 鼫, 时间]` 精确序、`uijm → 时间`
+- 冻结哨兵(永久有效):
+  `uij → [时间, 史记, 实践, 事迹, 铈, 鼫]` 精确序、`uijm → 时间`
   top1、`uj`/`ujm` **不得**出现 时间。
-- 既有门禁:FIXED_FIRST 2366/2366、占用二码 405/405、二码 ZR 246/246。
+- v2 门禁:68,842/68,842 映射完整性、65,909 条 PRIMARY 绝对名次、
+  2,933 条 FIXED_FIRST rank1、传统别名与 2–5 键 runtime 哨兵。
 
 ## 简码语法
 
 | 语法 | 适用范围 | 形态 |
 | --- | --- | --- |
-| `LegacyAnyFiV1` | 仅冻结旧数据(既有 production 简码) | 任意含 I 的 F/I 组合(冻结语法,不再新增) |
-| `MonotoneSuffixInitialsV2` | 未来生产简码 | 单调后缀缩写 `F* I*`,至少一个 I |
+| `LegacyAnyFiV1` | v2 PRIMARY 中的传统别名;旧 selector 仅研究重放 | 任意含 I 的 F/I 组合 |
+| `MonotoneSuffixInitialsV2` | v2 FIXED_FIRST 与其他 v2 候选 | 单调后缀缩写 `F* I*`,至少一个 I |
 
-`ShortcutPolicyId`(FIXED_FIRST / ZERO_REGRESSION / FIXED_FIRST_SHORTCUT
-等策略身份)是兼容接口,发布后不得变更语义。
+v1 selector 的 ZERO_REGRESSION/FIXED_FIRST/二码数据冻结在
+`data/shortcuts/legacy/`,只供 research-only 重放,不是 production layer。
 
 ## 兼容性契约(v1.x 冻结)
 
@@ -68,9 +70,8 @@ FROZEN STATIC  >  DYNAMIC USER LEARNING  >  SENTENCE COMPOSITION
 
 - canonical FullCode(单字 2/3/4 码全码);
 - 已发布简码映射的既有映射与菜单次序(一级简码 26、二/三/四码字符
-  菜单、100k 固定词 FullCode、44,518 ZERO_REGRESSION、2,366 FIXED_FIRST、
-  246 二码 ZERO_REGRESSION;v1.0.0 正式发布前的 mapping 调整属经评审的
-  数据演进,冻结自 v1.0.0 起生效);
+  菜单、100k 固定词 FullCode、68,842 条 canonical v2 词语简码;
+  自 v1.0.0 起冻结);
 - `ShortcutPolicyId` 值;
 - `xhup_flow_user` 用户词典身份(学习数据载体);
 - Trainer 持久化数据迁移兼容(进度/备份可跨版本导入);
@@ -93,7 +94,7 @@ Rime 包版本随生成器内嵌;全部产品级版本来源由
 
 ## 平台中立 Rime 源包
 
-`xhup-cli generate rime` 产出 11 个源文件(两套方案 + 全部词典),
+`xhup-cli generate rime` 产出 14 个源文件(12 个 YAML + 2 个 Lua),
 不含 userdb;面向 Weasel / Squirrel / fcitx5-rime / ibus-rime /
 fcitx5-android 等标准 librime 客户端。打包时附
 [rime/package/INSTALL.md](../rime/package/INSTALL.md) 安装说明。

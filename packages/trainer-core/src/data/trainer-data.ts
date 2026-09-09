@@ -1,15 +1,12 @@
 /**
- * 训练器规范数据(V2)的类型、运行时校验与加载。
+ * 训练器规范数据(V3)的类型、运行时校验与加载。
  *
  * 唯一事实来源是 Rust 生成的 `xhup_flow_trainer.json`;前端不维护任何
  * 双拼映射、汉字编码、词码、简码策略或频率表。加载时完整校验一次,
  * 校验失败抛出带用户可读原因的 {@link TrainerDataError}。
  *
- * V2 相对 V1 新增:`words`(固定词全码,按权重截断)、
- * `level1Shortcuts`、三个生产简码层(`wordShortcuts` = ZERO_REGRESSION、
- * `fixedFirstShortcuts`、`twoKeyShortcuts`)与 `sentences`(组件语义
- * 列表,输入码由 Rust 从 canonical 全码机械拼接)。单字段 `entries`
- * (2/3/4 码单字)与 V1 兼容。
+ * V3 使用 optimizer v2 canonical 两层:`primaryShortcuts` 与
+ * `fixedFirstShortcuts`;旧 ZERO_REGRESSION / 独立二码层不再是 production。
  */
 
 import { translate, type I18nKey, type Language } from "../i18n";
@@ -55,15 +52,25 @@ export type TrainerLevel1Shortcut = {
 
 /** 生产简码层身份(与 analyzer 的 ShortcutPolicyId 对应)。 */
 export type TrainerShortcutLayer =
-  | "zero-regression"
+  | "primary"
   | "fixed-first"
-  | "two-key-zero-regression";
+  | "primary-two-key";
 
 /** 一条词语简码关系(shortcut 与 fullCode 都保留可用)。 */
 export type TrainerShortcut = {
   word: string;
   fullCode: string;
   shortcutCode: string;
+};
+
+/** optimizer v2 PRIMARY 简码,含子集相对位次与实际静态菜单位次。 */
+export type TrainerPrimaryShortcut = TrainerShortcut & {
+  rank: number;
+  mergedRank: number;
+};
+
+/** FIXED_FIRST 简码,格式可由单调 F/I 模式机械投影。 */
+export type TrainerFixedFirstShortcut = TrainerShortcut & {
   /** F/I 投影模式(如 `FI` / `II`)。 */
   mode: string;
 };
@@ -82,16 +89,15 @@ export type DoublePinyinReference = {
   zeroInitials: { syllable: string; code: string }[];
 };
 
-/** 校验后的 V2 数据集。 */
+/** 校验后的 V3 数据集。 */
 export type TrainerDataset = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   packageVersion: string;
   entries: TrainerEntry[];
   words: TrainerWord[];
   level1Shortcuts: TrainerLevel1Shortcut[];
-  wordShortcuts: TrainerShortcut[];
-  fixedFirstShortcuts: TrainerShortcut[];
-  twoKeyShortcuts: TrainerShortcut[];
+  primaryShortcuts: TrainerPrimaryShortcut[];
+  fixedFirstShortcuts: TrainerFixedFirstShortcut[];
   sentences: TrainerSentence[];
   doublePinyin: DoublePinyinReference;
 };
@@ -236,10 +242,10 @@ function validateLevel1(value: unknown, index: number): TrainerLevel1Shortcut {
   return { key, char: isHanziString(char, `${at} 的 char`) };
 }
 
-function validateShortcut(value: unknown, index: number): TrainerShortcut {
+function validateShortcutBase(value: unknown, index: number): TrainerShortcut {
   const at = `第 ${index + 1} 条简码数据`;
   if (!isRecord(value)) fail(`${at} 结构无效`);
-  const { word, fullCode, shortcutCode, mode } = value;
+  const { word, fullCode, shortcutCode } = value;
   const text = isHanziString(word, `${at} 的 word`);
   if (text.length < 2 || text.length > 4) {
     fail(`${at} 的 word 应为 2-4 字词`);
@@ -247,16 +253,40 @@ function validateShortcut(value: unknown, index: number): TrainerShortcut {
   if (typeof fullCode !== "string" || !/^[a-z]{4,8}$/.test(fullCode)) {
     fail(`${at} 的 fullCode 应为 4-8 位小写字母`);
   }
-  if (typeof shortcutCode !== "string" || !/^[a-z]{2,7}$/.test(shortcutCode)) {
-    fail(`${at} 的 shortcutCode 应为 2-7 位小写字母`);
+  if (typeof shortcutCode !== "string" || !/^[a-z]{2,5}$/.test(shortcutCode)) {
+    fail(`${at} 的 shortcutCode 应为 2-5 位小写字母`);
   }
   if (shortcutCode.length >= fullCode.length) {
     fail(`${at} 的 shortcutCode 应短于 fullCode`);
   }
+  return { word: text, fullCode, shortcutCode };
+}
+
+function validatePrimaryShortcut(value: unknown, index: number): TrainerPrimaryShortcut {
+  const base = validateShortcutBase(value, index);
+  if (!isRecord(value)) fail(`第 ${index + 1} 条 PRIMARY 简码结构无效`);
+  const { rank, mergedRank } = value;
+  if (!Number.isSafeInteger(rank) || (rank as number) < 1) {
+    fail(`第 ${index + 1} 条 PRIMARY 简码 rank 应为正整数`);
+  }
+  if (!Number.isSafeInteger(mergedRank) || (mergedRank as number) < (rank as number)) {
+    fail(`第 ${index + 1} 条 PRIMARY 简码 mergedRank 应为不小于 rank 的正整数`);
+  }
+  return { ...base, rank: rank as number, mergedRank: mergedRank as number };
+}
+
+function validateFixedFirstShortcut(
+  value: unknown,
+  index: number,
+): TrainerFixedFirstShortcut {
+  const at = `第 ${index + 1} 条简码数据`;
+  const base = validateShortcutBase(value, index);
+  if (!isRecord(value)) fail(`第 ${index + 1} 条 FIXED_FIRST 简码结构无效`);
+  const { mode } = value;
   if (typeof mode !== "string" || !/^[FI]+$/.test(mode)) {
     fail(`${at} 的 mode 应为 F/I 投影串`);
   }
-  return { word: text, fullCode, shortcutCode, mode };
+  return { ...base, mode };
 }
 
 function validateSentence(value: unknown, index: number): TrainerSentence {
@@ -350,9 +380,9 @@ function validateDoublePinyin(value: unknown): DoublePinyinReference {
 }
 
 /**
- * 校验并返回 V2 数据集。
+ * 校验并返回 V3 数据集。
  *
- * 版本边界:schemaVersion 必须恰为 2——旧版本数据由 `pnpm build` 的
+ * 版本边界:schemaVersion 必须恰为 3——旧版本数据由 `pnpm build` 的
  * `generate:data` 重新生成,不做前端兼容解析。
  */
 export function validateTrainerDataset(
@@ -361,7 +391,7 @@ export function validateTrainerDataset(
 ): TrainerDataset {
   const language = options.language ?? "zh";
   if (!isRecord(value)) fail("训练数据结构无效");
-  if (value.schemaVersion !== 2) {
+  if (value.schemaVersion !== 3) {
     fail(t(language, "trainer.errorVersion", { actual: String(value.schemaVersion) }));
   }
   if (typeof value.packageVersion !== "string" || value.packageVersion === "") {
@@ -378,42 +408,36 @@ export function validateTrainerDataset(
     validateLevel1,
   );
   ensureUnique(level1Shortcuts.map((shortcut) => shortcut.key), "level1Shortcuts");
-  const wordShortcuts = validateArray(value.wordShortcuts, 1, "wordShortcuts", validateShortcut);
+  const primaryShortcuts = validateArray(
+    value.primaryShortcuts,
+    1,
+    "primaryShortcuts",
+    validatePrimaryShortcut,
+  );
   ensureUnique(
-    wordShortcuts.map((shortcut) => `${shortcut.word}:${shortcut.shortcutCode}`),
-    "wordShortcuts",
+    primaryShortcuts.map((shortcut) => `${shortcut.word}:${shortcut.shortcutCode}`),
+    "primaryShortcuts",
   );
   const fixedFirstShortcuts = validateArray(
     value.fixedFirstShortcuts,
     1,
     "fixedFirstShortcuts",
-    validateShortcut,
+    validateFixedFirstShortcut,
   );
   ensureUnique(
     fixedFirstShortcuts.map((shortcut) => `${shortcut.word}:${shortcut.shortcutCode}`),
     "fixedFirstShortcuts",
   );
-  const twoKeyShortcuts = validateArray(
-    value.twoKeyShortcuts,
-    1,
-    "twoKeyShortcuts",
-    validateShortcut,
-  );
-  ensureUnique(
-    twoKeyShortcuts.map((shortcut) => `${shortcut.word}:${shortcut.shortcutCode}`),
-    "twoKeyShortcuts",
-  );
   const sentences = validateArray(value.sentences, 1, "sentences", validateSentence);
   ensureUnique(sentences.map((sentence) => sentence.text), "sentences");
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     packageVersion: value.packageVersion,
     entries,
     words,
     level1Shortcuts,
-    wordShortcuts,
+    primaryShortcuts,
     fixedFirstShortcuts,
-    twoKeyShortcuts,
     sentences,
     doublePinyin: validateDoublePinyin(value.doublePinyin),
   };

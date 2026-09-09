@@ -27,18 +27,23 @@ pub const OWNED_FILES: &[&str] = &[
     "xhup_flow.schema.yaml",
     "xhup_flow_chars.dict.yaml",
     "xhup_flow_fixed_first_shortcuts.dict.yaml",
-    "xhup_flow_fixed_first_shortcuts.schema.yaml",
     "xhup_flow_flow.dict.yaml",
     "xhup_flow_flow.schema.yaml",
     "xhup_flow_learn.dict.yaml",
     "xhup_flow_learn.schema.yaml",
     "xhup_flow_shortcuts.dict.yaml",
     "xhup_flow_static.schema.yaml",
-    "xhup_flow_two_key_shortcuts.dict.yaml",
     "xhup_flow_word_shortcuts.dict.yaml",
     "xhup_flow_words.dict.yaml",
     "lua/xhup_flow/quick_hint.lua",
     "lua/xhup_flow/data/quick_hints.lua",
+];
+
+/// v1.0 canonical v2 切换后不再生成、但升级时必须清理的旧版自有文件。
+/// 它们从未承载用户数据,且只允许作为 Delete 目标进入计划。
+const OBSOLETE_OWNED_FILES: &[&str] = &[
+    "xhup_flow_fixed_first_shortcuts.schema.yaml",
+    "xhup_flow_two_key_shortcuts.dict.yaml",
 ];
 
 /// 主方案 / 静态回退方案的 schema id(模式选择只在这两者之间)。
@@ -588,6 +593,13 @@ pub fn plan_install(user_data_dir: &Path, package: &RimePackage) -> Result<Plan,
             });
         }
     }
+    for file in OBSOLETE_OWNED_FILES {
+        if user_data_dir.join(file).is_file() {
+            actions.push(PlanAction::Delete {
+                file: (*file).to_string(),
+            });
+        }
+    }
     Ok(Plan {
         actions,
         notes: vec![],
@@ -603,6 +615,7 @@ pub fn plan_uninstall(user_data_dir: &Path) -> Result<Plan, ManagerError> {
     }
     let actions = OWNED_FILES
         .iter()
+        .chain(OBSOLETE_OWNED_FILES)
         .filter(|file| user_data_dir.join(file).is_file())
         .map(|file| PlanAction::Delete {
             file: (*file).to_string(),
@@ -681,7 +694,8 @@ struct Committed {
 
 /// 校验计划只涉及 XHUP 拥有文件(execute 的唯一信任边界)。
 ///
-/// - `file` 必须逐字出现在 [`OWNED_FILES`] 中(白名单精确匹配;白名单
+/// - Write/Overwrite 的 `file` 必须逐字出现在 [`OWNED_FILES`] 中;
+///   Delete 还允许命中冻结的 legacy 自有文件清单(白名单精确匹配;白名单
 ///   内的子目录条目是编译期常量,路径逃逸不可能进入;`Path::join` 遇
 ///   绝对路径会替换基目录,必须在此堵死);
 /// - Overwrite 的 `backup` 必须与本目录推导的 [`backup_path`] 一致
@@ -690,7 +704,13 @@ struct Committed {
 fn validate_plan_actions(plan: &Plan, user_data_dir: &Path) -> Result<(), ManagerError> {
     for action in &plan.actions {
         let file = action.file();
-        if !OWNED_FILES.contains(&file) {
+        let valid = match action {
+            PlanAction::Write { .. } | PlanAction::Overwrite { .. } => OWNED_FILES.contains(&file),
+            PlanAction::Delete { .. } => {
+                OWNED_FILES.contains(&file) || OBSOLETE_OWNED_FILES.contains(&file)
+            }
+        };
+        if !valid {
             return Err(ManagerError::PackageInvalid {
                 missing: format!("非法计划目标:{file}"),
             });
@@ -778,7 +798,11 @@ pub fn execute(
         .iter()
         .filter(|action| matches!(action, PlanAction::Delete { .. }))
         .collect();
-    if !deletes.is_empty() {
+    let has_writes = plan
+        .actions
+        .iter()
+        .any(|action| !matches!(action, PlanAction::Delete { .. }));
+    if !deletes.is_empty() && !has_writes {
         for action in &deletes {
             if let PlanAction::Delete { file } = action {
                 let target = user_data_dir.join(file);
@@ -874,6 +898,20 @@ pub fn execute(
                 done += 1;
             }
             PlanAction::Delete { .. } => {}
+        }
+    }
+    // 升级计划中的 obsolete Delete 必须最后执行:只有新包完整提交后才移除
+    // 已废弃的旧版自有文件,避免 staging/commit 失败破坏既有安装。
+    for action in deletes {
+        if let PlanAction::Delete { file } = action {
+            let target = user_data_dir.join(file);
+            if target.exists() {
+                fs::remove_file(&target).map_err(|source| ManagerError::Io {
+                    path: target.clone(),
+                    source,
+                })?;
+            }
+            done += 1;
         }
     }
     Ok(done)
@@ -1009,7 +1047,7 @@ mod tests {
         dir
     }
 
-    /// 构造一个合法内存源包(11 个拥有文件,内容带标记)。
+    /// 构造一个合法内存源包(覆盖全部拥有文件,内容带标记)。
     fn fake_package(marker: &str) -> RimePackage {
         let schema = format!("{FLOW_SCHEMA_ID}.schema.yaml");
         let files = OWNED_FILES
@@ -1110,6 +1148,34 @@ mod tests {
     }
 
     #[test]
+    fn canonical_v2_upgrade_removes_only_obsolete_owned_shortcut_files() {
+        let user = fake_user_dir("canonical-v2-migration");
+        let package = fake_package("1.0.0");
+        for file in OBSOLETE_OWNED_FILES {
+            fs::write(user.join(file), "legacy XHUP source").unwrap();
+        }
+        fs::write(user.join("my_shortcuts.dict.yaml"), "user-owned").unwrap();
+
+        let plan = plan_install(&user, &package).unwrap();
+        for file in OBSOLETE_OWNED_FILES {
+            assert!(plan.actions.iter().any(|action| matches!(
+                action,
+                PlanAction::Delete { file: target } if target == *file
+            )));
+        }
+        execute(&plan, &user, Some(&package)).unwrap();
+        for file in OBSOLETE_OWNED_FILES {
+            assert!(!user.join(file).exists(), "升级必须清理旧生产文件 {file}");
+        }
+        assert_eq!(
+            fs::read_to_string(user.join("my_shortcuts.dict.yaml")).unwrap(),
+            "user-owned"
+        );
+
+        let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
     fn upgrade_overwrites_with_backup_and_repair_writes_missing() {
         let user = fake_user_dir("upgrade");
         let package_v1 = fake_package("1.0.0");
@@ -1182,6 +1248,21 @@ mod tests {
         assert!(user.join("xhup_flow_user.userdb").is_dir());
         // 再卸载 → 空计划(幂等)。
         assert!(plan_uninstall(&user).unwrap().is_empty());
+        let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
+    fn uninstall_also_removes_obsolete_owned_shortcut_files() {
+        let user = fake_user_dir("uninstall-obsolete");
+        for file in OBSOLETE_OWNED_FILES {
+            fs::write(user.join(file), "legacy XHUP source").unwrap();
+        }
+        let plan = plan_uninstall(&user).unwrap();
+        assert_eq!(plan.actions.len(), OBSOLETE_OWNED_FILES.len());
+        execute(&plan, &user, None).unwrap();
+        for file in OBSOLETE_OWNED_FILES {
+            assert!(!user.join(file).exists());
+        }
         let _ = fs::remove_dir_all(&user);
     }
 

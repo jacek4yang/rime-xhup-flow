@@ -30,8 +30,8 @@ use std::collections::BTreeMap;
 
 use xhup_core::KeySequence;
 use xhup_generator::{
-    canonical_fixed_first_shortcut_entries, canonical_word_shortcut_entries,
-    char_code_analysis_entries, word_code_analysis_entries,
+    char_code_analysis_entries, legacy_v1_fixed_first_shortcut_entries,
+    legacy_v1_word_shortcut_entries, word_code_analysis_entries,
 };
 
 use crate::candidates::{CandidateEnumerationSpec, CandidateGrammar};
@@ -253,15 +253,15 @@ impl TwoKeyUniverse {
         let words = word_code_analysis_entries();
         let chars = char_code_analysis_entries();
         let frequency = FrequencyModel::build(&chars, &words);
-        let occupancy = CodeOccupancy::build_current_production();
+        let occupancy = CodeOccupancy::build_legacy_v1_production();
         let char_domain = TwoKeyCharDomain::build();
 
         // 既有 ZR/FF 简码索引(词 → 状态)。
-        let zr: BTreeMap<String, KeySequence> = canonical_word_shortcut_entries()
+        let zr: BTreeMap<String, KeySequence> = legacy_v1_word_shortcut_entries()
             .iter()
             .map(|entry| (entry.word().to_string(), entry.shortcut_code().clone()))
             .collect();
-        let ff: BTreeMap<String, KeySequence> = canonical_fixed_first_shortcut_entries()
+        let ff: BTreeMap<String, KeySequence> = legacy_v1_fixed_first_shortcut_entries()
             .iter()
             .map(|entry| (entry.word().to_string(), entry.shortcut_code().clone()))
             .collect();

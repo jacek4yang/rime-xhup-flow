@@ -206,7 +206,7 @@ fn canonical_tsv_byte_reproduction() {
     // 入库 canonical TSV 必须能由 production selection API 字节级复现;
     // 不依赖 analyzer 之外的任何手工拼接。
     let fixture = fixture();
-    let canonical = include_str!("../../../data/shortcuts/word_zero_regression.tsv");
+    let canonical = include_str!("../../../data/shortcuts/legacy/word_zero_regression_v1.tsv");
     assert_eq!(
         production::serialize_canonical_tsv(&fixture.selection.selected),
         canonical,

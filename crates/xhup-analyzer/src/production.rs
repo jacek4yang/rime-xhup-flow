@@ -1,5 +1,7 @@
-//! Production 简码选择:把 ZERO_REGRESSION 分析结果中对 sensitivity 假设高度
-//! 稳定的子集固化为 canonical 生产数据。
+//! legacy v1 ZERO_REGRESSION selector 的冻结重放实现。
+//!
+//! 只用于历史再现、兼容研究与 fixture 字节复制;它不再导出当前
+//! production canonical。当前事实来源是 optimizer v2 PRIMARY + FIXED_FIRST。
 //!
 //! policy `zero-regression-high-v1`(冻结):
 //!

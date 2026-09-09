@@ -16,7 +16,7 @@ beforeEach(() => {
 });
 
 const DATASET: TrainerDataset = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   packageVersion: "0.1.0",
   entries: [
     { char: "阿", code: "aaed", length: 4, readings: ["a"], frequencyScore: 100, rimeWeight: 1 },
@@ -25,9 +25,8 @@ const DATASET: TrainerDataset = {
   ],
   words: [],
   level1Shortcuts: [],
-  wordShortcuts: [],
+  primaryShortcuts: [],
   fixedFirstShortcuts: [],
-  twoKeyShortcuts: [],
   sentences: [],
   doublePinyin: { initials: [], finals: [], zeroInitials: [] },
 };

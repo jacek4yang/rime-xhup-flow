@@ -10,11 +10,13 @@ v1 收口从 main 移除;既有版本仍可从 Releases 下载,文档见
 
 ## XHUP Flow 是什么?与普通小鹤/Rime 配置有何不同?
 
-普通小鹤音形配置只提供固定的码表。XHUP Flow 在此之上做了三件事:
+普通小鹤音形配置只提供固定的码表。XHUP Flow 在此之上做了四件事:
 
-1. **静态层(冻结)**:一级简码、单字全码(2/3/4 码)、词语简码、
-   固定词与 FIXED_FIRST 简码全部是**生成器按规范数据确定性产出**的
-   冻结层——发布后不改动任何既有映射,保证肌肉记忆零回归。
+1. **静态层(冻结)**:一级简码、单字全码(2/3/4 码)、固定词与
+   68,842 条 canonical v2 词语简码全部是**生成器按规范数据
+   确定性产出**的冻结层。v2 映射分为 65,909 条 PRIMARY 和 2,933 条
+   FIXED_FIRST,两者在同一静态 translator 中按显式 merged rank 排序;
+   v1.0.0 后不改动既有映射与菜单次序。
 2. **Flow 组句引擎**:连续键入多个词条的全码即可组成句子(例如
    `womf`+`uijm` 组出「我们时间」),可稳定组到 20 字长句;组句保持
    活动直到显式上屏,无自动提交。
@@ -32,7 +34,7 @@ v1 收口从 main 移除;既有版本仍可从 Releases 下载,文档见
     > 组句候选
 ```
 
-对全部 137,872 个静态 exact 码的审计(干净 userdb 与学习后两种状态)
+对全部 140,666 个静态 exact 码的审计(干净 userdb 与学习后两种状态)
 确认:菜单逐项同序相等、无可见重复,动态候选只允许追加在静态组之后。
 
 ## 产品组成
@@ -51,7 +53,7 @@ v1 收口从 main 移除;既有版本仍可从 Releases 下载,文档见
 | --- | --- | --- |
 | Windows | 小狼毫 Weasel | `%APPDATA%\Rime` |
 | macOS | 鼠须管 Squirrel | `~/Library/Rime` |
-| Linux | Fcitx5-Rime | `~/.config/fcitx5/rime` |
+| Linux | Fcitx5-Rime | `~/.local/share/fcitx5/rime` |
 | Linux | IBus-Rime | `~/.config/ibus/rime` |
 | Android | fcitx5-android | 平台中立包手动导入(桌面端不做自动安装) |
 

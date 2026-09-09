@@ -7,12 +7,13 @@
 //!   baseline 占用码上的 v2 rank-1 条目中**满足 FF 格式硬约束**者
 //!   (码长 ≥ 3、存在单调后缀 F/I 投影模式)。FF translator 的 initial
 //!   quality 栅栏为占用码提供「固定首选」;
-//! - `word_shortcuts_primary.tsv`(新格式 `词/码/rank`):其余全部条目
+//! - `word_shortcuts_primary.tsv`(新格式 `词/码/rank/merged_rank`):其余全部条目
 //!   (空码全部条目、占用码上非 dump-rank-1 条目、以及不满足 FF 格式
 //!   约束的占用码 rank1 —— 2 键码或仅 legacy IF 模式可推导的码,由
 //!   merged_ranking 的权重指派实现首选,见 docs 替换设计)。
 //!   primary 的 rank 列语义 = 该码 v2 条目按 dump 绝对 rank 序的稠密
-//!   名次(1..k;dump 绝对 rank 含 baseline 占用者插位,文件只保留相对序)。
+//!   名次(1..k);merged_rank 保留 baseline 候选插位后的绝对名次,供
+//!   generator 用整数权重精确重建 optimizer 菜单。
 //!
 //! 拆分冲突说明(2026-09):设计笔记原文为「占用码 rank1 → FF」,但 FF
 //! 文件格式(generator 硬校验)要求码长 ≥3 且模式单调后缀;v2 的 2 键
@@ -126,6 +127,7 @@ struct PrimaryRecord {
     word: String,
     code: KeySequence,
     rank: usize,
+    merged_rank: usize,
 }
 
 /// 由 完整码 + shortcut 推导 F/I 投影模式。
@@ -244,9 +246,21 @@ pub fn export(
         }
     }
 
+    // selected mapping 的紧凑内容承诺:词升序规范化为 word/code/绝对 rank。
+    // canonical 两层可在 CI 中独立重建同一字节串并核对 SHA256,从而证明
+    // 拆分无遗漏、无额外映射且位次一致,无需提交 6MB sweep 明细 dump。
+    let mut normalized_entries: Vec<&V2DumpEntry> = entries.iter().collect();
+    normalized_entries.sort_by(|a, b| a.word.cmp(&b.word));
+    let mut normalized_mapping = String::new();
+    for entry in normalized_entries {
+        normalized_mapping.push_str(&format!("{}\t{}\t{}\n", entry.word, entry.code, entry.rank));
+    }
+    let selected_mapping_sha256 = sha256_hex(normalized_mapping.as_bytes());
+
     // 拆分:占用码上 dump 绝对 rank 1 且 FF 格式合规 → FF;其余 → primary。
-    // primary 的 rank 列 = 该码 v2 条目按 dump 绝对 rank 序的稠密名次
-    // (1..k;绝对混排位次由 PR-B merged_ranking 语义重建,文件只需相对序)。
+    // primary rank = v2 块内稠密相对名次;merged_rank = dump 中 baseline
+    // 与 v2 混排后的绝对名次。二者都必须保留:前者是 v2 条目间顺序契约,
+    // 后者使 generator 无需重演浮点 optimizer 即可精确投影静态菜单。
     let mut ff: Vec<FfRecord> = Vec::new();
     let mut primary: Vec<PrimaryRecord> = Vec::new();
     let mut stats = ExportStats::default();
@@ -273,6 +287,7 @@ pub fn export(
                 word: entry.word.clone(),
                 code: code.clone(),
                 rank: index + 1,
+                merged_rank: entry.rank,
             });
             if occupied {
                 stats.primary_occupied_tail += 1;
@@ -314,6 +329,9 @@ pub fn export(
         "# input dump sha256: {}\n",
         provenance.dump_sha256
     ));
+    fixed_first_tsv.push_str(&format!(
+        "# selected mapping sha256: {selected_mapping_sha256}\n"
+    ));
     for record in &ff {
         fixed_first_tsv.push_str(&format!(
             "{}\t{}\t{}\t{}\n",
@@ -334,10 +352,13 @@ pub fn export(
         "# input dump sha256: {}\n",
         provenance.dump_sha256
     ));
+    primary_tsv.push_str(&format!(
+        "# selected mapping sha256: {selected_mapping_sha256}\n"
+    ));
     for record in &primary {
         primary_tsv.push_str(&format!(
-            "{}\t{}\t{}\n",
-            record.word, record.code, record.rank
+            "{}\t{}\t{}\t{}\n",
+            record.word, record.code, record.rank, record.merged_rank
         ));
     }
 
@@ -500,9 +521,9 @@ mod tests {
         assert!(out.fixed_first_tsv.contains("就是\tjqui\tjqu\tFI\n"));
         assert!(!out.fixed_first_tsv.contains("知道"));
         // primary 含其余全部,知道 的 IF 码也在(首选语义由 merged_ranking 保)。
-        assert!(out.primary_tsv.contains("知道\tvdc\t1\n"));
-        assert!(out.primary_tsv.contains("九十\tjqu\t1\n"));
-        assert!(out.primary_tsv.contains("我们\twm\t1\n"));
+        assert!(out.primary_tsv.contains("知道\tvdc\t1\t1\n"));
+        assert!(out.primary_tsv.contains("九十\tjqu\t1\t2\n"));
+        assert!(out.primary_tsv.contains("我们\twm\t1\t1\n"));
     }
 
     #[test]
@@ -528,18 +549,9 @@ mod tests {
         let entries = dump(&[("甲", "ab", 2), ("乙", "ab", 4), ("丙", "ac", 1)]);
         let out =
             export(&entries, &full, &occupied(&["ab"]), &provenance()).expect("插位 rank 应合法");
-        assert!(out.primary_tsv.contains(
-            "甲	ab	1
-"
-        ));
-        assert!(out.primary_tsv.contains(
-            "乙	ab	2
-"
-        ));
-        assert!(out.primary_tsv.contains(
-            "丙	ac	1
-"
-        ));
+        assert!(out.primary_tsv.contains("甲\tab\t1\t2\n"));
+        assert!(out.primary_tsv.contains("乙\tab\t2\t4\n"));
+        assert!(out.primary_tsv.contains("丙\tac\t1\t1\n"));
     }
 
     #[test]

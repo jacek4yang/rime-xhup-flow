@@ -165,12 +165,22 @@ fn serialization_order_is_strictly_increasing() {
 #[test]
 fn same_code_weights_are_unique_and_descend_in_file_order() {
     let (_, rows) = parse_dictionary(&generate_rime_word_dictionary());
-    // 与单字全码碰撞的 4 键码使用 merged_ranking 跨表权重:词表内只是合并
-    // 1..=n 排列的子集,不期望表内密度;跨表密度由 merged_ranking 单测保证。
-    let char_four_key_codes: BTreeSet<String> = canonical_char_entries()
+    // 与单字或 v2 简码碰撞的码使用 merged_ranking 跨表权重:词表内只是
+    // 合并排列的子集,不期望表内密度;跨表密度由 merged_ranking 单测保证。
+    let mut merged_codes: BTreeSet<String> = canonical_char_entries()
         .iter()
         .map(|entry| entry.code().to_string())
         .collect();
+    merged_codes.extend(
+        xhup_generator::canonical_primary_shortcut_entries()
+            .iter()
+            .map(|entry| entry.shortcut_code().to_string()),
+    );
+    merged_codes.extend(
+        xhup_generator::canonical_fixed_first_shortcut_entries()
+            .iter()
+            .map(|entry| entry.shortcut_code().to_string()),
+    );
     let mut by_code: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
     for (_, code, weight) in &rows {
         by_code.entry(code.as_str()).or_default().push(*weight);
@@ -182,7 +192,7 @@ fn same_code_weights_are_unique_and_descend_in_file_order() {
             weights.windows(2).all(|w| w[0] > w[1]),
             "{code} 文件内同码权重应严格降序"
         );
-        if char_four_key_codes.contains(*code) {
+        if merged_codes.contains(*code) {
             continue;
         }
         assert_eq!(

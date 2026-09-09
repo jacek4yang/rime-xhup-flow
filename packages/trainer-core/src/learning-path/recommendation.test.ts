@@ -179,7 +179,7 @@ describe("modeForPool", () => {
     expect(modeForPool("char-3")).toBe("sound-shape");
     expect(modeForPool("char-4")).toBe("full");
     expect(modeForPool("level1")).toBe("level1");
-    expect(modeForPool("shortcut-two-key-zero-regression")).toBe("two-key-word");
+    expect(modeForPool("shortcut-primary-two-key")).toBe("two-key-word");
     expect(modeForPool("word-6")).toBe("fixed-word");
     expect(modeForPool("sentence")).toBe("sentence");
   });

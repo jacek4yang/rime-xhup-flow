@@ -20,7 +20,7 @@
 //! 词语**(词汇存在性不因码碰撞被剥夺);碰撞码的词/字候选次序由生成器
 //! `merged_ranking` 按同源频率证据跨表仲裁。本工具仅统计碰撞规模供审计。
 //!
-//! shortcut protection:凡被规范简码数据(`data/shortcuts/*.tsv`)引用的
+//! shortcut protection:凡被 production canonical v2 简码引用的
 //! `(词, 完整码)` 不受 top-N 频率截断影响——简码的资格语义要求宿主词在
 //! 固定词层可达;必要时从该词长池的频率尾部逐出等量未受保护条目腾位。
 //! 受保护条目在源数据中无匹配 semantic entry 时失败(简码悬空),不静默放过。
@@ -215,55 +215,28 @@ struct ShortcutProtection {
     /// 被简码引用的 `(词, 完整码)`:宿主词必须留在固定词层。
     word_codes: BTreeSet<(String, String)>,
     /// FIXED_FIRST shortcut 命中的目标码:这些码上的词层占用者必须保留,
-    /// 否则 shortcut 失去 baseline 命中而悬空(ZR/二码层 shortcut 与词层
-    /// 按不变量天然不相交,无需列入)。
+    /// 否则 shortcut 失去 baseline 命中而悬空。
     target_codes: BTreeSet<String>,
 }
 
-/// 读取规范简码数据(`data/shortcuts/*.tsv`)构造保护集。
-///
-/// 简码 TSV 是仓库内 pin 住的规范数据;本工具不访问网络。路径相对 crate
-/// 清单目录解析,与构建/测试的工作目录无关。
+/// 由 generator 已校验的 PRIMARY + FIXED_FIRST 投影构造保护集。
 fn load_shortcut_protection() -> ShortcutProtection {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/shortcuts");
     let mut protection = ShortcutProtection {
         word_codes: BTreeSet::new(),
         target_codes: BTreeSet::new(),
     };
-    for (name, is_fixed_first) in [
-        ("word_zero_regression.tsv", false),
-        ("word_two_key_zero_regression.tsv", false),
-        ("word_fixed_first.tsv", true),
-    ] {
-        let path = dir.join(name);
-        let text = fs::read_to_string(&path)
-            .unwrap_or_else(|err| panic!("无法读取简码数据 {}: {err}", path.display()));
-        for (index, line) in text.lines().enumerate() {
-            if line.starts_with('#') {
-                continue;
-            }
-            let mut fields = line.split('\t');
-            let (Some(word), Some(fullcode)) = (fields.next(), fields.next()) else {
-                panic!(
-                    "{} 第 {} 行缺少 词/完整码 字段: {line:?}",
-                    path.display(),
-                    index + 1
-                );
-            };
-            protection
-                .word_codes
-                .insert((word.to_string(), fullcode.to_string()));
-            if is_fixed_first {
-                let shortcut = fields.next().unwrap_or_else(|| {
-                    panic!(
-                        "{} 第 {} 行缺少 shortcut 字段: {line:?}",
-                        path.display(),
-                        index + 1
-                    )
-                });
-                protection.target_codes.insert(shortcut.to_string());
-            }
-        }
+    for entry in xhup_generator::canonical_primary_shortcut_entries() {
+        protection
+            .word_codes
+            .insert((entry.word().to_string(), entry.full_code().to_string()));
+    }
+    for entry in xhup_generator::canonical_fixed_first_shortcut_entries() {
+        protection
+            .word_codes
+            .insert((entry.word().to_string(), entry.full_code().to_string()));
+        protection
+            .target_codes
+            .insert(entry.shortcut_code().to_string());
     }
     protection
 }

@@ -199,16 +199,6 @@ jobs:
       - name: 生成 Rime 包
         run: cargo run -p xhup-cli --locked -- generate rime --output /tmp/xhup-flow-package
 
-      - name: 导出 FIXED_FIRST 审计 manifest
-        run: >
-          cargo run -p xhup-analyzer --locked --bin shortcut-optimize --
-          --dump-fixed-first-audit-manifest /tmp/fixed-first.manifest
-
-      - name: 导出二码零冲突审计 manifest
-        run: >
-          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit --
-          --dump-two-key-audit-manifest /tmp/two-key.manifest
-
       - name: 导出全静态菜单 manifest 并构建 xhup-cli
         run: |
           cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
@@ -217,10 +207,8 @@ jobs:
 
       # 降级语义门禁:主方案引用 lua_filter 但环境无 librime-lua 时,
       # librime 必须跳过该组件且全部输入行为完整(docs/lua-runtime.md §2)。
-      - name: librime session 冒烟(无 Lua 插件降级路径 + 全量 A/B + 二码)
-        run: >
-          tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
-          /tmp/fixed-first.manifest /tmp/two-key.manifest
+      - name: librime session 冒烟(无 Lua 插件降级路径 + canonical v2 哨兵)
+        run: tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
 
       - name: 安装 librime-lua 插件与 Lua 解释器
         run: |

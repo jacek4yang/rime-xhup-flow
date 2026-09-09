@@ -1,10 +1,11 @@
 //! XHUP Flow 数据分析:编码空间占用、词语简码候选枚举、成本建模、频率收益与
-//! 重码成本分析、多 profile 确定性优化模拟、结果报告与 production 简码选择。
+//! 重码成本分析、optimizer v2 确定性优化/回放与历史 v1 selector 重放。
 //!
 //! 优化器是 deterministic heuristic,不声称数学全局最优;成本模型的数值是
-//! 无量纲优化目标,不是真实耗时预测。[`production`] 模块把对 sensitivity
-//! 假设高度稳定的 ZERO_REGRESSION 子集固化为 canonical 生产选择(显式导出、
-//! diff review 后入库);其余分析产物(TSV 转储、报告)不进入码表。
+//! 无量纲优化目标,不是真实耗时预测。`production*` 命名模块是 v1
+//! selector 的冻结历史重放实现,不再决定当前 production canonical。
+//! 当前唯一 production mapping 由 optimizer v2 选定点经 [`export_v2`]
+//! 导出为 PRIMARY + FIXED_FIRST。
 //!
 //! 词语 shortcut 的 frozen rule:每字只能选择 F(完整双拼两键)或 I(双拼
 //! 首键)。结构合法性由版本化 [`candidates::CandidateGrammar`] 表达,最短
@@ -115,10 +116,10 @@ pub struct AnalysisData {
     pub enumeration: EnumerationStats,
     /// 本份数据使用的候选枚举规格(语法 + 枚举期最小长度)。
     ///
-    /// ZERO_REGRESSION production evidence 必须基于
+    /// legacy v1 ZERO_REGRESSION 历史重放必须基于
     /// [`CandidateEnumerationSpec::LEGACY_V1_FROZEN`],FIXED_FIRST production
     /// evidence 必须基于 [`CandidateEnumerationSpec::MONOTONE_V2_THEORETICAL`]
-    /// (production 最短长度由 policy 在优化前过滤);由 evidence 收集函数
+    /// (历史 policy 最短长度由 policy 在优化前过滤);由 evidence 收集函数
     /// 硬断言,grammar 身份对生产证据显式可见。
     pub enumeration_spec: CandidateEnumerationSpec,
     /// 频率模型(domain 归一化状态)。

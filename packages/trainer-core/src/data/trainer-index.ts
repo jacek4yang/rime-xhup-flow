@@ -1,7 +1,8 @@
 /**
  * 训练数据的不可变索引:加载后构建一次,供练习/错题/键位视图共享。
  *
- * V2:除单字外,还索引固定词、一级简码、三个生产简码层与组句 fixtures,
+ * 除单字外,还索引固定词、一级简码、canonical v2 PRIMARY/FIXED_FIRST
+ * 练习池与组句 fixtures,
  * 并把全部条目投影为统一的 {@link TrainingItem} 域模型(练习引擎只消费
  * 该抽象,不为任何模式单写一套调度)。
  */
@@ -179,14 +180,14 @@ export const ALL_POOL_IDS: PoolId[] = [
   "word-4",
   "word-6",
   "word-8",
-  "shortcut-zero-regression",
+  "shortcut-primary",
   "shortcut-fixed-first",
-  "shortcut-two-key-zero-regression",
+  "shortcut-primary-two-key",
   "level1",
   "sentence",
 ];
 
-/** 校验后的 V2 数据集索引(不可变;加载后构建一次)。 */
+/** 校验后的 V3 数据集索引(不可变;加载后构建一次)。 */
 export type TrainerIndex = {
   dataset: TrainerDataset;
   /** 统一训练项:`${id}` → 条目(覆盖全部条目种类)。 */
@@ -231,9 +232,9 @@ export function buildTrainerIndex(dataset: TrainerDataset): TrainerIndex {
     "word-4": [],
     "word-6": [],
     "word-8": [],
-    "shortcut-zero-regression": [],
+    "shortcut-primary": [],
     "shortcut-fixed-first": [],
-    "shortcut-two-key-zero-regression": [],
+    "shortcut-primary-two-key": [],
     level1: [],
     sentence: [],
   };
@@ -263,17 +264,16 @@ export function buildTrainerIndex(dataset: TrainerDataset): TrainerIndex {
     byId.set(item.id, item);
     pools.level1.push(item);
   }
-  const shortcutLayers = [
-    ["wordShortcuts", "shortcut-zero-regression"],
-    ["fixedFirstShortcuts", "shortcut-fixed-first"],
-    ["twoKeyShortcuts", "shortcut-two-key-zero-regression"],
-  ] as const;
-  for (const [datasetKey, poolId] of shortcutLayers) {
-    for (const shortcut of dataset[datasetKey]) {
-      const item = shortcutItem(shortcut);
-      byId.set(item.id, item);
-      pools[poolId].push(item);
-    }
+  for (const shortcut of dataset.primaryShortcuts) {
+    const item = shortcutItem(shortcut);
+    byId.set(item.id, item);
+    const poolId = shortcut.shortcutCode.length === 2 ? "shortcut-primary-two-key" : "shortcut-primary";
+    pools[poolId].push(item);
+  }
+  for (const shortcut of dataset.fixedFirstShortcuts) {
+    const item = shortcutItem(shortcut);
+    byId.set(item.id, item);
+    pools["shortcut-fixed-first"].push(item);
   }
   for (const sentence of dataset.sentences) {
     const item = sentenceItem(sentence);

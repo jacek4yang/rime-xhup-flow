@@ -13,7 +13,7 @@ fn trainer_json() -> serde_json::Value {
 #[test]
 fn top_level_contract() {
     let doc = trainer_json();
-    assert_eq!(doc["schemaVersion"], 2);
+    assert_eq!(doc["schemaVersion"], 3);
     assert_eq!(doc["packageVersion"], env!("CARGO_PKG_VERSION"));
     assert_eq!(doc["entries"].as_array().unwrap().len(), 26753);
     for key in [
@@ -22,15 +22,14 @@ fn top_level_contract() {
         "entries",
         "words",
         "level1Shortcuts",
-        "wordShortcuts",
+        "primaryShortcuts",
         "fixedFirstShortcuts",
-        "twoKeyShortcuts",
         "sentences",
         "doublePinyin",
     ] {
         assert!(doc.get(key).is_some(), "缺少顶层字段 {key}");
     }
-    assert_eq!(doc.as_object().unwrap().len(), 10, "顶层字段集合固定");
+    assert_eq!(doc.as_object().unwrap().len(), 9, "顶层字段集合固定");
 }
 
 #[test]

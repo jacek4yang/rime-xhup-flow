@@ -180,11 +180,9 @@ fn finalize() -> Vec<FinalizedWordCodeEntry> {
         group_start = group_end;
     }
 
-    // 与单字全码碰撞的 4 键码:改用跨表合并权重(merged_ranking 保证无平局)。
+    // 与 v2 简码或单字层碰撞的码:改用跨表合并权重(保证全组无平局)。
     for entry in &mut entries {
-        if entry.code.len() == 4
-            && let Some(weight) = crate::merged_ranking::merged_weight(&entry.code, entry.word)
-        {
+        if let Some(weight) = crate::merged_ranking::merged_weight(&entry.code, entry.word) {
             entry.rime_weight = weight;
         }
     }
@@ -214,19 +212,27 @@ fn scored_entries() -> Vec<FinalizedWordCodeEntry> {
         .collect()
 }
 
-/// 未加权的 4 键条目快照,供 [`crate::merged_ranking`] 做跨表碰撞仲裁。
-///
-/// 只读取规范词语数据并推导码,不触发任何最终化/权重逻辑,因此不存在
-/// 与 merged_ranking 的初始化环。
-pub(crate) fn scored_four_key_entries() -> Vec<crate::merged_ranking::ScoredEntry> {
+/// 全部未加权条目快照,供 merged_ranking 重建 baseline 组。
+/// 不触发最终化/权重逻辑,因此不会形成 OnceLock 初始化环。
+pub(crate) fn scored_all_entries() -> Vec<crate::merged_ranking::ScoredEntry> {
     scored_entries()
         .into_iter()
-        .filter(|entry| entry.code.len() == 4)
         .map(|entry| crate::merged_ranking::ScoredEntry {
             code: entry.code,
             text: entry.word.to_string(),
             score: entry.frequency_score,
         })
+        .collect()
+}
+
+/// 未加权的 4 键条目快照,供 [`crate::merged_ranking`] 做跨表碰撞仲裁。
+///
+/// 只读取规范词语数据并推导码,不触发任何最终化/权重逻辑,因此不存在
+/// 与 merged_ranking 的初始化环。
+pub(crate) fn scored_four_key_entries() -> Vec<crate::merged_ranking::ScoredEntry> {
+    scored_all_entries()
+        .into_iter()
+        .filter(|entry| entry.code.len() == 4)
         .collect()
 }
 

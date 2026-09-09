@@ -1,15 +1,9 @@
 //! 高稳健 FIXED_FIRST 词语简码 Rime 词典的确定性序列化。
 //!
-//! 词典是 [`crate::fixed_first_shortcuts`] canonical 关系的投影:每行
-//! `词<TAB>shortcut 码<TAB>1`。production selection 的不变量保证一个
-//! shortcut exact code 恰对应一个词,因此本词典内部不存在 exact-code 候选
-//! 竞争,权重恒为 1。本词典**不被** `xhup_flow.dict.yaml` 导入,而是由
-//! 方案中独立的 `table_translator@fixed_first`(`initial_quality: 0`)加载;
-//! FIXED_FIRST 候选相对既有固定候选的严格靠后排序由方案的
-//! inter-translator priority fence(primary `initial_quality: 1000000`)
-//! 承担,词典内权重不参与跨 translator 排序(格式与项目既有生成词典一致,
-//! 不使用魔法大权重)。shortcut 是新增别名:每个词的完整码关系在固定词层
-//! 中完整保留。
+//! 词典是 [`crate::fixed_first_shortcuts`] canonical 关系的投影。每条权重
+//! 由 merged_ranking 指派。该词典与 PRIMARY 一起由顶层静态词典导入,
+//! 所以 FIXED_FIRST rank1、PRIMARY 插位与 baseline 相对序全部由同一组
+//! 唯一整数权重表达,不跨 translator 排序。
 //!
 //! 输出为 UTF-8(写入字节时)、LF 换行、恰好一个末尾换行、无 BOM;行顺序为
 //! canonical 序列化顺序(shortcut 长度 → 码 → 词),不承担排名语义。输出不
@@ -41,7 +35,11 @@ pub fn generate_rime_fixed_first_shortcut_dictionary() -> String {
         out.push_str(entry.word());
         out.push('\t');
         out.push_str(&entry.shortcut_code().to_string());
-        out.push_str("\t1\n");
+        let weight = crate::merged_ranking::merged_weight(entry.shortcut_code(), entry.word())
+            .expect("每条 FIXED_FIRST 简码都应具有 merged ranking 权重");
+        out.push('\t');
+        out.push_str(&weight.to_string());
+        out.push('\n');
     }
     out
 }
