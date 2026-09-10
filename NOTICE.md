@@ -83,15 +83,26 @@ SHA-256：
 
 再分发该 TSV（包括包含它的生成产物）时须保留上述署名与许可信息。该数据不因入库而改授 LGPL。
 
-## 固定高频词语数据
+## hot 与 extended 词语数据
 
-`data/words/wanxiang_base_words.tsv` 提取自万象基础词库并归一化到本项目规范读音：
+`data/words/wanxiang_base_words.tsv`（hot）与
+`data/words/wanxiang_extended_words.tsv`（其余完整合法快照）提取自万象
+基础词库并归一化到本项目规范读音：
 
 - 来源仓库：[`amzxyz/rime-wanxiang`](https://github.com/amzxyz/rime-wanxiang)，固定提交 `4618d67a978ff4f41b165c10b35558d38e333ab1`，文件 `dicts/jichu.dict.yaml`（Git Blob `a0f66e2fc6130f3f1c9b2e5109644c8b893477b0`）
 - 语义上游：[`amzxyz/RIME-LMDG`](https://github.com/amzxyz/RIME-LMDG)
 - 该数据集适用 CC BY 4.0 署名要求，许可证全文见 [`data/words/LICENSE.wanxiang`](data/words/LICENSE.wanxiang)；提取、选择、碰撞过滤规则与覆盖审计见 [`data/words/README.md`](data/words/README.md)
 
 再分发该 TSV（包括由它生成的 `xhup_flow_words.dict.yaml` 等数据产物）时须保留上述署名与许可信息。该数据不因入库而改授 LGPL。
+
+## attested 小鹤字符编码事实
+
+`data/xhup/attested_char_codes.tsv` 的历史兼容部分从上文固定的
+`flypy_chars.dict.yaml`（LGPL-3.0）确定性提取，保留其 sound code、shape
+code 与权重，而不再只抽取 8,105 字 core 形码。小鹤官网查形页仅作为少量
+回归 oracle；仓库不镜像官网数据库，记录查询标识、响应哈希与事实状态，
+项目也不因此成为小鹤官方项目。完整 schema、生成命令与审计见
+[`data/xhup/README.md`](data/xhup/README.md)。
 
 ## optimizer v2 PRIMARY 词语简码选择集
 

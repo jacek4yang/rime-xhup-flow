@@ -20,17 +20,31 @@
 - legacy v1 ZR/FIXED_FIRST/二码文件只留在
   `data/shortcuts/legacy/` 供 research-only 重放,不进入产品包。
 
+## P0 输入可达性修复
+
+- 8,105 字保留为 `CoreStandardHanzi` 规范语言学子集；生产 `InputHanzi`
+  为 8,208 字，9,796 条来源证据合并为 28,851 条 2/3/4 码关系；
+- `data/xhup/attested_char_codes.tsv` 来自固定
+  `boomker/rime-fast-xhup@308d6d2` 快照与小范围官网 oracle，输入码事实
+  不再依赖伪造 `HanziReading`；
+- hot 100,000 词保持冻结，pinned 万象其余 1,301,434 条 semantic entries
+  进入 secondary Flow 层；「提示词」(`tiuici`)来自上游快照而非特例；
+- Flow 同一低质量语言层同时含词汇证据与 9,254 条两键单字原语，能形成
+  「提嗯诶」等完全不存在于 hot/extended 词表的组合以及含语气字长句；
+- Trainer 数据契约升级到 V4，展示 core/extended scope、来源与状态。
+
 ## 可机械验证的发布门禁
 
 - Rust:`fmt` / `check` / `clippy -D warnings` / workspace 全测试;
 - replay:KdConv top-2000 基线 KSPC 1.8971、rank1 96.9544%、
   rank≤3 99.9120%、fallback 37.0093%;
-- Rime:140,664 个静态 exact code 菜单全量审计,涉及干净 userdb、
-  学习后静态保护、无重复、Flow 组句/持久化/导入导出;
+- Rime:141,138 个静态 exact code 菜单前缀全量审计，全部 extended exact
+  关系逐项可达，1,000 条词表外组合确定性抽样，并覆盖干净 userdb、
+  学习后静态保护、无重复、真实长句、Flow 持久化/导入导出；
 - runtime 哨兵:2–5 键、传统别名、legacy IF、prefix continuation、
   PRIMARY + FIXED_FIRST + baseline 精确混排菜单;
 - 真实部署:`rime_deployer --build` 必须自然产出主词典与
-  Flow/Learn table.bin;
+  Flow/Learn table.bin；
 - Trainer / trainer-core / miniapp:语义测试、严格 TypeScript 构建、
   weapp 构建与体积门禁;
 - generation:双跑字节相等;Rime/Trainer 规范文件哈希写入

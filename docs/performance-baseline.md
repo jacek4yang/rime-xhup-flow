@@ -47,6 +47,24 @@ tests/librime/run-flow-audit.sh ...
 librime 编译与 runtime 审计耗时以 CI 日志为准(Ubuntu runner 上
 完整冒烟 + Flow 审计约数分钟),不在此重复记录。
 
+## P0 开放输入变更对比
+
+同一开发机、同一 librime 1.16.1；before 为 100k 词包，after 为
+100k hot + 1,301,434 extended + 9,254 单字音码原语：
+
+| 指标 | before | after |
+| --- | ---: | ---: |
+| Rime 源文件总大小 | 9,028,087 B | 38,685,091 B |
+| ZIP（普通 deflate，仅体积参考） | — | 17,069,783 B |
+| release `generate rime` | 1.06–1.58 s | 5.39 s |
+| `rime_deployer --build` + 冒烟 | 3.81 s | 17.07–19.89 s |
+| 部署阶段峰值 RSS | 125,384 KiB | 1,041,536 KiB |
+| 已部署 runtime 76 项冒烟 | — | 0.48 s / 41,216 KiB 峰值 RSS |
+
+增长发生在首次/升级部署的词典编译阶段，已部署运行时没有同量级常驻内存
+回退。该成本换取 pinned 上游全部合法词汇不再受 Top-N 可达性截断；后续若
+优化物理存储，必须保持完整 runtime reachability 门禁，不得重新删词。
+
 ## 回归纪律
 
 - 影响生成器或词典数据结构的 PR:重跑上表 1–2 项,量级变化(>2×)
