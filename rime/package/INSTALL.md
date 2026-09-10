@@ -23,7 +23,7 @@ clients: Weasel (Windows), Squirrel (macOS), Fcitx5-Rime / IBus-Rime
 | `xhup_flow_word_shortcuts.dict.yaml` | canonical v2 PRIMARY 词语简码(显式合并候选位) |
 | `xhup_flow_fixed_first_shortcuts.dict.yaml` | canonical v2 FIXED_FIRST 词语简码 |
 | `xhup_flow_flow.dict.yaml` | Flow 组句词典 |
-| `xhup_flow_learn.dict.yaml` | Flow 学习词典 |
+| `xhup_flow_learn.dict.yaml` | Flow 学习词典(导入组句词典并补充全码原语) |
 | `xhup_flow_flow.schema.yaml` | 词典编译 wrapper(同上) |
 | `xhup_flow_learn.schema.yaml` | 词典编译 wrapper(同上) |
 | `lua/xhup_flow/quick_hint.lua` | 简码提示模块(可选增强,需 librime-lua) |

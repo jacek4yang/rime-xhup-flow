@@ -54,12 +54,12 @@ librime 编译与 runtime 审计耗时以 CI 日志为准(Ubuntu runner 上
 
 | 指标 | before | after |
 | --- | ---: | ---: |
-| Rime 源文件总大小 | 9,028,087 B | 38,685,091 B |
-| ZIP（普通 deflate，仅体积参考） | — | 17,069,783 B |
+| Rime 源文件总大小 | 9,028,087 B | 36,949,094 B |
+| ZIP（普通 deflate，仅体积参考） | — | 15,005,168 B |
 | release `generate rime` | 1.06–1.58 s | 5.39 s |
-| `rime_deployer --build` + 冒烟 | 3.81 s | 17.07–19.89 s |
-| 部署阶段峰值 RSS | 125,384 KiB | 1,041,536 KiB |
-| 已部署 runtime 76 项冒烟 | — | 0.48 s / 41,216 KiB 峰值 RSS |
+| `rime_deployer --build` + 冒烟 | 3.81 s | 17.07–27.08 s |
+| 部署阶段峰值 RSS | 125,384 KiB | 1,105,580 KiB |
+| 已部署 runtime 78 项冒烟 | — | 0.48 s / 41,216 KiB 峰值 RSS |
 
 增长发生在首次/升级部署的词典编译阶段，已部署运行时没有同量级常驻内存
 回退。该成本换取 pinned 上游全部合法词汇不再受 Top-N 可达性截断；后续若

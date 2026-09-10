@@ -4,12 +4,12 @@
 //!   (enable_sentence)使用。它包含 hot / extended 词汇证据和全部两键单字
 //!   音码原语：已知词改善分段排名，单字保证词表外组合、结构助词与语气字
 //!   不会令句子路径中断。primary 静态 translator 的高质量栅栏保护冻结菜单。
-//! - **学习词典 `xhup_flow_learn`**(单字 + 词条):供
+//! - **学习词典 `xhup_flow_learn`**:通过 `import_tables` 复用完整组句词典，
+//!   只本地追加 3/4 键单字全码原语，供
 //!   `table_translator@learn`(enable_sentence **false**、user_dict、
-//!   enable_encoder)使用。单字是规则式短语编码的原语(TableEncoder
-//!   的 DfsEncode 逐字 TranslateWord);learn translator 关闭组句,
-//!   其单字/词条 exact 查询与 primary 静态层完全重合,经 uniquifier
-//!   去重后不可见(零冲突)。
+//!   enable_encoder)使用。导入保证 Flow/Learn 共享 userdb 时 syllable-id
+//!   空间一致；追加全码让 TableEncoder 的 DfsEncode 仍可逐字解析。
+//!   learn translator 关闭组句，其 exact 查询经 uniquifier 去重后不可见。
 //!
 //! 两个词典都只含 canonical 完整关系,**显式排除全部简码别名**
 //! (一级简码 / canonical v2 PRIMARY + FIXED_FIRST):简码别名是肌肉记忆
@@ -26,8 +26,8 @@
 //! primary 静态排名）。librime `dict_compiler` 建表时对权重取 log，
 //! quality 再 exp 还原,组句(`poet`)按句子权重总和比较分段路径 —— 只有
 //! 真实频率证据才能让常用词路径压倒垃圾分段路径;排名权重(组内名次
-//! 1..N)在同码组间不可比,无法区分高频词与生僻词。学习词典仍沿用各最终化
-//! 条目的显式 Rime 权重(排名输出表示,不参与组句)。
+//! 1..N)在同码组间不可比,无法区分高频词与生僻词。学习词典导入相同的
+//! Flow 频率关系，避免共享 userdb 的内部 id 被不同系统词典误译。
 //!
 //! 行顺序只是确定性序列化顺序,不承担候选排序。输出 UTF-8、LF、恰好一个
 //! 末尾换行、无 BOM;不含时间戳/主机/路径等易变内容,相同规范数据与源码
@@ -36,7 +36,6 @@
 use crate::analysis::word_code_analysis_entries;
 use crate::char_codes::{canonical_input_char_code_entries, finalized_char_code_entries};
 use crate::word_codes::canonical_extended_word_code_entries;
-use crate::word_codes::canonical_word_code_entries;
 
 /// 词典名称(组句词典:词条 + 两键单字音码原语)。
 const DICTIONARY_NAME: &str = "xhup_flow_flow";
@@ -44,7 +43,7 @@ const DICTIONARY_NAME: &str = "xhup_flow_flow";
 /// 生成的 Flow 组句词典文件名(生成器拥有的产物标识,调用方不得自行命名)。
 pub const RIME_FLOW_DICTIONARY_FILENAME: &str = "xhup_flow_flow.dict.yaml";
 
-/// 学习词典名称(单字 + 词条,encoder 用)。
+/// 学习词典名称(导入 Flow 关系 + 全码单字补充,encoder 用)。
 const LEARN_DICTIONARY_NAME: &str = "xhup_flow_learn";
 
 /// 生成的 Flow 学习词典文件名。
@@ -148,47 +147,43 @@ pub fn generate_rime_flow_dictionary() -> String {
             .then(b.2.cmp(&a.2))
             .then(a.0.cmp(&b.0))
     });
-    render_dictionary(DICTIONARY_NAME, &rows, None)
+    render_dictionary(DICTIONARY_NAME, &rows, &[], None)
 }
 
-/// 生成完整的 Flow 学习 Rime 源词典文本(单字 + 词条全码 + encoder)。
+/// 生成 Flow 学习 Rime 源词典文本(导入组句词典 + encoder)。
 ///
 /// 供 `table_translator@learn`(enable_sentence **false**, user_dict,
-/// enable_encoder)使用:单字条目是规则式短语编码的原语
-/// (TableEncoder 的 DfsEncode 逐字 TranslateWord,经 reverse 词典解析);
-/// 单字不会造成退化句子,因为 learn translator 关闭组句,其单字
-/// exact 查询与 primary 静态单字完全重合,经 uniquifier 去重后不可见。
+/// enable_encoder)使用。它导入 `xhup_flow_flow` 的完整关系而不复制数据行，
+/// 使两个 translator 的 Flow 关系 syllable-id 空间严格一致；本地数据行
+/// 只追加 Flow 未收录的 3/4 键单字全码，不复制百万行词汇。否则 extended
+/// 词汇加入 Flow 后，共享 userdb 会把一方的 id 交给另一方，导致学习静默失效。
+/// 单字不会造成退化句子，因为 learn translator 关闭组句；其 exact 查询
+/// 与 flow 重合，经 uniquifier 去重后不可见。
 pub fn generate_rime_learn_dictionary() -> String {
-    let mut rows: Vec<(String, String, u32)> = Vec::new();
-    for entry in canonical_input_char_code_entries() {
-        rows.push((
-            entry.hanzi().as_char().to_string(),
-            entry.code().to_string(),
-            entry.weight(),
-        ));
-    }
-    for entry in canonical_word_code_entries() {
-        rows.push((
-            entry.word().to_string(),
-            entry.code().to_string(),
-            entry.weight(),
-        ));
-    }
-    rows.sort_by(|a, b| {
-        a.1.chars()
-            .count()
-            .cmp(&b.1.chars().count())
-            .then(a.1.cmp(&b.1))
-            .then(b.2.cmp(&a.2))
-            .then(a.0.cmp(&b.0))
-    });
-    render_dictionary(LEARN_DICTIONARY_NAME, &rows, Some(&flow_encoder_yaml()))
+    let rows: Vec<_> = canonical_input_char_code_entries()
+        .into_iter()
+        .filter(|entry| entry.code().len() > 2)
+        .map(|entry| {
+            (
+                entry.hanzi().as_char().to_string(),
+                entry.code().to_string(),
+                entry.weight(),
+            )
+        })
+        .collect();
+    render_dictionary(
+        LEARN_DICTIONARY_NAME,
+        &rows,
+        &[DICTIONARY_NAME],
+        Some(&flow_encoder_yaml()),
+    )
 }
 
-/// 词典 YAML 渲染共享(确定性;encoder 段可选)。
+/// 词典 YAML 渲染共享(确定性；import_tables / encoder 段可选)。
 fn render_dictionary(
     name: &str,
     rows: &[(String, String, u32)],
+    import_tables: &[&str],
     encoder_yaml: Option<&str>,
 ) -> String {
     let mut out = String::new();
@@ -200,6 +195,14 @@ fn render_dictionary(
     out.push_str("\nversion: \"");
     out.push_str(env!("CARGO_PKG_VERSION"));
     out.push_str("\"\nsort: by_weight\nuse_preset_vocabulary: false\n");
+    if !import_tables.is_empty() {
+        out.push_str("import_tables:\n");
+        for table in import_tables {
+            out.push_str("  - ");
+            out.push_str(table);
+            out.push('\n');
+        }
+    }
     if let Some(encoder) = encoder_yaml {
         out.push_str(encoder);
     }
@@ -415,22 +418,26 @@ mod tests {
         );
     }
 
-    /// 学习词典:单字 + 词条,含 encoder 段。
+    /// 学习词典导入组句词典而不复制百万行，并携带 encoder 段。
     #[test]
-    fn learn_dictionary_contains_chars_and_words() {
+    fn learn_dictionary_reuses_flow_syllable_space() {
         let dict = generate_rime_learn_dictionary();
-        // 单字条目存在(抽查:啊 的 2 键码 aa)。
-        assert!(dict.contains("\taa\t"), "学习词典应含单字条目(如 啊 aa)");
-        // 词条存在(抽查:我们 womf)。
-        assert!(dict.contains("我们\twomf\t"), "学习词典应含词条");
+        assert!(dict.contains("import_tables:\n  - xhup_flow_flow\n"));
+        let rows = dict
+            .lines()
+            .skip_while(|line| *line != "...")
+            .skip(1)
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 9_724 + 9_873);
+        assert!(rows.iter().all(|line| {
+            line.split('\t')
+                .nth(1)
+                .is_some_and(|code| matches!(code.len(), 3 | 4))
+        }));
         // encoder 段存在。
         assert!(dict.contains("encoder:"), "学习词典应含 encoder 段");
         assert!(dict.contains("formula: \"AaBaCaDaZa\""));
-        // 简码别名排除不变。
-        assert!(
-            !dict.contains("时间\tuij\t") && !dict.contains("记得\tjd\t"),
-            "简码别名不得进入学习词典"
-        );
+        assert!(dict.len() < 500_000, "学习词典不得复制百万行词汇数据");
     }
 
     /// encoder 规则:逐字声码首键,公式坐标正确。

@@ -44,6 +44,9 @@ compile_package_dict_isolated() {
   local dir="$work/compile-$dict"
   mkdir -p "$dir"
   cp "$PACKAGE_DIR/$dict.dict.yaml" "$dir/"
+  if [[ "$dict" == xhup_flow_learn ]]; then
+    cp "$PACKAGE_DIR/xhup_flow_flow.dict.yaml" "$dir/"
+  fi
   compile_dict_via_wrapper "$dir" "$dict"
   test -f "$dir/build/$dict.table.bin" || {
     echo "词典编译失败: $dict" >&2

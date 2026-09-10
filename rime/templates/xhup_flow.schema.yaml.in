@@ -8,7 +8,7 @@ schema:
   author:
     - XHUP Flow
   # librime 部署只编译默认 translator 命名空间的词典;Flow / Learn
-  # 三个辅助词典必须经官方 schema/dependencies 机制
+  # 两个辅助词典必须经官方 schema/dependencies 机制
   # 声明,Weasel / rime_deployer 才会为它们生成 table.bin。
   dependencies:
     - xhup_flow_flow
@@ -100,12 +100,10 @@ flow:
   initial_quality: 100
 
 # learn translator:学习短语编码(encoder)。学习词典 xhup_flow_learn
-# 含单字 + 词条全码(单字是规则式短语编码原语);enable_sentence
-# false(单字组句会产生退化句子,组句由 flow translator 负责)。
-# 单字/词条 exact 查询与 primary 静态层完全重合,经 uniquifier 去重后
-# 不可见。共享同一用户词典 xhup_flow_user:flow 层句子提交属于该语言,
-# 本层 Memorize 触发多元素 EncodePhrase,把 ≥5 字短语按「逐字声码
-# 首键」规则编码入库。
+# 通过 import_tables 继承完整 Flow 关系并追加 3/4 键单字全码原语，
+# 保证两个 translator 共享 xhup_flow_user 时 syllable-id 空间一致。
+# enable_sentence false 避免单字组句产生退化句子；本层 Memorize 触发
+# 多元素 EncodePhrase，把 ≥5 字短语按「逐字声码首键」规则编码入库。
 learn:
   dictionary: xhup_flow_learn
   user_dict: xhup_flow_user

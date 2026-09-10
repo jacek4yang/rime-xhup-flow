@@ -23,7 +23,10 @@ XHUP Flow 首个稳定版本。
 - hot 100,000 词只承担冻结排名，pinned 万象其余 1,301,434 条合法词汇
   进入 secondary Flow 层；修复旧 Top-N 外「提示词」(`tiuici`)不可达；
 - Flow 组句词典加入全部两键单字音码原语，支持真正的词表外组合、语气字
-  与单字/词混合长句，同时保持 frozen static exact top1 不变。
+  与单字/词混合长句，同时保持 frozen static exact top1 不变；
+- Learn 词典通过 `import_tables` 复用完整 Flow 码表并仅补充 3/4 键单字
+  原语，保证共享 userdb 的 syllable-id 一致，扩词后学习、重启、导出与
+  恢复行为保持可用。
 
 ### 工具与应用
 

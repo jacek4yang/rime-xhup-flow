@@ -31,6 +31,8 @@
   进入 secondary Flow 层；「提示词」(`tiuici`)来自上游快照而非特例；
 - Flow 同一低质量语言层同时含词汇证据与 9,254 条两键单字原语，能形成
   「提嗯诶」等完全不存在于 hot/extended 词表的组合以及含语气字长句；
+- Learn 通过 `import_tables` 继承完整 Flow 码表并只追加 3/4 键单字原语，
+  两个 translator 共享 userdb 时不会发生 syllable-id 漂移；
 - Trainer 数据契约升级到 V4，展示 core/extended scope、来源与状态。
 
 ## 可机械验证的发布门禁
