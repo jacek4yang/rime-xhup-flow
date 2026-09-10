@@ -187,7 +187,7 @@ export const ALL_POOL_IDS: PoolId[] = [
   "sentence",
 ];
 
-/** 校验后的 V3 数据集索引(不可变;加载后构建一次)。 */
+/** 校验后的 V4 数据集索引(不可变;加载后构建一次)。 */
 export type TrainerIndex = {
   dataset: TrainerDataset;
   /** 统一训练项:`${id}` → 条目(覆盖全部条目种类)。 */

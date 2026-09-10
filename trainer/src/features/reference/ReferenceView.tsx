@@ -12,6 +12,7 @@ import { useI18n } from "@/lib/use-i18n";
 import type { I18nKey } from "@xhup/trainer-core";
 import { useTrainerIndex } from "@/lib/trainer-context";
 import { KeyDetailDialog } from "./KeyDetailDialog";
+import type { TrainerIndex } from "@xhup/trainer-core";
 
 /**
  * 键位参考:键盘图(点按任一键打开键位知识面板) + 速查 + 映射表 +
@@ -170,27 +171,69 @@ function KeyMappingSummary({ keyChar }: { keyChar: string }) {
 }
 
 /** 规范数据速查:汉字/词/码前缀匹配,最多 24 条(只读)。 */
+export type ReferenceSearchResult = {
+  target: string;
+  code: string;
+  kind: string;
+  detail?: string;
+};
+
+/** 速查使用与生产 open composer 相同的逐字两键原语，不维护词语白名单。 */
+export function buildReferenceResults(
+  index: TrainerIndex,
+  query: string,
+): ReferenceSearchResult[] {
+  const q = query.trim();
+  if (q.length === 0) return [];
+  const matches: ReferenceSearchResult[] = [];
+
+  for (const entry of index.dataset.entries) {
+    if (entry.char.includes(q) || entry.code.startsWith(q.toLowerCase())) {
+      const evidence = [entry.scope, entry.codeSource, ...entry.statuses].join(" · ");
+      matches.push({ target: entry.char, code: entry.code, kind: "char", detail: evidence });
+      if (matches.length >= 24) return matches;
+    }
+  }
+  for (const item of index.byId.values()) {
+    if (item.kind === "char") continue;
+    if (item.target.includes(q) || item.primaryCode.startsWith(q.toLowerCase())) {
+      matches.push({ target: item.target, code: item.primaryCode, kind: item.kind });
+      if (matches.length >= 24) return matches;
+    }
+  }
+
+  const characters = [...q];
+  if (characters.length >= 2) {
+    const sounds = characters.map((character) => {
+      const entries = index.dataset.entries.filter(
+        (entry) => entry.char === character && entry.length === 2,
+      );
+      entries.sort((a, b) => {
+        const official = Number(b.codeSource === "official-attested") -
+          Number(a.codeSource === "official-attested");
+        if (official !== 0) return official;
+        if (a.frequencyScore !== b.frequencyScore) return b.frequencyScore - a.frequencyScore;
+        return a.code < b.code ? -1 : a.code > b.code ? 1 : 0;
+      });
+      return entries[0]?.code;
+    });
+    if (sounds.every((sound): sound is string => sound !== undefined)) {
+      matches.push({
+        target: q,
+        code: sounds.join(""),
+        kind: "open",
+        detail: "逐字两键音码 · 不依赖固定词表",
+      });
+    }
+  }
+  return matches.slice(0, 24);
+}
+
 function SearchResults({ query }: { query: string }) {
   const index = useTrainerIndex();
   const { t } = useI18n();
   const results = useMemo(() => {
-    const q = query.trim();
-    if (q.length === 0) return [];
-    const matches: { target: string; code: string; kind: string }[] = [];
-    for (const item of index.byId.values()) {
-      if (
-        item.target.includes(q) ||
-        item.primaryCode.startsWith(q.toLowerCase())
-      ) {
-        matches.push({
-          target: item.target,
-          code: item.primaryCode,
-          kind: item.kind,
-        });
-        if (matches.length >= 24) break;
-      }
-    }
-    return matches;
+    return buildReferenceResults(index, query);
   }, [index, query]);
 
   const KIND_LABELS: Record<string, I18nKey> = {
@@ -199,6 +242,7 @@ function SearchResults({ query }: { query: string }) {
     word: "reference.kindWord",
     shortcut: "reference.kindShortcut",
     sentence: "reference.kindSentence",
+    open: "reference.kindOpen",
   };
 
   if (query.trim().length === 0) return null;
@@ -216,8 +260,11 @@ function SearchResults({ query }: { query: string }) {
           <span className="font-mono text-sm text-muted-foreground">
             {result.code}
           </span>
-          <span className="ml-auto text-xs text-muted-foreground">
-            {KIND_LABELS[result.kind] ? t(KIND_LABELS[result.kind]) : result.kind}
+          <span className="ml-auto text-right text-xs text-muted-foreground">
+            <span className="block">
+              {KIND_LABELS[result.kind] ? t(KIND_LABELS[result.kind]) : result.kind}
+            </span>
+            {result.detail && <span className="block">{result.detail}</span>}
           </span>
         </li>
       ))}

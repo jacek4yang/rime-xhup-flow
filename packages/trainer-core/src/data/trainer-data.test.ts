@@ -18,13 +18,17 @@ function makeEntry(overrides: Partial<TrainerEntry> = {}): TrainerEntry {
     readings: ["xing"],
     frequencyScore: 123,
     rimeWeight: 42,
+    scope: "core",
+    codeSource: "canonical-reading-shape",
+    sources: [],
+    statuses: [],
     ...overrides,
   };
 }
 
 function makeDataset(overrides: Partial<TrainerDataset> = {}): TrainerDataset {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     packageVersion: "0.1.0",
     entries: [makeEntry()],
     words: [{ word: "我们", code: "womf", length: 4, charCount: 2, rimeWeight: 9 }],
@@ -50,9 +54,9 @@ function makeDataset(overrides: Partial<TrainerDataset> = {}): TrainerDataset {
 }
 
 describe("validateTrainerDataset", () => {
-  it("接受合法的 V3 数据集", () => {
+  it("接受合法的 V4 数据集", () => {
     const dataset = validateTrainerDataset(makeDataset());
-    expect(dataset.schemaVersion).toBe(3);
+    expect(dataset.schemaVersion).toBe(4);
     expect(dataset.entries).toHaveLength(1);
     expect(dataset.words).toHaveLength(1);
     expect(dataset.level1Shortcuts).toHaveLength(26);
@@ -62,9 +66,9 @@ describe("validateTrainerDataset", () => {
   it("拒绝旧版与未知 schemaVersion", () => {
     expect(() =>
       validateTrainerDataset({ ...makeDataset(), schemaVersion: 1 }),
-    ).toThrow(/版本应为 3/);
+    ).toThrow(/版本应为 4/);
     expect(() =>
-      validateTrainerDataset({ ...makeDataset(), schemaVersion: 4 }),
+      validateTrainerDataset({ ...makeDataset(), schemaVersion: 5 }),
     ).toThrow(TrainerDataError);
   });
 

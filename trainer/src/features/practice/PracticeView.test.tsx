@@ -23,12 +23,16 @@ const ENTRIES: TrainerEntry[] = [
     readings: ["xing", "hang"],
     frequencyScore: 100,
     rimeWeight: 1,
+    scope: "core",
+    codeSource: "canonical-reading-shape",
+    sources: [],
+    statuses: [],
   },
 ];
 
 function fixtureIndex(): TrainerIndex {
   return buildTrainerIndex({
-    schemaVersion: 3,
+    schemaVersion: 4,
     packageVersion: "0.1.0",
     entries: ENTRIES,
     words: [{ word: "我们", code: "womf", length: 4, charCount: 2, rimeWeight: 9 }],

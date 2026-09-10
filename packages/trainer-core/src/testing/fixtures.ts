@@ -1,6 +1,6 @@
 /**
  * 测试共享 fixture:构造规范形状的训练条目/索引/进度。
- * 仅测试使用;生产数据一律来自 Rust 生成的 V3 数据集。
+ * 仅测试使用;生产数据一律来自 Rust 生成的 V4 数据集。
  */
 
 import type {
@@ -22,6 +22,10 @@ export function makeEntry(char: string, code: string, score = 0): TrainerEntry {
     readings: ["x"],
     frequencyScore: score,
     rimeWeight: 1,
+    scope: "core",
+    codeSource: "canonical-reading-shape",
+    sources: [],
+    statuses: [],
   };
 }
 
@@ -62,10 +66,10 @@ export function makeSentence(text: string, code: string): TrainerSentence {
   return { text, code, components };
 }
 
-/** 最小合法 V3 数据集(全部 11 个池至少可构建)。 */
+/** 最小合法 V4 数据集(全部 11 个池至少可构建)。 */
 export function makeDataset(overrides: Partial<TrainerDataset> = {}): TrainerDataset {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     packageVersion: "0.0.0-test",
     entries: [
       makeEntry("行", "xk", 90),
