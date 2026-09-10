@@ -7,7 +7,7 @@ import {
 } from "./trainer-index";
 import { makeDataset, makeEntry } from "../testing/fixtures";
 
-describe("buildTrainerIndex(V3)", () => {
+describe("buildTrainerIndex(V4)", () => {
   const index = buildTrainerIndex(makeDataset());
 
   it("全部池 ID 都被构建且非空", () => {

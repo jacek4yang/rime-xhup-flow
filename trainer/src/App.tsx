@@ -96,7 +96,7 @@ function CenteredScreen({ children }: { children: React.ReactNode }) {
 }
 
 function ReadyApp({ dataset }: { dataset: TrainerDataset }) {
-  // 26753 条数据只校验、建索引一次;后续渲染不再全量 filter/sort。
+  // 生产字符数据只校验、建索引一次;后续渲染不再全量 filter/sort。
   const index = useMemo(() => buildTrainerIndex(dataset), [dataset]);
   return (
     <TrainerIndexProvider index={index}>

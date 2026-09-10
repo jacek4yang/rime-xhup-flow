@@ -24,11 +24,15 @@ xhup-cli generate trainer  →  trainer/public/generated/xhup_flow_trainer.json
 JSON;生成失败则前端命令直接失败,不会回退到过期数据。生成的 JSON
 属于构建产物,已被 `.gitignore` 忽略,不进入版本库。
 
-前端加载时完整校验 `schemaVersion: 3` 契约(条目 + 词语 +
+前端加载时完整校验 `schemaVersion: 4` 契约(条目 + 词语 +
 canonical v2 PRIMARY/FIXED_FIRST 简码 + 组句 fixtures + 双拼映射;
-字段、码长一致性、`(char, code)`
+字段、码长一致性、core/extended scope、编码来源/provenance、`(char, code)`
 唯一性、`frequencyScore` 安全整数等),校验失败会显示可读错误而不是
 白屏。V1 → V2 的本地进度迁移在 trainer store 内完成,旧备份可导入。
+
+参考页与生产生成器共享同一 `InputHanzi` 数据：搜索「嗯」「诶」会显示
+规范 core / 扩展输入、官网/兼容来源及 alternate code；搜索多字文本（如
+「提示词」）会按相同两键音码原语展示可输入组合码。
 
 ## 开发命令
 

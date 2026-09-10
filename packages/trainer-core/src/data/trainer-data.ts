@@ -1,12 +1,12 @@
 /**
- * 训练器规范数据(V3)的类型、运行时校验与加载。
+ * 训练器规范数据(V4)的类型、运行时校验与加载。
  *
  * 唯一事实来源是 Rust 生成的 `xhup_flow_trainer.json`;前端不维护任何
  * 双拼映射、汉字编码、词码、简码策略或频率表。加载时完整校验一次,
  * 校验失败抛出带用户可读原因的 {@link TrainerDataError}。
  *
- * V3 使用 optimizer v2 canonical 两层:`primaryShortcuts` 与
- * `fixedFirstShortcuts`;旧 ZERO_REGRESSION / 独立二码层不再是 production。
+ * V4 在 optimizer v2 简码契约上加入生产 InputHanzi 的 core/extended
+ * scope 与 attested provenance；旧 ZERO_REGRESSION / 独立二码层不再是 production。
  */
 
 import { translate, type I18nKey, type Language } from "../i18n";
@@ -31,6 +31,12 @@ export type TrainerEntry = {
   toneReading?: string;
   frequencyScore: number;
   rimeWeight: number;
+  /** 字符属于规范 8105 core，还是有来源的扩展输入层。 */
+  scope: "core" | "extended";
+  /** 编码来自规范读音/形码推导，或官方/历史 attested 事实。 */
+  codeSource: "canonical-reading-shape" | "official-attested" | "legacy-attested";
+  sources: string[];
+  statuses: string[];
 };
 
 /** 一条固定词训练条目(全码,逐字双拼拼接)。 */
@@ -89,9 +95,9 @@ export type DoublePinyinReference = {
   zeroInitials: { syllable: string; code: string }[];
 };
 
-/** 校验后的 V3 数据集。 */
+/** 校验后的 V4 数据集。 */
 export type TrainerDataset = {
-  schemaVersion: 3;
+  schemaVersion: 4;
   packageVersion: string;
   entries: TrainerEntry[];
   words: TrainerWord[];
@@ -143,7 +149,7 @@ function isLowerAlpha(value: unknown): value is string {
 }
 
 function isHanziString(value: unknown, at: string): string {
-  if (typeof value !== "string" || !/^[\u4e00-\u9fff]+$/.test(value)) {
+  if (typeof value !== "string" || !/^\p{Script=Han}+$/u.test(value)) {
     fail(`${at} 应为汉字串`);
   }
   return value;
@@ -153,7 +159,19 @@ function validateEntry(value: unknown, index: number): TrainerEntry {
   const at = `第 ${index + 1} 条训练数据`;
   if (!isRecord(value)) fail(`${at} 结构无效`);
 
-  const { char, code, length, readings, toneReading, frequencyScore, rimeWeight } = value;
+  const {
+    char,
+    code,
+    length,
+    readings,
+    toneReading,
+    frequencyScore,
+    rimeWeight,
+    scope,
+    codeSource,
+    sources,
+    statuses,
+  } = value;
 
   if (typeof char !== "string" || [...char].length !== 1) {
     fail(`${at} 的 char 应恰好为一个字符`);
@@ -169,11 +187,34 @@ function validateEntry(value: unknown, index: number): TrainerEntry {
   }
   if (
     !Array.isArray(readings) ||
-    readings.length === 0 ||
     !readings.every(isLowerAlpha) ||
     readings.some((reading) => reading.length < 1 || reading.length > 6)
   ) {
-    fail(`${at} 的 readings 应为非空小写字母数组`);
+    fail(`${at} 的 readings 应为小写字母数组`);
+  }
+  if (scope !== "core" && scope !== "extended") {
+    fail(`${at} 的 scope 应为 core/extended`);
+  }
+  if (
+    codeSource !== "canonical-reading-shape" &&
+    codeSource !== "official-attested" &&
+    codeSource !== "legacy-attested"
+  ) {
+    fail(`${at} 的 codeSource 无效`);
+  }
+  if (codeSource === "canonical-reading-shape" && readings.length === 0) {
+    fail(`${at} 的规范推导编码必须携带读音`);
+  }
+  const evidenceArray = (field: unknown, label: string): string[] => {
+    if (!Array.isArray(field) || !field.every((item) => typeof item === "string")) {
+      fail(`${at} 的 ${label} 应为字符串数组`);
+    }
+    return field as string[];
+  };
+  const sourceValues = evidenceArray(sources, "sources");
+  const statusValues = evidenceArray(statuses, "statuses");
+  if (codeSource !== "canonical-reading-shape" && sourceValues.length === 0) {
+    fail(`${at} 的 attested 编码必须携带来源`);
   }
   if (
     typeof frequencyScore !== "number" ||
@@ -202,6 +243,10 @@ function validateEntry(value: unknown, index: number): TrainerEntry {
     ...(toneReading === undefined ? {} : { toneReading }),
     frequencyScore,
     rimeWeight,
+    scope,
+    codeSource,
+    sources: sourceValues,
+    statuses: statusValues,
   };
 }
 
@@ -380,9 +425,9 @@ function validateDoublePinyin(value: unknown): DoublePinyinReference {
 }
 
 /**
- * 校验并返回 V3 数据集。
+ * 校验并返回 V4 数据集。
  *
- * 版本边界:schemaVersion 必须恰为 3——旧版本数据由 `pnpm build` 的
+ * 版本边界:schemaVersion 必须恰为 4——旧版本数据由 `pnpm build` 的
  * `generate:data` 重新生成,不做前端兼容解析。
  */
 export function validateTrainerDataset(
@@ -391,7 +436,7 @@ export function validateTrainerDataset(
 ): TrainerDataset {
   const language = options.language ?? "zh";
   if (!isRecord(value)) fail("训练数据结构无效");
-  if (value.schemaVersion !== 3) {
+  if (value.schemaVersion !== 4) {
     fail(t(language, "trainer.errorVersion", { actual: String(value.schemaVersion) }));
   }
   if (typeof value.packageVersion !== "string" || value.packageVersion === "") {
@@ -431,7 +476,7 @@ export function validateTrainerDataset(
   const sentences = validateArray(value.sentences, 1, "sentences", validateSentence);
   ensureUnique(sentences.map((sentence) => sentence.text), "sentences");
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     packageVersion: value.packageVersion,
     entries,
     words,

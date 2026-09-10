@@ -30,6 +30,9 @@ compile_dict_isolated() {
   local d="$work/compile-$dict"
   mkdir -p "$d"
   cp "$PACKAGE_DIR/$dict.dict.yaml" "$d/"
+  if [[ "$dict" == xhup_flow_learn ]]; then
+    cp "$PACKAGE_DIR/xhup_flow_flow.dict.yaml" "$d/"
+  fi
   cat > "$d/dc.schema.yaml" <<EOF
 # Rime schema
 # encoding: utf-8

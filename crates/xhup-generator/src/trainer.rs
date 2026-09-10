@@ -1,4 +1,4 @@
-//! 训练器规范数据集的 JSON 投影(V3)。
+//! 训练器规范数据集的 JSON 投影(V4)。
 //!
 //! 训练器不维护任何自己的双拼映射、汉字编码、词码、简码策略或频率表:
 //! 本模块把生成器的全部最终化 canonical 数据(单字、固定词、一级简码、
@@ -6,7 +6,8 @@
 //! 版本化 JSON 文档,与 Rime 词典共享同一份最终化数据(不存在第二份
 //! 推导/排名实现)。
 //!
-//! V3 契约(见 `schemaVersion = 3`):
+//! V4 契约(见 `schemaVersion = 4`):
+//! - `entries`:core + attested 生产字符，包含 scope、codeSource 与来源状态；
 //! - `words`:固定词全码(按 Rime 权重降序取前 [`TRAINER_WORD_LIMIT`]
 //!   条;训练无需全部 10 万词,截断保持数据集体积与加载校验可控);
 //! - `level1Shortcuts` / `primaryShortcuts` / `fixedFirstShortcuts`:全部
@@ -33,8 +34,8 @@ use crate::word_codes::canonical_word_code_entries;
 /// 训练器数据集产物文件名(生成器拥有的产物标识,调用方不得自行命名)。
 pub const TRAINER_DATA_FILENAME: &str = "xhup_flow_trainer.json";
 
-/// 数据集契约版本(V3:canonical optimizer v2 shortcuts)。
-pub const TRAINER_SCHEMA_VERSION: u32 = 3;
+/// 数据集契约版本(V4:生产 InputHanzi provenance + canonical optimizer v2)。
+pub const TRAINER_SCHEMA_VERSION: u32 = 4;
 
 /// 固定词收录上限(按 Rime 权重降序截断;0 表示不截断)。
 pub const TRAINER_WORD_LIMIT: usize = 20_000;
@@ -74,6 +75,13 @@ struct TrainerEntry {
     tone_reading: Option<&'static str>,
     frequency_score: u64,
     rime_weight: u32,
+    /// 字符成员层：规范 8105 core 或 attested 扩展。
+    scope: &'static str,
+    /// 当前编码关系的推导/证据类别。
+    code_source: &'static str,
+    /// 稳定来源标识与来源状态；core 机械推导关系可为空。
+    sources: Vec<&'static str>,
+    statuses: Vec<&'static str>,
 }
 
 /// 一条固定词训练条目(全码)。
@@ -230,6 +238,20 @@ pub fn generate_trainer_dataset() -> String {
             tone_reading: tone_readings.get(&entry.hanzi().as_char()).copied(),
             frequency_score: entry.frequency_score(),
             rime_weight: entry.rime_weight(),
+            scope: if entry.hanzi().is_core_standard() {
+                "core"
+            } else {
+                "extended"
+            },
+            code_source: if entry.is_core_derived() {
+                "canonical-reading-shape"
+            } else if entry.is_official() {
+                "official-attested"
+            } else {
+                "legacy-attested"
+            },
+            sources: entry.sources().to_vec(),
+            statuses: entry.statuses().to_vec(),
         })
         .collect();
 
@@ -382,7 +404,7 @@ mod tests {
     #[test]
     fn top_level_contract() {
         let doc = parse();
-        assert_eq!(doc["schemaVersion"], 3);
+        assert_eq!(doc["schemaVersion"], 4);
         assert_eq!(doc["packageVersion"], env!("CARGO_PKG_VERSION"));
         assert!(doc["entries"].is_array());
         assert!(doc["words"].is_array());
@@ -402,7 +424,7 @@ mod tests {
         let doc = parse();
         let json_entries = doc["entries"].as_array().unwrap();
         let finalized = finalized_char_code_entries();
-        assert_eq!(json_entries.len(), 26753);
+        assert_eq!(json_entries.len(), 28_851);
         assert_eq!(json_entries.len(), finalized.len());
         for (json, entry) in json_entries.iter().zip(finalized) {
             assert_eq!(json["char"].as_str().unwrap(), entry.hanzi().to_string());
@@ -411,6 +433,14 @@ mod tests {
             assert_eq!(
                 json["frequencyScore"].as_u64().unwrap(),
                 entry.frequency_score()
+            );
+            assert_eq!(
+                json["scope"].as_str().unwrap(),
+                if entry.hanzi().is_core_standard() {
+                    "core"
+                } else {
+                    "extended"
+                }
             );
         }
     }

@@ -16,12 +16,12 @@ beforeEach(() => {
 });
 
 const DATASET: TrainerDataset = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   packageVersion: "0.1.0",
   entries: [
-    { char: "阿", code: "aaed", length: 4, readings: ["a"], frequencyScore: 100, rimeWeight: 1 },
-    { char: "低", code: "dped", length: 4, readings: ["di"], frequencyScore: 90, rimeWeight: 1 },
-    { char: "行", code: "xk", length: 2, readings: ["xing"], frequencyScore: 80, rimeWeight: 1 },
+    { char: "阿", code: "aaed", length: 4, readings: ["a"], frequencyScore: 100, rimeWeight: 1, scope: "core", codeSource: "canonical-reading-shape", sources: [], statuses: [] },
+    { char: "低", code: "dped", length: 4, readings: ["di"], frequencyScore: 90, rimeWeight: 1, scope: "core", codeSource: "canonical-reading-shape", sources: [], statuses: [] },
+    { char: "行", code: "xk", length: 2, readings: ["xing"], frequencyScore: 80, rimeWeight: 1, scope: "core", codeSource: "canonical-reading-shape", sources: [], statuses: [] },
   ],
   words: [],
   level1Shortcuts: [],

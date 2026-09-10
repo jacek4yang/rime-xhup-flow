@@ -18,7 +18,7 @@
 
 use std::collections::BTreeSet;
 
-use xhup_core::{FullCode, XhupHanzi};
+use xhup_core::{FullCode, InputHanzi, XhupHanzi};
 
 use crate::char_codes::finalized_char_code_entries;
 
@@ -36,6 +36,23 @@ pub const RIME_CHAR_DICTIONARY_FILENAME: &str = "xhup_flow_chars.dict.yaml";
 pub struct RimeCharEntry {
     hanzi: XhupHanzi,
     code: FullCode,
+}
+
+/// 生产输入字符的一条四键关系（core + attested 扩展）。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct RimeInputCharEntry {
+    hanzi: InputHanzi,
+    code: FullCode,
+}
+
+impl RimeInputCharEntry {
+    pub fn hanzi(self) -> InputHanzi {
+        self.hanzi
+    }
+
+    pub fn code(self) -> FullCode {
+        self.code
+    }
 }
 
 impl RimeCharEntry {
@@ -73,6 +90,23 @@ pub fn canonical_char_entries() -> Vec<RimeCharEntry> {
         entries.extend(codes.into_iter().map(|code| RimeCharEntry { hanzi, code }));
     }
     entries
+}
+
+/// 全部生产输入字符四键关系。与实际 Rime 字典使用同一最终化管线；规范
+/// 8105 只是其中的 core 子集。
+pub fn canonical_input_char_entries() -> Vec<RimeInputCharEntry> {
+    finalized_char_code_entries()
+        .iter()
+        .filter(|entry| entry.code().len() == 4)
+        .map(|entry| RimeInputCharEntry {
+            hanzi: entry.hanzi(),
+            code: entry
+                .code()
+                .to_string()
+                .parse()
+                .expect("四键最终化关系必然可解析为 FullCode"),
+        })
+        .collect()
 }
 
 /// 生成完整的固定层静态单字 Rime 源词典文本(2/3/4 码)。
@@ -164,6 +198,20 @@ mod tests {
     fn zero_encodable_reading_hanzi_produce_no_entries() {
         assert!(codes_of('呣').is_empty());
         assert!(codes_of('嗯').is_empty());
+    }
+
+    #[test]
+    fn production_input_entries_restore_attested_characters() {
+        let entries = canonical_input_char_entries();
+        assert_eq!(entries.len(), 9_873);
+        assert!(entries.iter().any(|entry| {
+            entry.hanzi().as_char() == '嗯' && entry.code().to_string() == "ogkx"
+        }));
+        assert!(entries.iter().any(|entry| {
+            entry.hanzi().as_char() == '诶' && entry.code().to_string() == "eiyu"
+        }));
+        let supported: BTreeSet<_> = entries.iter().map(|entry| entry.hanzi()).collect();
+        assert!(supported.len() > 8_103);
     }
 
     #[test]

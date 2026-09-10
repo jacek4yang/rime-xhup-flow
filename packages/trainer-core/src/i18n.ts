@@ -183,7 +183,7 @@ const zh = {
   "reference.noResult": "没有匹配的条目",
   "reference.subtitle": "双拼键位、一级简码与编码速查;数据来自规范码表。",
   "reference.keyboardView": "键盘视图",
-  "reference.searchHint": "读规范数据:单字全码 / 词全码 / 生产简码(只读)。",
+  "reference.searchHint": "查询 core / 扩展字符、事实编码、固定词与开放组合。",
   "reference.mapping": "映射表",
   "reference.zeroInitials": "零声母",
   "reference.zeroInitialsHint": "没有声母的音节,按下面的规则补全两位音码。",
@@ -201,9 +201,10 @@ const zh = {
   "reference.kindWord": "词",
   "reference.kindShortcut": "简码",
   "reference.kindSentence": "句",
+  "reference.kindOpen": "开放组合",
   "trainer.errorLoad": "无法加载训练数据:{reason}",
   "trainer.errorVersion":
-    "训练数据版本应为 3(实际 {actual});请重新构建以生成 V3 数据",
+    "训练数据版本应为 4(实际 {actual});请重新构建以生成 V4 数据",
   "nav.product": "输入法",
   "product.title": "输入法管理",
   "product.subtitle": "安装、升级、修复与诊断 XHUP Flow 输入方案。",
@@ -653,7 +654,7 @@ const en: Record<I18nKey, string> = {
     "Double-pinyin keys, level-1 shortcuts and code lookup; data comes from the canonical tables.",
   "reference.keyboardView": "Keyboard view",
   "reference.searchHint":
-    "Read-only lookup over canonical chars, words and shortcuts.",
+    "Lookup core/extended chars, attested codes, fixed words, and open composition.",
   "reference.mapping": "Mapping",
   "reference.zeroInitials": "Zero initials",
   "reference.zeroInitialsHint":
@@ -674,9 +675,10 @@ const en: Record<I18nKey, string> = {
   "reference.kindWord": "Word",
   "reference.kindShortcut": "Shortcut",
   "reference.kindSentence": "Sentence",
+  "reference.kindOpen": "Open composition",
   "trainer.errorLoad": "Failed to load training data: {reason}",
   "trainer.errorVersion":
-    "Training data version must be 3 (got {actual}); rebuild to generate V3 data",
+    "Training data version must be 4 (got {actual}); rebuild to generate V4 data",
   "nav.product": "Input Method",
   "product.title": "Input Method",
   "product.subtitle": "Install, update, repair and diagnose the XHUP Flow schema.",

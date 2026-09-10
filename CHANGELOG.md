@@ -8,7 +8,7 @@ XHUP Flow 首个稳定版本。
 
 - 提供 `xhup_flow`(静态输入 + 连续组句 + 本地学习)与
   `xhup_flow_static`(纯静态)两套标准 librime 方案;
-- 保留 26 个一级简码、规范单字 2/3/4 码、固定词 4/6/8 码与
+- 保留 26 个一级简码、生产输入字符 2/3/4 码、固定词 4/6/8 码与
   完整码别名;
 - 正式切换 optimizer v2 canonical 词语简码:
   68,842 条 = 65,909 PRIMARY + 2,933 FIXED_FIRST;
@@ -17,6 +17,16 @@ XHUP Flow 首个稳定版本。
 - 保留高频传统别名,包括`就是=jqu`、`知道=vdc`、`不是=buu`、
   `你们=nim`、`还是=hdu`、`因为=yww`、`如果=rgo`;
 - 提供可选 librime-lua 简码提示;插件缺失时完整降级为纯静态输入。
+- 将 8,105 字降级为 `CoreStandardHanzi` 规范子集，并从固定历史小鹤数据
+  与官网回归 oracle 建立 8,208 字 `InputHanzi` / attested 编码层；恢复
+  「嗯」(`ogkx`/`onkx`/`enkx`)与「诶」(`eiyu`)；
+- hot 100,000 词只承担冻结排名，pinned 万象其余 1,301,434 条合法词汇
+  进入 secondary Flow 层；修复旧 Top-N 外「提示词」(`tiuici`)不可达；
+- Flow 组句词典加入全部两键单字音码原语，支持真正的词表外组合、语气字
+  与单字/词混合长句，同时保持 frozen static exact top1 不变；
+- Learn 词典通过 `import_tables` 复用完整 Flow 码表并仅补充 3/4 键单字
+  原语，保证共享 userdb 的 syllable-id 一致，扩词后学习、重启、导出与
+  恢复行为保持可用。
 
 ### 工具与应用
 
@@ -31,7 +41,8 @@ XHUP Flow 首个稳定版本。
 
 - KdConv top-2000 replay 基线:KSPC 1.8971、rank1 96.9544%、
   rank≤3 99.9120%;
-- librime 全量验证 140,664 个静态 exact code,并覆盖组句、学习、
+- librime 全量验证 141,138 个静态 exact code，并覆盖全部 extended 词、
+  确定性词表外组合抽样、真实口语长句、组句、学习、
   持久化、真实 deployment graph、Lua 与日常输入控制;
 - 所有 Rime/Trainer canonical 产物可重复生成,发布包附
   `SHA256SUMS.txt`、`CANONICAL-SHA256SUMS.txt` 和 `BUILD-INFO.txt`;

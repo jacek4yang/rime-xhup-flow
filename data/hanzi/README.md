@@ -1,6 +1,10 @@
 # XHUP 规范汉字读音数据
 
-本目录保存 XHUP Flow 的规范汉字读音**唯一事实来源**(canonical data):`readings.tsv`。未来的 Rust 编码器、分析器、Rime 产物与 trainer 均以此为准;当前由 `xhup-core::XhupHanzi` 经 `include_str!` 编译期嵌入消费。
+本目录保存 XHUP Flow **规范核心 8105 字的语言学读音事实**：
+`readings.tsv`。`xhup-core::XhupHanzi`（别名 `CoreStandardHanzi`）只表示
+这个高质量 core subset；它不再承担“输入法允许哪些字符”的全局边界。
+生产输入字符并集与小鹤事实编码见 [`../xhup/`](../xhup/README.md) 的
+`InputHanzi` / `AttestedXhupCode`。
 
 ## 语义边界
 
@@ -38,7 +42,8 @@ normalize(kTGHZ2013 该字读音集) ∪ { normalize(kMandarin_8105 主读音) }
 
 主读音已在 kTGHZ2013 集合中时只标一行 `primary`,不重复建 `alt` 行。审计确认有 **126 字**的归一化主读音不在其 kTGHZ2013 集合内(如 `欻 chua/xu`、`剋 ke/kei`、`嗲 die/dia`),这些字同时保留 primary 行与全部字典 `alt` 行;这 126 个主读音全部另有上游次级来源(`kXHC1983`/`kMandarin`/`pinyin.txt`)佐证。
 
-字符成员资格仅由本文件首列唯一集合承载,没有也不应有第二份字符清单文件。
+规范 core 的成员资格仅由本文件首列承载；生产输入字符全集是
+`CoreStandardHanzi ⊂ InputHanzi`，二者不能混用。
 
 ## 规范化契约
 
@@ -85,11 +90,16 @@ normalize(kTGHZ2013 该字读音集) ∪ { normalize(kMandarin_8105 主读音) }
 欸  ea   alt        嗯  ng   alt
 ```
 
-其中 **2 个主读音不可编码**(呣 `m`、嗯 `n`);恰好 **2 字当前没有任何 XHUP 可编码读音**:`呣`(`[m]`)、`嗯`(`[n, ng]`)。这些形式有上游来源支持,其不可编码性是**项目编码边界**(同 `data/pinyin/` README),不是语言学否定;未来显式立项的扩展层可重新审议。下游代码不得假设「每字必有可编码读音」。
+其中 **2 个主读音不能经 406 音节机械推导**（呣 `m`、嗯 `n`）；恰好
+**2 个 core 字没有可机械转换的语言学读音**：呣(`[m]`)、嗯(`[n, ng]`)。
+这只描述 `HanziReading -> XhupInputSyllable` 的转换边界，**不表示字符不能
+输入**。例如“嗯”的 `ogkx / onkx / enkx-` 已由小鹤官网 oracle 核验，
+另有历史兼容 `ngkx`，均在 `data/xhup/` 作为独立输入事实进入生产。
 
 ## 交叉核对来源(非成员资格权威)
 
-- 本仓库 `flypy_chars.dict.yaml`:8105 字全覆盖,同一读音编码必然一致;差异全部为读音覆盖差异(flypy 增补 585 字的口语/又读,上游多出 29 字),仅作回归证据。
+- pinned `flypy_chars.dict.yaml` 的 8,208 字兼容事实已进入
+  `data/xhup/attested_char_codes.tsv`；它不反向污染本目录的语言学读音。
 - `kXHC1983.txt`、`kMandarin.txt`、`pinyin.txt`(同上游仓库):仅作审计佐证,不并入本数据。
 
 ## 再生成

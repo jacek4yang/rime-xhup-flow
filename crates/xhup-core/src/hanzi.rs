@@ -5,7 +5,9 @@
 //! 仓库的目录结构。规范汉字成员资格仅由该文件首列唯一集合承载,进程内派生索引不算
 //! 第二份事实来源。
 //!
-//! [`XhupHanzi`] 表示「属于规范 8105 汉字清单的一个字符」;[`HanziReading`] 表示
+//! [`XhupHanzi`]（亦导出为 `CoreStandardHanzi`）只表示「属于规范 8105
+//! 汉字清单的一个字符」，不是整个输入法的字符宇宙；生产输入成员资格由
+//! `InputHanzi` 表示。 [`HanziReading`] 表示
 //! 「实际出现在规范汉字数据中的归一化无调读音」。`HanziReading` 刻意保留来源事实,
 //! 不等同于 [`XhupInputSyllable`]:当前有 6 个 `(字, 读音)` 关系落在 406 音节清单
 //! 之外(m、n、ng、hng、ea),它们仍是合法读音,仅经
@@ -95,8 +97,9 @@ impl XhupHanzi {
 
     /// 全部规范读音:非空,主读音在前,其余按规范顺序。
     ///
-    /// 注意:不保证任一读音可转换为 [`XhupInputSyllable`];当前 `呣`、`嗯` 两字
-    /// 没有任何 XHUP 可编码读音。
+    /// 注意:不保证任一语言学读音可转换为 [`XhupInputSyllable`];当前 `呣`、
+    /// `嗯` 两字没有可机械转换的 core reading，但仍可由独立 attested XHUP
+    /// 编码事实输入。
     pub fn readings(self) -> &'static [HanziReading] {
         let records = &canonical().records;
         let index = records

@@ -1,0 +1,12 @@
+# XHUP Flow 小鹤官网字符编码兼容性 oracle（小范围事实记录，不是全站镜像）
+# source_url: https://flypy.cc/ix/?q=...
+# source_payload_url: https://flypy.cc/ix/ixdata.json
+# oracle_revision: flypy-ix-d33e6afa-v1
+# parser_version: xhup-official-oracle-v1
+# decoded_payload_sha256: d33e6afa77d2586c097876674ad11cb33ea834e455be4bb704e05a9f33ad7dd4
+# page_marker_semantics: `-`=出简让全; `+`=表外字; `*`=生僻字/音
+# schema: character<TAB>sound_code<TAB>shape_code<TAB>status
+嗯	en	kx	official-yield-full
+嗯	og	kx	official
+嗯	on	kx	official
+诶	ei	yu	official-outside-core

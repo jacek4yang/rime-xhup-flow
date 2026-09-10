@@ -25,7 +25,7 @@ import shard from "./data/generated/dataset.json";
 describe("miniapp 数据分片", () => {
   it("通过共享核心的完整运行时校验", () => {
     const dataset = validateTrainerDataset(shard);
-    expect(dataset.schemaVersion).toBe(3);
+    expect(dataset.schemaVersion).toBe(4);
     expect(dataset.level1Shortcuts.length).toBe(26);
     expect(dataset.entries.length).toBeGreaterThanOrEqual(26);
   });

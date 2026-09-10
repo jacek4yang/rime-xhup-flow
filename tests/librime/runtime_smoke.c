@@ -192,6 +192,17 @@ int main(int argc, char **argv) {
         reset_composition();
     }
 
+    /* P0 输入可达性：事实字符码与完全不在固定词表中的开放组合。 */
+    const char *const reachability[][2] = {
+        {"eiyu", "诶"}, {"ogkx", "嗯"}, {"enkx", "嗯"},
+        {"tiuici", "提示词"}, {"tiogei", "提嗯诶"},
+        {"enwojtdeveyhjqkeyile", "嗯我觉得这样就可以了"},
+    };
+    for (size_t i = 0; i < sizeof(reachability) / sizeof(reachability[0]); ++i) {
+        expect_menu(reachability[i][0], reachability[i][1], 0);
+        reset_composition();
+    }
+
     /* 高频传统 alias:必须全部是 runtime rank 1。 */
     const char *const aliases[][2] = {
         {"jqu", "就是"}, {"vdc", "知道"}, {"buu", "不是"},

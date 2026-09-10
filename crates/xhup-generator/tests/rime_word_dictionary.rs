@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use xhup_generator::{canonical_char_entries, generate_rime_word_dictionary};
+use xhup_generator::generate_rime_word_dictionary;
 
 /// 数据行 `(词, 码, 权重)`。
 type DictRow = (String, String, u32);
@@ -167,7 +167,7 @@ fn same_code_weights_are_unique_and_descend_in_file_order() {
     let (_, rows) = parse_dictionary(&generate_rime_word_dictionary());
     // 与单字或 v2 简码碰撞的码使用 merged_ranking 跨表权重:词表内只是
     // 合并排列的子集,不期望表内密度;跨表密度由 merged_ranking 单测保证。
-    let mut merged_codes: BTreeSet<String> = canonical_char_entries()
+    let mut merged_codes: BTreeSet<String> = xhup_generator::canonical_input_char_code_entries()
         .iter()
         .map(|entry| entry.code().to_string())
         .collect();

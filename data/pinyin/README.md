@@ -4,7 +4,10 @@
 
 ## 语义边界
 
-`XhupInputSyllable` 是**输入法域**概念:XHUP Flow 接受的、属于当前规范小鹤可编码输入清单的归一化无调拼音拼写。它不声称覆盖全部语言学合法普通话音节,也不是标准书面汉语拼音的完整清单:
+`XhupInputSyllable` 是**可机械推导音节**概念：它承接 core linguistic
+reading 到双拼码的确定转换，但不是全部输入事实的门卫。有来源的 XHUP
+sound code 可以直接进入 `AttestedXhupCode`，无需伪装成这里的语言学音节。
+本清单也不声称覆盖全部语言学合法普通话音节：
 
 ```text
 有上游来源支持的归一化拼音形式

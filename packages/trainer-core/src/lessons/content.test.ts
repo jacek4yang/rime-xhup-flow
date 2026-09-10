@@ -53,6 +53,10 @@ function entry(char: string, code: string, frequencyScore = 1): TrainerEntry {
     readings: [],
     frequencyScore,
     rimeWeight: frequencyScore,
+    scope: "core",
+    codeSource: "canonical-reading-shape",
+    sources: [],
+    statuses: [],
   };
 }
 

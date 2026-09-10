@@ -4,8 +4,8 @@
  *
  *   static-baseline <shared> <flow_dir> <static_dir> <manifest>
  *     —— 全静态等值审计:对 manifest 的每个静态 exact code,
- *        FLOW schema(干净 userdb)菜单必须与 STATIC schema 菜单完全相等
- *        (逐项同序;证明 Flow translator 在无学习数据时不可见)。
+ *        FLOW schema(干净 userdb)必须以 STATIC 完整菜单为前缀；开放组句
+ *        候选只能追加在后，静态 top1 与相对次序不变。
  *
  *   static-baseline-learned <shared> <flow_dir> <manifest>
  *     —— 学习后静态审计:对 manifest 的每个静态 exact code,
@@ -256,6 +256,14 @@ static int menu_has_duplicate(const char *menu) {
     return 0;
 }
 
+static int menu_has_prefix(const char *menu, const char *prefix) {
+    size_t prefix_len = strlen(prefix);
+    if (strncmp(menu, prefix, prefix_len) != 0) {
+        return 0;
+    }
+    return menu[prefix_len] == '\0' || menu[prefix_len] == SEP;
+}
+
 /* ── 模式:baseline-capture / baseline-compare(全静态等值,两趟进程) ──
  *
  * glog 不允许同进程二次 initialize(CI librime 1.10 CHECK 失败),
@@ -265,8 +273,8 @@ static int menu_has_duplicate(const char *menu) {
  *   baseline-capture <shared> <static_dir> <manifest> <capture_out>
  *     —— STATIC schema 逐码捕获完整菜单(同时断言 == manifest)。
  *   baseline-compare <shared> <flow_dir> <manifest> <capture_in>
- *     —— FLOW schema(干净 userdb)逐码断言 == capture(== manifest),
- *        并检查可见重复。
+ *     —— FLOW schema(干净 userdb)逐码断言以 capture(== manifest)为
+ *        完整前缀，并检查可见重复。
  */
 static int run_baseline_capture(const char *shared, const char *static_dir,
                                 const char *manifest, const char *capture_out) {
@@ -381,7 +389,8 @@ static int run_baseline_compare(const char *shared, const char *flow_dir,
         type_keys(session, line);
         capture_menu(session, menu, sizeof(menu));
         ++codes;
-        int equal = strcmp(menu, expected) == 0 && strcmp(menu, static_menu) == 0;
+        int equal = strcmp(expected, static_menu) == 0 &&
+                    menu_has_prefix(menu, static_menu);
         int dup = menu_has_duplicate(menu);
         if (!equal) {
             ++mismatches;
@@ -393,7 +402,7 @@ static int run_baseline_compare(const char *shared, const char *flow_dir,
             snprintf(detail, sizeof(detail),
                      "code=%s expected=[%.128s] flow=[%.128s]", line, expected,
                      menu);
-            report(0, "FLOW(干净) == STATIC", detail);
+            report(0, "FLOW(干净) 保持 STATIC 完整前缀", detail);
         }
     }
     fclose(f);
@@ -404,7 +413,7 @@ static int run_baseline_compare(const char *shared, const char *flow_dir,
     rime->finalize();
 
     double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
-    printf("----\n全静态等值审计(干净 userdb):%ld codes,mismatch %ld,"
+    printf("----\n全静态前缀审计(干净 userdb):%ld codes,mismatch %ld,"
            "重复 %ld,%.2fs\n",
            codes, mismatches, duplicates, elapsed);
     return (mismatches == 0 && duplicates == 0) ? 0 : 1;
@@ -668,6 +677,75 @@ static int run_sentence(const char *shared, const char *dir,
     return failures == 0 ? 0 : 1;
 }
 
+/* ── 模式:contains-manifest(大规模可达性审计) ──
+ * 每行 `码<TAB>目标文本`；逐项查询真实菜单，要求目标恰出现一次且无
+ * auto commit。成功项不逐条打印，避免 6 万行 CI 噪声。
+ */
+static int run_contains_manifest(const char *shared, const char *dir,
+                                 const char *manifest) {
+    FILE *f = fopen(manifest, "r");
+    if (!f) {
+        fprintf(stderr, "无法打开 reachability manifest %s\n", manifest);
+        return 2;
+    }
+    RimeSessionId session;
+    if (!open_session(shared, dir, "xhup_flow", &session)) {
+        return 2;
+    }
+    char line[MAX_LINE], menu[MAX_MENU], detail[MAX_MENU + 128];
+    long rows = 0, missing = 0, duplicates = 0, auto_commits = 0;
+    clock_t start = clock();
+    while (fgets(line, sizeof(line), f)) {
+        size_t len = strlen(line);
+        while (len && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
+            line[--len] = '\0';
+        }
+        if (line[0] == '#' || line[0] == '\0') {
+            continue;
+        }
+        char *tab = strchr(line, '\t');
+        if (!tab) {
+            continue;
+        }
+        *tab = '\0';
+        const char *code = line;
+        const char *expected = tab + 1;
+        reset_composition(session);
+        type_keys(session, code);
+        capture_menu(session, menu, sizeof(menu));
+        int count = menu_count(menu, expected);
+        int rank = menu_rank(menu, expected);
+        ++rows;
+        ++checks;
+        if (count == 0) {
+            ++missing;
+            ++failures;
+            make_detail(detail, sizeof(detail), code, expected, rank, count, menu);
+            printf("FAIL  reachability missing  %s\n", detail);
+        } else if (count > 1) {
+            ++duplicates;
+            ++failures;
+            make_detail(detail, sizeof(detail), code, expected, rank, count, menu);
+            printf("FAIL  reachability duplicate  %s\n", detail);
+        }
+        ++checks;
+        if (has_commit(session)) {
+            ++auto_commits;
+            ++failures;
+            printf("FAIL  reachability auto commit  code=%.64s text=%.64s\n",
+                   code, expected);
+        }
+    }
+    fclose(f);
+    verify_frozen_sentinels(session);
+    rime->destroy_session(session);
+    rime->finalize();
+    double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
+    printf("----\n可达性审计:%ld rows,missing %ld,duplicate %ld,auto commit %ld,%.2fs\n",
+           rows, missing, duplicates, auto_commits, elapsed);
+    return failures == 0 ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr,
@@ -676,7 +754,8 @@ int main(int argc, char **argv) {
                 "  mode baseline-compare <shared> <flow_dir> <manifest> <capture_in>\n"
                 "  mode static-baseline-learned <shared> <flow_dir> <manifest>\n"
                 "  mode learning <shared> <user_dir> <script>\n"
-                "  mode sentence <shared> <dir> <sentences>\n",
+                "  mode sentence <shared> <dir> <sentences>\n"
+                "  mode contains-manifest <shared> <dir> <manifest>\n",
                 argv[0]);
         return 2;
     }
@@ -701,6 +780,9 @@ int main(int argc, char **argv) {
     }
     if (strcmp(mode, "sentence") == 0 && argc == 5) {
         return run_sentence(shared, argv[3], argv[4]);
+    }
+    if (strcmp(mode, "contains-manifest") == 0 && argc == 5) {
+        return run_contains_manifest(shared, argv[3], argv[4]);
     }
     fprintf(stderr, "未知模式或参数不足: %s\n", mode);
     return 2;

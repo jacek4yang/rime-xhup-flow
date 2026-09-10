@@ -4,7 +4,7 @@
  *
  * 唯一事实来源仍是 Rust(`pnpm -C trainer generate:data` 的产物);
  * 本脚本只做确定性切片,绝不手写/猜测任何编码、读音或词码。
- * 输出:src/data/generated/dataset.json(schemaVersion 3,可被
+ * 输出:src/data/generated/dataset.json(schemaVersion 4,可被
  * @xhup/trainer-core 的 validateTrainerDataset 完整校验)。
  */
 
@@ -22,8 +22,8 @@ const outPath = resolve(here, "..", "src", "data", "generated", "dataset.json");
 const raw = readFileSync(sourcePath, "utf8");
 const dataset = JSON.parse(raw);
 
-if (dataset.schemaVersion !== 3) {
-  throw new Error(`期望规范数据 schemaVersion 3,实际 ${dataset.schemaVersion}`);
+if (dataset.schemaVersion !== 4) {
+  throw new Error(`期望规范数据 schemaVersion 4,实际 ${dataset.schemaVersion}`);
 }
 
 // 频率降序为唯一排序键;相同分数保持原始顺序(稳定切片)。

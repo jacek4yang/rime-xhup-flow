@@ -6,21 +6,21 @@
 ## 数据流水线
 
 ```text
-canonical source data(data/:音形数据、词频、固定词来源)
+canonical source data(data/:core 音形、attested 输入码、词频/词汇证据)
         ↓
 Rust 生成器(xhup-generator,唯一语义来源)
         ↓
 ┌──────────────────────────┬─────────────────────────────┐
 │ 静态 Rime 源文件           │ Trainer 规范数据集            │
 │ xhup-cli generate rime   │ xhup-cli generate trainer    │
-│ (12 个 YAML + 2 Lua)     │ xhup_flow_trainer.json (V3)  │
+│ (12 个 YAML + 2 Lua)     │ xhup_flow_trainer.json (V4)  │
 └────────────┬─────────────┴──────────────┬──────────────┘
              ↓                            ↓
-      Static Engine                Trainer 前端(V3 契约校验)
+      Static Engine                Trainer 前端(V4 契约校验)
       (xhup_flow_static)                  ↓
              ↓                       练习/错题/统计(本地)
       Flow Engine(xhup_flow)
-      静态层 + 组句 + 本地学习
+      静态层 + 完整词汇/单字开放组句 + 本地学习
              ↓
       Trainer 控制中心(Rust manager:安装/升级/修复/卸载/诊断)
              ↓
@@ -30,7 +30,7 @@ Rust 生成器(xhup-generator,唯一语义来源)
 核心边界:
 
 - **Rust 是唯一语义来源**。React/TypeScript 不维护任何码表;前端只校验
-  与消费生成的规范数据集(`schemaVersion: 3` 契约,构建期重新生成,
+  与消费生成的规范数据集(`schemaVersion: 4` 契约,构建期重新生成,
   不回退过期数据)。
 - **生成是确定性的**:同一规范数据 + 同一生成器源码(含版本)+ 同一
   模板 ⇒ 字节级一致的产物(有测试兜底;CI 生成 `CANONICAL-SHA256SUMS.txt`)。
@@ -42,12 +42,13 @@ Rust 生成器(xhup-generator,唯一语义来源)
 ## 候选优先级契约
 
 ```text
-FROZEN STATIC  >  DYNAMIC USER LEARNING  >  SENTENCE COMPOSITION
+FROZEN STATIC  >  DYNAMIC USER LEARNING  >  OPEN SENTENCE COMPOSITION
 ```
 
 - Flow 引擎绝不改变任何静态候选的相对次序与 top1。runtime 审计对全部
-  140,664 个静态 exact 码逐码断言(干净 userdb 与学习后两种状态):
-  菜单逐项同序相等、无可见重复,动态候选只允许追加在静态组之后。
+  141,138 个静态 exact 码逐码断言(干净 userdb 与学习后两种状态):
+  完整 static 菜单是 Flow 菜单的同序前缀、无可见重复，动态/开放候选
+  只允许追加在静态组之后。
 - 冻结哨兵(永久有效):
   `uij → [时间, 史记, 实践, 事迹, 铈, 鼫]` 精确序、`uijm → 时间`
   top1、`uj`/`ujm` **不得**出现 时间。
@@ -63,6 +64,19 @@ FROZEN STATIC  >  DYNAMIC USER LEARNING  >  SENTENCE COMPOSITION
 
 v1 selector 的 ZERO_REGRESSION/FIXED_FIRST/二码数据冻结在
 `data/shortcuts/legacy/`,只供 research-only 重放,不是 production layer。
+
+## 输入域与词汇可达性
+
+```text
+CoreStandardHanzi(8,105 linguistic facts) ⊂ InputHanzi(current attested 8,208; extensible)
+hot static words(100,000) ⊂ pinned extended words(1,301,434)
+                              ⊂ open-composition reachable text
+```
+
+`HanziReading → XhupInputSyllable` 只是 core 的机械推导路径；小鹤官网或
+固定历史词典证明的 `AttestedXhupCode(sound, shape)` 可直接产生候选，不反向
+篡改语言学读音。Flow 词典把完整词汇证据与全部两键单字原语放在隔离的
+低质量 translator 中，既允许未知组合/语气字组句，也不污染 static exact。
 
 ## 兼容性契约(v1.x 冻结)
 

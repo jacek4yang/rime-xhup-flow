@@ -162,7 +162,9 @@ jobs:
   librime:
     name: librime runtime integration
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 1,301,434 条 extended 词汇逐条经真实 librime 查询，并在学习后复核完整
+    # static 菜单；本地四分片基线约 3 小时，保留完整门禁并为 runner 波动留余量。
+    timeout-minutes: 300
 
     steps:
       - name: 检出仓库
@@ -203,6 +205,16 @@ jobs:
         run: |
           cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
             --dump-static-menu-manifest /tmp/static-menu.manifest
+          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
+            --dump-extended-reachability-manifest /tmp/extended-reachability.manifest
+          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
+            --dump-extended-reachability-manifest /tmp/extended-reachability.second.manifest
+          cmp /tmp/extended-reachability.manifest /tmp/extended-reachability.second.manifest
+          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
+            --dump-open-composition-manifest /tmp/open-composition.manifest
+          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
+            --dump-open-composition-manifest /tmp/open-composition.second.manifest
+          cmp /tmp/open-composition.manifest /tmp/open-composition.second.manifest
           cargo build -p xhup-cli --locked
 
       # 降级语义门禁:主方案引用 lua_filter 但环境无 librime-lua 时,
@@ -229,6 +241,7 @@ jobs:
         run: >
           tests/librime/run-flow-audit.sh /tmp/xhup-flow-package
           /tmp/static-menu.manifest target/debug/xhup-cli
+          /tmp/extended-reachability.manifest /tmp/open-composition.manifest
 
       - name: librime 真实部署路径审计(rime_deployer --build 全量构建 + 冒烟)
         run: tests/librime/run-deploy-audit.sh /tmp/xhup-flow-package

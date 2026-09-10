@@ -18,8 +18,8 @@ use std::collections::BTreeMap;
 
 use xhup_core::KeySequence;
 use xhup_generator::{
-    canonical_fixed_first_shortcut_entries, canonical_level1_shortcuts,
-    canonical_primary_shortcut_entries, char_code_analysis_entries,
+    canonical_fixed_first_shortcut_entries, canonical_input_char_code_entries,
+    canonical_level1_shortcuts, canonical_primary_shortcut_entries, char_code_analysis_entries,
     legacy_v1_word_shortcut_entries, word_code_analysis_entries,
 };
 
@@ -212,14 +212,26 @@ impl CodeOccupancy {
                 0,
             );
         }
-        for entry in char_code_analysis_entries() {
-            push(
-                entry.code(),
-                entry.hanzi().as_char().to_string(),
-                CandidateSource::CharCode,
-                entry.rime_weight(),
-                entry.frequency_score(),
-            );
+        if layers == Layers::CurrentProduction {
+            for entry in canonical_input_char_code_entries() {
+                push(
+                    entry.code(),
+                    entry.hanzi().as_char().to_string(),
+                    CandidateSource::CharCode,
+                    entry.weight(),
+                    entry.frequency_score(),
+                );
+            }
+        } else {
+            for entry in char_code_analysis_entries() {
+                push(
+                    entry.code(),
+                    entry.hanzi().as_char().to_string(),
+                    CandidateSource::CharCode,
+                    entry.rime_weight(),
+                    entry.frequency_score(),
+                );
+            }
         }
         for entry in word_code_analysis_entries() {
             push(

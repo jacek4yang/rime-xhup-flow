@@ -13,9 +13,9 @@ fn trainer_json() -> serde_json::Value {
 #[test]
 fn top_level_contract() {
     let doc = trainer_json();
-    assert_eq!(doc["schemaVersion"], 3);
+    assert_eq!(doc["schemaVersion"], 4);
     assert_eq!(doc["packageVersion"], env!("CARGO_PKG_VERSION"));
-    assert_eq!(doc["entries"].as_array().unwrap().len(), 26753);
+    assert_eq!(doc["entries"].as_array().unwrap().len(), 28_851);
     for key in [
         "schemaVersion",
         "packageVersion",
@@ -54,7 +54,18 @@ fn entries_are_well_formed_and_unique() {
             .iter()
             .map(|r| r.as_str().unwrap())
             .collect();
-        assert!(!readings.is_empty(), "每个条目至少一个贡献读音");
+        let scope = entry["scope"].as_str().unwrap();
+        assert!(matches!(scope, "core" | "extended"));
+        let code_source = entry["codeSource"].as_str().unwrap();
+        assert!(matches!(
+            code_source,
+            "canonical-reading-shape" | "official-attested" | "legacy-attested"
+        ));
+        if code_source == "canonical-reading-shape" {
+            assert!(!readings.is_empty(), "机械推导条目至少一个贡献读音");
+        }
+        assert!(entry["sources"].is_array());
+        assert!(entry["statuses"].is_array());
         for pair in readings.windows(2) {
             assert!(pair[0] < pair[1], "readings 唯一且字典序升序");
         }
@@ -119,7 +130,7 @@ fn rime_dictionary_and_trainer_dataset_describe_identical_entries() {
             )
         })
         .collect();
-    assert_eq!(rime_set.len(), 26753);
+    assert_eq!(rime_set.len(), 28_851);
 
     let doc = trainer_json();
     let trainer_set: BTreeSet<(String, String, u64)> = doc["entries"]
@@ -134,7 +145,7 @@ fn rime_dictionary_and_trainer_dataset_describe_identical_entries() {
             )
         })
         .collect();
-    assert_eq!(trainer_set.len(), 26753);
+    assert_eq!(trainer_set.len(), 28_851);
 
     assert_eq!(rime_set, trainer_set, "Rime 与训练器必须是同一最终化条目集");
 }
