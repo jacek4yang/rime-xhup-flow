@@ -54,8 +54,8 @@ librime 编译与 runtime 审计耗时以 CI 日志为准(Ubuntu runner 上
 
 | 指标 | before | after |
 | --- | ---: | ---: |
-| Rime 源文件总大小 | 9,028,087 B | 36,949,094 B |
-| ZIP（普通 deflate，仅体积参考） | — | 15,005,168 B |
+| Rime 源文件总大小 | 9,028,087 B | 36,845,122 B |
+| ZIP（普通 deflate，仅体积参考） | — | 14,956,335 B |
 | release `generate rime` | 1.06–1.58 s | 5.39 s |
 | `rime_deployer --build` + 冒烟 | 3.81 s | 17.07–27.08 s |
 | 部署阶段峰值 RSS | 125,384 KiB | 1,105,580 KiB |
