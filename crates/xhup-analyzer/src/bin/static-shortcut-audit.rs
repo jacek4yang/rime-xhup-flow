@@ -900,12 +900,33 @@ fn extended_reachability_manifest() -> String {
 /// hot/extended exact 词，确保测试命中真正 open composer 而非固定词表。
 fn open_composition_manifest() -> String {
     use std::fmt::Write as _;
+    let mut occupied_codes: BTreeSet<String> =
+        xhup_analyzer::CodeOccupancy::build_current_production()
+            .occupied_codes()
+            .map(ToString::to_string)
+            .collect();
+    occupied_codes.extend(
+        xhup_generator::canonical_extended_word_code_entries()
+            .iter()
+            .map(|entry| entry.code().to_string()),
+    );
     let mut best_by_sound: BTreeMap<String, (char, u32)> = BTreeMap::new();
     for entry in xhup_generator::canonical_input_char_code_entries() {
         if entry.code().len() != 2 {
             continue;
         }
-        let candidate = (entry.hanzi().as_char(), entry.weight());
+        // Keep this projection identical to the character primitive weights in
+        // generate_rime_flow_dictionary.  The sentence translator emits its
+        // highest-quality composition, not the primary dictionary's static rank.
+        let base = u32::try_from(entry.frequency_score())
+            .unwrap_or(u32::MAX / 2)
+            .max(1);
+        let flow_weight = if entry.is_official() {
+            10_000_000u32.saturating_add(base)
+        } else {
+            base
+        };
+        let candidate = (entry.hanzi().as_char(), flow_weight);
         best_by_sound
             .entry(entry.code().to_string())
             .and_modify(|known| {
@@ -929,6 +950,9 @@ fn open_composition_manifest() -> String {
         let i = step % n;
         let j = (step / n + i * 137 + 17) % n;
         let code = format!("{}{}", primitives[i].0, primitives[j].0);
+        if occupied_codes.contains(&code) {
+            continue;
+        }
         let text = format!("{}{}", primitives[i].1.0, primitives[j].1.0);
         let reachability = xhup_generator::classify_reachability(&text, &code);
         if !reachability.static_reachable
