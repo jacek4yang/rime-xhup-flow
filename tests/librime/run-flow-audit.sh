@@ -2,7 +2,8 @@
 # XHUP Flow 引擎 runtime 审计驱动:全静态等值 / 组句 / 学习 / 持久化 /
 # 静态保护 / 学习管理端到端。
 #
-# 用法: run-flow-audit.sh <生成包目录> <全静态菜单 manifest> [xhup-cli 路径]
+# 用法: run-flow-audit.sh <生成包目录> <全静态菜单 manifest> [xhup-cli 路径|-]
+#   [extended manifest] [open-composition manifest]
 #
 # 生成包目录必须含 xhup-cli generate rime 的全部产物(12 个 yaml,含
 # xhup_flow_static.schema.yaml 与 Flow 组句/学习词典);manifest 由
@@ -19,7 +20,7 @@
 #      断言句子候选出现且无 auto commit;
 #   3. 学习会话:提交 Flow 组句句子,训练 xhup_flow_user;
 #   4. 重启持久化:全新进程断言学习状态仍在(动态候选可观察);
-#   5. 学习后静态审计:全部 140,664 个静态 exact code
+#   5. 学习后静态审计:全部 141,138 个静态 exact code
 #      逐码断言既有候选
 #      原次序、原 top1、无可见重复(动态候选只允许追加在静态组后);
 #   6. 学习管理端到端(提供 xhup-cli 时):export → reset → 学习行为
@@ -43,6 +44,9 @@ set -euo pipefail
 PACKAGE_DIR=${1:?"用法: run-flow-audit.sh <生成包目录> <静态菜单 manifest> [xhup-cli 路径]"}
 MANIFEST=${2:?"用法: run-flow-audit.sh <生成包目录> <静态菜单 manifest> [xhup-cli 路径]"}
 XHUP_CLI=${3:-}
+EXTENDED_MANIFEST=${4:-}
+OPEN_MANIFEST=${5:-}
+if [[ "$XHUP_CLI" == "-" ]]; then XHUP_CLI=; fi
 SHARED_DATA_DIR=${RIME_SHARED_DATA_DIR:-/usr/share/rime-data}
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
@@ -182,8 +186,66 @@ gen_sentence 我们 时间 发展 工作
 gen_sentence 我们 时间 发展 工作 科技 教育 社会 生活
 gen_sentence 我们 时间 发展 工作 科技 教育 社会 生活 学习 世界
 
-echo "== 组句审计(2/4/8/10 词,最长 20 字) =="
+# P0 开放输入回归：前四条验证 attested 字符与旧 Top-N 外来源词，
+# 「提嗯诶」明确不存在于 hot/extended 词表，只能由逐字原语组句；其余为
+# 包含单字/语气词/结构助词的真实句子，不从词典机械挑词。
+cat >> "$sent" <<'EOF'
+eiyu	诶
+ogkx	嗯
+enkx	嗯
+tiuici	提示词
+tiogei	提嗯诶
+enwojtdeveyhjqkeyile	嗯我觉得这样就可以了
+einizfmeyezdveli	诶你怎么也在这里
+wojtdevegeuurufaxmzdhcdolene	我觉得这个输入法现在好多了呢
+vegetiuiciykgdmwyzufmewfti	这个提示词应该没有什么问题
+wojbtmvybwjixuwjujvegexlmu	我今天准备继续完善这个项目
+EOF
+
+echo "== 组句审计(已知词 + attested 字符 + 词表外组合 + 真实口语长句) =="
 "$work/audit" sentence "$SHARED_DATA_DIR" "$flow_dir" "$sent"
+
+# ---------- 2b. 全扩展词 + 确定性开放组合 runtime 可达性 ----------
+run_sharded_reachability() {
+  local manifest=$1 label=$2 shard_count=$3
+  local rows shard_rows=0 status=0
+  rows=$(grep -vc '^#' "$manifest")
+  local pids=() logs=()
+  for ((i = 0; i < shard_count; ++i)); do
+    : > "$work/reach-$label-$i"
+  done
+  awk -v n="$shard_count" -v prefix="$work/reach-$label-" '
+    /^#/ { next }
+    { print > (prefix ((rows++) % n)) }
+  ' "$manifest"
+  for ((i = 0; i < shard_count; ++i)); do
+    local shard="$work/reach-$label-$i"
+    local clone="$work/reach-deploy-$label-$i"
+    local log="$work/reach-$label-$i.log"
+    shard_rows=$((shard_rows + $(wc -l < "$shard")))
+    cp -a "$flow_dir" "$clone"
+    ("$work/audit" contains-manifest "$SHARED_DATA_DIR" "$clone" "$shard") \
+      > "$log" 2>&1 &
+    pids+=("$!")
+    logs+=("$log")
+  done
+  [[ "$shard_rows" -eq "$rows" ]] || {
+    echo "$label manifest 分片丢行:原始 $rows / 分片 $shard_rows" >&2
+    exit 2
+  }
+  for pid in "${pids[@]}"; do if ! wait "$pid"; then status=1; fi; done
+  for log in "${logs[@]}"; do cat "$log"; done
+  [[ "$status" -eq 0 ]] || exit 1
+}
+
+if [[ -n "$EXTENDED_MANIFEST" ]]; then
+  echo "== 全扩展词 exact runtime 可达性审计 =="
+  run_sharded_reachability "$EXTENDED_MANIFEST" extended 4
+fi
+if [[ -n "$OPEN_MANIFEST" ]]; then
+  echo "== 1000 条确定性词表外开放组合 runtime 审计 =="
+  run_sharded_reachability "$OPEN_MANIFEST" open 2
+fi
 
 # ---------- 3. 学习会话(Flow 句子提交训练 xhup_flow_user) ----------
 # 单词提交经学习 translator 的编码器产生编码词条(动态候选,菜单可观察);

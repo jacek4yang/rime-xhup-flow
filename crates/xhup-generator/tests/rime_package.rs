@@ -132,7 +132,7 @@ fn schema_semantics() {
     // translator 链:全部静态层在唯一 primary table translator 中。
     assert!(
         schema.contains(
-            "  translators:\n    - punct_translator\n    - table_translator\n    - table_translator@flow"
+            "  translators:\n    - punct_translator\n    - table_translator\n    - table_translator@flow\n    - table_translator@learn"
         ),
         "translator 链应为 punct → static primary → Flow"
     );
@@ -148,18 +148,18 @@ fn schema_semantics() {
         !schema.contains("table_translator@fixed_first") && !schema.contains("fixed_first:"),
         "FIXED_FIRST 必须并入同一静态 translator"
     );
-    // Flow translator:连续组句 + 共享用户词典,initial_quality 0 严格靠后;
+    // Flow translator:完整词汇 + 单字开放组句 + 共享用户词典；严格位于静态之后。
     // 无自动提交、无 completion。
     assert!(
         schema.contains(
-            "flow:\n  dictionary: xhup_flow_flow\n  user_dict: xhup_flow_user\n  enable_completion: false\n  enable_sentence: true\n  sentence_over_completion: true\n  enable_user_dict: true\n  initial_quality: 0"
+            "flow:\n  dictionary: xhup_flow_flow\n  user_dict: xhup_flow_user\n  enable_completion: false\n  enable_sentence: true\n  sentence_over_completion: true\n  enable_user_dict: true\n  initial_quality: 100"
         ),
         "flow translator 配置不符合组句语义"
     );
     // learn translator:学习短语编码(encoder),关闭组句,共享用户词典。
     assert!(
         schema.contains(
-            "learn:\n  dictionary: xhup_flow_learn\n  user_dict: xhup_flow_user\n  enable_completion: false\n  enable_sentence: false\n  enable_user_dict: true\n  enable_encoder: true\n  encode_commit_history: true\n  max_phrase_length: 20\n  max_homographs: 1\n  initial_quality: 0"
+            "learn:\n  dictionary: xhup_flow_learn\n  user_dict: xhup_flow_user\n  enable_completion: false\n  enable_sentence: false\n  enable_user_dict: true\n  enable_encoder: true\n  encode_commit_history: true\n  max_phrase_length: 20\n  max_homographs: 1\n  initial_quality: 1000"
         ),
         "learn translator 配置不符合学习语义"
     );

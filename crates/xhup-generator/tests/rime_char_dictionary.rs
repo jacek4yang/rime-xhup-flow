@@ -65,8 +65,8 @@ fn header_semantics() {
 #[test]
 fn row_counts_and_uniqueness() {
     let (_, rows) = parse_dictionary(&generate_rime_char_dictionary());
-    assert_eq!(rows.len(), 26753);
-    for (len, expected) in [(2, 8573), (3, 9022), (4, 9158)] {
+    assert_eq!(rows.len(), 28_851);
+    for (len, expected) in [(2, 9_254), (3, 9_724), (4, 9_873)] {
         assert_eq!(
             rows.iter().filter(|(_, code, _)| code.len() == len).count(),
             expected,
@@ -74,8 +74,8 @@ fn row_counts_and_uniqueness() {
         );
     }
     let hanzi: BTreeSet<char> = rows.iter().map(|(zi, _, _)| *zi).collect();
-    assert_eq!(hanzi.len(), 8103);
-    for (len, expected) in [(2, 405), (3, 4812), (4, 8416)] {
+    assert_eq!(hanzi.len(), 8_208);
+    for (len, expected) in [(2, 414), (3, 5_013), (4, 9_027)] {
         let codes: BTreeSet<&str> = rows
             .iter()
             .filter(|(_, code, _)| code.len() == len)
@@ -122,12 +122,13 @@ fn serialization_order_and_anchors() {
     }
     // 序列化锚点(文件组织,不承担排名语义;排名见权重列)。
     let expected_prefix = [
-        ('啊', "aa", 6),
-        ('阿', "aa", 5),
-        ('锕', "aa", 4),
-        ('嗄', "aa", 3),
-        ('腌', "aa", 2),
-        ('吖', "aa", 1),
+        ('啊', "aa", 7),
+        ('阿', "aa", 6),
+        ('锕', "aa", 5),
+        ('嗄', "aa", 4),
+        ('腌', "aa", 3),
+        ('吖', "aa", 2),
+        ('呵', "aa", 1),
     ];
     for (row, expected) in rows.iter().zip(expected_prefix) {
         assert_eq!(row.0, expected.0);
@@ -186,7 +187,7 @@ fn same_code_weights_are_unique_and_descend_in_file_order() {
 #[test]
 fn fanout_sentinels() {
     let (_, rows) = parse_dictionary(&generate_rime_char_dictionary());
-    for (code, expected) in [("yi", 136), ("jid", 14), ("jumk", 5)] {
+    for (code, expected) in [("yi", 147), ("jid", 14), ("jumk", 5)] {
         assert_eq!(
             rows.iter().filter(|(_, c, _)| c == code).count(),
             expected,
@@ -208,14 +209,15 @@ fn collision_group_ranking_sentinels() {
         jumk,
         [('橘', 5), ('桔', 4), ('驹', 3), ('椐', 2), ('枸', 1)]
     );
-    // yi 组首:万象分数最高的是「以」(136),「一」次之(135)
+    // yi 组首不变；11 个扩展候选只追加在旧 136 个 core 候选之后。
     let yi: Vec<(char, u32)> = rows
         .iter()
         .filter(|(_, code, _)| code == "yi")
         .map(|(zi, _, weight)| (*zi, *weight))
         .collect();
-    assert_eq!(yi[0], ('以', 136));
-    assert_eq!(yi[1], ('一', 135));
+    assert_eq!(yi[0], ('以', 147));
+    assert_eq!(yi[1], ('一', 146));
+    assert_eq!(yi.len(), 147);
 }
 
 #[test]
@@ -262,12 +264,18 @@ fn ge_lo_luo_collapse_deduplicates_generically() {
 }
 
 #[test]
-fn zero_encodable_reading_hanzi_are_absent() {
+fn non_derivable_core_readings_do_not_block_attested_input_codes() {
     let (_, rows) = parse_dictionary(&generate_rime_char_dictionary());
-    // 「呣」「嗯」是合法规范汉字且有规范形码,但无 XHUP 可编码规范读音,
-    // 因此没有任何静态码条目,不回退到旧词典的兼容音码。
-    assert!(codes_of(&rows, '呣').is_empty());
-    assert!(codes_of(&rows, '嗯').is_empty());
+    // 「呣」「嗯」没有可机械推导的 core HanziReading，但这是语言事实，
+    // 不能再成为输入能力边界；有来源的小鹤事实码由独立 evidence 层提供。
+    assert_eq!(codes_of(&rows, '呣'), BTreeSet::from(["om", "omk", "omkm"]));
+    assert_eq!(
+        codes_of(&rows, '嗯'),
+        BTreeSet::from([
+            "en", "ng", "og", "on", "enk", "ngk", "ogk", "onk", "enkx", "ngkx", "ogkx", "onkx"
+        ])
+    );
+    assert!(codes_of(&rows, '诶').contains("eiyu"));
 }
 
 #[test]

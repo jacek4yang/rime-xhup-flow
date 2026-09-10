@@ -32,6 +32,10 @@ fn usage() -> ! {
          \x20 --static-report          静态多级简码体系全量报告(码长 × 来源层)\n\
          \x20 --dump-static-menu-manifest <path>\n\
          \x20                           导出当前 canonical v2 完整有序菜单\n\
+         \x20 --dump-extended-reachability-manifest <path>\n\
+         \x20                           导出全部扩展词 exact runtime 可达性清单\n\
+         \x20 --dump-open-composition-manifest <path>\n\
+         \x20                           导出 1000 条确定性词表外开放组合样本\n\
          \n\
          legacy 研究产物请输出到临时路径,不要 commit;production canonical\n\
          只能由 export-v2-canonical 导出。"
@@ -45,6 +49,8 @@ fn main() -> ExitCode {
     let mut dump_production_two_key_path: Option<String> = None;
     let mut dump_two_key_manifest_path: Option<String> = None;
     let mut dump_static_menu_manifest_path: Option<String> = None;
+    let mut dump_extended_reachability_path: Option<String> = None;
+    let mut dump_open_composition_path: Option<String> = None;
     let mut static_report = false;
 
     let mut args = std::env::args().skip(1);
@@ -63,6 +69,12 @@ fn main() -> ExitCode {
             "--dump-static-menu-manifest" => {
                 dump_static_menu_manifest_path = Some(args.next().unwrap_or_else(|| usage()));
             }
+            "--dump-extended-reachability-manifest" => {
+                dump_extended_reachability_path = Some(args.next().unwrap_or_else(|| usage()));
+            }
+            "--dump-open-composition-manifest" => {
+                dump_open_composition_path = Some(args.next().unwrap_or_else(|| usage()));
+            }
             "--static-report" => static_report = true,
             "--help" | "-h" => usage(),
             _ => usage(),
@@ -73,6 +85,8 @@ fn main() -> ExitCode {
         && dump_production_two_key_path.is_none()
         && dump_two_key_manifest_path.is_none()
         && dump_static_menu_manifest_path.is_none()
+        && dump_extended_reachability_path.is_none()
+        && dump_open_composition_path.is_none()
         && !static_report
     {
         usage();
@@ -90,6 +104,24 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
         eprintln!("全静态菜单 manifest({exact_code_count} exact codes) → {path}");
+        return ExitCode::SUCCESS;
+    }
+
+    if let Some(path) = dump_extended_reachability_path {
+        if let Err(error) = std::fs::write(&path, extended_reachability_manifest()) {
+            eprintln!("写入 {path} 失败:{error}");
+            return ExitCode::FAILURE;
+        }
+        eprintln!("全部扩展词 runtime 可达性 manifest → {path}");
+        return ExitCode::SUCCESS;
+    }
+
+    if let Some(path) = dump_open_composition_path {
+        if let Err(error) = std::fs::write(&path, open_composition_manifest()) {
+            eprintln!("写入 {path} 失败:{error}");
+            return ExitCode::FAILURE;
+        }
+        eprintln!("开放组合确定性抽样 manifest → {path}");
         return ExitCode::SUCCESS;
     }
 
@@ -814,7 +846,7 @@ fn static_menu_manifest(occupancy: &xhup_analyzer::occupancy::CodeOccupancy) -> 
     for entry in xhup_generator::canonical_level1_shortcuts() {
         codes.insert(entry.key().as_char().to_string());
     }
-    for entry in xhup_generator::canonical_char_code_entries() {
+    for entry in xhup_generator::canonical_input_char_code_entries() {
         codes.insert(entry.code().to_string());
     }
     for entry in xhup_generator::canonical_word_code_entries() {
@@ -843,6 +875,80 @@ fn static_menu_manifest(occupancy: &xhup_analyzer::occupancy::CodeOccupancy) -> 
             }
             writeln!(out, "{code}\t{}", menu.join("|")).unwrap();
         }
+    }
+    out
+}
+
+/// 全部扩展词 exact 关系；每行供 librime 逐项查询存在性。
+fn extended_reachability_manifest() -> String {
+    use std::fmt::Write as _;
+    let entries = xhup_generator::canonical_extended_word_code_entries();
+    let mut out = String::new();
+    writeln!(
+        out,
+        "# XHUP Flow extended lexicon runtime reachability manifest."
+    )
+    .unwrap();
+    writeln!(out, "# relations: {}", entries.len()).unwrap();
+    for entry in entries {
+        writeln!(out, "{}\t{}", entry.code(), entry.word()).unwrap();
+    }
+    out
+}
+
+/// 由每个两键音码的 runtime 首选字符构造 1000 个确定性双字组合；排除
+/// hot/extended exact 词，确保测试命中真正 open composer 而非固定词表。
+fn open_composition_manifest() -> String {
+    use std::fmt::Write as _;
+    let mut best_by_sound: BTreeMap<String, (char, u32)> = BTreeMap::new();
+    for entry in xhup_generator::canonical_input_char_code_entries() {
+        if entry.code().len() != 2 {
+            continue;
+        }
+        let candidate = (entry.hanzi().as_char(), entry.weight());
+        best_by_sound
+            .entry(entry.code().to_string())
+            .and_modify(|known| {
+                if candidate.1 > known.1 || (candidate.1 == known.1 && candidate.0 < known.0) {
+                    *known = candidate;
+                }
+            })
+            .or_insert(candidate);
+    }
+    let primitives: Vec<_> = best_by_sound.into_iter().collect();
+    assert!(
+        primitives.len() > 100,
+        "开放音码原语应覆盖足够多 sound code"
+    );
+    let mut rows: BTreeSet<(String, String)> = BTreeSet::new();
+    let n = primitives.len();
+    for step in 0..(n * n) {
+        if rows.len() == 1_000 {
+            break;
+        }
+        let i = step % n;
+        let j = (step / n + i * 137 + 17) % n;
+        let code = format!("{}{}", primitives[i].0, primitives[j].0);
+        let text = format!("{}{}", primitives[i].1.0, primitives[j].1.0);
+        let reachability = xhup_generator::classify_reachability(&text, &code);
+        if !reachability.static_reachable
+            && !reachability.extended_lexicon_reachable
+            && reachability.open_composition_reachable
+        {
+            rows.insert((code, text));
+        }
+    }
+    assert_eq!(rows.len(), 1_000, "应能构造 1000 条真正词表外开放组合");
+
+    let mut out = String::new();
+    writeln!(
+        out,
+        "# XHUP Flow deterministic open-composition runtime sample."
+    )
+    .unwrap();
+    writeln!(out, "# rows: {}", rows.len()).unwrap();
+    for (code, text) in rows {
+        writeln!(out, "{code}\t{text}").unwrap();
     }
     out
 }

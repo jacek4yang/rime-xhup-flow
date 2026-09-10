@@ -142,16 +142,15 @@ fn primary_layer_reaches_optimizer_merged_ranks() {
     }
 }
 
-/// current production 分层审计:简码层行数等于 canonical TSV 条数,
-/// total = baseline 126779 + PRIMARY 简码行数 + FIXED_FIRST 简码行数;
-/// 固定层行数与 baseline 完全一致。
+/// current production 分层审计:简码层行数等于 canonical TSV 条数；
+/// core baseline 保持不变，attested 扩展关系只增加可达候选。
 #[test]
 fn current_production_layer_audit_counts_shortcuts() {
     let baseline = CodeOccupancy::build_baseline_fixed().layer_audit();
     let production_occupancy = CodeOccupancy::build_current_production();
     assert_eq!(
         production_occupancy.occupied_codes().count(),
-        140_664,
+        141_138,
         "current production distinct exact code 数"
     );
     let production = production_occupancy.layer_audit();
@@ -178,23 +177,27 @@ fn current_production_layer_audit_counts_shortcuts() {
     );
     assert_eq!(
         production.total_rows(),
-        baseline.total_rows() + shortcut_count + fixed_first_count
+        baseline.total_rows() + 2_098 + shortcut_count + fixed_first_count
     );
-    // 固定层行数不受简码层影响
+    // 固定简码层与词层不受扩展字符层影响；字符关系按已审计事实源精确增长。
     assert_eq!(
         production.level1_shortcut_rows,
         baseline.level1_shortcut_rows
     );
-    assert_eq!(production.char_2key_rows, baseline.char_2key_rows);
-    assert_eq!(production.char_3key_rows, baseline.char_3key_rows);
-    assert_eq!(production.char_4key_rows, baseline.char_4key_rows);
+    assert_eq!(production.char_2key_rows, 9_254);
+    assert_eq!(production.char_3key_rows, 9_724);
+    assert_eq!(production.char_4key_rows, 9_873);
+    assert_eq!(production.char_2key_rows - baseline.char_2key_rows, 681);
+    assert_eq!(production.char_3key_rows - baseline.char_3key_rows, 702);
+    assert_eq!(production.char_4key_rows - baseline.char_4key_rows, 715);
     assert_eq!(production.word_4key_rows, baseline.word_4key_rows);
     assert_eq!(production.word_6key_rows, baseline.word_6key_rows);
     assert_eq!(production.word_8key_rows, baseline.word_8key_rows);
 }
 
 /// 全量硬不变量:每条 FIXED_FIRST 在统一 static 菜单中严格 rank 1;
-/// baseline 与同码 PRIMARY 候选继续按 merged ranking 保持确定次序。
+/// baseline 与同码 PRIMARY 候选继续按 merged ranking 保持确定次序；
+/// attested 扩展字符只允许追加在旧 static 菜单之后。
 #[test]
 fn fixed_first_layer_is_rank_one_in_merged_menu() {
     let baseline = CodeOccupancy::build_baseline_fixed();
@@ -222,10 +225,16 @@ fn fixed_first_layer_is_rank_one_in_merged_menu() {
             .filter(|primary| primary.shortcut_code() == shortcut)
             .count();
         let group = production.group(shortcut).expect("FF 码在 current 有组");
-        assert_eq!(
-            group.len(),
-            fanout + primary_on_code + 1,
-            "{shortcut} current fanout 应为 baseline + PRIMARY + FIXED_FIRST"
+        let legacy_fanout = fanout + primary_on_code + 1;
+        assert!(
+            group.len() >= legacy_fanout,
+            "{shortcut} current fanout 必须覆盖 baseline + PRIMARY + FIXED_FIRST"
+        );
+        assert!(
+            group[legacy_fanout..]
+                .iter()
+                .all(|candidate| candidate.source() == CandidateSource::CharCode),
+            "{shortcut} 旧 static 菜单之后只允许追加 attested 字符候选"
         );
         let fixed = group
             .iter()
