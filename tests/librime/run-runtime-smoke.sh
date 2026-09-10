@@ -36,6 +36,24 @@ EOF
   rm "$dir/dict_compile.schema.yaml"
 }
 
+# 生产 Flow/Learn 辅助词典必须分别在隔离目录编译；同目录连续复用临时
+# wrapper 会让 librime 的部署状态互相干扰。真实用户路径另由
+# run-deploy-audit.sh 的 `rime_deployer --build` 独立守卫。
+compile_package_dict_isolated() {
+  local dict=$1 dest=$2
+  local dir="$work/compile-$dict"
+  mkdir -p "$dir"
+  cp "$PACKAGE_DIR/$dict.dict.yaml" "$dir/"
+  compile_dict_via_wrapper "$dir" "$dict"
+  test -f "$dir/build/$dict.table.bin" || {
+    echo "词典编译失败: $dict" >&2
+    exit 2
+  }
+  mkdir -p "$dest/build"
+  cp "$dir/build/$dict.table.bin" "$dir/build/$dict.prism.bin" \
+     "$dir/build/$dict.reverse.bin" "$dest/build/"
+}
+
 # ---------- 1. priority preflight ----------
 preflight_control="$work/preflight-control"
 preflight_production="$work/preflight-production"
@@ -81,6 +99,9 @@ patch:
 EOF
 rime_deployer --compile "$smoke_dir/xhup_flow.schema.yaml" "$smoke_dir" \
   "$SHARED_DATA_DIR" >/dev/null
+for dict in xhup_flow_flow xhup_flow_learn; do
+  compile_package_dict_isolated "$dict" "$smoke_dir"
+done
 
 cc $CFLAGS -o "$work/runtime_smoke" "$SCRIPT_DIR/runtime_smoke.c" \
   $(pkg-config --cflags --libs rime)
