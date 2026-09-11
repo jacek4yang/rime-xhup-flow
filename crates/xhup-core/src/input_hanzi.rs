@@ -183,93 +183,30 @@ impl AttestedXhupCode {
 }
 
 fn parse_attested(text: &'static str, name: &str) -> AttestedData {
-    let mut evidence = Vec::new();
-    let mut previous: Option<(
-        char,
-        DoublePinyinCode,
-        ShapeCode,
-        &'static str,
-        &'static str,
-        u32,
-    )> = None;
-    for (index, line) in text.lines().enumerate() {
-        let row = index + 1;
-        if line.starts_with('#') || line.is_empty() {
-            continue;
-        }
-        let mut fields = line.split('\t');
-        let (
-            Some(character),
-            Some(sound),
-            Some(shape),
-            Some(weight),
-            Some(source),
-            Some(status),
-            None,
-        ) = (
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-        )
-        else {
-            panic!("{name} 第 {row} 行应为六个 TAB 字段: {line:?}");
-        };
-        let mut chars = character.chars();
-        let (Some(character), None) = (chars.next(), chars.next()) else {
-            panic!("{name} 第 {row} 行字符字段必须恰好一个 Unicode 标量: {line:?}");
-        };
-        let sound_code: DoublePinyinCode = sound
-            .parse()
-            .unwrap_or_else(|err| panic!("{name} 第 {row} 行音码非法: {err}"));
-        let shape_code: ShapeCode = shape
-            .parse()
-            .unwrap_or_else(|err| panic!("{name} 第 {row} 行形码非法: {err}"));
-        let source_weight: u32 = weight
-            .parse()
-            .unwrap_or_else(|_| panic!("{name} 第 {row} 行来源权重应为 u32: {weight:?}"));
-        assert!(
-            !source.is_empty()
-                && source
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte == b'-'),
-            "{name} 第 {row} 行 source 非法: {source:?}"
-        );
-        assert!(
-            !status.is_empty()
-                && status
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte == b'-'),
-            "{name} 第 {row} 行 status 非法: {status:?}"
-        );
-        let key = (
-            character,
-            sound_code,
-            shape_code,
-            source,
-            status,
-            source_weight,
-        );
-        if let Some(previous) = previous {
-            assert!(
-                previous < key,
-                "{name} 第 {row} 行未按声明键严格升序（重复或乱序）: {line:?}"
-            );
-        }
-        previous = Some(key);
-        evidence.push(AttestedXhupCode {
-            hanzi: InputHanzi(character),
-            sound_code,
-            shape_code,
-            source_weight,
-            source,
-            status,
-        });
-    }
-    assert_eq!(evidence.len(), 9_796, "{name} evidence 行数漂移");
+    use crate::knowledge::{canonical_sources, parse_full_codes, resolve_full_codes};
+    let normalized = parse_full_codes(text).unwrap_or_else(|err| panic!("{name}: {err}"));
+    let resolved = resolve_full_codes(&normalized, canonical_sources())
+        .unwrap_or_else(|err| panic!("{name}: {err}"));
+    let active: std::collections::BTreeSet<_> = resolved
+        .iter()
+        .map(|relation| (relation.character, relation.code))
+        .collect();
+    let evidence: Vec<_> = normalized
+        .into_iter()
+        .filter(|e| {
+            active.contains(&(e.character, e.code()))
+                && e.provenance.status.is_active()
+                && e.provenance.confidence != crate::knowledge::EvidenceConfidence::Low
+        })
+        .map(|e| AttestedXhupCode {
+            hanzi: InputHanzi(e.character.0),
+            sound_code: e.sound,
+            shape_code: e.shape,
+            source_weight: e.weight,
+            source: e.provenance.source,
+            status: e.provenance.status.as_str(),
+        })
+        .collect();
 
     let mut records = Vec::new();
     let mut all = Vec::new();
@@ -287,7 +224,6 @@ fn parse_attested(text: &'static str, name: &str) -> AttestedData {
         all.push(hanzi);
         start = end;
     }
-    assert_eq!(records.len(), 8_208, "{name} 输入字符数漂移");
     assert!(all.windows(2).all(|pair| pair[0] < pair[1]));
     for &core in XhupHanzi::all() {
         assert!(
@@ -307,6 +243,14 @@ fn parse_attested(text: &'static str, name: &str) -> AttestedData {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn production_membership_builder_accepts_synthetic_extension() {
+        let text = format!("{ATTESTED_CODES_TSV}\u{10ffff}\taa\tbb\t0\trime-fast-xhup\tattested\n");
+        let data = parse_attested(Box::leak(text.into_boxed_str()), "synthetic.tsv");
+        assert_eq!(data.all.len(), InputHanzi::all().len() + 1);
+        assert_eq!(data.all.last().unwrap().as_char(), '\u{10ffff}');
+    }
 
     #[test]
     fn core_is_a_strict_subset_of_input_universe() {

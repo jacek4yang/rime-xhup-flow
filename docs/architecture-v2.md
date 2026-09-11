@@ -56,6 +56,8 @@ librime-lua 时必须明确失败并给安装诊断，不能继续以“完整 F
 
 ## crate 与运行时边界
 
+多源字符证据、确定性来源与冲突审计见 [knowledge-base.md](knowledge-base.md)。
+
 | 层 | 当前/目标职责 |
 | --- | --- |
 | `xhup-core` | XHUP 键、音节、音形、字符身份等底层事实；继续不包含候选排序 |

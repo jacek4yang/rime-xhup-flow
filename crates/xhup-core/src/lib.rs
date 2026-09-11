@@ -15,6 +15,7 @@ mod hanzi;
 mod input_hanzi;
 mod input_syllable;
 mod key;
+pub mod knowledge;
 mod layout;
 mod sequence;
 mod shape;
