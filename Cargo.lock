@@ -4472,7 +4472,10 @@ dependencies = [
 name = "xhup-analyzer"
 version = "1.0.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "xhup-core",
+ "xhup-decoder",
  "xhup-generator",
 ]
 
@@ -4487,6 +4490,13 @@ dependencies = [
 [[package]]
 name = "xhup-core"
 version = "1.0.0"
+
+[[package]]
+name = "xhup-decoder"
+version = "1.0.0"
+dependencies = [
+ "xhup-core",
+]
 
 [[package]]
 name = "xhup-generator"

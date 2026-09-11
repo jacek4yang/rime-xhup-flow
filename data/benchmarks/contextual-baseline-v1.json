@@ -1,0 +1,16 @@
+{
+  "schema": "xhup-contextual-baseline/v1",
+  "benchmarkSchema": "xhup-contextual-benchmark/v1",
+  "scorer": "word-frequency-segmentation/v1",
+  "metrics": {
+    "caseCount": 4,
+    "top1TextCorrect": 4,
+    "top1PathCorrect": 2,
+    "topKPathCorrect": 4,
+    "contextualCaseCount": 4,
+    "contextualTop1Correct": 2,
+    "truncatedCases": 0,
+    "totalCompletePaths": 8,
+    "maximumCompletePaths": 2
+  }
+}

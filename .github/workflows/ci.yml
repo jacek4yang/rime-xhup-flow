@@ -95,6 +95,12 @@ jobs:
           --input data/corpus/replay_fixture.txt
           --baseline data/corpus/replay_baseline.json
 
+      - name: 上下文联合分段 foundation 基线
+        run: >
+          cargo run --locked -p xhup-analyzer --bin contextual-bench --
+          --input data/benchmarks/contextual-v1.json
+          --baseline data/benchmarks/contextual-baseline-v1.json
+
   trainer:
     name: trainer 前端
     runs-on: ubuntu-latest

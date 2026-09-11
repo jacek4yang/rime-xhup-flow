@@ -5,5 +5,8 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
 xhup-core = { path = "../xhup-core" }
+xhup-decoder = { path = "../xhup-decoder" }
 xhup-generator = { path = "../xhup-generator" }

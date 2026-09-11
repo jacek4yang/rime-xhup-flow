@@ -1,0 +1,71 @@
+{
+  "schema": "xhup-v1-static-baseline/v1",
+  "source": {
+    "mainSha": "778bfa53a28f9eced48d6557fe75d1a3fed75c27",
+    "tag": "xhup-flow-v1.0.0",
+    "release": "XHUP Flow v1.0.0",
+    "publishedAt": "2026-09-10T17:45:31Z"
+  },
+  "characters": {
+    "coreStandardHanzi": 8105,
+    "inputHanzi": 8208,
+    "attestedEvidenceRows": 9796,
+    "productionCodeRelations": 28851,
+    "twoKeyRelations": 9254,
+    "threeKeyRelations": 9724,
+    "fourKeyRelations": 9873
+  },
+  "lexicon": {
+    "hotSemanticEntries": 100000,
+    "extendedSemanticEntries": 1301434
+  },
+  "static": {
+    "primaryMappings": 65909,
+    "fixedFirstMappings": 2933,
+    "totalCompilerMappings": 68842,
+    "distinctExactCodes": 141138
+  },
+  "replay": {
+    "fixture": "data/corpus/replay_fixture.txt",
+    "sentences": 2000,
+    "characters": 16974,
+    "tokens": 9095,
+    "keys": 32201,
+    "rank1Tokens": 8818,
+    "top3Tokens": 9087,
+    "fallbackTokens": 3366,
+    "kspc": 1.8971,
+    "rank1RatePercent": 96.9544,
+    "top3RatePercent": 99.912,
+    "fallbackRatePercent": 37.0093
+  },
+  "generatedRimePackage": {
+    "artifactCount": 14,
+    "sourceBytes": 36845122,
+    "releaseZipBytes": 16282474,
+    "releaseZipSha256": "bb781ae064646caa81fa1bb6a19bf6607195b0c95f52b6e335672b341606bbfe"
+  },
+  "lua": {
+    "sourceModules": ["rime/lua/xhup_flow/quick_hint.lua"],
+    "generatedLuaArtifacts": ["lua/xhup_flow/quick_hint.lua", "lua/xhup_flow/quick_hint_data.lua"],
+    "pureLuaTestFiles": 2,
+    "mandatoryForMainScheme": false
+  },
+  "runtimeTests": {
+    "librimeHarnessSources": 11,
+    "runtimeSmokeChecks": 78,
+    "realLuaPluginAudit": true,
+    "fullStaticMenuAudit": true,
+    "extendedReachabilityAudit": true,
+    "oovCompositionAudit": true
+  },
+  "observedPerformance": {
+    "localWindowsReleaseGenerateRimeMilliseconds": [4495.1077, 4619.1398, 4556.4851],
+    "localRimeDeployerAvailable": false,
+    "documentedLinuxDeploySecondsRange": [17.07, 27.08],
+    "documentedLinuxDeployPeakRssKiB": 1105580,
+    "documentedRuntimeSmokeSeconds": 0.48,
+    "documentedRuntimePeakRssKiB": 41216,
+    "note": "本机无 rime_deployer；deploy/RSS 采用 v1.0.0 已提交的 librime 1.16.1 实测，仅作参考。"
+  }
+}
