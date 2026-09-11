@@ -1,0 +1,79 @@
+{
+  "schema": "xhup-contextual-benchmark/v1",
+  "topK": 3,
+  "maxPathsPerCase": 32,
+  "cases": [
+    {
+      "id": "research-life-dev",
+      "split": "development",
+      "source": "wanxiang-base@4618d67 + kdconv-derived@653db76",
+      "tags": ["ambiguous-segmentation", "same-input-different-context"],
+      "leftContext": "这个课题关注",
+      "rawInput": "yjjqugmk",
+      "edges": [
+        { "start": 0, "end": 4, "text": "研究", "kind": "hot-word", "frequency": 266843 },
+        { "start": 4, "end": 8, "text": "生命", "kind": "hot-word", "frequency": 80039 },
+        { "start": 0, "end": 6, "text": "研究生", "kind": "hot-word", "frequency": 72173 },
+        { "start": 6, "end": 8, "text": "命", "kind": "character", "frequency": 6600 }
+      ],
+      "expected": [
+        { "start": 0, "end": 4, "text": "研究" },
+        { "start": 4, "end": 8, "text": "生命" }
+      ]
+    },
+    {
+      "id": "graduate-prefix-eval",
+      "split": "evaluation",
+      "source": "wanxiang-base@4618d67 + kdconv-derived@653db76",
+      "tags": ["ambiguous-segmentation", "same-input-different-context", "composition-prefix"],
+      "leftContext": "这名",
+      "rawInput": "yjjqugmk",
+      "edges": [
+        { "start": 0, "end": 4, "text": "研究", "kind": "hot-word", "frequency": 266843 },
+        { "start": 4, "end": 8, "text": "生命", "kind": "hot-word", "frequency": 80039 },
+        { "start": 0, "end": 6, "text": "研究生", "kind": "hot-word", "frequency": 72173 },
+        { "start": 6, "end": 8, "text": "命", "kind": "character", "frequency": 6600 }
+      ],
+      "expected": [
+        { "start": 0, "end": 6, "text": "研究生" },
+        { "start": 6, "end": 8, "text": "命" }
+      ]
+    },
+    {
+      "id": "university-life-dev",
+      "split": "development",
+      "source": "wanxiang-base@4618d67 + kdconv-derived@653db76",
+      "tags": ["ambiguous-segmentation", "same-input-different-context"],
+      "leftContext": "丰富的",
+      "rawInput": "daxtugho",
+      "edges": [
+        { "start": 0, "end": 4, "text": "大学", "kind": "hot-word", "frequency": 166291 },
+        { "start": 4, "end": 8, "text": "生活", "kind": "hot-word", "frequency": 208656 },
+        { "start": 0, "end": 6, "text": "大学生", "kind": "hot-word", "frequency": 37576 },
+        { "start": 6, "end": 8, "text": "活", "kind": "character", "frequency": 5124 }
+      ],
+      "expected": [
+        { "start": 0, "end": 4, "text": "大学" },
+        { "start": 4, "end": 8, "text": "生活" }
+      ]
+    },
+    {
+      "id": "student-prefix-eval",
+      "split": "evaluation",
+      "source": "wanxiang-base@4618d67 + kdconv-derived@653db76",
+      "tags": ["ambiguous-segmentation", "same-input-different-context", "composition-prefix"],
+      "leftContext": "这位",
+      "rawInput": "daxtugho",
+      "edges": [
+        { "start": 0, "end": 4, "text": "大学", "kind": "hot-word", "frequency": 166291 },
+        { "start": 4, "end": 8, "text": "生活", "kind": "hot-word", "frequency": 208656 },
+        { "start": 0, "end": 6, "text": "大学生", "kind": "hot-word", "frequency": 37576 },
+        { "start": 6, "end": 8, "text": "活", "kind": "character", "frequency": 5124 }
+      ],
+      "expected": [
+        { "start": 0, "end": 6, "text": "大学生" },
+        { "start": 6, "end": 8, "text": "活" }
+      ]
+    }
+  ]
+}

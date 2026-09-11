@@ -17,6 +17,7 @@
 
 pub mod candidates;
 pub mod compat;
+pub mod contextual_benchmark;
 pub mod corpus;
 pub mod cost;
 pub mod dynamic;

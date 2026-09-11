@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/xhup-core",
+    "crates/xhup-decoder",
     "crates/xhup-analyzer",
     "crates/xhup-generator",
     "crates/xhup-cli",
