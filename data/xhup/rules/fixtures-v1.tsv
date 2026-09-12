@@ -1,0 +1,50 @@
+# xhup-rule-fixtures/v1
+char-han	含	xhup-character	hj,rk	hjrk	flypy-help-ux	exact-official	protected	-	Published character example
+char-he	鹤	xhup-character	he,dn	hedn	flypy-help-xh	exact-official	protected	-	Published character example
+char-jiu	就	xhup-character	jq,wy	jqwy	flypy-help-ux	exact-official	protected	-	Published character example
+char-xiao	小	xhup-character	xn,ld	xnld	flypy-help-xh	exact-official	protected	-	Published character example
+char-xing	形	xhup-character	xk,kp	xkkp	flypy-help-xh	exact-official	protected	-	Published character example
+char-xu	蓄	xhup-character	xu,ct	xuct	flypy-help-ux	exact-official	protected	-	Published character example
+char-yi-horizontal	一	xhup-character	yi,aa	yiaa	flypy-help-gz	exact-official	protected	-	Single horizontal stroke is repeated
+char-yi-turning	乙	xhup-character	yi,vv	yivv	flypy-help-gz	exact-official	protected	-	Single turning stroke is repeated
+char-yin	音	xhup-character	yb,lo	yblo	flypy-help-xh	exact-official	protected	-	Published character example
+deviation-five-character	他乡遇故知	xhup-phrase-four-plus	ta,xl,yu,gu,vi	txyv	flypy-help-xh	intentional-deviation	known-missing	flow-v1-policy	Official example absent in frozen Flow code space; text remains openly composable
+deviation-zhidao	知道	xhup-phrase-shortcut	vi,dc	vd	flypy-help-xh	intentional-deviation	known-missing	flow-v1-policy	Official shortcut absent; frozen Flow protects vdc and retains vidc
+flow-oov	提嗯诶	flow-sequential-composition	ti,og,ei	tiogei	flow-v1-policy	flow-extension	protected	-	Composition is independent of static and extended vocabulary
+flow-tishici	提示词	flow-sequential-composition	ti,ui,ci	tiuici	flow-v1-policy	flow-extension	protected	-	Sequential Flow path is not an official four-key phrase code
+historical-hang	行	historical-character	hh,ii	hhii	rime-fast-xhup	historical-compatible	protected	-	Pinned external table relation; input code not linguistic reading
+historical-le	乐	historical-character	le,pd	lepd	rime-fast-xhup	historical-compatible	protected	-	Pinned external table relation
+historical-ng	嗯	historical-character	ng,kx	ngkx	rime-fast-xhup	historical-compatible	protected	-	Historical code coexists with official special codes
+historical-xing	行	historical-character	xk,ii	xkii	rime-fast-xhup	historical-compatible	protected	-	Multiple sound-code relations are preserved
+historical-yue	乐	historical-character	yt,pd	ytpd	rime-fast-xhup	historical-compatible	protected	-	Multiple sound-code relations are preserved
+phrase-four	小鹤音形	xhup-phrase-four-plus	xn,he,yb,xk	xhyx	flypy-help-xh	rule-compatible	observe	-	Derived from independently published character sounds; dictionary membership not asserted
+phrase-three	输入法	xhup-phrase-three	uu,ru,fa	urfa	flypy-help-xh	exact-official	protected	-	Published three-character phrase example
+phrase-tishici	提示词	xhup-phrase-three	ti,ui,ci	tuci	flypy-help-xh	rule-compatible	observe	-	Rule projection only; not claimed as an attested official dictionary entry
+phrase-two	双拼	xhup-phrase-two	ul,pb	ulpb	flypy-help-xh	exact-official	protected	-	Published two-character phrase example
+policy-bushi	不是	flow-monotone-shortcut	bu,ui;FI	buu	flow-v1-policy	historical-compatible	protected	-	Frozen Flow v1 alias; no independent official attestation asserted
+policy-haishi	还是	flow-monotone-shortcut	hd,ui;FI	hdu	flow-v1-policy	historical-compatible	protected	-	Frozen Flow v1 alias
+policy-jiushi	就是	flow-monotone-shortcut	jq,ui;FI	jqu	flow-v1-policy	historical-compatible	protected	-	Frozen Flow v1 alias
+policy-nimen	你们	flow-monotone-shortcut	ni,mf;FI	nim	flow-v1-policy	historical-compatible	protected	-	Frozen Flow v1 alias
+policy-ruguo	如果	flow-legacy-shortcut	ru,go;IF	rgo	flow-v1-policy	historical-compatible	protected	-	Legacy IF is preserved compiler policy rather than monotone grammar
+policy-yinwei	因为	flow-legacy-shortcut	yb,ww;IF	yww	flow-v1-policy	historical-compatible	protected	-	Legacy IF is preserved compiler policy rather than monotone grammar
+policy-zhidao	知道	flow-legacy-shortcut	vi,dc;IF	vdc	flow-v1-policy	historical-compatible	protected	-	Frozen Flow v1 alias distinct from official vd
+shape-he	鹤	xhup-shape	丶:d,鸟:n;first-last+no-intersected-root	dn	flypy-help-gz	exact-official	observe	-	Intersecting root is not taken as an independent root
+shape-yi	乙	xhup-shape	折:v,折:v;first-last+repeat-single-stroke	vv	flypy-help-gz	exact-official	observe	-	Repeated single stroke is explicit decomposition evidence
+shape-zhong	中	xhup-shape	丨:l,丨:l;first-last+no-intersected-root	ll	flypy-help-gz	exact-official	observe	-	Official example of the intersected-root constraint
+shortcut-xiao	小	xhup-character-shortcut	xnld	x	flypy-help-xh	official-alias	protected	-	Published one-key shortcut assignment
+shortcut-yuelaiyue	越来越	xhup-phrase-shortcut	yt,ld,yt	yly	flypy-help-xh	official-alias	protected	-	Published three-key shortcut assignment
+sound-a	啊	xhup-sound	-,a	aa	flypy-help-up	exact-official	observe	-	Published single-letter zero-initial example
+sound-ai	爱	xhup-sound	-,ai	ai	flypy-help-up	exact-official	observe	-	Published two-letter zero-initial example
+sound-ang	昂	xhup-sound	-,ang	ah	flypy-help-up	exact-official	observe	-	Published three-letter zero-initial example
+sound-ch	ch+a	xhup-sound	ch,a	ia	flypy-keyboard	rule-compatible	observe	-	Keyboard component relation only; not a linguistic reading claim
+sound-sh	sh+uang	xhup-sound	sh,uang	ul	flypy-keyboard	rule-compatible	observe	-	Keyboard component relation only
+sound-shared-ing	b+ing	xhup-sound	b,ing	bk	flypy-keyboard	rule-compatible	observe	-	Shared final key is not a merged linguistic final
+sound-shared-uai	b+uai	xhup-sound	b,uai	bk	flypy-keyboard	rule-compatible	observe	-	Structural keyboard combination need not be a valid syllable
+sound-umlaut	l+ve	xhup-sound	l,ve	lt	flypy-keyboard	rule-compatible	observe	-	ASCII v labels umlaut u in normalized spelling
+sound-zh	zh+ong	xhup-sound	zh,ong	vs	flypy-keyboard	rule-compatible	observe	-	Keyboard component relation only
+special-ei	诶	xhup-attested-special	ei,yu	eiyu	flypy-official-ix	official-special	protected	-	Existing oracle outside-core marker; not a fabricated reading
+special-en	嗯	xhup-attested-special	en,kx	enkx	flypy-official-ix	official-special	protected	-	Existing oracle yield-full marker is metadata not an input key
+special-og	嗯	xhup-attested-special	og,kx	ogkx	flypy-official-ix	official-special	protected	-	Existing official special sound-code evidence
+special-on	嗯	xhup-attested-special	on,kx	onkx	flypy-official-ix	official-special	protected	-	Existing official special sound-code evidence
+unknown-interjection-reading	嗯	xhup-unresolved	-	-	core-readings	unknown	unresolved	-	Ordinary keyboard derivation from linguistic n is unresolved; attested input codes are separate
+unknown-rare-prefix	生僻音	xhup-unresolved	-	-	flypy-official-ix	unknown	unresolved	-	Rare marker mentions apostrophe input; full prefix behavior is not modeled without independent fixtures

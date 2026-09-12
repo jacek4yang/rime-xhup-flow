@@ -36,6 +36,7 @@ pub mod production_fixed_first;
 pub mod production_two_key;
 pub mod replay;
 pub mod report;
+pub mod rules;
 pub mod sweep;
 pub mod sweep_v2;
 pub mod two_key_study;
