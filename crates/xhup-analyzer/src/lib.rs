@@ -31,6 +31,7 @@ pub mod optimize;
 pub mod optimizer_v2;
 pub mod policy;
 pub mod prefix;
+pub mod prefix_space;
 pub mod production;
 pub mod production_fixed_first;
 pub mod production_two_key;
