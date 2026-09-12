@@ -129,14 +129,26 @@ impl DoctorReport {
 
 /// 探测系统/平台 librime-lua 插件可用性。
 pub fn probe_system_lua_plugin() -> Result<&'static str, &'static str> {
-    probe_system_lua_plugin_with(&|p| p.is_file())
+    probe_system_lua_plugin_with(None, &|p| p.is_file())
 }
 
 /// 探测系统/平台 librime-lua 插件可用性 (带探测函数注入)。
-pub fn probe_system_lua_plugin_with<F>(file_exists: &F) -> Result<&'static str, &'static str>
+pub fn probe_system_lua_plugin_with<F>(
+    plugins_dir: Option<&Path>,
+    file_exists: &F,
+) -> Result<&'static str, &'static str>
 where
     F: Fn(&Path) -> bool,
 {
+    if let Some(dir) = plugins_dir {
+        if file_exists(&dir.join("librime-lua.so"))
+            || file_exists(&dir.join("librime-plugin-lua.so"))
+        {
+            return Ok("自定义插件目录内检测到 librime-lua 插件");
+        }
+        return Err("自定义插件目录内未找到 librime-lua.so 或 librime-plugin-lua.so");
+    }
+
     if cfg!(target_os = "windows") {
         return Ok("Windows 小狼毫 (Weasel ≥ 0.15 内置 librime-lua)");
     }
@@ -145,21 +157,27 @@ where
     }
 
     let candidates = [
+        "/usr/lib/rime-plugins/librime-lua.so",
         "/usr/lib/rime-plugins/librime-plugin-lua.so",
+        "/usr/lib/x86_64-linux-gnu/rime-plugins/librime-lua.so",
         "/usr/lib/x86_64-linux-gnu/rime-plugins/librime-plugin-lua.so",
+        "/usr/lib/aarch64-linux-gnu/rime-plugins/librime-lua.so",
         "/usr/lib/aarch64-linux-gnu/rime-plugins/librime-plugin-lua.so",
+        "/usr/lib64/rime-plugins/librime-lua.so",
         "/usr/lib64/rime-plugins/librime-plugin-lua.so",
+        "/usr/local/lib/rime-plugins/librime-lua.so",
         "/usr/local/lib/rime-plugins/librime-plugin-lua.so",
     ];
     for path in &candidates {
         if file_exists(Path::new(path)) {
-            return Ok("Linux 系统 librime-plugin-lua.so 插件在场");
+            return Ok("Linux 系统 librime-lua 插件在场");
         }
     }
-    if let Some(dir) = std::env::var_os("RIME_PLUGINS_DIR")
-        && file_exists(&PathBuf::from(dir).join("librime-plugin-lua.so"))
-    {
-        return Ok("RIME_PLUGINS_DIR 内检测到 librime-plugin-lua 插件");
+    if let Some(dir) = std::env::var_os("RIME_PLUGINS_DIR") {
+        let p = PathBuf::from(dir);
+        if file_exists(&p.join("librime-lua.so")) || file_exists(&p.join("librime-plugin-lua.so")) {
+            return Ok("RIME_PLUGINS_DIR 内检测到 librime-lua 插件");
+        }
     }
     Err(
         "未检测到 librime-plugin-lua 插件。Debian/Ubuntu: sudo apt install librime-plugin-lua; 或改用纯静态方案 xhup_flow_static",
@@ -170,14 +188,16 @@ where
 pub fn inspect_installation(
     user_data_dir: &Path,
     schema_filter: Option<&str>,
+    plugins_dir: Option<&Path>,
 ) -> Result<DoctorReport, DoctorError> {
-    inspect_installation_with(user_data_dir, schema_filter, &|p| p.is_file())
+    inspect_installation_with(user_data_dir, schema_filter, plugins_dir, &|p| p.is_file())
 }
 
 /// 执行运行环境诊断与合同自检 (带文件探测器注入)。
 pub fn inspect_installation_with<F>(
     user_data_dir: &Path,
     schema_filter: Option<&str>,
+    plugins_dir: Option<&Path>,
     file_exists: &F,
 ) -> Result<DoctorReport, DoctorError>
 where
@@ -234,7 +254,7 @@ where
             ));
         }
 
-        match probe_system_lua_plugin_with(file_exists) {
+        match probe_system_lua_plugin_with(plugins_dir, file_exists) {
             Ok(info) => {
                 messages.push(format!("平台 Lua 运行时: {}", info));
             }
@@ -297,7 +317,7 @@ mod tests {
             fs::write(target, "-- lua").unwrap();
         }
 
-        let report = inspect_installation_with(&dir, Some("xhup_flow"), &|_| true).unwrap();
+        let report = inspect_installation_with(&dir, Some("xhup_flow"), None, &|_| true).unwrap();
         assert!(report.lua_contract_ok);
         assert!(report.missing_core_files.is_empty());
         assert!(report.missing_lua_files.is_empty());
@@ -313,7 +333,7 @@ mod tests {
         for file in CORE_RIME_FILES {
             fs::write(dir.join(file), "# schema").unwrap();
         }
-        let report = inspect_installation_with(&dir, Some("xhup_flow"), &|_| true).unwrap();
+        let report = inspect_installation_with(&dir, Some("xhup_flow"), None, &|_| true).unwrap();
         assert!(!report.lua_contract_ok);
         assert_eq!(report.missing_lua_files.len(), 4);
         let text = report.format_report();
@@ -326,7 +346,8 @@ mod tests {
     fn inspect_static_schema_fallback() {
         let dir = create_test_dir("static");
         fs::write(dir.join("xhup_flow_static.schema.yaml"), "# static").unwrap();
-        let report = inspect_installation_with(&dir, Some("xhup_flow_static"), &|_| false).unwrap();
+        let report =
+            inspect_installation_with(&dir, Some("xhup_flow_static"), None, &|_| false).unwrap();
         assert!(report.lua_contract_ok);
         let text = report.format_report();
         assert!(text.contains("纯静态零-Lua 模式"));

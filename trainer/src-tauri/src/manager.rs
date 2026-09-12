@@ -195,21 +195,29 @@ impl RimeClient {
             Self::Squirrel => Ok("鼠须管内置 librime-lua (≥ 1.0)"),
             Self::Fcitx5 | Self::Ibus => {
                 let candidates = [
+                    "/usr/lib/rime-plugins/librime-lua.so",
                     "/usr/lib/rime-plugins/librime-plugin-lua.so",
+                    "/usr/lib/x86_64-linux-gnu/rime-plugins/librime-lua.so",
                     "/usr/lib/x86_64-linux-gnu/rime-plugins/librime-plugin-lua.so",
+                    "/usr/lib/aarch64-linux-gnu/rime-plugins/librime-lua.so",
                     "/usr/lib/aarch64-linux-gnu/rime-plugins/librime-plugin-lua.so",
+                    "/usr/lib64/rime-plugins/librime-lua.so",
                     "/usr/lib64/rime-plugins/librime-plugin-lua.so",
+                    "/usr/local/lib/rime-plugins/librime-lua.so",
                     "/usr/local/lib/rime-plugins/librime-plugin-lua.so",
                 ];
                 for path in &candidates {
                     if file_exists(Path::new(path)) {
-                        return Ok("已检测到系统 librime-plugin-lua 插件");
+                        return Ok("已检测到系统 librime-lua 插件");
                     }
                 }
-                if let Some(dir) = std::env::var_os("RIME_PLUGINS_DIR")
-                    && file_exists(&PathBuf::from(dir).join("librime-plugin-lua.so"))
-                {
-                    return Ok("已在 RIME_PLUGINS_DIR 检测到 librime-plugin-lua 插件");
+                if let Some(dir) = std::env::var_os("RIME_PLUGINS_DIR") {
+                    let p = PathBuf::from(dir);
+                    if file_exists(&p.join("librime-lua.so"))
+                        || file_exists(&p.join("librime-plugin-lua.so"))
+                    {
+                        return Ok("已在 RIME_PLUGINS_DIR 检测到 librime-lua 插件");
+                    }
                 }
                 Err(
                     "未检测到 librime-plugin-lua 插件。Debian/Ubuntu: sudo apt install librime-plugin-lua; 或选用纯静态方案 xhup_flow_static",

@@ -97,6 +97,9 @@ struct DoctorArgs {
     /// 目标方案 (xhup_flow 或 xhup_flow_static; 缺省自适应)
     #[arg(long)]
     schema: Option<String>,
+    /// 自定义 librime 插件目录 (覆盖系统与环境变量探测)
+    #[arg(long)]
+    plugins_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -284,7 +287,11 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
             }
         },
         Command::Doctor(args) => {
-            let report = doctor::inspect_installation(&args.user_data_dir, args.schema.as_deref())?;
+            let report = doctor::inspect_installation(
+                &args.user_data_dir,
+                args.schema.as_deref(),
+                args.plugins_dir.as_deref(),
+            )?;
             print!("{}", report.format_report());
             if !report.lua_contract_ok {
                 return Err(doctor::DoctorError::ContractFailed(
