@@ -157,10 +157,13 @@ static void expect_exact_order(const char *keys, const char *const *expected,
 }
 
 int main(int argc, char **argv) {
-    if (argc != 3) {
-        fprintf(stderr, "用法: %s <shared_data_dir> <user_data_dir>\n", argv[0]);
+    if (argc < 3 || argc > 4) {
+        fprintf(stderr, "用法: %s <shared_data_dir> <user_data_dir> [schema_id]\n", argv[0]);
         return 2;
     }
+    const char *schema_id = argc >= 4 ? argv[3] : "xhup_flow";
+    int is_static = strcmp(schema_id, "xhup_flow_static") == 0;
+
     rime = rime_get_api();
     if (!rime) return 2;
     RIME_STRUCT(RimeTraits, traits);
@@ -176,11 +179,12 @@ int main(int argc, char **argv) {
         rime->join_maintenance_thread();
     }
     session = rime->create_session();
-    if (!session || !rime->select_schema(session, "xhup_flow")) {
-        fprintf(stderr, "无法创建 session 或选择 xhup_flow\n");
+    if (!session || !rime->select_schema(session, schema_id)) {
+        fprintf(stderr, "无法创建 session 或选择 %s\n", schema_id);
         rime->finalize();
         return 2;
     }
+    printf("== 冒烟验证方案: %s ==\n", schema_id);
 
     /* baseline 固定层。 */
     const char *const baseline[][2] = {
@@ -198,8 +202,14 @@ int main(int argc, char **argv) {
         {"tiuici", "提示词"}, {"tiogei", "提嗯诶"},
         {"enwojtdeveyhjqkeyile", "嗯我觉得这样就可以了"},
     };
-    for (size_t i = 0; i < sizeof(reachability) / sizeof(reachability[0]); ++i) {
+    /* 静态方案不包含 flow 组句层，只验证事实单字并确认长句不被组出 */
+    size_t reach_limit = is_static ? 3 : sizeof(reachability) / sizeof(reachability[0]);
+    for (size_t i = 0; i < reach_limit; ++i) {
         expect_menu(reachability[i][0], reachability[i][1], 0);
+        reset_composition();
+    }
+    if (is_static) {
+        expect_absent("enwojtdeveyhjqkeyile", "嗯我觉得这样就可以了");
         reset_composition();
     }
 

@@ -35,6 +35,7 @@ fn artifact_set_is_exact_and_ordered() {
             "xhup_flow_learn.schema.yaml",
             "lua/xhup_flow/annotation.lua",
             "lua/xhup_flow/quick_hint.lua",
+            "lua/xhup_flow/init.lua",
             "lua/xhup_flow/data/quick_hints.lua",
             "xhup_flow.schema.yaml",
             "xhup_flow_static.schema.yaml",
@@ -252,11 +253,11 @@ fn schema_excludes_non_portable_or_deferred_features() {
     ] {
         assert!(!schema.contains(forbidden), "方案不应包含 `{forbidden}`");
     }
-    // Lua 唯一许可例外:quick_hint 简码提示(可选增强,缺失时降级);
+    // Lua 唯一许可例外:quick_hint 简码提示(2.0 mandatory Lua 合同组件);
     // 其余任何 lua 组件引用仍然禁止。
     let lua_lines: Vec<&str> = schema
         .lines()
-        .filter(|line| line.contains("lua") && !line.trim_start().starts_with('#'))
+        .filter(|line| line.contains("lua_") && !line.trim_start().starts_with('#'))
         .collect();
     assert_eq!(
         lua_lines,

@@ -119,9 +119,13 @@ fn generated_package_bytes_match_v1_release_snapshot() {
         "v1 历史发布快照记录 36845122 源码字节"
     );
 
-    // 当前 2.0 便携包扩充 annotation.lua (共 15 个产物):
+    // 当前 2.0 便携包扩充 annotation.lua 与 init.lua (共 16 个产物):
     let artifacts = generate_rime_artifacts();
-    assert_eq!(artifacts.len(), 15, "2.0 包扩充候选注释格式化模块");
+    assert_eq!(
+        artifacts.len(),
+        16,
+        "2.0 包扩充候选注释与运行时初始化诊断模块"
+    );
 
     // 冻结的 12 个静态模式与词典产物字节严格不变:
     let static_bytes: usize = artifacts
@@ -222,6 +226,15 @@ fn runtime_lua_artifacts_meet_ascii_and_decoupled_contract() {
 
     // 正常提示逻辑中不写死装饰 emoji
     assert!(!quick_hint.contents().contains("\"⚡\""));
+
+    // 运行时入口与合同诊断模块
+    let init = artifacts
+        .iter()
+        .find(|a| a.filename() == "lua/xhup_flow/init.lua")
+        .expect("init.lua 产物必须存在");
+    assert!(!init.contents().contains('\r'), "LF only");
+    assert!(init.contents().contains("check_contract"));
+    assert!(init.contents().contains("diagnose_string"));
 }
 
 #[test]

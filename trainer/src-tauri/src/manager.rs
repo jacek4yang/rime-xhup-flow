@@ -37,6 +37,7 @@ pub const OWNED_FILES: &[&str] = &[
     "xhup_flow_words.dict.yaml",
     "lua/xhup_flow/annotation.lua",
     "lua/xhup_flow/quick_hint.lua",
+    "lua/xhup_flow/init.lua",
     "lua/xhup_flow/data/quick_hints.lua",
 ];
 
@@ -176,6 +177,44 @@ impl RimeClient {
             Self::Squirrel => "在菜单栏「鼠须管」菜单中执行「重新部署」。",
             Self::Fcitx5 => "运行 fcitx5-rime 的「重新部署」,或重启 Fcitx5。",
             Self::Ibus => "运行 ibus restart,或在 IBus 设置中重新部署 Rime。",
+        }
+    }
+
+    /// 探测该客户端所在平台是否支持/内置 librime-lua。
+    pub fn probe_lua_support(&self) -> Result<&'static str, &'static str> {
+        self.probe_lua_support_with(&|p| p.is_file())
+    }
+
+    /// 探测该客户端所在平台是否支持/内置 librime-lua (支持注入文件探测器以供测试)。
+    pub fn probe_lua_support_with<F>(&self, file_exists: &F) -> Result<&'static str, &'static str>
+    where
+        F: Fn(&Path) -> bool,
+    {
+        match self {
+            Self::Weasel => Ok("小狼毫内置 librime-lua (≥ 0.15)"),
+            Self::Squirrel => Ok("鼠须管内置 librime-lua (≥ 1.0)"),
+            Self::Fcitx5 | Self::Ibus => {
+                let candidates = [
+                    "/usr/lib/rime-plugins/librime-plugin-lua.so",
+                    "/usr/lib/x86_64-linux-gnu/rime-plugins/librime-plugin-lua.so",
+                    "/usr/lib/aarch64-linux-gnu/rime-plugins/librime-plugin-lua.so",
+                    "/usr/lib64/rime-plugins/librime-plugin-lua.so",
+                    "/usr/local/lib/rime-plugins/librime-plugin-lua.so",
+                ];
+                for path in &candidates {
+                    if file_exists(Path::new(path)) {
+                        return Ok("已检测到系统 librime-plugin-lua 插件");
+                    }
+                }
+                if let Some(dir) = std::env::var_os("RIME_PLUGINS_DIR")
+                    && file_exists(&PathBuf::from(dir).join("librime-plugin-lua.so"))
+                {
+                    return Ok("已在 RIME_PLUGINS_DIR 检测到 librime-plugin-lua 插件");
+                }
+                Err(
+                    "未检测到 librime-plugin-lua 插件。Debian/Ubuntu: sudo apt install librime-plugin-lua; 或选用纯静态方案 xhup_flow_static",
+                )
+            }
         }
     }
 }
@@ -970,6 +1009,71 @@ pub fn learning_summary(user_data_dir: &Path) -> LearningSummary {
     }
 }
 
+/// Lua 运行时合同评估结果
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum LuaContractStatus {
+    /// 合同满足:主方案 xhup_flow 所需的 Lua 模块完整且平台环境满足 librime-lua 需求
+    Satisfied {
+        lua_files_count: usize,
+        platform_support: String,
+    },
+    /// 纯静态方案回退:仅使用 xhup_flow_static,零 Lua 需求
+    StaticFallback,
+    /// 缺少 Lua 文件
+    MissingLuaFiles { missing: Vec<String> },
+    /// 平台缺少 librime-lua 插件
+    PluginMissing { guidance: String },
+    /// 未安装
+    NotInstalled,
+}
+
+pub fn evaluate_lua_contract(status: &InstallStatus) -> LuaContractStatus {
+    evaluate_lua_contract_with(status, &|p| p.is_file())
+}
+
+pub fn evaluate_lua_contract_with<F>(status: &InstallStatus, file_exists: &F) -> LuaContractStatus
+where
+    F: Fn(&Path) -> bool,
+{
+    if status.installed_files == 0 {
+        return LuaContractStatus::NotInstalled;
+    }
+    let has_flow = status.schemas.contains(&FLOW_SCHEMA_ID.to_string());
+    let has_static = status.schemas.contains(&STATIC_SCHEMA_ID.to_string());
+
+    if !has_flow && has_static {
+        return LuaContractStatus::StaticFallback;
+    }
+
+    let lua_owned: Vec<&str> = OWNED_FILES
+        .iter()
+        .copied()
+        .filter(|f| f.starts_with("lua/xhup_flow/"))
+        .collect();
+    let missing_lua: Vec<String> = lua_owned
+        .iter()
+        .filter(|f| status.missing_files.iter().any(|m| m == *f))
+        .map(|s| s.to_string())
+        .collect();
+
+    if !missing_lua.is_empty() {
+        return LuaContractStatus::MissingLuaFiles {
+            missing: missing_lua,
+        };
+    }
+
+    match status.client.probe_lua_support_with(file_exists) {
+        Ok(info) => LuaContractStatus::Satisfied {
+            lua_files_count: lua_owned.len(),
+            platform_support: info.to_string(),
+        },
+        Err(guidance) => LuaContractStatus::PluginMissing {
+            guidance: guidance.to_string(),
+        },
+    }
+}
+
 /// 生成脱敏诊断报告:版本/平台/架构/客户端/文件计数与完整性/方案/
 /// 学习数据存在性/学习工具/重新部署能力;不包含学习词内容、用户
 /// 其它文件、环境变量与凭据。用户数据目录路径属必要信息予以保留。
@@ -1013,6 +1117,38 @@ pub fn diagnostics_report(
         .filter(|s| **s == FileIntegrity::Different)
         .count();
     report.push_str(&format!("完整性: 一致 {matches} / 不同 {different}\n"));
+
+    let lua_contract = evaluate_lua_contract(status);
+    match lua_contract {
+        LuaContractStatus::Satisfied {
+            lua_files_count,
+            platform_support,
+        } => {
+            report.push_str(&format!(
+                "Lua 运行时合同: 满足 (xhup_flow 拥有全部 {lua_files_count} 个 Lua 模块; {platform_support})\n"
+            ));
+        }
+        LuaContractStatus::StaticFallback => {
+            report.push_str(
+                "Lua 运行时合同: 静态方案回退 (xhup_flow_static 为纯静态零-Lua 模式,与 v1.0.0 冻结基线一致)\n",
+            );
+        }
+        LuaContractStatus::MissingLuaFiles { missing } => {
+            report.push_str(&format!(
+                "Lua 运行时合同: 未满足 - 缺少 Lua 模块文件 ({})\n",
+                missing.join(", ")
+            ));
+        }
+        LuaContractStatus::PluginMissing { guidance } => {
+            report.push_str(&format!(
+                "Lua 运行时合同: 未满足 - 系统缺少 librime-lua 插件 ({guidance})\n"
+            ));
+        }
+        LuaContractStatus::NotInstalled => {
+            report.push_str("Lua 运行时合同: (未安装)\n");
+        }
+    }
+
     report.push_str(&format!(
         "学习数据: {}\n",
         if learning.db_exists {
@@ -1413,11 +1549,79 @@ mod tests {
         assert!(report.contains("已安装版本: 1.0.0"));
         assert!(report.contains(&format!("完整性: 一致 {} / 不同 0", OWNED_FILES.len())));
         assert!(report.contains("平台: "));
+        assert!(report.contains("Lua 运行时合同: "));
         assert!(report.contains("重新部署: 手动执行("));
         assert!(
             !report.contains("default.custom.yaml"),
             "不包含用户文件内容"
         );
+        let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
+    fn lua_contract_evaluation_matrix() {
+        let user = fake_user_dir("lua-contract");
+        let package = fake_package("1.0.0");
+        execute(
+            &plan_install(&user, &package).unwrap(),
+            &user,
+            Some(&package),
+        )
+        .unwrap();
+
+        // 1. Weasel 平台: 内置支持，全部 Lua 模块在场 -> Satisfied
+        let status_weasel = install_status(&user, RimeClient::Weasel, Some(&package));
+        match evaluate_lua_contract(&status_weasel) {
+            LuaContractStatus::Satisfied {
+                lua_files_count,
+                platform_support,
+            } => {
+                assert_eq!(lua_files_count, 4);
+                assert!(platform_support.contains("小狼毫内置"));
+            }
+            other => panic!("期望 Satisfied, 实际 {other:?}"),
+        }
+
+        // 2. Fcitx5 平台在未检测到系统插件时 -> PluginMissing
+        let status_fcitx5 = install_status(&user, RimeClient::Fcitx5, Some(&package));
+        let contract_fcitx5_no_plugin = evaluate_lua_contract_with(&status_fcitx5, &|_| false);
+        match contract_fcitx5_no_plugin {
+            LuaContractStatus::PluginMissing { guidance } => {
+                assert!(guidance.contains("librime-plugin-lua"));
+                assert!(guidance.contains("xhup_flow_static"));
+            }
+            other => panic!("期望 PluginMissing, 实际 {other:?}"),
+        }
+
+        // 3. Fcitx5 平台检测到插件时 -> Satisfied
+        let contract_fcitx5_with_plugin = evaluate_lua_contract_with(&status_fcitx5, &|_| true);
+        match contract_fcitx5_with_plugin {
+            LuaContractStatus::Satisfied {
+                lua_files_count, ..
+            } => {
+                assert_eq!(lua_files_count, 4);
+            }
+            other => panic!("期望 Satisfied, 实际 {other:?}"),
+        }
+
+        // 4. 缺少 Lua 文件 -> MissingLuaFiles
+        fs::remove_file(user.join("lua/xhup_flow/init.lua")).unwrap();
+        let status_missing = install_status(&user, RimeClient::Weasel, Some(&package));
+        match evaluate_lua_contract(&status_missing) {
+            LuaContractStatus::MissingLuaFiles { missing } => {
+                assert_eq!(missing, vec!["lua/xhup_flow/init.lua"]);
+            }
+            other => panic!("期望 MissingLuaFiles, 实际 {other:?}"),
+        }
+
+        // 5. 仅使用 xhup_flow_static -> StaticFallback
+        fs::remove_file(user.join("xhup_flow.schema.yaml")).unwrap();
+        let status_static = install_status(&user, RimeClient::Weasel, Some(&package));
+        match evaluate_lua_contract(&status_static) {
+            LuaContractStatus::StaticFallback => {}
+            other => panic!("期望 StaticFallback, 实际 {other:?}"),
+        }
+
         let _ = fs::remove_dir_all(&user);
     }
 

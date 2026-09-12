@@ -76,5 +76,14 @@ done
 cc $CFLAGS -o "$work/audit" "$SCRIPT_DIR/runtime_lua_audit.c" \
   $(pkg-config --cflags --libs rime)
 
+echo "== Lua runtime 合同检查 (真实 deploy 目录) =="
+lua5.4 -e '
+package.path = "'"$deploy_dir"'/lua/?.lua;'"$deploy_dir"'/lua/?/init.lua;" .. package.path
+local xhup = require("xhup_flow")
+local report = xhup.check_contract()
+assert(report.ok, "Lua 合同检查未通过: " .. table.concat(report.errors, "; "))
+print("PASS  Lua check_contract() 成功: " .. report.version)
+'
+
 echo "== Lua quick_hint runtime 审计(真实 librime-lua) =="
 "$work/audit" "$SHARED_DATA_DIR" "$deploy_dir"

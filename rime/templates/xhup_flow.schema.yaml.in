@@ -14,8 +14,10 @@ schema:
     - xhup_flow_flow
     - xhup_flow_learn
   description: |
-    XHUP Flow 的跨平台小鹤音形方案,输入行为仅使用标准 librime 核心组件
-    (Lua 简码提示为可选增强,插件缺失时自动降级);
+    XHUP Flow 2.0 智能化双拼音形方案。本方案需要 librime-lua 运行时支持
+    (候选注释、上下文解码与运行时策略编排);在不支持或未启用 Lua 的
+    环境，请安装 librime-plugin-lua 或切换使用静态兼容方案 xhup_flow_static
+    (保留 100% 肌肉记忆与零 Lua 运行);
     当前版本提供 26 个一级简码字、core + attested 输入字符(二至四码)、
     canonical v2 词语简码(别名,不替换完整码)、hot 固定词语与完整 pinned
     secondary 词汇层；逐字两键原语保证词表外文本可参与组句;
@@ -64,8 +66,9 @@ engine:
     - table_translator@flow
     - table_translator@learn
   filters:
-    # 候选注释与简码提示(可选增强):候选注释格式化并追加 ~<简码>,只追加不重排;
-    # librime-lua 缺失时 librime 跳过该组件,输入行为不变。
+    # 候选注释与简码提示(xhup_flow mandatory Lua 运行时合同组件):
+    # 候选注释格式化并追加 ~<简码>,只追加不重排;缺失 librime-lua 时无法
+    # 提供 2.0 智能体验(需安装插件或选用 xhup_flow_static 方案)。
     # 顺序约束:注解类 filter 必须在 uniquifier 之前(与 rime-ice 等
     # 成熟方案一致)。实测(Ubuntu noble librime-lua git20230917):
     # lua_filter 位于 uniquifier 之后时,其协程 translation 会把每个

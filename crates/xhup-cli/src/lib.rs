@@ -5,6 +5,7 @@
 //! `rime_dict_manager`)提供,本 crate 不重复任何业务逻辑。
 #![forbid(unsafe_code)]
 
+pub mod doctor;
 pub mod learning;
 
 use std::error::Error;
@@ -84,6 +85,18 @@ enum Command {
     Generate(GenerateArgs),
     /// 用户词学习管理(status / export / import / reset)
     Learning(LearningArgs),
+    /// 运行环境与 Lua 合同诊断 (doctor)
+    Doctor(DoctorArgs),
+}
+
+#[derive(Debug, Args)]
+struct DoctorArgs {
+    /// Rime 用户数据目录
+    #[arg(long)]
+    user_data_dir: PathBuf,
+    /// 目标方案 (xhup_flow 或 xhup_flow_static; 缺省自适应)
+    #[arg(long)]
+    schema: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -140,6 +153,8 @@ pub enum CliError {
     },
     /// 学习管理失败(status / export / import / reset)。
     Learning(learning::LearningError),
+    /// 诊断检查失败。
+    Doctor(doctor::DoctorError),
 }
 
 impl fmt::Display for CliError {
@@ -160,6 +175,7 @@ impl fmt::Display for CliError {
                 write!(f, "无法替换最终产物 {}: {source}", artifact.display())
             }
             Self::Learning(source) => write!(f, "{source}"),
+            Self::Doctor(source) => write!(f, "{source}"),
         }
     }
 }
@@ -171,6 +187,7 @@ impl Error for CliError {
             | Self::WriteTemporaryFile { source, .. }
             | Self::ReplaceArtifact { source, .. } => Some(source),
             Self::Learning(source) => Some(source),
+            Self::Doctor(source) => Some(source),
             Self::OutputNotDirectory { .. } => None,
         }
     }
@@ -179,6 +196,12 @@ impl Error for CliError {
 impl From<learning::LearningError> for CliError {
     fn from(source: learning::LearningError) -> Self {
         Self::Learning(source)
+    }
+}
+
+impl From<doctor::DoctorError> for CliError {
+    fn from(source: doctor::DoctorError) -> Self {
+        Self::Doctor(source)
     }
 }
 
@@ -260,6 +283,17 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                 Ok(())
             }
         },
+        Command::Doctor(args) => {
+            let report = doctor::inspect_installation(&args.user_data_dir, args.schema.as_deref())?;
+            print!("{}", report.format_report());
+            if !report.lua_contract_ok {
+                return Err(doctor::DoctorError::ContractFailed(
+                    "Lua 运行时合同未满足，详情见上方报告".to_string(),
+                )
+                .into());
+            }
+            Ok(())
+        }
     }
 }
 

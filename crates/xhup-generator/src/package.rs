@@ -16,8 +16,9 @@
 //! (含 package version)与相同模板下,生成结果字节级一致。
 
 use crate::lua_hints::{
-    LUA_ANNOTATION_FILENAME, LUA_QUICK_HINT_DATA_FILENAME, LUA_QUICK_HINT_FILENAME,
-    generate_lua_quick_hints_data, lua_annotation_source, lua_quick_hint_source,
+    LUA_ANNOTATION_FILENAME, LUA_INIT_FILENAME, LUA_QUICK_HINT_DATA_FILENAME,
+    LUA_QUICK_HINT_FILENAME, generate_lua_quick_hints_data, lua_annotation_source, lua_init_source,
+    lua_quick_hint_source,
 };
 use crate::rime::{RIME_CHAR_DICTIONARY_FILENAME, generate_rime_char_dictionary};
 use crate::rime_fixed_first_shortcuts::{
@@ -193,6 +194,10 @@ pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
         RimeArtifact {
             filename: LUA_QUICK_HINT_FILENAME,
             contents: lua_quick_hint_source().to_string(),
+        },
+        RimeArtifact {
+            filename: LUA_INIT_FILENAME,
+            contents: lua_init_source().to_string(),
         },
         RimeArtifact {
             filename: LUA_QUICK_HINT_DATA_FILENAME,
