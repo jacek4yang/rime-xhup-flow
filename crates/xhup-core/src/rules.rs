@@ -211,14 +211,14 @@ impl RuleId {
                 false,
             ),
             Self::MonotoneShortcut => (
-                "flow-v1-policy",
+                "flow-v2-compiler-policy",
                 L::CompilerPolicy,
                 D::Shortcut,
                 "F* I* with at least one I; assignment/ranking remains compiler policy",
                 false,
             ),
             Self::LegacyShortcut => (
-                "flow-v1-policy",
+                "flow-v2-compiler-policy",
                 L::CompilerPolicy,
                 D::Shortcut,
                 "legacy F/I projection; preserved assignment is not proof of official attestation",
