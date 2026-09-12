@@ -9,6 +9,10 @@
 
 ## 数据层
 
+统一来源注册表为 `sources.tsv`；它复用下列既有证据，不复制第二套字符表。
+证据类型、激活决议、离线导出及 `knowledge-audit` 命令见
+[知识库文档](../../docs/knowledge-base.md)。
+
 - `official_char_code_oracle.tsv`：通过小鹤官网查形页及其
   `ixdata.json` 核验的少量兼容性事实。官网没有明确的可再分发数据许可，故这里只
   记录回归所需的事实、稳定 oracle/parser 版本与完整响应哈希，不镜像全站数据，

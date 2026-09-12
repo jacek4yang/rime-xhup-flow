@@ -24,6 +24,7 @@ mod analysis;
 mod char_codes;
 mod fixed_first_shortcuts;
 mod frequency;
+pub mod knowledge;
 mod lua_hints;
 mod merged_ranking;
 mod package;

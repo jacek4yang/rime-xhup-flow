@@ -24,6 +24,7 @@ pub mod dynamic;
 pub mod evidence;
 pub mod export_v2;
 pub mod frequency;
+pub mod knowledge;
 pub mod mapping_v2;
 pub mod occupancy;
 pub mod optimize;

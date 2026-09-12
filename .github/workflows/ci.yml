@@ -95,6 +95,9 @@ jobs:
           --input data/corpus/replay_fixture.txt
           --baseline data/corpus/replay_baseline.json
 
+      - name: 知识库来源与证据审计
+        run: cargo run --locked -p xhup-analyzer --bin knowledge-audit -- --check
+
       - name: 上下文联合分段 foundation 基线
         run: >
           cargo run --locked -p xhup-analyzer --bin contextual-bench --
