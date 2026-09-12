@@ -1,18 +1,20 @@
 # Lua 运行时策略层架构(XHUP Flow)
 
-状态:**quick_hint 已落地并经验证**(#59,CI librime runtime integration 全绿);
+状态:**quick_hint、annotation 与 mandatory Lua 合同诊断已落地**(#59, #88, CI 全绿);
 其余模块按本文规划推进。依据:docs/research-runtime-and-references.md;
 本文只记录决策、权衡与不变量。
 
 ## 0. 定位
 
-Rust 负责全局、确定性、可复现的离线计算(静态层与简码映射);Lua 只做
-**轻量、有界、可降级的运行时策略**:
+Rust 负责全局、确定性、可复现的离线计算(静态层与简码映射);Lua 承载
+**轻量、有界、上下文驱动的运行时控制面**:
 
+- 主方案 `xhup_flow` 执行 **2.0 mandatory Lua 合同**:需要 `librime-lua` 运行时支持(候选注释、上下文解码与运行时策略编排);
+- 静态方案 `xhup_flow_static` **永久保留为纯静态零-Lua 兼容基线**:零 Lua 依赖、零学习、零网络，100% 保持 v1.0.0 冻结肌肉记忆;
 - 不重排静态冻结候选(FROZEN STATIC 契约红线);
 - 不实现离线优化器的任何职责;
 - 不产生网络请求、不读写用户隐私数据外泄;
-- Lua 不可用的环境必须完整回退到纯静态行为。
+- 2.0 主方案缺少 librime-lua 时必须通过 `xhup-cli doctor` 与 Trainer 明确报警并给出安装指引，不能继续以“完整 Flow”名义静默降级;此时用户可选用 `xhup_flow_static`。
 
 ## 1. 加载机制:零 rime.lua
 
@@ -60,12 +62,13 @@ librime-lua git20230917 的协程 translation 在 lua_filter 位于 uniquifier
 上游产生的重复。模板 `rime/templates/*.yaml.in` 已固化该顺序并注释依据,
 run-lua-audit.sh 断言 quick_hint 不改变候选次序作为回归守卫。
 
-产品形态:
+产品形态与合同:
 
-- `xhup_flow`(默认,现代模式):静态层 + Flow + 学习 + Lua 策略;
-- `xhup_flow_static`:纯静态,无 Lua、无学习(调试/基准/隐私敏感)。
-
-Lua 全部功能在静态方案下缺席即视为正常。
+- `xhup_flow`(默认, 2.0 智能化主方案): 静态层 + Flow + 学习 + mandatory Lua 策略层。
+  依赖 librime-lua 运行时; 缺少插件时由 `xhup-cli doctor` 与 Trainer 明确报警并给出安装指引,
+  不静默降级为“未增强的半成品”。
+- `xhup_flow_static`(永久保留兼容方案): 纯静态, 零 Lua、零学习、零网络(调试/基准/隐私敏感/无插件环境)。
+  与 v1.0.0 冻结肌肉记忆 100% 一致。Lua 在静态方案下缺席即视为正常预期。
 
 ## 3. 模块规划(小而专,反巨型单文件)
 

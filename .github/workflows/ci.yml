@@ -229,9 +229,9 @@ jobs:
           cmp /tmp/open-composition.manifest /tmp/open-composition.second.manifest
           cargo build -p xhup-cli --locked
 
-      # 降级语义门禁:主方案引用 lua_filter 但环境无 librime-lua 时,
-      # librime 必须跳过该组件且全部输入行为完整(docs/lua-runtime.md §2)。
-      - name: librime session 冒烟(无 Lua 插件降级路径 + canonical v2 哨兵)
+      # 纯静态回退与无插件降级门禁: xhup_flow_static 保持零 Lua 运行,
+      # 主方案 xhup_flow 在无插件环境亦能安全回退(docs/lua-runtime.md §2)。
+      - name: librime session 冒烟(纯静态回退 + canonical v2 哨兵)
         run: tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
 
       - name: 安装 librime-lua 插件与 Lua 解释器
@@ -240,11 +240,17 @@ jobs:
             librime-plugin-lua \
             lua5.4
 
+      - name: Lua runtime 合同与自检单测(lua5.4,不依赖 librime)
+        run: lua5.4 tests/lua/test_contract.lua
+
       - name: Lua quick_hint 纯逻辑单测(lua5.4,不依赖 librime)
         run: lua5.4 tests/lua/test_quick_hint.lua
 
       - name: Lua quick_hint 模块级仿真(真实生成数据 + require 路径约定)
         run: lua5.4 tests/lua/sim_quick_hint.lua /tmp/xhup-flow-package
+
+      - name: xhup-cli doctor 运行环境与 Lua 合同诊断
+        run: target/debug/xhup-cli doctor --user-data-dir /tmp/xhup-flow-package
 
       - name: librime Lua quick_hint 审计(真实插件:提示注释 + 次序不变)
         run: tests/librime/run-lua-audit.sh /tmp/xhup-flow-package

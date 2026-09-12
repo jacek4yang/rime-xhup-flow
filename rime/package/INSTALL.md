@@ -27,16 +27,15 @@ clients: Weasel (Windows), Squirrel (macOS), Fcitx5-Rime / IBus-Rime
 | `xhup_flow_flow.schema.yaml` | 词典编译 wrapper(同上) |
 | `xhup_flow_learn.schema.yaml` | 词典编译 wrapper(同上) |
 | `lua/xhup_flow/annotation.lua` | 候选注释格式化模块(极简纯 ASCII,清洗装饰标记) |
-| `lua/xhup_flow/quick_hint.lua` | 简码提示模块(可选增强,需 librime-lua) |
+| `lua/xhup_flow/quick_hint.lua` | 简码提示模块(追加纯 ASCII 简码注释) |
+| `lua/xhup_flow/init.lua` | Lua 命名空间入口与运行时合同自检模块 |
 | `lua/xhup_flow/data/quick_hints.lua` | 简码提示数据(生成器产出) |
 | `INSTALL.md` | 本说明(部署时无需复制) |
 
-**Lua 简码提示与候选注释(可选)**:在有 librime-lua 的环境(小狼毫 ≥0.15、鼠须管
-≥1.0、fcitx5-android、安装 `librime-plugin-lua` 的 Linux 桌面),主方案的
-quick_hint filter 会给有可用简码的候选追加 `~<简码>` 注释(纯 ASCII,默认开,
-可在方案开关中关闭);无 librime-lua 时组件被跳过,输入行为完全不变。
-本包不携带 `rime.lua`,也不触碰用户 `lua/` 目录下 `lua/xhup_flow/`
-以外的任何文件。
+**Lua 运行时合同与方案选择**:
+- 主方案 `xhup_flow`: 2.0 智能化主方案, 要求 `librime-lua` 运行时支持(在小狼毫 ≥0.15、鼠须管 ≥1.0、fcitx5-android 或安装了 `librime-plugin-lua` 的 Linux 桌面天然支持)。可通过 `xhup-cli doctor` 检查合同满足状态。
+- 纯静态方案 `xhup_flow_static`: 永久保留的纯静态方案, 零 Lua、零学习、零网络，100% 保留 v1.0.0 冻结肌肉记忆。若环境未安装 librime-lua 插件或需要最高度离线/基准对照，推荐选用该方案。
+- 本包完全遵循零 `rime.lua` 架构, 绝不触碰用户 `lua/` 目录下 `lua/xhup_flow/` 以外的任何文件。
 
 **为什么有 wrapper schema**:PRIMARY 与 FIXED_FIRST 是主词典的导入表；
 Flow / Learn 独立词典则经主方案 `schema/dependencies` 指向同名 wrapper

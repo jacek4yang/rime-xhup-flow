@@ -98,9 +98,12 @@ cat > "$smoke_dir/default.custom.yaml" <<'EOF'
 patch:
   schema_list/+:
     - schema: xhup_flow
+    - schema: xhup_flow_static
   menu/page_size: 500
 EOF
 rime_deployer --compile "$smoke_dir/xhup_flow.schema.yaml" "$smoke_dir" \
+  "$SHARED_DATA_DIR" >/dev/null
+rime_deployer --compile "$smoke_dir/xhup_flow_static.schema.yaml" "$smoke_dir" \
   "$SHARED_DATA_DIR" >/dev/null
 for dict in xhup_flow_flow xhup_flow_learn; do
   compile_package_dict_isolated "$dict" "$smoke_dir"
@@ -108,5 +111,7 @@ done
 
 cc $CFLAGS -o "$work/runtime_smoke" "$SCRIPT_DIR/runtime_smoke.c" \
   $(pkg-config --cflags --libs rime)
-echo "== canonical v2 production 冒烟 =="
-"$work/runtime_smoke" "$SHARED_DATA_DIR" "$smoke_dir"
+echo "== canonical v2 production 冒烟 (xhup_flow) =="
+"$work/runtime_smoke" "$SHARED_DATA_DIR" "$smoke_dir" xhup_flow
+echo "== 纯静态零-Lua 回退方案冒烟 (xhup_flow_static) =="
+"$work/runtime_smoke" "$SHARED_DATA_DIR" "$smoke_dir" xhup_flow_static

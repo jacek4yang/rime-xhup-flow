@@ -15,6 +15,9 @@ pub const LUA_ANNOTATION_FILENAME: &str = "lua/xhup_flow/annotation.lua";
 /// 简码提示模块产物文件名(入库源码,相对包根)。
 pub const LUA_QUICK_HINT_FILENAME: &str = "lua/xhup_flow/quick_hint.lua";
 
+/// Lua 命名空间入口与合同诊断模块产物文件名(入库源码,相对包根)。
+pub const LUA_INIT_FILENAME: &str = "lua/xhup_flow/init.lua";
+
 /// 简码提示数据产物文件名(生成器产出,相对包根)。
 pub const LUA_QUICK_HINT_DATA_FILENAME: &str = "lua/xhup_flow/data/quick_hints.lua";
 
@@ -24,6 +27,9 @@ const ANNOTATION_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/annota
 /// 简码提示模块源(入库源码,与模板同法嵌入)。
 const QUICK_HINT_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/quick_hint.lua");
 
+/// Lua 命名空间入口与合同诊断模块源(入库源码,与模板同法嵌入)。
+const INIT_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/init.lua");
+
 /// 候选注释模块源文本(逐字嵌入,未经任何改写)。
 pub fn lua_annotation_source() -> &'static str {
     ANNOTATION_SOURCE
@@ -32,6 +38,11 @@ pub fn lua_annotation_source() -> &'static str {
 /// 简码提示模块源文本(逐字嵌入,未经任何改写)。
 pub fn lua_quick_hint_source() -> &'static str {
     QUICK_HINT_SOURCE
+}
+
+/// Lua 命名空间入口与合同诊断模块源文本(逐字嵌入,未经任何改写)。
+pub fn lua_init_source() -> &'static str {
+    INIT_SOURCE
 }
 
 /// 生成简码提示数据模块文本(Lua table,词 → 最简码)。

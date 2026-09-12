@@ -86,5 +86,7 @@ done
 
 cc $CFLAGS -o "$work/runtime_smoke" "$SCRIPT_DIR/runtime_smoke.c" \
   $(pkg-config --cflags --libs rime)
-echo "== 对 --build 部署的 runtime 冒烟 =="
-"$work/runtime_smoke" "$shared_dir" "$deploy_dir"
+echo "== 对 --build 部署的 runtime 冒烟 (xhup_flow) =="
+"$work/runtime_smoke" "$shared_dir" "$deploy_dir" xhup_flow
+echo "== 对 --build 部署的 runtime 冒烟 (xhup_flow_static) =="
+"$work/runtime_smoke" "$shared_dir" "$deploy_dir" xhup_flow_static

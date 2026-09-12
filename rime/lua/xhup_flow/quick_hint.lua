@@ -12,13 +12,16 @@
 -- 性能:映射表 init 一次性加载(require 缓存),func 内每候选一次 O(1)
 -- 哈希查询,零 IO、零大临时表。
 
-local hints = require("xhup_flow.data.quick_hints")
-local annotation = require("xhup_flow.annotation")
+local ok_hints, loaded_hints = pcall(function() return require("xhup_flow.data.quick_hints") end)
+local hints = (ok_hints and type(loaded_hints) == "table") and loaded_hints or {}
+
+local ok_ann, loaded_ann = pcall(function() return require("xhup_flow.annotation") end)
+local annotation = (ok_ann and type(loaded_ann) == "table") and loaded_ann or nil
 
 -- 纯决策逻辑(脱离 librime 可单测):返回可用的最优简码，或 nil。
 -- 仅在简码严格短于当前输入时提示(更长的码没有提示价值)。
 local function should_hint(input, text, map)
-  local hint = map[text]
+  local hint = map and map[text] or nil
   if hint == nil or hint == input or #hint >= #input then
     return nil
   end
@@ -28,7 +31,7 @@ end
 -- 兼容旧单测/对外辅助入口:返回格式化后的简码提示字符串或 nil
 local function decorate(input, text, map)
   local hint = should_hint(input, text, map)
-  if not hint then
+  if not hint or not annotation then
     return nil
   end
   return annotation.format_shortcut_hint(hint)
@@ -36,9 +39,18 @@ end
 
 local function init(env)
   env.hints = hints
+  env.annotation = annotation
 end
 
 local function func(translation, env)
+  local ann = env.annotation or annotation
+  if not ann then
+    for cand in translation:iter() do
+      yield(cand)
+    end
+    return
+  end
+
   local show_hint = env.engine.context:get_option("quick_hint")
   local is_debug = env.engine.context:get_option("debug_candidate_annotations")
   local input = env.engine.context.input
@@ -50,7 +62,7 @@ local function func(translation, env)
     end
 
     local orig_comment = cand.comment
-    local new_comment = annotation.format_candidate_comment(
+    local new_comment = ann.format_candidate_comment(
       orig_comment,
       hint_code,
       cand.type,
