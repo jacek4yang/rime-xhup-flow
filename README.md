@@ -176,6 +176,7 @@ Flow(组句学习)与 Static(纯静态)一起安装;在输入法的方案菜单�
 - 架构与数据流水线:[docs/architecture.md](docs/architecture.md)。
 - XHUP Flow 2.0 workstream（当前仅基础、无生产行为变化）:
   [docs/architecture-v2.md](docs/architecture-v2.md)。
+- 官方规则、Flow 扩展与离线兼容审计:[docs/xhup-rules.md](docs/xhup-rules.md)。
 - 开发约束与验证命令:[AGENTS.md](AGENTS.md)、[CONTRIBUTING.md](CONTRIBUTING.md)。
 - 训练器说明:[trainer/README.md](trainer/README.md)。
 - 发布前的人工验收清单:[docs/release-readiness.md](docs/release-readiness.md)。

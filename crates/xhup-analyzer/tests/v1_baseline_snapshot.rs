@@ -106,6 +106,49 @@ fn generated_package_bytes_match_v1_release_snapshot() {
 }
 
 #[test]
+fn artifact_content_matches_independent_v1_release_hashes() {
+    use std::collections::BTreeMap;
+    use xhup_analyzer::export_v2::sha256_hex;
+    let mut actual: BTreeMap<_, _> = generate_rime_artifacts()
+        .into_iter()
+        .map(|artifact| {
+            (
+                artifact.filename().to_string(),
+                sha256_hex(artifact.contents().as_bytes()),
+            )
+        })
+        .collect();
+    actual.insert(
+        "xhup_flow_trainer.json".into(),
+        sha256_hex(xhup_generator::generate_trainer_dataset().as_bytes()),
+    );
+    let mut expected = BTreeMap::new();
+    let manifest = include_str!("../../../data/benchmarks/v1-artifact-hashes.tsv");
+    assert!(manifest.starts_with("# xhup-v1-artifact-hashes/v1\n"));
+    assert!(manifest.contains("# source: https://github.com/jacek4yang/rime-xhup-flow/releases/download/xhup-flow-v1.0.0/CANONICAL-SHA256SUMS.txt\n"));
+    assert!(manifest.contains("# upstream manifest SHA-256: 3f1baa21104266f06973f47a5464f2a4d07dde2048fa3d2a5c6ecccee93a6558\n"));
+    for line in manifest.lines().filter(|l| !l.starts_with('#')) {
+        let (path, hash) = line
+            .split_once('\t')
+            .expect("strict two-column release fixture");
+        assert_eq!(hash.len(), 64);
+        assert!(
+            hash.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        );
+        assert!(
+            expected
+                .insert(path.to_string(), hash.to_string())
+                .is_none()
+        );
+    }
+    assert_eq!(
+        actual, expected,
+        "frozen static artifacts must match the independently published v1 release"
+    );
+}
+
+#[test]
 fn replay_totals_match_v1_release_snapshot() {
     let doc = snapshot();
     let report = Replayer::new(&ReplayCostModel::default()).replay_corpus(REPLAY_FIXTURE.lines());

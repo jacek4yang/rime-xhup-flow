@@ -17,6 +17,7 @@ mod input_syllable;
 mod key;
 pub mod knowledge;
 mod layout;
+pub mod rules;
 mod sequence;
 mod shape;
 

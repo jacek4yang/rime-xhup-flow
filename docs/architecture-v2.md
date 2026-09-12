@@ -1,6 +1,6 @@
 # XHUP Flow 2.0 架构
 
-状态：**里程碑 1 基础已实现，生产输入行为未改变**。umbrella 追踪见
+状态：**里程碑 1 基础与里程碑 2 知识库已合并；规则模型独立交付，生产行为未改变**。umbrella 追踪见
 [GitHub #83](https://github.com/jacek4yang/rime-xhup-flow/issues/83)。v1 当前实现与
 发布契约仍以 [architecture.md](architecture.md) 为准；本文件定义后续 PR 的目标
 边界和可执行顺序。
@@ -13,7 +13,8 @@ XHUP Knowledge Base
   attested + generated codes / frequency / variants / evidence
         ↓
 XHUP Flow Compiler (Rust, deterministic + explainable)
-  v1 compatibility constraints + XHUP rules + lexical/corpus evidence
+  prefix-closed trie / candidate slots (code, rank)
+  XHUP rules + lexical/corpus evidence + migration costs
         ↓
 compiled deterministic artifacts
   native Rime tables + compact model/index metadata
@@ -22,7 +23,7 @@ librime + mandatory librime-lua (main xhup_flow)
         ↓
 Contextual Joint Decoder
   raw keys + committed left context + composition + local user state
-  lattice → bounded Beam/Viterbi → deterministic Top-K
+  joint key/text lattice → bounded Beam/Viterbi → deterministic Top-K
         ↓
 local user learning (versioned, resettable, private)
 ```
@@ -32,9 +33,9 @@ librime-lua 时必须明确失败并给安装诊断，不能继续以“完整 F
 
 ## 不变量
 
-1. `xhup-flow-v1.0.0` 是不可变兼容输入。既有字符全码、canonical 简码、静态
-   exact 菜单相对顺序/top1、传统高价值 alias、`xhup_flow_user` 身份与迁移语义
-   不得静默改变。
+1. `xhup-flow-v1.0.0` 是不可变兼容输入。`xhup_flow_static` 永久冻结精确映射、
+   菜单顺序/top1 与行为；智能 `xhup_flow` 保留接受的 legacy/XHUP 码和文本可达性，
+   可在明确政策、基准与回归测试下动态排序。`xhup_flow_user` 身份与迁移语义不变。
 2. 编译器决定码位质量，不决定有效文本是否可达。词库影响排名，不定义可达语言：
 
    ```text
@@ -49,6 +50,8 @@ librime-lua 时必须明确失败并给安装诊断，不能继续以“完整 F
    随机顺序。
 5. 解码必须显式有界。Lua 不承载巨型词典、不做每键磁盘 I/O、不物化无界候选，
    弱证据向 v1 确定性顺序回退。
+6. `valid prefix != commit boundary`。例如 `uior` 的 `u/ui/uio/uior` 都是合法查询
+   状态，节点是有序候选空间而非某个词的专属码；短码首选不自动提交。
 
 机器可读的 v1 锚点在
 [`data/benchmarks/v1-static-baseline.json`](../data/benchmarks/v1-static-baseline.json)，
@@ -57,6 +60,7 @@ librime-lua 时必须明确失败并给安装诊断，不能继续以“完整 F
 ## crate 与运行时边界
 
 多源字符证据、确定性来源与冲突审计见 [knowledge-base.md](knowledge-base.md)。
+官方规则、历史实现、Flow 编译政策/扩展的边界和独立夹具见 [xhup-rules.md](xhup-rules.md)。
 
 | 层 | 当前/目标职责 |
 | --- | --- |
@@ -96,6 +100,10 @@ LatticeEdge {
 ```
 
 同一 span、重叠 span 与不同长度 span 可同时存在，候选来源类别不决定可达性。
+生产适配将接收 prefix-space 合同：同一位置可同时有 `u/ui/uio/uior` 的变长 key spans，
+每条边连接字符、词、扩展词、用户词、别名或 OOV 原语。目标是联合最大化
+`P(text, word_segmentation, key_segmentation | raw_keys, left_context, user_state)`，
+不能先固定按键分段再只优化文本。
 完整路径必须从 `0` 连续覆盖到 `raw_input.len`，同时表达 surface text 和 segmentation。
 里程碑 1 的 `complete_paths(limit)` 仅用于小 fixture，调用必须传非零硬上限并返回
 `truncated`；生产实现不得先全量枚举，将改为按 position/state 合并的 bounded
@@ -139,30 +147,25 @@ seed fixture 来自已固定万象词频与 KdConv 派生存在性证据，先�
 
 ## 静态与动态层策略
 
-初始保护策略保持：
-
-```text
-immutable v1 static exact candidates
-  > trusted/high-confidence learned candidates
-  > contextual sentence candidates
-  > low-confidence OOV fallback
-```
-
-任何允许 context 越过静态候选的提案都必须先定义受保护 static class、promotion 条件、
-置信度阈值、解释字段与 differential regression fixture，并由人工产品决策批准。禁止
-引入“Lua 全局重排所有候选”的泛化 filter。
+当前 v1 运行时仍优先保护静态候选，本规则 PR 不改它。该实现不是智能 Flow 的永久
+排名限制：产品政策已允许上下文改变主方案首选，必须有界、可解释、可测量，并保留
+接受码与开放可达性。`xhup_flow_static` 则始终保持 v1 精确顺序与行为。
+正常菜单只显示最小 ASCII 注释；丰富 `[CTX]/[USR]/[OOV]` 信息限显式 debug/Trainer。
 
 ## 交付顺序
 
 1. **已建立**：v1 机器基线、本文、context benchmark v1、runtime context、lattice/path、
    deterministic scorer、frequency+segmentation baseline 与 CI 门禁；生产行为零变化。
-2. 知识库 evidence schema、冲突决议、来源/许可与“为何支持”审计；不设置新字符硬上限。
+2. **已合并 #85**：知识库 evidence schema、冲突决议、来源/许可与“为何支持”审计；无新字符硬上限。
 3. XHUP 双拼/形码/全码/简码规则形式化与 v1 compatibility fixture。
-4. `xhup_flow` mandatory Lua 合同、真实模块加载诊断、跨平台包装与 librime E2E。
-5. native lookup → runtime lattice；接入真实 committed context 与首个 n-gram scorer。
-6. bounded Beam/Viterbi Top-K、低置信度回退、解释 breakdown 与性能基准。
-7. 本地用户 context/segmentation 学习、版本/迁移/损坏回退/重置/导入导出。
-8. Trainer explanation、首次 deploy 优化、Windows/Linux/macOS/Android 验证和 2.0 发布。
+4. Prefix-Space Compiler v3：前缀闭合 trie、多位置候选槽位、全局目标与 v2 对照基准；
+   先评估 assignment/min-cost-flow 加拥塞/熵项迭代重加权，不只调 v2 系数或优化 KSPC。
+   频率、击键/rank/collision、前缀/邻域外部性、分段歧义、XHUP 偏离及迁移成本都需解释。
+5. 独立候选注释清理；`xhup_flow` mandatory Lua 合同、模块加载诊断、包装与 librime E2E。
+6. native lookup → production key/text lattice 与候选融合；接入真实 committed context 和 n-gram scorer。
+7. bounded Beam/Viterbi 联合 key/text Top-K、低置信度回退、解释 breakdown 与性能基准。
+8. 本地用户 context/segmentation 学习、版本/迁移/损坏回退/重置/导入导出。
+9. Trainer explanation、首次 deploy 优化、Windows/Linux/macOS/Android 验证和 2.0 发布。
 
-在第 5–7 步通过真实 librime-lua、同输入不同上下文不同 top path、OOV 可达、v1 static
+在第 6–8 步通过真实 librime-lua、同输入不同上下文不同 top path、OOV 可达、v1 static
 差异 0、学习重启持久化及 p95/p99/内存门禁前，不得宣称 contextual decoder 完成。

@@ -98,6 +98,9 @@ jobs:
       - name: 知识库来源与证据审计
         run: cargo run --locked -p xhup-analyzer --bin knowledge-audit -- --check
 
+      - name: XHUP 独立规则与兼容夹具审计
+        run: cargo run --locked -p xhup-analyzer --bin xhup-rule-audit -- --summary --check
+
       - name: 上下文联合分段 foundation 基线
         run: >
           cargo run --locked -p xhup-analyzer --bin contextual-bench --
