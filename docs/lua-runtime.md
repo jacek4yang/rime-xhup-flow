@@ -72,7 +72,8 @@ Lua 全部功能在静态方案下缺席即视为正常。
 ```text
 lua/xhup_flow/
 ├── init.lua                # 命名空间出口(可选,*语法不依赖它)
-├── quick_hint.lua          # 简码提示(filter,只追加 comment)
+├── annotation.lua          # 候选注释格式化(极简 ASCII、清洗装饰标记、类型解耦)
+├── quick_hint.lua          # 简码提示(filter,委托 annotation 格式化 comment)
 ├── candidate_control.lua   # 本地置顶/降频/隐藏(processor+filter 双入口)
 ├── context_ranker.lua      # 有界上下文调序(filter,仅前 3~5 候选)
 ├── sentence_policy.lua     # 简码与组句交互策略(随 Flow 重设计落地)
@@ -84,19 +85,20 @@ lua/xhup_flow/
 
 ## 4. 各模块语义与不变量
 
-### 4.1 quick_hint(简码提示)— 已落地(#59)
+### 4.1 quick_hint 与 annotation(候选注释与简码提示)
 
-用户键入较长码时,候选注释显示 `⚡<简码>`(如 `时间` 候选注释 `⚡uij`)。
+用户键入较长码时,候选注释显示 `~<简码>`(纯 ASCII 极简呈现,如 `时间` 候选注释 `~uij`)。
 
-- 只写 candidate comment,**绝不**改变候选次序(与冻结契约兼容;
-  run-lua-audit.sh 逐码断言次序不变);
-- 数据源:init 时从生成器产出的简码映射文件一次性加载为哈希表
-  (O(1) 查询),热路径零 IO;每候选恰好 yield 一次(重复候选问题
-  由 filter 顺序保证,不在 Lua 内去重 —— 见 §2 不变量);
-- 默认开启可配置(schema switch);Trainer 练习模式的答案泄露规则是
-  独立约束,正常输入提示不得影响练习测试;
-- 纯逻辑单测 tests/lua/test_quick_hint.lua(lua5.4,不依赖 librime)+
-  模块级仿真 tests/lua/sim_quick_hint.lua(真实生成数据 + require 路径)。
+- **极简纯 ASCII 呈现**:正常模式下只输出纯 ASCII 简码前缀 `~` 与代码,绝不污染 emoji(无 `⚡`、`🔥`、`🧠`、`⭐` 等);
+- **装饰与引擎标记清洗**:
+  - 调研与根因溯源:librime C++ 核心 `src/rime/gear/table_translator.cc` 中 `kUnitySymbol = " \xe2\x98\xaf "`(`☯`, U+262F),在 `TableTranslation::Peek()` 中对由 `UnityTableEncoder` 构造的用户词条(`user_table`)自动追加该符号;
+  - `annotation.lua` 在正常模式下清洗 `⚡`、`☯` 及常见装饰 emoji 并规范化空格,同时保证绝不误伤任何多字节 UTF-8 CJK 字符;
+- **候选集类型解耦与可信调试**:
+  - 简码提示决策与注释展示完全解耦;
+  - 提供 `debug_candidate_annotations` 方案开关(默认 0 关闭);开启后输出经代码证实的元数据标签(`cand.type == "sentence"` 对应 `[S]`, `user_table` 对应 `[USR]`),不在前端做臆测标签;
+- **不变量约束**:只写 candidate comment,**绝不**改变候选文本(`cand.text`)、**绝不**改变候选次序与 rank(与冻结静态契约 100% 兼容);
+- **数据源与性能**:init 时从生成器产出的简码映射文件一次性加载为哈希表(O(1) 查询),热路径零 IO;每候选恰好 yield 一次;
+- **测试覆盖**:纯逻辑单测 `tests/lua/test_quick_hint.lua`(23 项断言覆盖清洗、ASCII、语义保留与调试模式)+ 模块级仿真 `tests/lua/sim_quick_hint.lua`(真实 68,842 条生成数据 + require 路径)+ C 级 runtime 审计 `tests/librime/runtime_lua_audit.c`。
 
 **行尾不变量**:`*.lua` 受 `.gitattributes` `text eol=lf` 约束 ——
 Trainer 打包用 `include_str!` 按字节嵌入 Lua 源,Windows autocrlf 转出的

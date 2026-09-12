@@ -26,13 +26,14 @@ clients: Weasel (Windows), Squirrel (macOS), Fcitx5-Rime / IBus-Rime
 | `xhup_flow_learn.dict.yaml` | Flow 学习词典(导入组句词典并补充全码原语) |
 | `xhup_flow_flow.schema.yaml` | 词典编译 wrapper(同上) |
 | `xhup_flow_learn.schema.yaml` | 词典编译 wrapper(同上) |
+| `lua/xhup_flow/annotation.lua` | 候选注释格式化模块(极简纯 ASCII,清洗装饰标记) |
 | `lua/xhup_flow/quick_hint.lua` | 简码提示模块(可选增强,需 librime-lua) |
 | `lua/xhup_flow/data/quick_hints.lua` | 简码提示数据(生成器产出) |
 | `INSTALL.md` | 本说明(部署时无需复制) |
 
-**Lua 简码提示(可选)**:在有 librime-lua 的环境(小狼毫 ≥0.15、鼠须管
+**Lua 简码提示与候选注释(可选)**:在有 librime-lua 的环境(小狼毫 ≥0.15、鼠须管
 ≥1.0、fcitx5-android、安装 `librime-plugin-lua` 的 Linux 桌面),主方案的
-quick_hint filter 会给有可用简码的候选追加 `⚡<简码>` 注释(默认开,
+quick_hint filter 会给有可用简码的候选追加 `~<简码>` 注释(纯 ASCII,默认开,
 可在方案开关中关闭);无 librime-lua 时组件被跳过,输入行为完全不变。
 本包不携带 `rime.lua`,也不触碰用户 `lua/` 目录下 `lua/xhup_flow/`
 以外的任何文件。

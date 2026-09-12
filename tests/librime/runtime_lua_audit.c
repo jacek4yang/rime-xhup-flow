@@ -1,12 +1,14 @@
-/* XHUP Flow Lua quick_hint runtime 审计。
+/* XHUP Flow Lua 候选注释与 quick_hint runtime 审计。
  *
  * 验证 docs/lua-runtime.md §4.1 的语义与不变量:
  *
- * - 全码输入时,有可用简码的候选注释含 `⚡<简码>`(如 uijm → 时间 ⚡uij);
+ * - 全码输入时,有可用简码的候选注释含 `~<简码>`(纯 ASCII,如 uijm → 时间 ~uij);
+ * - 正常模式绝不含 `⚡`、`☯` 等装饰/引擎标记;
  * - 提示只是注释追加:开关 quick_hint 开/关两趟的候选**文本序列逐项相同**
  *   (候选次序与集合零变化,FROZEN STATIC 契约);
  * - 输入已是简码本身时不提示;
- * - 简码不短于输入时不提示(2 键输入对 3 键简码无提示)。
+ * - 简码不短于输入时不提示(2 键输入对 3 键简码无提示);
+ * - 调试开关 debug_candidate_annotations 开启时支持明确可信标签。
  *
  * 用法: runtime_lua_audit <shared_data_dir> <user_data_dir>
  * user_data_dir 必须已含生成包(含 lua/ 子目录)并完成部署编译;
@@ -112,11 +114,11 @@ int main(int argc, char **argv) {
     static char texts_off[32768];
     char comment[256];
 
-    /* 1. 全码输入(开关默认开):提示存在;抓候选文本序列。 */
+    /* 1. 全码输入(开关默认开):提示存在(纯 ASCII ~uij);无 ⚡ 与 ☯;抓候选文本序列。 */
     type_keys("uijm");
     int found = candidate_comment("时间", comment, sizeof(comment));
-    report(found && strstr(comment, "⚡uij") != NULL,
-           "uijm → 时间 注释含 ⚡uij", comment);
+    report(found && strstr(comment, "~uij") != NULL && strstr(comment, "⚡") == NULL && strstr(comment, "☯") == NULL,
+           "uijm → 时间 注释含 ~uij (纯 ASCII,无 ⚡ 与 ☯)", comment);
     capture_texts(texts_on, sizeof(texts_on));
     rime->clear_composition(session);
 
@@ -124,7 +126,7 @@ int main(int argc, char **argv) {
     rime->set_option(session, "quick_hint", 0);
     type_keys("uijm");
     found = candidate_comment("时间", comment, sizeof(comment));
-    report(found && strstr(comment, "⚡uij") == NULL,
+    report(found && strstr(comment, "~uij") == NULL && strstr(comment, "⚡") == NULL,
            "quick_hint=0 → 时间 无提示注释", comment);
     capture_texts(texts_off, sizeof(texts_off));
     rime->clear_composition(session);
@@ -135,7 +137,7 @@ int main(int argc, char **argv) {
     /* 3. 输入已是简码本身:不提示。 */
     type_keys("uij");
     found = candidate_comment("时间", comment, sizeof(comment));
-    report(found && strstr(comment, "⚡") == NULL,
+    report(found && strstr(comment, "~") == NULL && strstr(comment, "⚡") == NULL,
            "uij(简码本身)→ 时间 无提示", comment);
     rime->clear_composition(session);
 
@@ -143,11 +145,20 @@ int main(int argc, char **argv) {
     type_keys("ui");
     found = candidate_comment("时间", comment, sizeof(comment));
     if (found) {
-        report(strstr(comment, "⚡") == NULL, "ui(2 键)→ 时间 无提示", comment);
+        report(strstr(comment, "~") == NULL && strstr(comment, "⚡") == NULL, "ui(2 键)→ 时间 无提示", comment);
     } else {
         report(1, "ui(2 键)→ 时间 不在菜单(前缀不可达,符合预期)", NULL);
     }
     rime->clear_composition(session);
+
+    /* 5. 调试模式开关:可正常设置并在会话中生效。 */
+    rime->set_option(session, "debug_candidate_annotations", 1);
+    type_keys("uijm");
+    found = candidate_comment("时间", comment, sizeof(comment));
+    report(found && strstr(comment, "~uij") != NULL && strstr(comment, "⚡") == NULL,
+           "debug_candidate_annotations=1 生效且仍保持无 ⚡", comment);
+    rime->clear_composition(session);
+    rime->set_option(session, "debug_candidate_annotations", 0);
 
     rime->destroy_session(session);
     rime->finalize();

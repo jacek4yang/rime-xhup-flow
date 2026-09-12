@@ -87,29 +87,56 @@ fn canonical_counts_match_v1_release_snapshot() {
     );
 }
 
+const FROZEN_STATIC_ARTIFACTS: &[&str] = &[
+    "lua/xhup_flow/data/quick_hints.lua",
+    "xhup_flow.dict.yaml",
+    "xhup_flow_chars.dict.yaml",
+    "xhup_flow_fixed_first_shortcuts.dict.yaml",
+    "xhup_flow_flow.dict.yaml",
+    "xhup_flow_flow.schema.yaml",
+    "xhup_flow_learn.dict.yaml",
+    "xhup_flow_learn.schema.yaml",
+    "xhup_flow_shortcuts.dict.yaml",
+    "xhup_flow_static.schema.yaml",
+    "xhup_flow_word_shortcuts.dict.yaml",
+    "xhup_flow_words.dict.yaml",
+    "xhup_flow_trainer.json",
+];
+
 #[test]
 fn generated_package_bytes_match_v1_release_snapshot() {
     let doc = snapshot();
-    let artifacts = generate_rime_artifacts();
+    // 区分冻结 v1 发布 oracle 与当前 Flow 2.0 产物演进:
+    // v1 历史发布快照记录 14 个产物, 源码 36,845,122 字节:
     assert_eq!(
-        artifacts.len() as u64,
-        number(&doc, "/generatedRimePackage/artifactCount")
+        number(&doc, "/generatedRimePackage/artifactCount"),
+        14,
+        "v1 历史发布快照记录 14 个产物"
     );
-    let bytes: usize = artifacts
+    assert_eq!(
+        number(&doc, "/generatedRimePackage/sourceBytes"),
+        36845122,
+        "v1 历史发布快照记录 36845122 源码字节"
+    );
+
+    // 当前 2.0 便携包扩充 annotation.lua (共 15 个产物):
+    let artifacts = generate_rime_artifacts();
+    assert_eq!(artifacts.len(), 15, "2.0 包扩充候选注释格式化模块");
+
+    // 冻结的 12 个静态模式与词典产物字节严格不变:
+    let static_bytes: usize = artifacts
         .iter()
+        .filter(|a| FROZEN_STATIC_ARTIFACTS.contains(&a.filename()))
         .map(|artifact| artifact.contents().len())
         .sum();
-    assert_eq!(
-        bytes as u64,
-        number(&doc, "/generatedRimePackage/sourceBytes")
-    );
+    assert_eq!(static_bytes, 36838387, "静态基线产物字节数保持恒定");
 }
 
 #[test]
 fn artifact_content_matches_independent_v1_release_hashes() {
     use std::collections::BTreeMap;
     use xhup_analyzer::export_v2::sha256_hex;
-    let mut actual: BTreeMap<_, _> = generate_rime_artifacts()
+    let actual: BTreeMap<_, _> = generate_rime_artifacts()
         .into_iter()
         .map(|artifact| {
             (
@@ -117,11 +144,11 @@ fn artifact_content_matches_independent_v1_release_hashes() {
                 sha256_hex(artifact.contents().as_bytes()),
             )
         })
+        .chain(std::iter::once((
+            "xhup_flow_trainer.json".into(),
+            sha256_hex(xhup_generator::generate_trainer_dataset().as_bytes()),
+        )))
         .collect();
-    actual.insert(
-        "xhup_flow_trainer.json".into(),
-        sha256_hex(xhup_generator::generate_trainer_dataset().as_bytes()),
-    );
     let mut expected = BTreeMap::new();
     let manifest = include_str!("../../../data/benchmarks/v1-artifact-hashes.tsv");
     assert!(manifest.starts_with("# xhup-v1-artifact-hashes/v1\n"));
@@ -142,10 +169,59 @@ fn artifact_content_matches_independent_v1_release_hashes() {
                 .is_none()
         );
     }
+
+    // 提取不可变的 12 个静态方案/词典与 Trainer 数据产物
+    let actual_frozen: BTreeMap<_, _> = actual
+        .into_iter()
+        .filter(|(k, _)| FROZEN_STATIC_ARTIFACTS.contains(&k.as_str()))
+        .collect();
+    let expected_frozen: BTreeMap<_, _> = expected
+        .into_iter()
+        .filter(|(k, _)| FROZEN_STATIC_ARTIFACTS.contains(&k.as_str()))
+        .collect();
+
+    assert_eq!(actual_frozen.len(), 13);
     assert_eq!(
-        actual, expected,
+        actual_frozen, expected_frozen,
         "frozen static artifacts must match the independently published v1 release"
     );
+}
+
+#[test]
+fn runtime_lua_artifacts_meet_ascii_and_decoupled_contract() {
+    let artifacts = generate_rime_artifacts();
+    let annotation = artifacts
+        .iter()
+        .find(|a| a.filename() == "lua/xhup_flow/annotation.lua")
+        .expect("annotation.lua 产物必须存在");
+    let quick_hint = artifacts
+        .iter()
+        .find(|a| a.filename() == "lua/xhup_flow/quick_hint.lua")
+        .expect("quick_hint.lua 产物必须存在");
+
+    assert!(!annotation.contents().contains('\r'), "LF only");
+    assert!(!quick_hint.contents().contains('\r'), "LF only");
+
+    // 注释模块包含清洗与格式化入口
+    assert!(annotation.contents().contains("clean_decorative_markers"));
+    assert!(annotation.contents().contains("format_shortcut_hint"));
+    assert!(annotation.contents().contains("format_candidate_comment"));
+    assert!(annotation.contents().contains("debug_tag_for_type"));
+
+    // 简码提示模块委托至 annotation 模块
+    assert!(
+        quick_hint
+            .contents()
+            .contains("require(\"xhup_flow.annotation\")")
+    );
+    assert!(
+        quick_hint
+            .contents()
+            .contains("debug_candidate_annotations")
+    );
+
+    // 正常提示逻辑中不写死装饰 emoji
+    assert!(!quick_hint.contents().contains("\"⚡\""));
 }
 
 #[test]

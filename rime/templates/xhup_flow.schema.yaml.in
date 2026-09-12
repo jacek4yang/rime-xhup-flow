@@ -34,11 +34,15 @@ switches:
     states: [。，, ．，]
   - name: full_shape
     states: [半角, 全角]
-  # 简码提示(Lua quick_hint filter):开 = 候选注释追加 ⚡<简码>。
+  # 简码提示(Lua quick_hint filter):开 = 候选注释追加 ~<简码>。
   # librime-lua 缺失时该组件被跳过,开关无效果,输入行为不变。
   - name: quick_hint
     reset: 1
     states: [关闭提示, 简码提示]
+  # 候选注释调试模式:开 = 在注释中输出明确可信的元数据标签([S], [USR])。
+  - name: debug_candidate_annotations
+    reset: 0
+    states: [常规注释, 调试注释]
 
 engine:
   processors:
@@ -60,7 +64,7 @@ engine:
     - table_translator@flow
     - table_translator@learn
   filters:
-    # 简码提示(可选增强):候选注释追加 ⚡<简码>,只追加不重排;
+    # 候选注释与简码提示(可选增强):候选注释格式化并追加 ~<简码>,只追加不重排;
     # librime-lua 缺失时 librime 跳过该组件,输入行为不变。
     # 顺序约束:注解类 filter 必须在 uniquifier 之前(与 rime-ice 等
     # 成熟方案一致)。实测(Ubuntu noble librime-lua git20230917):
