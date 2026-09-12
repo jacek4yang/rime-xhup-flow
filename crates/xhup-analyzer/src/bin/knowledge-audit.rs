@@ -65,10 +65,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             parse_started.elapsed().as_secs_f64() * 1000.0
         );
     }
-    if export {
-        print!("{}", serialize_evidence(&evidence)?);
-        return Ok(());
-    }
     let core: BTreeSet<_> = XhupHanzi::all().iter().map(|c| c.as_char()).collect();
     let production: BTreeSet<_> = InputHanzi::all().iter().map(|c| c.as_char()).collect();
     if check {
@@ -78,6 +74,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "knowledge validation failed: duplicate evidence or invalid provenance".into(),
             );
         }
+    }
+    if export {
+        print!("{}", serialize_evidence(&evidence)?);
+        return Ok(());
     }
     let audit_started = std::time::Instant::now();
     if let Some(ch) = ch {

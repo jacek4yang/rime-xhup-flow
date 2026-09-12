@@ -157,3 +157,24 @@ fn cli_json_is_deterministic_and_rejects_bad_arguments() {
         );
     }
 }
+#[test]
+fn checked_export_rejects_orphan_provenance_before_writing_output() {
+    use std::io::Write;
+    let path = std::env::temp_dir().join(format!("xhup-empty-sources-{}.tsv", std::process::id()));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .unwrap();
+    file.write_all(b"# xhup-knowledge-sources/v1\n").unwrap();
+    drop(file);
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_knowledge-audit"))
+        .args(["--export-tsv", "--check", "--sources"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    std::fs::remove_file(path).unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("invalid provenance"));
+}
