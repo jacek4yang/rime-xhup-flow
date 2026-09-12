@@ -33,6 +33,7 @@ fn artifact_set_is_exact_and_ordered() {
             "xhup_flow_learn.dict.yaml",
             "xhup_flow_flow.schema.yaml",
             "xhup_flow_learn.schema.yaml",
+            "lua/xhup_flow/annotation.lua",
             "lua/xhup_flow/quick_hint.lua",
             "lua/xhup_flow/data/quick_hints.lua",
             "xhup_flow.schema.yaml",
@@ -182,9 +183,16 @@ fn schema_semantics() {
         schema.contains("- name: quick_hint\n    reset: 1"),
         "quick_hint 开关应默认开启"
     );
+    assert!(
+        schema.contains("- name: debug_candidate_annotations\n    reset: 0"),
+        "debug_candidate_annotations 开关应默认关闭"
+    );
     // Lua 产物:模块源码与生成数据俱在,数据与 canonical 简码映射一致。
+    let annotation = contents_of(&artifacts, "lua/xhup_flow/annotation.lua");
+    assert!(annotation.contains("format_shortcut_hint"));
     let module = contents_of(&artifacts, "lua/xhup_flow/quick_hint.lua");
     assert!(module.contains("xhup_flow.data.quick_hints"));
+    assert!(module.contains("xhup_flow.annotation"));
     let data = contents_of(&artifacts, "lua/xhup_flow/data/quick_hints.lua");
     assert!(
         data.contains("[\"时间\"] = \"uij\""),

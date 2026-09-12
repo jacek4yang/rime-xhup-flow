@@ -9,14 +9,25 @@
 use crate::fixed_first_shortcuts::canonical_fixed_first_shortcut_entries;
 use crate::primary_shortcuts::canonical_primary_shortcut_entries;
 
+/// 候选注释模块产物文件名(入库源码,相对包根)。
+pub const LUA_ANNOTATION_FILENAME: &str = "lua/xhup_flow/annotation.lua";
+
 /// 简码提示模块产物文件名(入库源码,相对包根)。
 pub const LUA_QUICK_HINT_FILENAME: &str = "lua/xhup_flow/quick_hint.lua";
 
 /// 简码提示数据产物文件名(生成器产出,相对包根)。
 pub const LUA_QUICK_HINT_DATA_FILENAME: &str = "lua/xhup_flow/data/quick_hints.lua";
 
+/// 候选注释模块源(入库源码,与模板同法嵌入)。
+const ANNOTATION_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/annotation.lua");
+
 /// 简码提示模块源(入库源码,与模板同法嵌入)。
 const QUICK_HINT_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/quick_hint.lua");
+
+/// 候选注释模块源文本(逐字嵌入,未经任何改写)。
+pub fn lua_annotation_source() -> &'static str {
+    ANNOTATION_SOURCE
+}
 
 /// 简码提示模块源文本(逐字嵌入,未经任何改写)。
 pub fn lua_quick_hint_source() -> &'static str {
@@ -89,9 +100,17 @@ mod tests {
 
     #[test]
     fn source_is_embedded_verbatim() {
+        // 注释模块:包含纯 ASCII 格式化与清洗装饰标记核心逻辑。
+        assert!(lua_annotation_source().contains("clean_decorative_markers"));
+        assert!(lua_annotation_source().contains("format_shortcut_hint"));
+        assert!(lua_annotation_source().contains("debug_tag_for_type"));
+        assert!(lua_annotation_source().contains("format_candidate_comment"));
+
         // 源文件是完整模块本体:命名空间数据引用与组件三要素俱在。
         assert!(lua_quick_hint_source().contains("xhup_flow.data.quick_hints"));
-        assert!(lua_quick_hint_source().contains("return { init = init, func = func"));
+        assert!(lua_quick_hint_source().contains("xhup_flow.annotation"));
+        assert!(lua_quick_hint_source().contains("init = init"));
+        assert!(lua_quick_hint_source().contains("func = func"));
     }
 
     #[test]

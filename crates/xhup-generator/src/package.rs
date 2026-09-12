@@ -16,8 +16,8 @@
 //! (含 package version)与相同模板下,生成结果字节级一致。
 
 use crate::lua_hints::{
-    LUA_QUICK_HINT_DATA_FILENAME, LUA_QUICK_HINT_FILENAME, generate_lua_quick_hints_data,
-    lua_quick_hint_source,
+    LUA_ANNOTATION_FILENAME, LUA_QUICK_HINT_DATA_FILENAME, LUA_QUICK_HINT_FILENAME,
+    generate_lua_quick_hints_data, lua_annotation_source, lua_quick_hint_source,
 };
 use crate::rime::{RIME_CHAR_DICTIONARY_FILENAME, generate_rime_char_dictionary};
 use crate::rime_fixed_first_shortcuts::{
@@ -132,7 +132,7 @@ fn render_template(template: &str, name: &str) -> String {
 /// 词典(3~5 键)→ 固定层词语词典(4/6/8 键)→ 顶层词典(导入前五者)→
 /// Flow 词典(组句专用,完整词汇关系 + 单字音码原语,无简码别名,由
 /// table_translator@flow 加载,不被顶层词典导入)→ 两个辅助词典的编译
-/// wrapper schema → Lua 简码提示模块与数据(librime-lua `*module` 组件,
+/// wrapper schema → Lua 候选注释模块、简码提示模块与数据(librime-lua `*module` 组件,
 /// 可选增强,缺失时主方案降级为纯静态行为)→ 主方案(Flow 引擎)→
 /// 静态兼容方案(无 Flow translator 的回退)。同一规范数据、生成器
 /// 源码与模板产生同一顺序、字节级一致的产物集合。
@@ -185,6 +185,10 @@ pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
         RimeArtifact {
             filename: RIME_LEARN_WRAPPER_SCHEMA_FILENAME,
             contents: render_dict_compile_wrapper("xhup_flow_learn"),
+        },
+        RimeArtifact {
+            filename: LUA_ANNOTATION_FILENAME,
+            contents: lua_annotation_source().to_string(),
         },
         RimeArtifact {
             filename: LUA_QUICK_HINT_FILENAME,

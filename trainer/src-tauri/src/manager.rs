@@ -35,6 +35,7 @@ pub const OWNED_FILES: &[&str] = &[
     "xhup_flow_static.schema.yaml",
     "xhup_flow_word_shortcuts.dict.yaml",
     "xhup_flow_words.dict.yaml",
+    "lua/xhup_flow/annotation.lua",
     "lua/xhup_flow/quick_hint.lua",
     "lua/xhup_flow/data/quick_hints.lua",
 ];
