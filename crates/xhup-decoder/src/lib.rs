@@ -6,10 +6,15 @@
 #![forbid(unsafe_code)]
 
 mod context;
+mod evidence;
 mod lattice;
 mod scoring;
 
 pub use context::RuntimeContext;
+pub use evidence::{
+    CandidateSource, FusedCandidate, FusedEdge, FusedEdgeId, LatticeBounds, LatticeBuildStats,
+    LatticeFusionBuilder, SourceEvidence,
+};
 pub use lattice::{
     CandidateKind, EdgeCandidate, EdgeId, Lattice, LatticeEdge, LatticeError, LatticePath, PathSet,
     Span,

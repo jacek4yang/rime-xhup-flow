@@ -246,6 +246,12 @@ jobs:
       - name: Lua quick_hint 纯逻辑单测(lua5.4,不依赖 librime)
         run: lua5.4 tests/lua/test_quick_hint.lua
 
+      - name: Lua native_lookup 纯逻辑单测(lua5.4,不依赖 librime)
+        run: lua5.4 tests/lua/test_native_lookup.lua
+
+      - name: Lua joint lattice 夹具一致性(Rust/Lua 共享夹具)
+        run: lua5.4 tests/lua/sim_native_lookup.lua
+
       - name: Lua quick_hint 模块级仿真(真实生成数据 + require 路径约定)
         run: lua5.4 tests/lua/sim_quick_hint.lua /tmp/xhup-flow-package
 

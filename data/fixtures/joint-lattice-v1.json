@@ -1,0 +1,173 @@
+{
+  "schema": "xhup-joint-lattice-fixture/v1",
+  "description": "Shared Rust/Lua conformance fixtures for joint lattice construction and evidence fusion.",
+  "cases": [
+    {
+      "id": "nested-prefix-path",
+      "description": "u / ui / uio / uior: overlapping prefix spans from position 0",
+      "tags": ["nested-prefix", "overlapping-spans"],
+      "rawInput": "uior",
+      "candidates": [
+        { "start": 0, "end": 1, "text": "去", "source": "static_table", "frequency": 580000, "sourceRank": 1 },
+        { "start": 0, "end": 2, "text": "我", "source": "static_table", "frequency": 1200000, "sourceRank": 1 },
+        { "start": 0, "end": 2, "text": "时", "source": "flow_table", "frequency": 340000, "sourceRank": 1 },
+        { "start": 0, "end": 3, "text": "时间", "source": "static_table", "frequency": 266843, "sourceRank": 1 },
+        { "start": 0, "end": 4, "text": "时间", "source": "static_table", "frequency": 266843, "sourceRank": 1 },
+        { "start": 0, "end": 4, "text": "时间", "source": "flow_table", "frequency": 266843, "sourceRank": 1 },
+        { "start": 1, "end": 2, "text": "一", "source": "flow_table", "frequency": 900000, "sourceRank": 1 },
+        { "start": 2, "end": 3, "text": "哦", "source": "flow_table", "frequency": 50000, "sourceRank": 1 },
+        { "start": 2, "end": 4, "text": "哦尔", "source": "flow_table", "frequency": 100, "sourceRank": 1 },
+        { "start": 3, "end": 4, "text": "日", "source": "flow_table", "frequency": 120000, "sourceRank": 1 }
+      ],
+      "expectedFusedEdges": 9,
+      "expectedFusionEvents": 1,
+      "fusionNote": "text=时间 at span [0,4) appears from both static_table and flow_table -> fused to 1 edge with 2 evidence entries; 时间 at [0,3) is a different span and not fused"
+    },
+    {
+      "id": "overlapping-lexical-segmentation",
+      "description": "yjjqugmk: 研究+生命 vs 研究生+命",
+      "tags": ["overlapping-spans", "ambiguous-segmentation"],
+      "rawInput": "yjjqugmk",
+      "candidates": [
+        { "start": 0, "end": 4, "text": "研究", "source": "static_table", "frequency": 266843, "sourceRank": 1 },
+        { "start": 0, "end": 4, "text": "研究", "source": "flow_table", "frequency": 266843, "sourceRank": 1 },
+        { "start": 4, "end": 8, "text": "生命", "source": "static_table", "frequency": 80039, "sourceRank": 1 },
+        { "start": 4, "end": 8, "text": "生命", "source": "flow_table", "frequency": 80039, "sourceRank": 1 },
+        { "start": 0, "end": 6, "text": "研究生", "source": "flow_table", "frequency": 72173, "sourceRank": 1 },
+        { "start": 6, "end": 8, "text": "命", "source": "flow_table", "frequency": 6600, "sourceRank": 1 },
+        { "start": 0, "end": 2, "text": "研", "source": "flow_table", "frequency": 5000, "sourceRank": 1 },
+        { "start": 2, "end": 4, "text": "究", "source": "flow_table", "frequency": 3000, "sourceRank": 1 },
+        { "start": 4, "end": 6, "text": "生", "source": "flow_table", "frequency": 200000, "sourceRank": 1 },
+        { "start": 6, "end": 8, "text": "命", "source": "flow_table", "frequency": 6600, "sourceRank": 2 }
+      ],
+      "expectedFusedEdges": 7,
+      "expectedFusionEvents": 3,
+      "fusionNote": "研究 at [0,4) fuses across static+flow; 生命 at [4,8) fuses across static+flow; 命 at [6,8) from two flow entries fuses"
+    },
+    {
+      "id": "duplicate-source-fusion",
+      "description": "Same text from static and user sources on same span",
+      "tags": ["fusion", "user-learned"],
+      "rawInput": "womf",
+      "candidates": [
+        { "start": 0, "end": 4, "text": "我们", "source": "static_table", "frequency": 500000, "sourceRank": 1 },
+        { "start": 0, "end": 4, "text": "我们", "source": "flow_table", "frequency": 500000, "sourceRank": 1 },
+        { "start": 0, "end": 4, "text": "我们", "source": "user_learned", "frequency": 10, "sourceRank": 1 },
+        { "start": 0, "end": 2, "text": "我", "source": "flow_table", "frequency": 1200000, "sourceRank": 1 },
+        { "start": 2, "end": 4, "text": "们", "source": "flow_table", "frequency": 300000, "sourceRank": 1 }
+      ],
+      "expectedFusedEdges": 3,
+      "expectedFusionEvents": 1,
+      "fusionNote": "我们 at [0,4) from 3 sources -> 1 fused edge with 3 evidence entries"
+    },
+    {
+      "id": "character-primitives",
+      "description": "Single-character 2-key sound primitives ensure OOV reachability",
+      "tags": ["character-primitive", "oov-reachability"],
+      "rawInput": "tiuici",
+      "candidates": [
+        { "start": 0, "end": 2, "text": "提", "source": "flow_table", "frequency": 80000, "sourceRank": 1 },
+        { "start": 2, "end": 4, "text": "示", "source": "flow_table", "frequency": 60000, "sourceRank": 1 },
+        { "start": 4, "end": 6, "text": "词", "source": "flow_table", "frequency": 40000, "sourceRank": 1 },
+        { "start": 0, "end": 6, "text": "提示词", "source": "sentence_composition", "frequency": 0, "sourceRank": 1 }
+      ],
+      "expectedFusedEdges": 4,
+      "expectedFusionEvents": 0,
+      "fusionNote": "No duplicates; character primitives provide full coverage"
+    },
+    {
+      "id": "static-aliases",
+      "description": "Attested legacy alias for 就是 at jqu",
+      "tags": ["alias", "static-table"],
+      "rawInput": "jqu",
+      "candidates": [
+        { "start": 0, "end": 3, "text": "就是", "source": "static_table", "frequency": 400000, "sourceRank": 1 },
+        { "start": 0, "end": 2, "text": "就", "source": "flow_table", "frequency": 350000, "sourceRank": 1 },
+        { "start": 2, "end": 3, "text": "是", "source": "flow_table", "frequency": 500000, "sourceRank": 1 }
+      ],
+      "expectedFusedEdges": 3,
+      "expectedFusionEvents": 0,
+      "fusionNote": "No duplicates; shortcut alias coexists with character primitives"
+    },
+    {
+      "id": "bounded-fanout-truncation",
+      "description": "Excessive candidates on one span trigger truncation",
+      "tags": ["truncation", "bounded-fanout"],
+      "rawInput": "ab",
+      "boundsOverride": {
+        "max_candidates_per_span": 2,
+        "max_outgoing_per_position": 4,
+        "max_total_edges": 100
+      },
+      "candidates": [
+        { "start": 0, "end": 2, "text": "甲", "source": "static_table", "frequency": 100, "sourceRank": 1 },
+        { "start": 0, "end": 2, "text": "乙", "source": "static_table", "frequency": 90, "sourceRank": 2 },
+        { "start": 0, "end": 2, "text": "丙", "source": "static_table", "frequency": 80, "sourceRank": 3 },
+        { "start": 0, "end": 1, "text": "啊", "source": "flow_table", "frequency": 50000, "sourceRank": 1 },
+        { "start": 1, "end": 2, "text": "吧", "source": "flow_table", "frequency": 30000, "sourceRank": 1 }
+      ],
+      "expectedTruncatedCandidates": 1,
+      "truncationNote": "max_candidates_per_span=2 truncates 丙 from [0,2); fallback primitives 啊 and 吧 preserved"
+    },
+    {
+      "id": "full-coverage-with-fallback",
+      "description": "Every position 0..end reachable via fallback character primitives",
+      "tags": ["reachability", "fallback"],
+      "rawInput": "abcd",
+      "candidates": [
+        { "start": 0, "end": 4, "text": "甲乙", "source": "static_table", "frequency": 100, "sourceRank": 1 },
+        { "start": 0, "end": 2, "text": "甲", "source": "flow_table", "frequency": 50, "sourceRank": 1 },
+        { "start": 2, "end": 4, "text": "乙", "source": "flow_table", "frequency": 50, "sourceRank": 1 }
+      ],
+      "expectedFusedEdges": 3,
+      "expectedFusionEvents": 0,
+      "reachabilityNote": "Position 0 can reach end via [0,4) or [0,2)+[2,4)"
+    },
+    {
+      "id": "oov-open-composition",
+      "description": "Words not in any dictionary still reachable via character primitives",
+      "tags": ["oov", "open-composition"],
+      "rawInput": "tiogei",
+      "candidates": [
+        { "start": 0, "end": 2, "text": "提", "source": "flow_table", "frequency": 80000, "sourceRank": 1 },
+        { "start": 2, "end": 4, "text": "嗯", "source": "flow_table", "frequency": 5000, "sourceRank": 1 },
+        { "start": 4, "end": 6, "text": "诶", "source": "flow_table", "frequency": 3000, "sourceRank": 1 }
+      ],
+      "expectedFusedEdges": 3,
+      "expectedFusionEvents": 0,
+      "reachabilityNote": "提嗯诶 is OOV; character primitives make it reachable"
+    },
+    {
+      "id": "extended-lexical-candidates",
+      "description": "Extended lexicon entries from flow table",
+      "tags": ["extended-lexical"],
+      "rawInput": "uurufa",
+      "candidates": [
+        { "start": 0, "end": 6, "text": "输入法", "source": "flow_table", "frequency": 15000, "sourceRank": 1 },
+        { "start": 0, "end": 2, "text": "输", "source": "flow_table", "frequency": 40000, "sourceRank": 1 },
+        { "start": 2, "end": 4, "text": "入", "source": "flow_table", "frequency": 60000, "sourceRank": 1 },
+        { "start": 4, "end": 6, "text": "法", "source": "flow_table", "frequency": 70000, "sourceRank": 1 }
+      ],
+      "expectedFusedEdges": 4,
+      "expectedFusionEvents": 0
+    },
+    {
+      "id": "simulated-user-learned",
+      "description": "User-learned candidate with low frequency still preserved",
+      "tags": ["user-learned"],
+      "rawInput": "womfuijm",
+      "candidates": [
+        { "start": 0, "end": 4, "text": "我们", "source": "static_table", "frequency": 500000, "sourceRank": 1 },
+        { "start": 4, "end": 8, "text": "时间", "source": "static_table", "frequency": 266843, "sourceRank": 1 },
+        { "start": 0, "end": 8, "text": "我们时间", "source": "user_learned", "frequency": 2, "sourceRank": 1 },
+        { "start": 0, "end": 2, "text": "我", "source": "flow_table", "frequency": 1200000, "sourceRank": 1 },
+        { "start": 2, "end": 4, "text": "们", "source": "flow_table", "frequency": 300000, "sourceRank": 1 },
+        { "start": 4, "end": 6, "text": "时", "source": "flow_table", "frequency": 340000, "sourceRank": 1 },
+        { "start": 6, "end": 8, "text": "间", "source": "flow_table", "frequency": 100000, "sourceRank": 1 }
+      ],
+      "expectedFusedEdges": 7,
+      "expectedFusionEvents": 0,
+      "fusionNote": "User-learned 我们时间 is a unique span [0,8) with no duplicate"
+    }
+  ]
+}
