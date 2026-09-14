@@ -300,23 +300,26 @@ mod tests {
     fn flow_weights_carry_frequency_evidence() {
         let weights = flow_dict_weights();
         for entry in word_code_analysis_entries() {
-            assert_eq!(
-                *weights
-                    .get(entry.word())
-                    .unwrap_or_else(|| panic!("词条不在组句词典: {}", entry.word())),
-                entry.frequency_score(),
-                "组句词典权重应等于万象频率分数: {}",
-                entry.word()
+            let scores = weights
+                .get(entry.word())
+                .unwrap_or_else(|| panic!("词条不在组句词典: {}", entry.word()));
+            assert!(
+                scores.contains(&entry.frequency_score()),
+                "组句词典权重应包含万象频率分数: {} {:?}",
+                entry.word(),
+                entry.frequency_score()
             );
         }
         for entry in canonical_extended_word_code_entries() {
-            assert_eq!(
-                *weights
-                    .get(entry.word())
-                    .unwrap_or_else(|| panic!("扩展词条不在组句词典: {}", entry.word())),
+            let scores = weights
+                .get(entry.word())
+                .unwrap_or_else(|| panic!("扩展词条不在组句词典: {}", entry.word()));
+            assert!(
+                scores.contains(&entry.frequency_score()),
+                "扩展词典权重应包含 (词, 码) 聚合分数: {} {:?} vs {:?}",
+                entry.word(),
                 entry.frequency_score(),
-                "扩展词典权重应等于万象频率分数: {}",
-                entry.word()
+                scores
             );
         }
     }
@@ -327,7 +330,12 @@ mod tests {
     #[test]
     fn common_words_outweigh_garbage_segmentation() {
         let weights = flow_dict_weights();
-        let weight_of = |word: &str| weights.get(word).copied().unwrap_or(0);
+        let weight_of = |word: &str| {
+            weights
+                .get(word)
+                .map(|scores| scores.iter().max().copied().unwrap_or(0))
+                .unwrap_or(0)
+        };
         for (common, garbage) in [
             ("我们", "我们是"),
             ("时间", "剪发"),
@@ -343,23 +351,27 @@ mod tests {
         }
     }
 
-    /// 一次性解析组句词典为 词→权重 映射(测试辅助,避免逐条线性扫描)。
-    fn flow_dict_weights() -> std::collections::HashMap<String, u64> {
-        generate_rime_flow_dictionary()
+    /// 一次性解析组句词典为 词→权重列表 映射(测试辅助,避免逐条线性扫描)。
+    ///
+    /// 同一词可携带多个读音序列(不同码),各自拥有独立权重行;
+    /// 搜狗细胞词库聚合层引入跨源同词多码后,单词单值映射不再成立。
+    fn flow_dict_weights() -> std::collections::HashMap<String, Vec<u64>> {
+        let mut map: std::collections::HashMap<String, Vec<u64>> = std::collections::HashMap::new();
+        for line in generate_rime_flow_dictionary()
             .lines()
             .skip_while(|line| *line != "...")
             .skip(1)
-            .map(|line| {
-                let mut fields = line.split('\t');
-                let word = fields.next().expect("词字段存在").to_string();
-                let weight = fields
-                    .nth(1)
-                    .expect("权重字段存在")
-                    .parse()
-                    .expect("权重为整数");
-                (word, weight)
-            })
-            .collect()
+        {
+            let mut fields = line.split('\t');
+            let word = fields.next().expect("词字段存在").to_string();
+            let weight = fields
+                .nth(1)
+                .expect("权重字段存在")
+                .parse()
+                .expect("权重为整数");
+            map.entry(word).or_default().push(weight);
+        }
+        map
     }
 
     /// Flow 词典排除全部简码别名；两键行只能是单字 sound primitive，

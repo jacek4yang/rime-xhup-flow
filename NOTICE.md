@@ -135,6 +135,31 @@ selected mapping;它是其中可由单调 F/I 格式表达的 rank1 分区。
 
 再分发该些 TSV 时须保留上述署名与许可信息。该数据不因入库而改授 LGPL;项目 Rust 代码仍保持 LGPL-3.0-only。
 
+## 官网权威字形数据
+
+data/xhup/flypy_official_char_codes.tsv 提取自小鹤音形官网查形页数据集:
+
+- 来源:https://www.flypy.cc/ix/(页面随附 ixdata.json)
+- 数据集 payload SHA-256:5f0b7856df992efac8e5ec014cd9dbdf698131b49d4adec19c01a85a07aa0b42
+- 抓取日期:2026-09-14;覆盖 8,414 字(全码/拆分/读音)
+- 许可状态:官网未声明数据许可;仓库所有者决策将其作为权威参照层入库,
+  仅用于编码事实核验与扩展,不构成对官网品牌或数据的大规模转售。
+- 该数据不因入库改授 LGPL-3.0。
+
+## 搜狗细胞词库聚合层
+
+data/words/sogou/ 为搜狗细胞词库全站抓取(2026-09-13,109 分类、
+6,279 个 .scel)按本项目规范读音归一化后的确定性聚合快照:
+
+- 2~4 字词 2,082,859 条(9 分片)+ 5 字及以上长词 2,170,395 条(9 分片);
+- 来源:搜狗细胞词库站 https://pinyin.sogou.com/dict/;
+- 许可状态:来源用户协议限非商业且不授权再分发。仓库所有者于 2026-09-14
+  明确决策推翻 docs/data-pipeline.md §1.3 原搜狗红线,将该聚合层入库,
+  由所有者承担相应责任;本层数据**仅限个人学习研究使用,禁止商用**,
+  不因入库改授 LGPL-3.0。下游再分发 Release 视同知悉上述限制。
+- 分片清单与 SHA-256 见 data/words/sogou/MANIFEST.tsv;提取与过滤规则
+  见 data/words/sogou/README.md。
+
 ## 许可证
 
 仓库保留上游配置随附的 LGPL-3.0 许可证文本，见 [`LICENSE`](LICENSE)。

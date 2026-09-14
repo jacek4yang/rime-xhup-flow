@@ -24,7 +24,9 @@ use std::sync::OnceLock;
 
 use xhup_core::{HanziReading, KeySequence};
 
-use crate::words::{canonical_extended_word_entries, canonical_word_entries};
+use crate::words::{
+    canonical_extended_word_entries, canonical_sogou_word_entries, canonical_word_entries,
+};
 
 /// 一条最终化的静态词语编码关系(模块内投影的事实来源)。
 ///
@@ -136,6 +138,11 @@ pub fn canonical_word_code_entries() -> Vec<RimeWordCodeEntry> {
 }
 
 /// 全部扩展词 exact 关系，按码长、码、分数降序、词排序。
+///
+/// 聚合范围 = 万象 extended 层 + 搜狗细胞词库聚合层(所有者决策入库,
+/// 见 data/words/sogou/README.md)。万象条目携带真实聚合分数;搜狗条目
+/// 分数恒为 1,仅在与万象不重叠的 (词, 码) 上提供增量 exact 候选证据,
+/// 排名永远低于任何万象支持的候选。
 pub fn canonical_extended_word_code_entries() -> &'static [RimeExtendedWordCodeEntry] {
     static ENTRIES: OnceLock<Vec<RimeExtendedWordCodeEntry>> = OnceLock::new();
     ENTRIES
@@ -147,6 +154,24 @@ pub fn canonical_extended_word_code_entries() -> &'static [RimeExtendedWordCodeE
                 *score = score
                     .checked_add(entry.frequency_score())
                     .expect("扩展词聚合分数 u64 溢出");
+            }
+            // 搜狗层仅提供万象两层之外的增量:与 hot/extended 相同
+            // (词, 读音序列) 的条目跳过,避免同一词在组句词典重复出现,
+            // 也避免与 hot 静态层权重竞争(hot 词的真实频率证据永远优先)。
+            let mut wanxiang_keys: std::collections::BTreeSet<(&str, KeySequence)> = aggregated
+                .keys()
+                .map(|(word, code)| (*word, code.clone()))
+                .collect();
+            for entry in canonical_word_entries() {
+                let code = derive_code(entry.readings());
+                wanxiang_keys.insert((entry.word(), code));
+            }
+            for entry in canonical_sogou_word_entries() {
+                let code = derive_code(entry.readings());
+                if wanxiang_keys.contains(&(entry.word(), code.clone())) {
+                    continue;
+                }
+                aggregated.insert((entry.word(), code), entry.frequency_score());
             }
             let mut entries: Vec<_> = aggregated
                 .into_iter()
