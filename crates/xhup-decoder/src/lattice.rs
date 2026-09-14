@@ -50,12 +50,57 @@ pub enum CandidateKind {
     OovComposition,
 }
 
+impl CandidateKind {
+    /// 语义优先级(小者更优先,与声明顺序一致):
+    /// hot、extended、character、alias、user、oov。
+    /// 融合时 evidence 排序键,与整层静态/动态优先级栅栏语义对齐。
+    pub fn priority(self) -> u8 {
+        match self {
+            Self::HotWord => 0,
+            Self::ExtendedWord => 1,
+            Self::Character => 2,
+            Self::AttestedAlias => 3,
+            Self::UserLearned => 4,
+            Self::OovComposition => 5,
+        }
+    }
+}
+
+/// 单个来源对 `(span, text)` 的一条证据:来源类别 + 该来源的频率计数。
+///
+/// 排序语义(`Ord`):类别优先级优先(`priority` 小者在前),再按频率
+/// 降序——即融合 evidence 的确定性次序。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct CandidateEvidence {
+    kind: CandidateKind,
+    frequency: u64,
+}
+
+impl CandidateEvidence {
+    pub fn new(kind: CandidateKind, frequency: u64) -> Self {
+        Self { kind, frequency }
+    }
+
+    pub fn kind(&self) -> CandidateKind {
+        self.kind
+    }
+
+    pub fn frequency(&self) -> u64 {
+        self.frequency
+    }
+}
+
 /// 一条 span 解释携带的最小候选事实。
+///
+/// `evidence` 记录同一 `(span, text)` 的全部来源(多源融合,见 README
+/// 「融合契约」):列表恒非空、按 `(kind, frequency)` 降序去重;
+/// `kind`/`frequency` 是 evidence 首项(最高优先级来源)的投影。
 #[derive(Clone, Eq, PartialEq)]
 pub struct EdgeCandidate {
     text: Box<str>,
     kind: CandidateKind,
     frequency: u64,
+    evidence: Box<[CandidateEvidence]>,
 }
 
 impl EdgeCandidate {
@@ -70,9 +115,44 @@ impl EdgeCandidate {
             return Err(LatticeError::EmptyCandidateText);
         }
         Ok(Self {
-            text,
             kind,
             frequency,
+            evidence: Box::new([CandidateEvidence { kind, frequency }]),
+            text,
+        })
+    }
+
+    /// 多来源融合构造:evidence 不得为空;重复 `(kind, frequency)` 去重;
+    /// 按 `(kind, frequency)` 降序;`kind`/`frequency` 投影首项。
+    pub fn fused(
+        text: impl Into<Box<str>>,
+        evidence: impl IntoIterator<Item = CandidateEvidence>,
+    ) -> Result<Self, LatticeError> {
+        let text = text.into();
+        if text.is_empty() {
+            return Err(LatticeError::EmptyCandidateText);
+        }
+        let mut seen: Vec<CandidateEvidence> = Vec::new();
+        for item in evidence {
+            if !seen.contains(&item) {
+                seen.push(item);
+            }
+        }
+        if seen.is_empty() {
+            return Err(LatticeError::EmptyCandidateText);
+        }
+        // 确定性次序:类别优先级升序(priority 小者优先),同类别频率降序。
+        seen.sort_by(|a, b| {
+            a.kind
+                .priority()
+                .cmp(&b.kind.priority())
+                .then(b.frequency.cmp(&a.frequency))
+        });
+        Ok(Self {
+            kind: seen[0].kind,
+            frequency: seen[0].frequency,
+            evidence: seen.into_boxed_slice(),
+            text,
         })
     }
 
@@ -86,6 +166,11 @@ impl EdgeCandidate {
 
     pub fn frequency(&self) -> u64 {
         self.frequency
+    }
+
+    /// 全部来源证据(确定性降序),供 Trainer 解释与审计。
+    pub fn evidence(&self) -> &[CandidateEvidence] {
+        &self.evidence
     }
 }
 
@@ -192,8 +277,15 @@ impl Lattice {
         self.outgoing.get(position).map(Vec::as_slice)
     }
 
-    /// 加入一条候选边。插入顺序成为稳定 EdgeId；不做候选去重，以便后续证据层
-    /// 明确表示同一文本的不同来源。
+    /// 加入一条候选边,并与同一 `(span, text)` 的既有边做多源融合。
+    ///
+    /// 融合契约(Issue #83 §11):同一 `(span, text)` 来自多个来源时必须
+    /// deterministic fusion,保留全部 evidence,不制造重复语义路径——
+    /// 即 lattice 中每个 `(span, text)` 恰好一条边,evidence 为并集
+    /// (去重、按 `(kind, frequency)` 降序)。融合后的边保留首次插入的
+    /// EdgeId(插入顺序稳定),不改变既有路径枚举。
+    ///
+    /// 完全新增文本仍按插入顺序分配新 EdgeId。
     pub fn add_edge(
         &mut self,
         span: Span,
@@ -205,6 +297,24 @@ impl Lattice {
                 end: span.end,
                 input_len: self.input.len(),
             });
+        }
+        // 同 (span, text) 融合:在同 span 起点 outgoing 的既有边中查找。
+        for &existing_id in &self.outgoing[span.start] {
+            let existing = &self.edges[existing_id.0];
+            if existing.span == span && existing.candidate.text == candidate.text {
+                let merged = EdgeCandidate::fused(
+                    candidate.text.clone(),
+                    existing
+                        .candidate
+                        .evidence()
+                        .iter()
+                        .copied()
+                        .chain(candidate.evidence().iter().copied()),
+                )
+                .expect("两侧 evidence 均非空,融合不可能失败");
+                self.edges[existing_id.0].candidate = merged;
+                return Ok(existing_id);
+            }
         }
         let id = EdgeId(self.edges.len());
         self.edges.push(LatticeEdge {
