@@ -45,7 +45,7 @@ pub fn build_production_lattice(input: &str, path_limit: NonZeroUsize) -> BuiltL
             (0, len),
             entry.word().to_string(),
             CandidateKind::HotWord,
-            entry.frequency_score() as u64,
+            entry.frequency_score(),
         ));
     }
 
@@ -68,5 +68,5 @@ pub fn build_production_lattice(input: &str, path_limit: NonZeroUsize) -> BuiltL
 
 /// 融合统计快捷访问(测试与基准用)。
 pub fn production_build_stats(input: &str, path_limit: NonZeroUsize) -> BuildStats {
-    build_production_lattice(input, path_limit).stats().clone()
+    *build_production_lattice(input, path_limit).stats()
 }
