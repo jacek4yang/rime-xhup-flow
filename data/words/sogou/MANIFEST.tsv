@@ -21,3 +21,5 @@ sogou_long_09.tsv	170395	8546ef8a5709b3c3c27b8c8f64ab97418102d64496761c3f92a9ea9
 # input_merged_full_sha256: 401d6fb28f030d6e4e02adb6d35fb1cdaa47929d6f5e92db76a1f625134ca5d8
 # entries: 4253254 (cell 2082859 / long 2170395)
 # skipped: not-cjk-or-single 1013 unknown-char 64667 reading 11743
+tags_compact.tsv60594647bc798a3dd8b4de670c65311f4fadb1148b6fc4a04fbd9e4d08b42d755739bc
+protect_list.tsv647904193dfdc04e6a02222390f5e088e39b0a4e3fc9caedf36ced063f1b58b6c159da
