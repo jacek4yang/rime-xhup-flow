@@ -78,6 +78,8 @@ pub struct RimeWordCodeEntry {
     word: String,
     code: KeySequence,
     weight: u32,
+    /// 万象聚合分数(组句/审计/解释使用;不进入静态词典权重)。
+    frequency_score: u64,
 }
 
 /// 扩展词层的 exact 编码关系。它不进入冻结静态主词典，频率分数直接供
@@ -118,6 +120,11 @@ impl RimeWordCodeEntry {
     pub fn weight(&self) -> u32 {
         self.weight
     }
+
+    /// 万象聚合分数:固定层词条的频率证据(组句词典权重同源)。
+    pub fn frequency_score(&self) -> u64 {
+        self.frequency_score
+    }
 }
 
 /// 全部静态词语编码条目(4/6/8 键)的公共投影。
@@ -133,6 +140,7 @@ pub fn canonical_word_code_entries() -> Vec<RimeWordCodeEntry> {
             word: entry.word().to_string(),
             code: entry.code().clone(),
             weight: entry.rime_weight(),
+            frequency_score: entry.frequency_score(),
         })
         .collect()
 }

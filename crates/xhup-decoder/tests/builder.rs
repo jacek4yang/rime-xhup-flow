@@ -9,7 +9,6 @@ fn fact(span: (usize, usize), text: &str, kind: CandidateKind, frequency: u64) -
 #[test]
 fn multi_source_facts_fuse_and_keep_single_edge_per_span_text() {
     // 研究生|命 与 研究|生命 两种分段,同文本不同来源:
-    let builder = LatticeBuilder::new();
     let mut b = LatticeBuilder::new();
     b.push(fact((0, 4), "研究", CandidateKind::HotWord, 266_843));
     b.push(fact((4, 8), "生命", CandidateKind::HotWord, 80_039));
