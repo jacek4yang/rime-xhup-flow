@@ -7,11 +7,16 @@
 
 mod builder;
 mod context;
+mod evidence;
 mod lattice;
 mod scoring;
 
 pub use builder::{BuildStats, BuiltLattice, LatticeBuilder, SourceCandidate};
 pub use context::RuntimeContext;
+pub use evidence::{
+    CandidateSource, FusedCandidate, FusedEdge, FusedEdgeId, LatticeBounds, LatticeBuildStats,
+    LatticeFusionBuilder, SourceEvidence,
+};
 pub use lattice::{
     CandidateEvidence, CandidateKind, EdgeCandidate, EdgeId, Lattice, LatticeEdge, LatticeError,
     LatticePath, PathSet, Span,
