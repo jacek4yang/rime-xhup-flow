@@ -26,6 +26,7 @@ pub mod export_v2;
 pub mod frequency;
 pub mod knowledge;
 pub mod mapping_v2;
+pub mod multi_source_evidence;
 pub mod occupancy;
 pub mod optimize;
 pub mod optimizer_v2;
