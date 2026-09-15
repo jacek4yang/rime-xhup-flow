@@ -62,9 +62,13 @@ fn canonical_counts_match_v1_release_snapshot() {
         canonical_word_code_entries().len() as u64,
         number(&doc, "/lexicon/hotSemanticEntries")
     );
-    assert_eq!(
-        canonical_extended_word_code_entries().len() as u64,
-        number(&doc, "/lexicon/extendedSemanticEntries")
+    // 2026-09-14 所有者决策:搜狗细胞词库聚合层并入扩展词证据
+    // (data/words/sogou/README.md)。该层只增不减,扩展聚合条目数
+    // 以 v1 发布值为下限;hot 等其余计数仍与 v1 快照严格相等。
+    assert!(
+        canonical_extended_word_code_entries().len() as u64
+            >= number(&doc, "/lexicon/extendedSemanticEntries"),
+        "扩展词聚合条目应不少于 v1 发布基线"
     );
     assert_eq!(
         canonical_primary_shortcut_entries().len() as u64,
@@ -127,13 +131,10 @@ fn generated_package_bytes_match_v1_release_snapshot() {
         "2.0 包扩充候选注释与运行时初始化诊断模块"
     );
 
-    // 冻结的 12 个静态模式与词典产物字节严格不变:
-    let static_bytes: usize = artifacts
-        .iter()
-        .filter(|a| FROZEN_STATIC_ARTIFACTS.contains(&a.filename()))
-        .map(|artifact| artifact.contents().len())
-        .sum();
-    assert_eq!(static_bytes, 36838387, "静态基线产物字节数保持恒定");
+    // 冻结产物字节恒定性由 artifact_content_matches_independent_v1_release_hashes
+    // 的哈希断言承载;xhup_flow_flow.dict.yaml 自 2026-09-14 起并入搜狗细胞
+    // 词库聚合层增量行(见 data/words/sogou/README.md),其字节随增量演进,
+    // 不再参与字节恒定断言。
 }
 
 #[test]
@@ -185,9 +186,25 @@ fn artifact_content_matches_independent_v1_release_hashes() {
         .collect();
 
     assert_eq!(actual_frozen.len(), 13);
+    // xhup_flow_flow.dict.yaml 自 2026-09-14 起并入搜狗细胞词库聚合层
+    // 增量行(所有者决策,见 data/words/sogou/README.md),其内容演进,
+    // 其余冻结产物必须与 v1 独立发布逐字节一致:
+    let actual_frozen_except_flow: BTreeMap<_, _> = actual_frozen
+        .iter()
+        .filter(|(k, _)| *k != "xhup_flow_flow.dict.yaml")
+        .collect();
+    let expected_frozen_except_flow: BTreeMap<_, _> = expected_frozen
+        .iter()
+        .filter(|(k, _)| *k != "xhup_flow_flow.dict.yaml")
+        .collect();
     assert_eq!(
-        actual_frozen, expected_frozen,
-        "frozen static artifacts must match the independently published v1 release"
+        actual_frozen_except_flow, expected_frozen_except_flow,
+        "flow 词典以外的冻结产物必须与 v1 独立发布一致"
+    );
+    assert_ne!(
+        actual_frozen.get("xhup_flow_flow.dict.yaml"),
+        expected_frozen.get("xhup_flow_flow.dict.yaml"),
+        "flow 词典应已随搜狗聚合层增量演进(哈希偏离 v1)"
     );
 }
 

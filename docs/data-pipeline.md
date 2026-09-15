@@ -32,9 +32,16 @@ docs/lua-runtime.md;优化目标见 docs/input-model-v2.md。
 | lotem/rime-octagram-data essay(.gram) | LGPL-3.0 | bigram sanity check;离线解码可行(自写 darts walker,BSD 源码可参考),产出是剪枝后 log 概率而非原始计数 |
 | LCCC(thu-coai/CDial-GPT) | 仓库 MIT,但上游微博/豆瓣未清理 | 本地参考;是否允许「不可逆词形计数聚合」入库待所有者拍板,默认不 |
 
-### 1.3 红线(不得入库、不得派生入库)
+### 1.3 红线(不得入库、不得派生入库)——2026-09-14 所有者决策修订
 
-- 任何搜狗系词库(SogouWan/scel,用户协议限非商业);
+> **所有者决策(2026-09-14)**:下述搜狗红线由仓库所有者明确推翻,搜狗
+> 细胞词库聚合层按「个人学习研究、禁止商用」限定入库(见
+> `data/words/sogou/README.md` 与 NOTICE.md §搜狗细胞词库聚合层)。
+> 其余红线维持不变。
+
+- ~~任何搜狗系词库(SogouWan/scel,用户协议限非商业)~~(2026-09-14
+  所有者决策推翻:聚合层限定个人学习研究、禁止商用后入库,见
+  `data/words/sogou/README.md`);
 - NLPCC / SMP 竞赛数据(协议限研究用途);
 - 豆瓣语料、chinese-chatbot-corpus 合集(无许可);
 - essay .gram 的派生数据文件(LGPL);

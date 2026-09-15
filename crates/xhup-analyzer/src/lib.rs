@@ -34,6 +34,7 @@ pub mod prefix;
 pub mod prefix_space;
 pub mod production;
 pub mod production_fixed_first;
+pub mod production_lattice;
 pub mod production_two_key;
 pub mod replay;
 pub mod report;

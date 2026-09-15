@@ -18,6 +18,20 @@ use xhup_core::{HanziReading, XhupHanzi};
 const WORDS_TSV: &str = include_str!("../../../data/words/wanxiang_base_words.tsv");
 const EXTENDED_WORDS_TSV: &str = include_str!("../../../data/words/wanxiang_extended_words.tsv");
 
+/// 搜狗细胞词库聚合层(2~4 字分片,来源与限制见 data/words/sogou/README.md)。
+/// 逐片嵌入;条目分数恒为 1(来源无真实词频),仅提供 exact 候选增量证据。
+const SOGOU_WORD_SHARDS: &[&str] = &[
+    include_str!("../../../data/words/sogou/sogou_cell_01.tsv"),
+    include_str!("../../../data/words/sogou/sogou_cell_02.tsv"),
+    include_str!("../../../data/words/sogou/sogou_cell_03.tsv"),
+    include_str!("../../../data/words/sogou/sogou_cell_04.tsv"),
+    include_str!("../../../data/words/sogou/sogou_cell_05.tsv"),
+    include_str!("../../../data/words/sogou/sogou_cell_06.tsv"),
+    include_str!("../../../data/words/sogou/sogou_cell_07.tsv"),
+    include_str!("../../../data/words/sogou/sogou_cell_08.tsv"),
+    include_str!("../../../data/words/sogou/sogou_cell_09.tsv"),
+];
+
 /// 一条规范词语 semantic entry:`(词, 规范读音序列)` + 万象聚合分数。
 ///
 /// 字段对 crate 内只读;词形零拷贝借用内嵌 TSV,逐字读音为规范类型化切片。
@@ -61,6 +75,42 @@ pub(crate) fn canonical_extended_word_entries() -> &'static [CanonicalWordEntry]
     static ENTRIES: OnceLock<Vec<CanonicalWordEntry>> = OnceLock::new();
     ENTRIES
         .get_or_init(|| parse_tsv(EXTENDED_WORDS_TSV, "wanxiang_extended_words.tsv"))
+        .as_slice()
+}
+
+/// 搜狗细胞词库聚合层全部 semantic entry(与 hot/extended 去重交集的
+/// 增量由聚合方处理;本层独立解析,不做跨层去重假设)。
+///
+/// 分片为同一 TSV 格式的连续切片,排序键 (词长, 词, 读音序列) 跨片单调;
+/// 解析时按分片顺序拼接并校验跨片边界,保证与单片等价。
+pub(crate) fn canonical_sogou_word_entries() -> &'static [CanonicalWordEntry] {
+    static ENTRIES: OnceLock<Vec<CanonicalWordEntry>> = OnceLock::new();
+    ENTRIES
+        .get_or_init(|| {
+            let mut entries: Vec<CanonicalWordEntry> = Vec::new();
+            for (index, shard) in SOGOU_WORD_SHARDS.iter().enumerate() {
+                let name = format!("sogou_cell_{:02}.tsv", index + 1);
+                entries.extend(parse_tsv_shard(shard, &name));
+            }
+            // 跨片边界单调性校验:后一分片首行必须大于等于前一分片末行,
+            // 相等即重复条目,均视为数据损坏。
+            let mut previous_key: Option<(usize, &str, Vec<HanziReading>)> = None;
+            for entry in &entries {
+                let key = (
+                    entry.word().chars().count(),
+                    entry.word(),
+                    entry.readings().to_vec(),
+                );
+                if let Some(previous) = &previous_key {
+                    assert!(
+                        previous < &key,
+                        "sogou 分片拼接后未按 (词长, 词, 读音序列) 严格升序: {key:?}"
+                    );
+                }
+                previous_key = Some(key);
+            }
+            entries
+        })
         .as_slice()
 }
 
@@ -144,6 +194,81 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalWordEntry> {
     entries
 }
 
+/// 解析单个搜狗分片:与 [`parse_tsv`] 相同格式与校验,但不要求该分片
+/// 非空(分片行数由提取器确定性切分,边界单调性由调用方跨片校验)。
+fn parse_tsv_shard(text: &'static str, name: &str) -> Vec<CanonicalWordEntry> {
+    let mut entries: Vec<CanonicalWordEntry> = Vec::new();
+    let mut previous_key: Option<(usize, &'static str, Vec<HanziReading>)> = None;
+    for (index, line) in text.lines().enumerate() {
+        let row_number = index + 1;
+        if line.starts_with('#') {
+            continue;
+        }
+        let mut fields = line.split('\t');
+        let (Some(word), Some(readings_field), Some(score_field), None) =
+            (fields.next(), fields.next(), fields.next(), fields.next())
+        else {
+            panic!("{name} 第 {row_number} 行应为三个 TAB 分隔字段: {line:?}");
+        };
+
+        let chars: Vec<XhupHanzi> = word
+            .chars()
+            .map(|ch| {
+                XhupHanzi::try_from(ch).unwrap_or_else(|_| {
+                    panic!("{name} 第 {row_number} 行汉字不在规范清单内: {ch:?}")
+                })
+            })
+            .collect();
+        assert!(
+            (2..=4).contains(&chars.len()),
+            "{name} 第 {row_number} 行词长应为 2~4 字: {word:?}"
+        );
+
+        let spellings: Vec<&str> = readings_field.split(' ').collect();
+        assert!(
+            spellings.len() == chars.len(),
+            "{name} 第 {row_number} 行读音数应等于词长: {line:?}"
+        );
+        let mut readings: Vec<HanziReading> = Vec::with_capacity(chars.len());
+        for (&hanzi, spelling) in chars.iter().zip(&spellings) {
+            let reading = hanzi
+                .readings()
+                .iter()
+                .copied()
+                .find(|reading| reading.as_str() == *spelling)
+                .unwrap_or_else(|| {
+                    panic!("{name} 第 {row_number} 行读音不是该字的规范读音: {line:?}")
+                });
+            assert!(
+                reading.to_input_syllable().is_some(),
+                "{name} 第 {row_number} 行读音应可编码为 XHUP 输入音节: {line:?}"
+            );
+            readings.push(reading);
+        }
+
+        let score: u64 = score_field
+            .parse()
+            .unwrap_or_else(|_| panic!("{name} 第 {row_number} 行分数应为 u64: {score_field:?}"));
+        assert!(score > 0, "{name} 第 {row_number} 行分数应为正数: {line:?}");
+
+        let key = (chars.len(), word, readings.clone());
+        if let Some(previous) = &previous_key {
+            assert!(
+                (previous.0, previous.1, &previous.2) < (key.0, key.1, &key.2),
+                "{name} 第 {row_number} 行未按 (词长, 词, 读音序列) 严格升序(重复或乱序): {line:?}"
+            );
+        }
+        previous_key = Some(key);
+
+        entries.push(CanonicalWordEntry {
+            word,
+            readings: readings.into_boxed_slice(),
+            frequency_score: score,
+        });
+    }
+    entries
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,6 +309,34 @@ mod tests {
                 .all(|entry| !hot.contains(&(entry.word(), entry.readings())))
         );
         assert!(entries.iter().any(|entry| entry.word() == "提示词"));
+    }
+
+    #[test]
+    fn sogou_shard_counts_match_committed_manifest() {
+        let entries = canonical_sogou_word_entries();
+        assert_eq!(entries.len(), 2_082_859);
+        // 全部条目分数恒为 1(来源无真实词频)。
+        assert!(entries.iter().all(|entry| entry.frequency_score() == 1));
+        let mut per_len = [0usize; 5];
+        for entry in entries {
+            per_len[entry.readings().len()] += 1;
+        }
+        assert_eq!(per_len[2], 335_675);
+        assert_eq!(per_len[3], 745_814);
+        assert_eq!(per_len[4], 1_001_370);
+    }
+
+    #[test]
+    fn sogou_shards_strictly_ordered_across_shard_boundaries() {
+        let entries = canonical_sogou_word_entries();
+        for pair in entries.windows(2) {
+            let (a, b) = (&pair[0], &pair[1]);
+            assert!(
+                (a.word().chars().count(), a.word(), a.readings())
+                    < (b.word().chars().count(), b.word(), b.readings()),
+                "sogou 拼接序列应严格递增(无重复)"
+            );
+        }
     }
 
     #[test]
