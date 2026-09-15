@@ -565,8 +565,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # packages 显式去掉已从 Google 仓库下线的 'tools'(旧版 sdk-tools),
+      # 否则 action 内部 sdkmanager 安装 'tools' 会直接失败(2026-09 起复现)。
       - name: 安装 Android SDK
         uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
 
       - name: 安装 Android SDK 组件(固定版本)
         run: |
