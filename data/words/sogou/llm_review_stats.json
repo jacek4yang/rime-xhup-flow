@@ -1,0 +1,10 @@
+{
+  "model": "deepseek-v4.1-flash",
+  "endpoint": "http://127.0.0.1:8088/v1/messages",
+  "batch_size": 50,
+  "total": 55684,
+  "keep": 9279,
+  "remove": 46405,
+  "missing": 0,
+  "verdicts_sha256": "3e378729b301bc14f17c58a64f5013096845d2a41c3a06ea97e2980c4712317d"
+}
