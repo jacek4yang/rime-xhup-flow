@@ -115,6 +115,7 @@ pub struct CorpusStatsBuilder {
     sentence_counts: BTreeMap<String, u64>,
     left: BTreeMap<String, BTreeSet<String>>,
     right: BTreeMap<String, BTreeSet<String>>,
+    bigram: BTreeMap<String, BTreeMap<String, u64>>,
     sentences: u64,
     tokens: u64,
 }
@@ -134,6 +135,7 @@ impl CorpusStatsBuilder {
             sentence_counts: BTreeMap::new(),
             left: BTreeMap::new(),
             right: BTreeMap::new(),
+            bigram: BTreeMap::new(),
             sentences: 0,
             tokens: 0,
         }
@@ -169,6 +171,31 @@ impl CorpusStatsBuilder {
                 .or_default()
                 .insert(right.to_string());
         }
+        // bigram 转移计数(与上面 left/right 上下文窗口同一边界语义)。
+        for pair in tokens.windows(2) {
+            *self
+                .bigram
+                .entry(pair[0].clone())
+                .or_default()
+                .entry(pair[1].clone())
+                .or_insert(0) += 1;
+        }
+        if let Some(first) = tokens.first() {
+            *self
+                .bigram
+                .entry("<s>".to_string())
+                .or_default()
+                .entry(first.clone())
+                .or_insert(0) += 1;
+        }
+        if let Some(last) = tokens.last() {
+            *self
+                .bigram
+                .entry(last.clone())
+                .or_default()
+                .entry("</s>".to_string())
+                .or_insert(0) += 1;
+        }
     }
 
     /// 完成聚合。
@@ -191,6 +218,33 @@ impl CorpusStatsBuilder {
             sentences: self.sentences,
             tokens: self.tokens,
         }
+    }
+
+    /// 词级 bigram 转移计数(与 [`Self::feed`] 同一分词流)。
+    ///
+    /// 产出确定性 TSV:`left<TAB>right<TAB>count`,按 `(left, right)`
+    /// 字典序;边界记 `<s>`/`</s>`,头部注释记录句数与转移对数。
+    /// 用途:committed-context bigram scorer(xhup-decoder)的转移证据;
+    /// 只有聚合计数入库,原始语料绝不入库。
+    pub fn bigram_tsv(&self) -> String {
+        let mut transitions: BTreeMap<(&str, &str), u64> = BTreeMap::new();
+        for (left, row) in &self.bigram {
+            for (right, &count) in row {
+                transitions.insert((left.as_str(), right.as_str()), count);
+            }
+        }
+        let mut out = String::new();
+        out.push_str(&format!(
+            "# kdconv-bigram sentences={} tokens={} pairs={}\n",
+            self.sentences,
+            self.tokens,
+            transitions.len()
+        ));
+        out.push_str("left\tright\tcount\n");
+        for ((left, right), count) in &transitions {
+            out.push_str(&format!("{left}\t{right}\t{count}\n"));
+        }
+        out
     }
 }
 

@@ -5,11 +5,13 @@
 //! librime；候选检索、Lua 编排与有界 Beam/Viterbi 解码由后续里程碑实现。
 #![forbid(unsafe_code)]
 
+mod bigram;
 mod builder;
 mod context;
 mod lattice;
 mod scoring;
 
+pub use bigram::{BOS, BigramModel, EOS, KdconvBigramBreakdown, KdconvBigramScorer};
 pub use builder::{BuildStats, BuiltLattice, LatticeBuilder, SourceCandidate};
 pub use context::RuntimeContext;
 pub use lattice::{
