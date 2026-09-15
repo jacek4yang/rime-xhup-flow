@@ -129,6 +129,22 @@ score = Σ fixed_point_log2(word_frequency + 1)
 n-gram backoff、static compatibility、ambiguity/confidence、user selection/recency 与
 安全回退项。
 
+### committed-context bigram scorer(`kdconv-bigram/v1`)
+
+第一个消费 committed left context 的 scorer(xhup-decoder `bigram.rs`)：
+
+```text
+score = baseline + Σ fixed_point_log2(bigram_count(left, right) + 1) × transition_weight
+```
+
+- 转移证据:`data/corpus/kdconv_bigram.tsv`(KdConv 92,558 句,与 unigram
+  统计同一分词流;生成与许可见 data/corpus/README.md);
+- 覆盖「context 尾 token → 路径首段」与路径内相邻段两种相邻关系;
+- committed context 经有界窗口(默认 4 token)提取,未知字符切断链;
+- 无证据转移零奖励,不阻断 OOV/open composition;
+- breakdown 暴露 baseline 总分、转移奖励与命中转移列表(Trainer 解释)。
+
+
 ## benchmark v1
 
 格式与来源见 [data/benchmarks/README.md](../data/benchmarks/README.md)。关键约束：

@@ -41,6 +41,26 @@
   「知道/什么」类引导词高频而「我们」类主语词低频;它提供会话域
   证据但不代表移动聊天全貌,后续以 PTT(转简)等来源补充。
 
+## kdconv_bigram.tsv(会话域 bigram 转移,2026-09-15)
+
+- **来源**:与 conversation_kdconv.tsv 完全相同的 92,558 句(相同
+  SHA-256 pin)与同一最大匹配分词流(Segmenter::build)。
+- **生成命令**(可复现,字节级确定性):
+
+  ```bash
+  python3 data/corpus/scripts/kdconv_to_sentences.py <kdconv数据目录> /tmp/sentences.txt
+  cargo run --locked -p xhup-analyzer --bin corpus-stats -- \
+    --input /tmp/sentences.txt --output /tmp/unigram.tsv \
+    --bigram data/corpus/kdconv_bigram.tsv
+  ```
+
+- **格式**:`left<TAB>right<TAB>count`(按 (left, right) 字典序;
+  句首/句尾边界 `<s>`/`</s>`;头部注释记录句数/token 数/转移对数)。
+  232,987 个转移对,3.7MB。
+- **消费方**:xhup-decoder `KdconvBigramScorer`(`kdconv-bigram/v1`,
+  committed-context 评分,见 docs/architecture-v2.md scorer 契约节)。
+- **许可**:派生自 Apache-2.0 的 KdConv,聚合计数,随源同许可。
+
 ## replay_fixture.txt(回放夹具,入库)
 
 - **用途**:CI 语料回放回归门禁的输入(见 `.github/workflows/ci.yml`

@@ -52,11 +52,15 @@ fn collect_inputs(path: &Path) -> Result<Vec<PathBuf>, String> {
 fn main() -> ExitCode {
     let mut input: Option<PathBuf> = None;
     let mut output: Option<PathBuf> = None;
+    let mut bigram_output: Option<PathBuf> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--input" => input = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--output" => output = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
+            "--bigram" => {
+                bigram_output = Some(PathBuf::from(args.next().unwrap_or_else(|| usage())))
+            }
             _ => usage(),
         }
     }
@@ -89,9 +93,16 @@ fn main() -> ExitCode {
             builder.feed(line);
         }
     }
+    let bigram_tsv = builder.bigram_tsv();
     let stats = builder.finish();
     if let Err(e) = std::fs::write(&output, stats.to_tsv()) {
         eprintln!("无法写出 {}: {e}", output.display());
+        return ExitCode::FAILURE;
+    }
+    if let Some(bigram_output) = &bigram_output
+        && let Err(e) = std::fs::write(bigram_output, bigram_tsv)
+    {
+        eprintln!("无法写出 bigram {}: {e}", bigram_output.display());
         return ExitCode::FAILURE;
     }
     println!(
