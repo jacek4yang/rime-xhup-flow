@@ -52,3 +52,19 @@
   娱乐(403)待 LLM 精判;keep=正常词汇;
 - 再生成:	ools/classify_sogou.py --celldb <原始抓取目录> --sys-freq <频率表>
   (原始 scel/txt 仅存于抓取机器,不入仓库;产物哈希见 MANIFEST)。
+
+## LLM 精判层(2026-09-15,词库质量提升计划 PR-3,issue #94)
+
+- llm_review_verdicts.tsv(55,684 行,3 列:词、读音、判定):
+  tags_compact.tsv 全部 llm_review 词条的 LLM 精判结果,**全量判定完成**;
+- 判定语义:keep=日常常用词(9,279 条)/ remove=具体人名、角色名、作品名、
+  粉丝圈黑话、生造词(46,405 条);拿不准一律 remove(保守优先);
+- 保护兜底:protected 白名单词即使被 LLM 判 remove 也强制回写 keep
+  (本批判定中白名单词未出现冲突);
+- 模型与可复现性:deepseek-v4.1-flash(本地 codebuddy-proxy,温度 0,
+  批大小 50,批内顺序固定);统计与判定文件 SHA-256 见 llm_review_stats.json
+  (verdicts sha256: 3e378729b301bc14f17c58a64f5013096845d2a41c3a06ea97e2980c4712317d);
+- 重建:python tools/llm_review.py --endpoint <Anthropic Messages 兼容端点>
+  (需本地模型;判定文件逐批落盘,断点续跑);原始分片与 tags_compact 零修改;
+- 消费方:PR-4 构建分流——remove 词条构建时排除,keep 词条进入下一轮
+  多源频率证据融合。
