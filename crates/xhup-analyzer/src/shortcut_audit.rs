@@ -276,7 +276,7 @@ mod tests {
             hints: &hints,
             full_code_lens: &full_lens,
             normalized_frequency: &freq,
-            occupancy: &occupancy,
+            occupancy,
             top_n: 1000,
         };
         let (entries, metrics) = run_audit(&input);
@@ -308,7 +308,7 @@ mod tests {
             hints: &hints,
             full_code_lens: &full_lens,
             normalized_frequency: &freq,
-            occupancy: &occupancy,
+            occupancy,
             top_n: 10,
         };
         let (entries, metrics) = run_audit(&input);
@@ -327,7 +327,7 @@ mod tests {
             hints: &hints,
             full_code_lens: &full_lens,
             normalized_frequency: &freq,
-            occupancy: &occupancy,
+            occupancy,
             top_n: 1000,
         };
         let (entries, metrics) = run_audit(&input);
