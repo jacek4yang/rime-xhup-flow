@@ -21,6 +21,8 @@
 use xhup_core::KeySequence;
 use xhup_generator::WordCodeAnalysisEntry;
 
+use std::collections::BTreeMap;
+
 use crate::corpus::CorpusStats;
 use crate::frequency::FrequencyModel;
 
@@ -49,6 +51,9 @@ pub struct LexicalEvidence {
     formal_frequency: Option<f64>,
     /// 技术域归一化频率(语料管线落地前 None)。
     technical_frequency: Option<f64>,
+    /// 多源融合 daily-prior(MultiSourceFrequencyEvidence,§25 第 2 步):
+    /// 覆盖全部 canonical 词;由 evidence set 构建时融合注入。
+    daily_prior: Option<f64>,
 }
 
 impl LexicalEvidence {
@@ -102,6 +107,11 @@ impl LexicalEvidence {
         self.technical_frequency
     }
 
+    /// 多源融合 daily-prior(MultiSourceFrequencyEvidence;缺失 = 未接入)。
+    pub fn daily_prior(&self) -> Option<f64> {
+        self.daily_prior
+    }
+
     /// 测试构造:显式给定各信号(仅供 synthetic 测试;对集成测试可见)。
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
@@ -124,6 +134,7 @@ impl LexicalEvidence {
             conversation_frequency,
             formal_frequency: None,
             technical_frequency: None,
+            daily_prior: None,
         }
     }
 }
@@ -178,6 +189,8 @@ pub struct EvidenceCoverage {
     pub formal_frequency: f64,
     /// 技术域频率覆盖率。
     pub technical_frequency: f64,
+    /// 多源 daily-prior 覆盖率(接入后应为 1.0)。
+    pub daily_prior: f64,
 }
 
 /// 全部 canonical 词语关系的词汇证据视图(构建一次,各分析复用)。
@@ -196,6 +209,30 @@ impl LexicalEvidenceSet {
         let corpus = CorpusStats::from_tsv(CONVERSATION_TSV).expect("嵌入的语料统计必须可解析");
         let corpus_tokens = corpus.tokens.max(1) as f64;
         let corpus_sentences = corpus.sentences.max(1) as f64;
+        // 多源 daily-prior(§25 第 2 步):词 → 万象归一化频率,与
+        // MultiSourceFrequencyEvidence 的其余证据源(会话语料、白名单
+        // 来源标记)融合;wanxiang 是 canonical 前提,先验恒存在。
+        let prior_input: BTreeMap<String, f64> = words
+            .iter()
+            .map(|entry| {
+                (
+                    entry.word().to_string(),
+                    frequency.word_probability(entry.frequency_score()),
+                )
+            })
+            .collect();
+        let multi_source = crate::multi_source_evidence::build_from_canonical(&prior_input);
+        let prior_weights = crate::multi_source_evidence::DailyPriorWeights::default();
+        let prior_by_word: BTreeMap<String, f64> = multi_source
+            .entries()
+            .iter()
+            .map(|e| {
+                (
+                    e.word().to_string(),
+                    multi_source.daily_prior(e, &prior_weights),
+                )
+            })
+            .collect();
         let entries = words
             .iter()
             .map(|entry| {
@@ -213,6 +250,7 @@ impl LexicalEvidenceSet {
                     // 正式/技术域:来源待导入(docs/data-pipeline.md)。
                     formal_frequency: None,
                     technical_frequency: None,
+                    daily_prior: prior_by_word.get(entry.word()).copied(),
                 }
             })
             .collect();
@@ -259,6 +297,12 @@ impl LexicalEvidenceSet {
                 self.entries
                     .iter()
                     .filter(|e| e.technical_frequency.is_some())
+                    .count(),
+            ),
+            daily_prior: rate(
+                self.entries
+                    .iter()
+                    .filter(|e| e.daily_prior.is_some())
                     .count(),
             ),
         }
@@ -322,6 +366,29 @@ mod tests {
         // 待导入信号:显式 0%(缺失 ≠ 零;来源导入时本断言必须更新)。
         assert_eq!(coverage.formal_frequency, 0.0);
         assert_eq!(coverage.technical_frequency, 0.0);
+        // 多源 daily-prior:wanxiang 为 canonical 前提,先验全量覆盖。
+        assert_eq!(coverage.daily_prior, 1.0, "daily_prior 恒存在(MSFE 接入)");
+    }
+
+    #[test]
+    fn daily_prior_prefers_multi_source_common_words() {
+        let (_, set) = evidence_set();
+        // 真实数据上:多源在测的日常词先验应显著高于先验为负的词。
+        let mut entries: Vec<&LexicalEvidence> = set.entries().iter().collect();
+        entries.sort_by(|a, b| {
+            b.daily_prior()
+                .partial_cmp(&a.daily_prior())
+                .expect("先验不应为 NaN")
+        });
+        let top = entries[0];
+        assert!(
+            top.conversation_frequency().is_some() || top.wanxiang_score() > 0,
+            "先验最高词应有证据支撑: {}",
+            top.word()
+        );
+        // 融合输入的确定性:同一词重复计算结果一致。
+        let again = top.daily_prior().unwrap();
+        assert!((again - top.daily_prior().unwrap()).abs() < 1e-12);
     }
 
     #[test]

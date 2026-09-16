@@ -209,7 +209,12 @@ pub fn evaluate_assignment(
 ) -> UtilityBreakdownV2 {
     let (wg, wc, wsc, wcd) = weights.effective(evidence);
     // 各信号统一到可比尺度:频率类信号取 log1p 压缩动态范围。
-    let global = (evidence.normalized_frequency()).ln_1p();
+    // daily_prior(MultiSourceFrequencyEvidence)存在时作为全局频率项的
+    // **替代**(它本身已含 wanxiang 份额,不能再叠加一次):
+    let global_signal = evidence
+        .daily_prior()
+        .unwrap_or_else(|| evidence.normalized_frequency());
+    let global = global_signal.ln_1p();
     let conversation = evidence
         .conversation_frequency()
         .map(f64::ln_1p)
