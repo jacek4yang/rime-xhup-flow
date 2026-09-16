@@ -8,8 +8,9 @@
 //! 3. 是否「有用」(rank 1:输入简码即首选命中)还是「误导」
 //!    (词不在菜单或 rank > 1,用户必须翻页/选择,提示价值存疑)?
 //! 4. 全库聚合指标:top1/top3 rate、misleading-hint rate、
-//!    expected effort saving(词频加权)、collision mass、
-//!    prefix utilization、high-frequency shallow-slot coverage。
+//!    expected effort saving(daily-prior 加权:log 域先验 exp 归一化)、
+//!    collision mass、prefix utilization、
+//!    high-frequency shallow-slot coverage(daily-prior 降序)。
 //!
 //! 效用语义与 optimizer/replay 共享:键节省 = 全码长 − 简码长(与
 //! lua_hints「严格短于全码才提示」一致);rank 来自 [`CodeOccupancy`]
@@ -76,13 +77,20 @@ pub struct ShortcutAuditMetrics {
     pub useful_with_selection: usize,
     /// verdict = Misleading 的数量与占比(misleading-hint rate)。
     pub misleading: usize,
-    /// 词频加权的期望键节省(Σ P(word) × saved;P 用万象归一化频率)。
+    /// 期望键节省:Σ w(word) × saved。
+    ///
+    /// daily-prior 是 log 域相对值(0 = 中位),**不是**概率,不可与 1e-6
+    /// 比较,也不可直接当 P(word)。正质量 = `exp(prior)`,仅保留有限且
+    /// 严格为正的值,在传入的先验图上归一化使 Σw = 1;缺失先验的词显式
+    /// 跳过,不填 0。未提供 daily_prior 图时回退到 `normalized_frequency`。
     pub expected_effort_saving: f64,
     /// 重码质量合计(Σ (fanout − 1) / fanout;衡量 collision mass)。
     pub collision_mass: f64,
     /// 前缀利用率:被简码占用的不同码数 / (简码数)(去重后)。
     pub prefix_utilization: f64,
-    /// 高频词浅层覆盖:先验 top-1000 词中获得 ≤3 键简码的比例。
+    /// 高频词浅层覆盖:daily-prior 降序(词形升序兜底) top-N 中获得 ≤3
+    /// 键简码的比例。缺失先验的词不进入 top-N;未提供 daily_prior 图时
+    /// 回退到万象归一化频率排序。
     pub top1000_shallow_coverage: f64,
 }
 
@@ -92,8 +100,11 @@ pub struct ShortcutAuditInput<'a> {
     pub hints: &'a BTreeMap<String, String>,
     /// 词 → 全码键数(quick-hint 视图构建时的伴生数据)。
     pub full_code_lens: &'a BTreeMap<String, usize>,
-    /// 词 → 万象归一化频率(expected effort saving 加权)。
+    /// 词 → 万象归一化频率(daily_prior 缺失时的回退加权/排序)。
     pub normalized_frequency: &'a BTreeMap<String, f64>,
+    /// 词 → daily-prior(log 域相对值,0 = 中位)。`Some` 时优先用于
+    /// expected_effort_saving 与 top-N 浅层覆盖;图中不存在的词视为缺失。
+    pub daily_prior: Option<&'a BTreeMap<String, f64>>,
     /// 真实菜单体系(canonical 层静态占用)。
     pub occupancy: &'a crate::occupancy::CodeOccupancy,
     /// 先验 top-N 浅层覆盖的 N(§10 高频词浅层覆盖口径)。
@@ -136,6 +147,7 @@ fn aggregate(entries: &[ShortcutAuditEntry], input: &ShortcutAuditInput) -> Shor
         total: entries.len(),
         ..ShortcutAuditMetrics::default()
     };
+    let masses = normalized_effort_masses(input.daily_prior, input.normalized_frequency);
     let mut distinct_codes = std::collections::BTreeSet::new();
     for e in entries {
         match e.verdict() {
@@ -147,9 +159,9 @@ fn aggregate(entries: &[ShortcutAuditEntry], input: &ShortcutAuditInput) -> Shor
             metrics.collision_mass += (e.menu_fanout - 1) as f64 / e.menu_fanout as f64;
         }
         distinct_codes.insert(e.shortcut_code.clone());
-        // 词频加权期望键节省:缺失频率的词不计入(显式跳过,不填 0)。
-        if let Some(&p) = input.normalized_frequency.get(&e.word) {
-            metrics.expected_effort_saving += p * e.keystrokes_saved() as f64;
+        // 期望键节省:缺失先验/质量的词不计入(显式跳过,不填 0)。
+        if let Some(&w) = masses.get(&e.word) {
+            metrics.expected_effort_saving += w * e.keystrokes_saved() as f64;
         }
     }
     metrics.prefix_utilization = if entries.is_empty() {
@@ -157,16 +169,58 @@ fn aggregate(entries: &[ShortcutAuditEntry], input: &ShortcutAuditInput) -> Shor
     } else {
         distinct_codes.len() as f64 / entries.len() as f64
     };
-    // 高频词浅层覆盖:先验(top-N 由调用方传入排序)中 ≤3 键简码占比。
+    // 高频词浅层覆盖:先验 top-N(daily-prior 优先)中 ≤3 键简码占比。
     metrics.top1000_shallow_coverage = shallow_coverage(input);
     metrics
 }
 
+/// daily-prior → 正质量:`exp(prior)`,仅有限且严格为正。
+///
+/// 先验是 log 域相对值(0 = 中位),不是概率;exp 把中位置于质量 1,
+/// 高于中位的词质量大于 1。溢出/下溢到非有限或非正的值视为不可用。
+fn exp_positive_mass(prior: f64) -> Option<f64> {
+    let mass = prior.exp();
+    (mass.is_finite() && mass > 0.0).then_some(mass)
+}
+
+/// 在传入的先验图上把质量归一化为权重(Σw = 1)。
+///
+/// 优先 `daily_prior`(exp 正质量);未提供时回退到 `normalized_frequency`
+/// (已是非负质量)。图中缺失、非有限、非正的词跳过,不填 0。
+fn normalized_effort_masses(
+    daily_prior: Option<&BTreeMap<String, f64>>,
+    normalized_frequency: &BTreeMap<String, f64>,
+) -> BTreeMap<String, f64> {
+    let mut masses = BTreeMap::new();
+    match daily_prior {
+        Some(priors) => {
+            for (word, &prior) in priors {
+                if let Some(mass) = exp_positive_mass(prior) {
+                    masses.insert(word.clone(), mass);
+                }
+            }
+        }
+        None => {
+            for (word, &p) in normalized_frequency {
+                if p.is_finite() && p > 0.0 {
+                    masses.insert(word.clone(), p);
+                }
+            }
+        }
+    }
+    let z: f64 = masses.values().copied().sum();
+    if z > 0.0 && z.is_finite() {
+        for mass in masses.values_mut() {
+            *mass /= z;
+        }
+        masses
+    } else {
+        BTreeMap::new()
+    }
+}
+
 fn shallow_coverage(input: &ShortcutAuditInput) -> f64 {
-    // 先验口径:万象归一化频率降序,词形升序兜底(与 sweep_v2 同口径)。
-    let mut ranked: Vec<(&String, &f64)> = input.normalized_frequency.iter().collect();
-    ranked.sort_by(|a, b| b.1.total_cmp(a.1).then_with(|| a.0.cmp(b.0)));
-    let top: Vec<&String> = ranked.iter().take(input.top_n).map(|(w, _)| *w).collect();
+    let top = ranked_prior_words(input);
     if top.is_empty() {
         return 0.0;
     }
@@ -180,6 +234,27 @@ fn shallow_coverage(input: &ShortcutAuditInput) -> f64 {
         })
         .count();
     covered as f64 / top.len() as f64
+}
+
+/// 浅层覆盖的先验排序:daily-prior 降序,词形升序兜底。
+/// 缺失/非有限先验的词不进入列表;未提供 daily_prior 图时回退到
+/// 万象归一化频率(同样降序 + 词形升序)。
+fn ranked_prior_words<'a>(input: &ShortcutAuditInput<'a>) -> Vec<&'a String> {
+    let source: &BTreeMap<String, f64> = match input.daily_prior {
+        Some(priors) => priors,
+        None => input.normalized_frequency,
+    };
+    let mut ranked: Vec<(&String, f64)> = source
+        .iter()
+        .filter(|(_, value)| value.is_finite())
+        .map(|(word, value)| (word, *value))
+        .collect();
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    ranked
+        .into_iter()
+        .take(input.top_n)
+        .map(|(word, _)| word)
+        .collect()
 }
 
 /// 审计 TSV(确定性;头部注释含聚合指标,数据按词字典序)。
@@ -276,6 +351,7 @@ mod tests {
             hints: &hints,
             full_code_lens: &full_lens,
             normalized_frequency: &freq,
+            daily_prior: None,
             occupancy,
             top_n: 1000,
         };
@@ -308,6 +384,7 @@ mod tests {
             hints: &hints,
             full_code_lens: &full_lens,
             normalized_frequency: &freq,
+            daily_prior: None,
             occupancy,
             top_n: 10,
         };
@@ -327,6 +404,7 @@ mod tests {
             hints: &hints,
             full_code_lens: &full_lens,
             normalized_frequency: &freq,
+            daily_prior: None,
             occupancy,
             top_n: 1000,
         };
@@ -358,5 +436,147 @@ mod tests {
             .iter()
             .map(|e| (e.word().to_string(), e.frequency_score() as f64 / total))
             .collect()
+    }
+
+    const FIXTURE_HIGH: &str = "::~high-prior::~";
+    const FIXTURE_LOW: &str = "::~low-prior::~";
+    const FIXTURE_WANXIANG: &str = "::~wanxiang-heavy::~";
+
+    fn synthetic_audit(
+        hints: &BTreeMap<String, String>,
+        full_lens: &BTreeMap<String, usize>,
+        wanxiang: &BTreeMap<String, f64>,
+        prior: &BTreeMap<String, f64>,
+        occupancy: &crate::occupancy::CodeOccupancy,
+        top_n: usize,
+    ) -> (Vec<ShortcutAuditEntry>, ShortcutAuditMetrics) {
+        run_audit(&ShortcutAuditInput {
+            hints,
+            full_code_lens: full_lens,
+            normalized_frequency: wanxiang,
+            daily_prior: Some(prior),
+            occupancy,
+            top_n,
+        })
+    }
+
+    #[test]
+    fn higher_daily_prior_contributes_more_to_expected_effort_saving() {
+        // 两词键节省相同;先验图同时含二者,分别只广告一词,使贡献差
+        // 能从聚合指标直接读出(归一化分母是整张先验图)。
+        let occupancy = shared_occupancy();
+        let mut full_lens = BTreeMap::new();
+        full_lens.insert(FIXTURE_HIGH.to_string(), 6);
+        full_lens.insert(FIXTURE_LOW.to_string(), 6);
+        let mut wanxiang = BTreeMap::new();
+        wanxiang.insert(FIXTURE_HIGH.to_string(), 0.01);
+        wanxiang.insert(FIXTURE_LOW.to_string(), 0.99);
+        let mut prior = BTreeMap::new();
+        prior.insert(FIXTURE_HIGH.to_string(), 2.0);
+        prior.insert(FIXTURE_LOW.to_string(), -1.0);
+
+        let mut hints_high = BTreeMap::new();
+        hints_high.insert(FIXTURE_HIGH.to_string(), "aaaa".to_string());
+        let mut hints_low = BTreeMap::new();
+        hints_low.insert(FIXTURE_LOW.to_string(), "bbbb".to_string());
+
+        let saving_high =
+            synthetic_audit(&hints_high, &full_lens, &wanxiang, &prior, occupancy, 10)
+                .1
+                .expected_effort_saving;
+        let saving_low = synthetic_audit(&hints_low, &full_lens, &wanxiang, &prior, occupancy, 10)
+            .1
+            .expected_effort_saving;
+        assert!(
+            saving_high > saving_low,
+            "同键节省下高 daily_prior 应对期望节省贡献更多: high={saving_high} low={saving_low}"
+        );
+
+        let masses = normalized_effort_masses(Some(&prior), &wanxiang);
+        let w_high = masses[FIXTURE_HIGH];
+        let w_low = masses[FIXTURE_LOW];
+        assert!(w_high > w_low);
+        assert!((w_high + w_low - 1.0).abs() < 1e-12);
+        assert!((saving_high - w_high * 2.0).abs() < 1e-12);
+        assert!((saving_low - w_low * 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn missing_daily_prior_is_skipped_not_zero_filled() {
+        let occupancy = shared_occupancy();
+        let mut hints = BTreeMap::new();
+        hints.insert(FIXTURE_HIGH.to_string(), "aaaa".to_string());
+        hints.insert(FIXTURE_LOW.to_string(), "bbbb".to_string());
+        let mut full_lens = BTreeMap::new();
+        full_lens.insert(FIXTURE_HIGH.to_string(), 6);
+        full_lens.insert(FIXTURE_LOW.to_string(), 8);
+        let mut wanxiang = BTreeMap::new();
+        wanxiang.insert(FIXTURE_HIGH.to_string(), 0.01);
+        wanxiang.insert(FIXTURE_LOW.to_string(), 0.99);
+        let mut prior = BTreeMap::new();
+        prior.insert(FIXTURE_HIGH.to_string(), 0.0);
+        let metrics = synthetic_audit(&hints, &full_lens, &wanxiang, &prior, occupancy, 10).1;
+        // 仅 FIXTURE_HIGH 有先验,权重 1;低先验词缺失 → 跳过,不按 0 或万象频率填。
+        assert!((metrics.expected_effort_saving - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn top_n_shallow_coverage_uses_daily_prior_order_not_wanxiang() {
+        let occupancy = shared_occupancy();
+        let mut hints = BTreeMap::new();
+        hints.insert(FIXTURE_HIGH.to_string(), "abc".to_string());
+        hints.insert(FIXTURE_WANXIANG.to_string(), "abcd".to_string());
+        let mut full_lens = BTreeMap::new();
+        full_lens.insert(FIXTURE_HIGH.to_string(), 6);
+        full_lens.insert(FIXTURE_WANXIANG.to_string(), 6);
+        let mut wanxiang = BTreeMap::new();
+        wanxiang.insert(FIXTURE_HIGH.to_string(), 0.001);
+        wanxiang.insert(FIXTURE_WANXIANG.to_string(), 0.999);
+        let mut prior = BTreeMap::new();
+        prior.insert(FIXTURE_HIGH.to_string(), 3.0);
+        prior.insert(FIXTURE_WANXIANG.to_string(), -3.0);
+        let metrics = synthetic_audit(&hints, &full_lens, &wanxiang, &prior, occupancy, 1).1;
+        // top-1 必须是高 daily_prior(浅层)而非高万象(非浅层)。
+        assert_eq!(metrics.top1000_shallow_coverage, 1.0);
+
+        // 只在万象图中的词不得挤进 top-N。
+        wanxiang.insert(FIXTURE_LOW.to_string(), 0.5);
+        hints.insert(FIXTURE_LOW.to_string(), "xyz".to_string());
+        full_lens.insert(FIXTURE_LOW.to_string(), 6);
+        let metrics = synthetic_audit(&hints, &full_lens, &wanxiang, &prior, occupancy, 2).1;
+        // prior 图只有 HIGH / WANXIANG 两词;LOW 缺失不得占用 top-2。
+        // HIGH 浅层 + WANXIANG 非浅层 → 0.5;若 LOW(浅层)挤入则为 1.0。
+        assert_eq!(metrics.top1000_shallow_coverage, 0.5);
+    }
+
+    #[test]
+    fn misleading_rate_zero_when_every_advertised_shortcut_is_rank_one() {
+        let occupancy = shared_occupancy();
+        let (all_hints, all_lens) = xhup_generator::lua_hints_view_with_full_lens();
+        let mut hints = BTreeMap::new();
+        let mut full_lens = BTreeMap::new();
+        for (word, code) in &all_hints {
+            let rank = occupancy
+                .group(&parse_code(code))
+                .and_then(|group| group.iter().position(|c| c.text() == word).map(|p| p + 1));
+            if rank == Some(1) {
+                hints.insert(word.clone(), code.clone());
+                if let Some(&len) = all_lens.get(word) {
+                    full_lens.insert(word.clone(), len);
+                }
+                if hints.len() >= 8 {
+                    break;
+                }
+            }
+        }
+        assert!(!hints.is_empty(), "真实菜单中必须能抽出 rank-1 提示夹具");
+        let wanxiang = BTreeMap::new();
+        let prior = BTreeMap::new();
+        let (_, metrics) = synthetic_audit(&hints, &full_lens, &wanxiang, &prior, occupancy, 8);
+        assert_eq!(metrics.misleading, 0);
+        assert_eq!(metrics.useful, metrics.total);
+        assert_eq!(metrics.useful_with_selection, 0);
+        let rate = metrics.misleading as f64 / metrics.total.max(1) as f64;
+        assert_eq!(rate, 0.0);
     }
 }
