@@ -5,6 +5,15 @@ use crate::{Lattice, LatticePath, RuntimeContext};
 /// 评分统一使用固定点整数；越大越好，避免跨平台浮点决胜漂移。
 pub type Score = i64;
 
+/// Q10 固定点 log2(count + 1)。零计数是“无证据”而非不可达。
+pub(crate) fn log2_q10(count: u64) -> Score {
+    let value = count.saturating_add(1);
+    let exponent = value.ilog2();
+    let base = 1_u64 << exponent;
+    let fractional = (((value - base) as u128) * 1024 / base as u128) as Score;
+    Score::from(exponent) * 1024 + fractional
+}
+
 /// scorer 的最小接口。实现必须在相同 context、lattice 与 path 下返回相同结果，
 /// 且不得修改外部状态。
 pub trait DeterministicScorer {
@@ -48,11 +57,7 @@ impl BaselineScorer {
 
     /// Q10 固定点 log2(frequency + 1)。零频率是“无证据”而非不可达。
     fn frequency_reward(frequency: u64) -> Score {
-        let value = frequency.saturating_add(1);
-        let exponent = value.ilog2();
-        let base = 1_u64 << exponent;
-        let fractional = (((value - base) as u128) * 1024 / base as u128) as Score;
-        Score::from(exponent) * 1024 + fractional
+        log2_q10(frequency)
     }
 }
 
