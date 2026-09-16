@@ -12,6 +12,7 @@
 pub mod benchmark;
 pub mod cost;
 pub mod explain;
+pub mod production;
 pub mod slot;
 pub mod solver;
 pub mod trie;
@@ -19,6 +20,11 @@ pub mod trie;
 pub use benchmark::{BenchmarkMetrics, PrefixSpaceBenchmarkReport, evaluate_v3_metrics};
 pub use cost::{PrefixCostModel, PrefixUtilityBreakdown, evaluate_prefix_placement};
 pub use explain::PrefixPlacementExplanation;
+pub use production::{
+    DEFAULT_PRODUCTION_LIMIT, ProductionPrefixUniverse, TEST_PRODUCTION_LIMIT,
+    build_production_universe, solver_mass, stats_equal_except_runtime, verify_prefix_closed,
+    verify_production_invariants,
+};
 pub use slot::{CandidateSlotKey, CandidateSlotState, SlotCandidate, SlotPlacementSource};
 pub use solver::{
     MAX_SLOTS_PER_NODE, PrefixSpaceCompiledModel, PrefixSpaceStats, PrefixTarget, SolverOptions,
