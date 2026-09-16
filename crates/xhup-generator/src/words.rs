@@ -78,8 +78,8 @@ pub(crate) fn canonical_extended_word_entries() -> &'static [CanonicalWordEntry]
         .as_slice()
 }
 
-/// 搜狗细胞词库聚合层全部 semantic entry(与 hot/extended 去重交集的
-/// 增量由聚合方处理;本层独立解析,不做跨层去重假设)。
+/// 搜狗细胞词库聚合层全部 semantic entry(原始分片,含 target /
+/// llm_review-remove)。生产构建走 sogou_filter 生产子集。
 ///
 /// 分片为同一 TSV 格式的连续切片,排序键 (词长, 词, 读音序列) 跨片单调;
 /// 解析时按分片顺序拼接并校验跨片边界,保证与单片等价。

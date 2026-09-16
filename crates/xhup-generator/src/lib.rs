@@ -37,6 +37,7 @@ mod rime_shortcuts;
 mod rime_word_shortcuts;
 mod rime_words;
 mod shortcuts;
+mod sogou_filter;
 mod trainer;
 mod two_key_shortcuts;
 mod word_codes;
