@@ -242,11 +242,14 @@ fn verdict_label(v: ShortcutVerdict) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::OnceLock;
     /// 合成占用视图替代品:直接用真实 CodeOccupancy 结构构造难以在测试
     /// 中注入合成菜单(它是 canonical 数据派生的冻结视图);审计核心
     /// 逻辑(判定/聚合/TSV)用真实 canonical 占用 + 合成 hints 验证。
-    fn real_occupancy() -> crate::occupancy::CodeOccupancy {
-        crate::occupancy::CodeOccupancy::build_current_production()
+    /// 构建成本高(canonical 全层),进程内共享一份(测试只读)。
+    fn shared_occupancy() -> &'static crate::occupancy::CodeOccupancy {
+        static CELL: OnceLock<crate::occupancy::CodeOccupancy> = OnceLock::new();
+        CELL.get_or_init(crate::occupancy::CodeOccupancy::build_current_production)
     }
 
     #[test]
@@ -266,7 +269,7 @@ mod tests {
 
     #[test]
     fn audit_entries_derive_rank_from_real_menu() {
-        let occupancy = real_occupancy();
+        let occupancy = shared_occupancy();
         let freq = real_word_freq_normalized();
         let (hints, full_lens) = xhup_generator::lua_hints_view_with_full_lens();
         let input = ShortcutAuditInput {
@@ -295,7 +298,7 @@ mod tests {
     fn misleading_is_detected_for_unbacked_hint() {
         // 提示视图之外的词(指向不存在的码-词关系)必须被判 misleading:
         // 用一个 canonical 层没有的合成词验证判定逻辑(测试夹具,不入库)。
-        let occupancy = real_occupancy();
+        let occupancy = shared_occupancy();
         let freq = real_word_freq_normalized();
         let mut hints = BTreeMap::new();
         hints.insert("::~不存在词::~".to_string(), "aaaa".to_string());
@@ -317,7 +320,7 @@ mod tests {
 
     #[test]
     fn metrics_shapes_are_sane() {
-        let occupancy = real_occupancy();
+        let occupancy = shared_occupancy();
         let freq = real_word_freq_normalized();
         let (hints, full_lens) = xhup_generator::lua_hints_view_with_full_lens();
         let input = ShortcutAuditInput {

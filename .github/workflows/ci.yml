@@ -19,7 +19,8 @@ jobs:
   rust:
     name: Rust workspace
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 分钟在 runner 慢时被全量测试吃满(2026-09-16 复现);45 留余量。
+    timeout-minutes: 45
 
     steps:
       - name: 检出仓库
