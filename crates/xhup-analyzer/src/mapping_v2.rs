@@ -330,12 +330,12 @@ impl MappingV2 {
     /// 项与主导项(docs/optimizer-v2.md §6 理由卡)。
     pub fn to_detail_tsv(&self) -> String {
         let mut out = String::from(
-            "word\tcode\trank\tnet_utility\tfrequency_utility\tkeystrokes_saved\txhup_prior\tselection_cost\tdisruption_cost\tkeystroke_cost\trare_pollution\tdominant\n",
+            "word\tcode\trank\tnet_utility\tfrequency_utility\tkeystrokes_saved\txhup_prior\tselection_cost\tdisruption_cost\tkeystroke_cost\trare_pollution\tdomain_displacement\tdominant\n",
         );
         for entry in self.entries.values() {
             let b = &entry.breakdown;
             out.push_str(&format!(
-                "{}\t{}\t{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{}\n",
+                "{}\t{}\t{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{}\n",
                 entry.word,
                 entry.code,
                 entry.rank,
@@ -347,6 +347,7 @@ impl MappingV2 {
                 b.disruption_cost,
                 b.keystroke_cost,
                 b.rare_pollution,
+                b.domain_displacement,
                 dominant_term(b),
             ));
         }
@@ -408,6 +409,7 @@ pub fn dominant_term(breakdown: &UtilityBreakdownV2) -> &'static str {
         ("disruption_cost", -breakdown.disruption_cost),
         ("keystroke_cost", -breakdown.keystroke_cost),
         ("rare_pollution", -breakdown.rare_pollution),
+        ("domain_displacement", -breakdown.domain_displacement),
     ];
     let mut best = terms[0];
     for term in terms {
@@ -517,7 +519,7 @@ pub fn render_explain(report: &ExplainReport) -> String {
     ));
     let b = &report.baseline_breakdown;
     out.push_str(&format!(
-        "全码对照分解(频率/省键/先验/选择/扰动/击键/长尾): {:.3}/{:.1}/{:.3}/{:.3}/{:.3}/{:.1}/{:.3}
+        "全码对照分解(频率/省键/先验/选择/扰动/击键/长尾/领域): {:.3}/{:.1}/{:.3}/{:.3}/{:.3}/{:.1}/{:.3}/{:.3}
 ",
         b.frequency_utility,
         b.keystrokes_saved,
@@ -525,13 +527,14 @@ pub fn render_explain(report: &ExplainReport) -> String {
         b.selection_cost,
         b.disruption_cost,
         b.keystroke_cost,
-        b.rare_pollution
+        b.rare_pollution,
+        b.domain_displacement
     ));
     match &report.outcome {
         Some((code, rank)) => out.push_str(&format!("最终: 分配 {code} rank {rank}\n")),
         None => out.push_str("最终: 未分配(留全码)\n"),
     }
-    out.push_str("候选\t模式\t位次\t占用质量\t净效用\t判定\t主导项\t分解(频率/省键/先验/选择/扰动/击键/长尾)\n");
+    out.push_str("候选\t模式\t位次\t占用质量\t净效用\t判定\t主导项\t分解(频率/省键/先验/选择/扰动/击键/长尾/领域)\n");
     for c in &report.candidates {
         let occupants = if c.occupant_masses.is_empty() {
             "空".to_string()
@@ -547,14 +550,15 @@ pub fn render_explain(report: &ExplainReport) -> String {
                 format!("{net:.4}"),
                 dominant_term(b).to_string(),
                 format!(
-                    "{:.3}/{:.1}/{:.3}/{:.3}/{:.3}/{:.1}/{:.3}",
+                    "{:.3}/{:.1}/{:.3}/{:.3}/{:.3}/{:.1}/{:.3}/{:.3}",
                     b.frequency_utility,
                     b.keystrokes_saved,
                     b.xhup_prior,
                     b.selection_cost,
                     b.disruption_cost,
                     b.keystroke_cost,
-                    b.rare_pollution
+                    b.rare_pollution,
+                    b.domain_displacement
                 ),
             ),
             _ => ("-".to_string(), "-".to_string(), "-".to_string()),

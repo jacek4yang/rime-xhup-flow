@@ -58,7 +58,9 @@ pub use compat::{
 pub use corpus::{CorpusStats, CorpusStatsBuilder, Segmenter, WordCorpusStats};
 pub use cost::{CostBreakdown, CostModel};
 pub use dynamic::DynamicCandidateKind;
-pub use evidence::{Eligibility, EvidenceCoverage, LexicalEvidence, LexicalEvidenceSet};
+pub use evidence::{
+    Eligibility, EvidenceCoverage, LexicalClass, LexicalEvidence, LexicalEvidenceSet,
+};
 pub use frequency::{CharCodeUsage, FrequencyModel, FrequencyScale};
 pub use mapping_v2::{
     BaselineMassView, ExplainCandidate, ExplainReport, ExplainVerdict, FanoutStats, MappingV2,

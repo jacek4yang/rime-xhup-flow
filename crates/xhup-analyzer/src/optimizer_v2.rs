@@ -12,7 +12,7 @@
 //! - 效用计算纯函数化,可解释(UtilityBreakdownV2 逐项可查);
 //! - 确定性:同输入同参数 → 同输出。
 
-use crate::evidence::LexicalEvidence;
+use crate::evidence::{LexicalClass, LexicalEvidence, WANXIANG_RARE_TAIL};
 
 /// 候选位资源:码 + 排名位。
 ///
@@ -55,8 +55,10 @@ pub struct CostModelV2 {
     /// 认知复杂度系数:码与该词既有模式不一致(简码键不是全码前缀)
     /// 的惩罚。
     pub cognitive_complexity_coeff: f64,
-    /// 长尾污染系数:低频词占稀缺位的惩罚(按归一化频率阈值计算)。
+    /// 长尾污染系数:低频词占稀缺位的惩罚(按万象归一化频率阈值计算)。
     pub rare_pollution_coeff: f64,
+    /// 领域/实体挤占系数:无跨源日常信号的书面单源词占 1/2 键浅码的惩罚。
+    pub domain_displacement_coeff: f64,
 }
 
 impl Default for CostModelV2 {
@@ -71,6 +73,7 @@ impl Default for CostModelV2 {
             xhup_deviation_coeff: 1.0,
             cognitive_complexity_coeff: 0.5,
             rare_pollution_coeff: 1.0,
+            domain_displacement_coeff: 1.0,
         }
     }
 }
@@ -179,6 +182,8 @@ pub struct UtilityBreakdownV2 {
     pub keystroke_cost: f64,
     /// 长尾污染惩罚。
     pub rare_pollution: f64,
+    /// 领域/实体挤占惩罚(书面单源词占稀缺浅码;与 rare_pollution 分列)。
+    pub domain_displacement: f64,
 }
 
 impl UtilityBreakdownV2 {
@@ -189,6 +194,7 @@ impl UtilityBreakdownV2 {
             - self.disruption_cost
             - self.keystroke_cost
             - self.rare_pollution
+            - self.domain_displacement
     }
 }
 
@@ -233,9 +239,20 @@ pub fn evaluate_assignment(
     } else {
         cost.cognitive_complexity_coeff
     };
-    // 长尾污染:归一化频率低于中位数量级的词占用稀缺短位(≤3 键)时惩罚。
-    let rare_pollution = if slot.key_len <= 3 && evidence.normalized_frequency() < 1e-6 {
-        cost.rare_pollution_coeff
+    // 长尾污染:万象归一化频率低于最底五分位的词占用稀缺短位(≤3 键)时惩罚。
+    // 阈值只标定 wanxiang 概率;daily_prior 是 log 域相对值,不可与 1e-6 比较。
+    let rare_pollution =
+        if slot.key_len <= 3 && evidence.normalized_frequency() < WANXIANG_RARE_TAIL {
+            cost.rare_pollution_coeff
+        } else {
+            0.0
+        };
+    // 领域挤占:无跨源 MSFE 信号的书面单源词(LexicalClass::DomainSpecific)
+    // 占用 1/2 键浅码时惩罚。conversation None 不是频率 0,也不并入长尾项。
+    let domain_displacement = if is_scarce_shallow_slot(slot)
+        && evidence.lexical_class() == LexicalClass::DomainSpecific
+    {
+        cost.domain_displacement_coeff
     } else {
         0.0
     };
@@ -248,7 +265,13 @@ pub fn evaluate_assignment(
         disruption_cost: cost.disruption_cost(slot),
         keystroke_cost: cost.keystroke_cost(slot),
         rare_pollution,
+        domain_displacement,
     }
+}
+
+/// 稀缺浅码位:1/2 键(含 rank 1 的 1–2 键,后者是前者子集)。
+fn is_scarce_shallow_slot(slot: &CandidateSlot) -> bool {
+    slot.key_len <= 2
 }
 
 #[cfg(test)]
@@ -359,6 +382,128 @@ mod tests {
         assert!(
             breakdown.rare_pollution > 0.0,
             "低频词占稀缺位应被惩罚: {:?}",
+            breakdown
+        );
+        assert_eq!(
+            breakdown.domain_displacement, 0.0,
+            "长尾 Rare 走 rare_pollution,不并入领域挤占"
+        );
+    }
+
+    fn two_key_rank1() -> CandidateSlot {
+        CandidateSlot {
+            key_len: 2,
+            rank: 1,
+            occupant_mass: 0.0,
+            displaced_mass: 0.0,
+        }
+    }
+
+    fn evaluate_synthetic(evidence: &LexicalEvidence, slot: &CandidateSlot) -> UtilityBreakdownV2 {
+        evaluate_assignment(
+            evidence,
+            slot,
+            &CostModelV2::default(),
+            &EvidenceWeights::default(),
+            0.5,
+            8,
+            true,
+        )
+    }
+
+    #[test]
+    fn domain_specific_word_on_two_key_rank1_is_penalized() {
+        // 高万象质量 + 无跨源信号 = 领域词,不是日常常用;2 键 rank1 应收领域挤占。
+        let domain = LexicalEvidence::for_test(
+            "词甲",
+            "abcd".parse().unwrap(),
+            50_000,
+            1e-4,
+            None,
+            None,
+            None,
+        )
+        .with_daily_prior(Some(1e-4))
+        .with_lexical_class(LexicalClass::DomainSpecific);
+        let breakdown = evaluate_synthetic(&domain, &two_key_rank1());
+        assert!(
+            breakdown.domain_displacement > 0.0,
+            "领域词占 2 键 rank1 应被惩罚: {:?}",
+            breakdown
+        );
+        assert_eq!(
+            breakdown.rare_pollution, 0.0,
+            "非长尾(≥1e-6)不得走 rare_pollution"
+        );
+        assert!(
+            breakdown.total()
+                < breakdown.frequency_utility + breakdown.keystrokes_saved + breakdown.xhup_prior
+                    - breakdown.selection_cost
+                    - breakdown.disruption_cost
+                    - breakdown.keystroke_cost
+                    - breakdown.rare_pollution,
+            "total() 必须计入 domain_displacement"
+        );
+    }
+
+    #[test]
+    fn conversation_evidence_avoids_domain_displacement_on_two_key() {
+        // 会话域在测 = Common,即使万象质量同样高,2 键也不收领域挤占。
+        let spoken = LexicalEvidence::for_test(
+            "词乙",
+            "efgh".parse().unwrap(),
+            50_000,
+            1e-4,
+            Some(0.02),
+            Some(8),
+            Some(1e-3),
+        )
+        .with_daily_prior(Some(0.4))
+        .with_lexical_class(LexicalClass::Common);
+        let breakdown = evaluate_synthetic(&spoken, &two_key_rank1());
+        assert_eq!(
+            breakdown.domain_displacement, 0.0,
+            "有会话证据的词不得被当成领域挤占: {:?}",
+            breakdown
+        );
+        assert_eq!(breakdown.rare_pollution, 0.0);
+    }
+
+    #[test]
+    fn missing_conversation_is_not_treated_as_domain() {
+        // 合成夹具未接入 MSFE 白名单:conversation None → Unknown,不是领域词。
+        let unknown = LexicalEvidence::for_test(
+            "词丙",
+            "ijkl".parse().unwrap(),
+            50_000,
+            1e-4,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(unknown.lexical_class(), LexicalClass::Unknown);
+        let breakdown = evaluate_synthetic(&unknown, &two_key_rank1());
+        assert_eq!(
+            breakdown.domain_displacement, 0.0,
+            "缺测 ≠ 领域挤占: {:?}",
+            breakdown
+        );
+    }
+
+    #[test]
+    fn common_conversational_word_on_two_key_is_not_domain_penalized() {
+        // 真实会话骨干词(知道)占 2 键:领域项必须为 0。
+        let (_, set) = evidence_of();
+        let zhidao = set
+            .entries()
+            .iter()
+            .find(|e| e.word() == "知道")
+            .expect("知道 应在库");
+        assert_eq!(zhidao.lexical_class(), LexicalClass::Common);
+        let breakdown = evaluate_synthetic(zhidao, &two_key_rank1());
+        assert_eq!(
+            breakdown.domain_displacement, 0.0,
+            "常用会话词不得被领域惩罚: {:?}",
             breakdown
         );
     }
