@@ -3630,6 +3630,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "xhup-analyzer",
  "xhup-cli",
  "xhup-generator",
 ]

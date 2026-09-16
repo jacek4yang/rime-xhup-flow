@@ -315,3 +315,37 @@ pub fn product_export_package(destination: String) -> Result<String, CommandErro
     .map_err(|source| CommandError::new("io", format!("无法写入 INSTALL.md: {source}")))?;
     Ok(target.display().to_string())
 }
+
+/// 对单个词渲染 mapping v2 ASCII 理由卡(桌面诊断;不改 IME UI)。
+///
+/// 空输入拒绝;词不在 v2 候选宇宙时返回 `explain_unknown_word`。
+/// 分析输入按进程 OnceLock 构建,首次可能较慢。
+#[tauri::command]
+pub fn explain_word(word: String) -> Result<String, CommandError> {
+    let word = word.trim();
+    if word.is_empty() {
+        return Err(CommandError::new(
+            "explain_empty_word",
+            "请输入一个词语".to_string(),
+        ));
+    }
+    xhup_analyzer::explain_production_word(word).ok_or_else(|| {
+        CommandError::new(
+            "explain_unknown_word",
+            "该词不在 mapping v2 候选宇宙(无证据或无合法候选)".to_string(),
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::explain_word;
+
+    #[test]
+    fn explain_word_rejects_empty() {
+        for input in ["", "   ", "\t\n"] {
+            let error = explain_word(input.to_string()).expect_err("空输入必须拒绝");
+            assert_eq!(error.code, "explain_empty_word");
+        }
+    }
+}

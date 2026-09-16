@@ -111,6 +111,10 @@ export function ControlCenterView() {
   const [importPath, setImportPath] = useState("");
   const [exportDest, setExportDest] = useState("");
   const [diagnostics, setDiagnostics] = useState<string | null>(null);
+  const [explainQuery, setExplainQuery] = useState("");
+  const [explainCard, setExplainCard] = useState<string | null>(null);
+  const [explainBusy, setExplainBusy] = useState(false);
+  const [explainError, setExplainError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     productApi
@@ -141,6 +145,19 @@ export function ControlCenterView() {
     },
     [refresh, t],
   );
+
+  const runExplain = useCallback(() => {
+    const word = explainQuery.trim();
+    if (word === "" || explainBusy) return;
+    setExplainBusy(true);
+    setExplainError(null);
+    setExplainCard(null);
+    productApi
+      .explainWord(word)
+      .then(setExplainCard)
+      .catch((cause: unknown) => setExplainError(errorText(cause, t)))
+      .finally(() => setExplainBusy(false));
+  }, [explainBusy, explainQuery, t]);
 
   const openPlan = (kind: MaintenanceKind) => {
     setNotice(null);
@@ -521,6 +538,61 @@ export function ControlCenterView() {
           )}
         </>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("product.explainTitle")}</CardTitle>
+          <CardDescription>{t("product.explainHint")}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <form
+            className="flex flex-col gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              runExplain();
+            }}
+          >
+            <label htmlFor="explain-word" className="text-sm font-medium">
+              {t("product.explainWord")}
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <input
+                id="explain-word"
+                type="text"
+                value={explainQuery}
+                onChange={(event) => setExplainQuery(event.target.value)}
+                className="min-h-11 flex-1 rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
+                disabled={explainBusy}
+              />
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={explainBusy || explainQuery.trim() === ""}
+              >
+                {t("product.explainAction")}
+              </Button>
+            </div>
+          </form>
+          {explainBusy && (
+            <p className="text-sm text-muted-foreground" aria-live="polite">
+              {t("product.explainLoading")}
+            </p>
+          )}
+          {explainError && (
+            <p role="alert" className="text-sm text-destructive">
+              {explainError}
+            </p>
+          )}
+          {explainCard && (
+            <pre
+              className="max-h-64 overflow-auto rounded-md bg-muted p-3 font-mono text-xs"
+              aria-label={t("product.explainTitle")}
+            >
+              {explainCard}
+            </pre>
+          )}
+        </CardContent>
+      </Card>
 
       {/* 维护计划确认:先看清楚每一个动作,再执行。 */}
       <Dialog open={plan !== null} onOpenChange={(open) => !open && setPlan(null)}>

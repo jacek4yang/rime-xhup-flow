@@ -67,7 +67,33 @@ describe("ControlCenterView", () => {
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
     render(<ControlCenterView />);
     expect(screen.getByText(/桌面应用/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "解释" })).not.toBeInTheDocument();
     await waitFor(() => expect(invokeMock).not.toHaveBeenCalled());
+  });
+
+  it("桌面端显示简码决策解释卡,点击后展示 ASCII 理由卡", async () => {
+    const user = userEvent.setup();
+    let resolveExplain: ((card: string) => void) | undefined;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "product_status") return Promise.resolve(freshStatus());
+      if (command === "explain_word") {
+        return new Promise<string>((resolve) => {
+          resolveExplain = resolve;
+        });
+      }
+      return Promise.reject(new Error(`unexpected command: ${command}`));
+    });
+    render(<ControlCenterView />);
+    expect(screen.getByRole("button", { name: "解释" })).toBeDisabled();
+    await user.type(screen.getByLabelText("词语"), "我们");
+    await user.click(screen.getByRole("button", { name: "解释" }));
+    expect(screen.getByText("正在生成解释…")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("explain_word", { word: "我们" }),
+    );
+    resolveExplain!("词: 我们\t全码: womf\t全码rank: 1\n");
+    expect(await screen.findByText(/全码: womf/)).toBeInTheDocument();
+    expect(screen.queryByText("正在生成解释…")).not.toBeInTheDocument();
   });
 
   it("展示安装状态卡(客户端、目录、未安装徽章)", async () => {
