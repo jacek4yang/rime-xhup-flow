@@ -76,7 +76,7 @@ pub use fixed_first_shortcuts::{
 };
 pub use lua_hints::{
     LUA_QUICK_HINT_DATA_FILENAME, LUA_QUICK_HINT_FILENAME, generate_lua_quick_hints_data,
-    lua_quick_hint_source,
+    lua_hints_view, lua_hints_view_with_full_lens, lua_quick_hint_source,
 };
 pub use package::{RimeArtifact, generate_rime_artifacts};
 pub use primary_shortcuts::{CanonicalPrimaryShortcutEntry, canonical_primary_shortcut_entries};

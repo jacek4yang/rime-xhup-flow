@@ -51,6 +51,50 @@ pub fn lua_init_source() -> &'static str {
 /// 与生成顺序无关。canonical 词只含 CJK 字符,无引号/反斜杠转义问题
 /// (生成时硬断言)。
 pub fn generate_lua_quick_hints_data() -> String {
+    let (best, _) = quick_hints_view_with_full_lens();
+    let mut out = String::new();
+    out.push_str("-- 由 xhup-generator 生成,勿手改\n");
+    out.push_str("-- canonical 简码映射的提示视图:词 → 最简码(严格短于全码)\n");
+    out.push_str("return {\n");
+    for (word, (shortcut, _)) in &best {
+        assert!(
+            !word.contains(['"', '\\']),
+            "canonical 词不应含引号/反斜杠: {word}"
+        );
+        out.push_str(&format!("  [\"{word}\"] = \"{shortcut}\",\n"));
+    }
+    out.push_str("}\n");
+    out
+}
+
+/// 提示视图结构化访问(审计与提示消费共用同一实现,§9 效用语义统一):
+/// 词 → 最简码。只收录严格短于全码的简码;确定性:词按 Unicode 标量升序。
+pub fn lua_hints_view() -> std::collections::BTreeMap<String, String> {
+    let (best, _) = quick_hints_view_with_full_lens();
+    best.into_iter()
+        .map(|(w, (c, _))| (w.to_string(), c))
+        .collect()
+}
+
+/// 提示视图 + 词 → 全码键数伴生表(两表键集一致)。
+pub fn lua_hints_view_with_full_lens() -> (
+    std::collections::BTreeMap<String, String>,
+    std::collections::BTreeMap<String, usize>,
+) {
+    let (best, ()) = quick_hints_view_with_full_lens();
+    let hints = best
+        .iter()
+        .map(|(w, (c, _))| (w.to_string(), c.clone()))
+        .collect();
+    let lens = best.iter().map(|(w, (_, l))| (w.to_string(), *l)).collect();
+    (hints, lens)
+}
+
+/// 内部实现:canonical 两层简码按词聚合最简码。
+fn quick_hints_view_with_full_lens() -> (
+    std::collections::BTreeMap<&'static str, (String, usize)>,
+    (),
+) {
     // 词 → (最优简码, 该词全码键数)。
     let mut best: std::collections::BTreeMap<&str, (String, usize)> =
         std::collections::BTreeMap::new();
@@ -89,20 +133,7 @@ pub fn generate_lua_quick_hints_data() -> String {
             entry.full_code().len(),
         );
     }
-
-    let mut out = String::new();
-    out.push_str("-- 由 xhup-generator 生成,勿手改\n");
-    out.push_str("-- canonical 简码映射的提示视图:词 → 最简码(严格短于全码)\n");
-    out.push_str("return {\n");
-    for (word, (shortcut, _)) in &best {
-        assert!(
-            !word.contains(['"', '\\']),
-            "canonical 词不应含引号/反斜杠: {word}"
-        );
-        out.push_str(&format!("  [\"{word}\"] = \"{shortcut}\",\n"));
-    }
-    out.push_str("}\n");
-    out
+    (best, ())
 }
 
 #[cfg(test)]

@@ -261,6 +261,14 @@ jobs:
       - name: librime Lua quick_hint 审计(真实插件:提示注释 + 次序不变)
         run: tests/librime/run-lua-audit.sh /tmp/xhup-flow-package
 
+      # Production Shortcut Audit(§3/§9/§10;§24 DoD misleading-hint rate 门禁):
+      # 全部 advertised shortcut(quick-hint 提示视图,与 Lua 运行时同一实现)
+      # 逐条对照 canonical 真实菜单;任何 misleading 即门禁红(阈值 0)。
+      - name: Production Shortcut Audit(misleading-hint rate 门禁)
+        run: >
+          cargo run --locked -p xhup-analyzer --bin production-shortcut-audit --
+          --output /tmp/shortcut-audit.tsv --threshold 0.0
+
       - name: librime Flow 引擎审计(全静态等值 + 组句 + 学习持久化 + 学习管理)
         run: >
           tests/librime/run-flow-audit.sh /tmp/xhup-flow-package
