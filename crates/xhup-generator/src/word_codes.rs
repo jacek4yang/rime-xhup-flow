@@ -24,9 +24,8 @@ use std::sync::OnceLock;
 
 use xhup_core::{HanziReading, KeySequence};
 
-use crate::words::{
-    canonical_extended_word_entries, canonical_sogou_word_entries, canonical_word_entries,
-};
+use crate::sogou_filter::production_sogou_word_entries;
+use crate::words::{canonical_extended_word_entries, canonical_word_entries};
 
 /// 一条最终化的静态词语编码关系(模块内投影的事实来源)。
 ///
@@ -147,10 +146,11 @@ pub fn canonical_word_code_entries() -> Vec<RimeWordCodeEntry> {
 
 /// 全部扩展词 exact 关系，按码长、码、分数降序、词排序。
 ///
-/// 聚合范围 = 万象 extended 层 + 搜狗细胞词库聚合层(所有者决策入库,
-/// 见 data/words/sogou/README.md)。万象条目携带真实聚合分数;搜狗条目
+/// 聚合范围 = 万象 extended 层 + 搜狗细胞词库**生产子集**(PR-4 构建分流:
+/// 排除 `target` 与 `llm_review-remove`;原始分片不修改,见
+/// data/words/sogou/README.md)。万象条目携带真实聚合分数;搜狗条目
 /// 分数恒为 1,仅在与万象不重叠的 (词, 码) 上提供增量 exact 候选证据,
-/// 排名永远低于任何万象支持的候选。
+/// 排名永远低于任何万象支持的候选。被排除词仍走 open composition。
 pub fn canonical_extended_word_code_entries() -> &'static [RimeExtendedWordCodeEntry] {
     static ENTRIES: OnceLock<Vec<RimeExtendedWordCodeEntry>> = OnceLock::new();
     ENTRIES
@@ -174,7 +174,7 @@ pub fn canonical_extended_word_code_entries() -> &'static [RimeExtendedWordCodeE
                 let code = derive_code(entry.readings());
                 wanxiang_keys.insert((entry.word(), code));
             }
-            for entry in canonical_sogou_word_entries() {
+            for entry in production_sogou_word_entries() {
                 let code = derive_code(entry.readings());
                 if wanxiang_keys.contains(&(entry.word(), code.clone())) {
                     continue;
@@ -380,6 +380,18 @@ mod tests {
             extended.iter().any(|entry| {
                 entry.word() == "提示词" && entry.code().to_string() == "tiuici"
             })
+        );
+        assert!(
+            extended.iter().any(|entry| entry.word() == "一辑"),
+            "llm_review keep 应进入生产扩展词层"
+        );
+        assert!(
+            extended.iter().all(|entry| entry.word() != "一仇"),
+            "target 标注不得进入生产扩展词层"
+        );
+        assert!(
+            extended.iter().all(|entry| entry.word() != "丁于"),
+            "llm_review remove 不得进入生产扩展词层"
         );
     }
 

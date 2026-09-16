@@ -183,6 +183,16 @@ mod tests {
     }
 
     #[test]
+    fn sogou_production_exclusions_remain_open_composition() {
+        // PR-4 构建分流排除 target「一仇」:不得因词库清洗变成不可达。
+        let code = preferred_open_composition_code("一仇").expect("规范汉字必须有 sound primitive");
+        let result = classify_reachability("一仇", &code);
+        assert!(!result.extended_lexicon_reachable);
+        assert!(result.open_composition_reachable);
+        assert!(result.is_reachable());
+    }
+
+    #[test]
     fn extended_lexicon_is_an_acceleration_not_a_boundary() {
         let entry = canonical_extended_word_code_entries()
             .first()

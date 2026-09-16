@@ -66,5 +66,21 @@
   (verdicts sha256: 3e378729b301bc14f17c58a64f5013096845d2a41c3a06ea97e2980c4712317d);
 - 重建:python tools/llm_review.py --endpoint <Anthropic Messages 兼容端点>
   (需本地模型;判定文件逐批落盘,断点续跑);原始分片与 tags_compact 零修改;
-- 消费方:PR-4 构建分流——remove 词条构建时排除,keep 词条进入下一轮
-  多源频率证据融合。
+- 消费方:PR-4 构建分流(见下节)。
+
+## 生产构建分流(2026-09-17,词库质量提升计划 PR-4)
+
+原始分片与 tags/verdicts **零修改**。生成器(`xhup-generator::sogou_filter`)
+在投影扩展词码 / Flow 组句词典前按 `(词, 规范读音序列)` 分流:
+
+| 标注 | 生产构建 |
+| --- | --- |
+| 无标注(默认 keep,1,476,913) | 保留 |
+| protected(276,922) | 保留 |
+| llm_review + keep(9,279) | 保留 |
+| llm_review + remove(46,405) | 排除 |
+| target(273,340) | 排除 |
+
+生产子集 1,763,114 条(原始 2,082,859 − 319,745)。被排除词仍可通过
+逐字音码 open composition 到达,不改变语言边界。`xhup_flow_static`
+不消费搜狗层,v1 冻结行为不变。

@@ -63,8 +63,9 @@ fn canonical_counts_match_v1_release_snapshot() {
         number(&doc, "/lexicon/hotSemanticEntries")
     );
     // 2026-09-14 所有者决策:搜狗细胞词库聚合层并入扩展词证据
-    // (data/words/sogou/README.md)。该层只增不减,扩展聚合条目数
-    // 以 v1 发布值为下限;hot 等其余计数仍与 v1 快照严格相等。
+    // (data/words/sogou/README.md)。PR-4 起生产子集排除 target 与
+    // llm_review-remove,扩展聚合条目数仍以 v1 万象发布值为下限;
+    // hot 等其余计数仍与 v1 快照严格相等。`xhup_flow_static` 不受影响。
     assert!(
         canonical_extended_word_code_entries().len() as u64
             >= number(&doc, "/lexicon/extendedSemanticEntries"),
@@ -133,7 +134,7 @@ fn generated_package_bytes_match_v1_release_snapshot() {
 
     // 冻结产物字节恒定性由 artifact_content_matches_independent_v1_release_hashes
     // 的哈希断言承载;xhup_flow_flow.dict.yaml 自 2026-09-14 起并入搜狗细胞
-    // 词库聚合层增量行(见 data/words/sogou/README.md),其字节随增量演进,
+    // 词库聚合层,PR-4 起按标注/精判分流,其字节随生产子集演进,
     // 不再参与字节恒定断言。
 }
 
@@ -187,8 +188,8 @@ fn artifact_content_matches_independent_v1_release_hashes() {
 
     assert_eq!(actual_frozen.len(), 13);
     // xhup_flow_flow.dict.yaml 自 2026-09-14 起并入搜狗细胞词库聚合层
-    // 增量行(所有者决策,见 data/words/sogou/README.md),其内容演进,
-    // 其余冻结产物必须与 v1 独立发布逐字节一致:
+    // (所有者决策,见 data/words/sogou/README.md),PR-4 起按生产子集
+    // 演进,其余冻结产物必须与 v1 独立发布逐字节一致:
     let actual_frozen_except_flow: BTreeMap<_, _> = actual_frozen
         .iter()
         .filter(|(k, _)| *k != "xhup_flow_flow.dict.yaml")
