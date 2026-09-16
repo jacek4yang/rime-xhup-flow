@@ -224,6 +224,12 @@ impl LatticePath {
     pub fn is_empty(&self) -> bool {
         self.edge_ids.is_empty()
     }
+
+    pub(crate) fn from_edge_ids(edge_ids: Vec<EdgeId>) -> Self {
+        Self {
+            edge_ids: edge_ids.into_boxed_slice(),
+        }
+    }
 }
 
 /// 显式上限下枚举到的完整路径；`truncated` 表示仍有未物化路径。
@@ -326,8 +332,8 @@ impl Lattice {
         Ok(id)
     }
 
-    /// 以显式上限枚举完整路径。该方法只是里程碑一的可验证参考实现；生产
-    /// 解码器将使用有界 Beam/Viterbi，不会先物化所有路径。
+    /// 以显式上限枚举完整路径。该方法是可验证参考实现，只应用于小 fixture；
+    /// 生产解码见 [`crate::decode_beam`]，不会先物化所有路径。
     pub fn complete_paths(&self, limit: NonZeroUsize) -> PathSet {
         let mut paths = Vec::new();
         let mut current = Vec::new();
@@ -348,9 +354,7 @@ impl Lattice {
         paths: &mut Vec<LatticePath>,
     ) -> bool {
         if position == self.input.len() {
-            paths.push(LatticePath {
-                edge_ids: current.clone().into_boxed_slice(),
-            });
+            paths.push(LatticePath::from_edge_ids(current.clone()));
             return paths.len() >= limit;
         }
         for &edge_id in &self.outgoing[position] {

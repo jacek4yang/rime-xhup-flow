@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::scoring::{BaselineScoreBreakdown, BaselineScorer, Score};
+use crate::scoring::{BaselineScoreBreakdown, BaselineScorer, Score, log2_q10};
 use crate::{DeterministicScorer, Lattice, LatticePath, RuntimeContext};
 
 /// 句首/句尾边界 token(与 corpus 统计层约定一致)。
@@ -202,22 +202,13 @@ impl KdconvBigramScorer {
         self.transition_weight
     }
 
-    /// Q10 log2(count + 1)(与 baseline 词频奖励同标度)。
-    fn log2_q10(count: u64) -> Score {
-        let value = count.saturating_add(1);
-        let exponent = value.ilog2();
-        let base = 1_u64 << exponent;
-        let fractional = (((value - base) as u128) * 1024 / base as u128) as Score;
-        Score::from(exponent) * 1024 + fractional
-    }
-
     /// 相邻 (left, right) token 的转移奖励;无证据为零。
     fn transition_reward(&self, left: &str, right: &str) -> Score {
         let count = self.model.transition_count(left, right);
         if count == 0 {
             return 0;
         }
-        Self::log2_q10(count).saturating_mul(self.transition_weight)
+        log2_q10(count).saturating_mul(self.transition_weight)
     }
 }
 
