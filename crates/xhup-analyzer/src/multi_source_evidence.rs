@@ -420,6 +420,40 @@ mod tests {
     }
 
     #[test]
+    fn lexical_class_follows_cross_source_presence() {
+        use crate::evidence::LexicalClass;
+        let set =
+            MultiSourceEvidenceSet::build(&words_fixture(), &corpus_fixture(), &protect_fixture());
+        assert_eq!(
+            LexicalClass::from_multi_source(set.get("我们").unwrap()),
+            LexicalClass::Common
+        );
+        assert_eq!(
+            LexicalClass::from_multi_source(set.get("时间").unwrap()),
+            LexicalClass::Common
+        );
+        assert_eq!(
+            LexicalClass::from_multi_source(set.get("生僻专名").unwrap()),
+            LexicalClass::Rare
+        );
+        let mut words = words_fixture();
+        words.insert("书面词".to_string(), 1e-4);
+        let set = MultiSourceEvidenceSet::build(&words, &corpus_fixture(), &protect_fixture());
+        assert_eq!(
+            LexicalClass::from_multi_source(set.get("书面词").unwrap()),
+            LexicalClass::DomainSpecific,
+            "高万象、无跨源信号 = 领域词,不是 Rare,也不是把 conversation None 当 0"
+        );
+        let protect_only = parse_protect_list("书面词\tsogou_sys_freq\n");
+        let set = MultiSourceEvidenceSet::build(&words, &corpus_fixture(), &protect_only);
+        assert_eq!(
+            LexicalClass::from_multi_source(set.get("书面词").unwrap()),
+            LexicalClass::Common,
+            "白名单 sogou_sys_freq 即跨源日常信号"
+        );
+    }
+
+    #[test]
     fn protect_list_parser_is_deterministic_and_lenient_to_comments() {
         let parsed = parse_protect_list("# comment\n\n词\t来源A,来源B\n");
         assert_eq!(parsed.len(), 1);

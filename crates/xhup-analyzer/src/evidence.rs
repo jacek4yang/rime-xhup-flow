@@ -25,10 +25,49 @@ use std::collections::BTreeMap;
 
 use crate::corpus::CorpusStats;
 use crate::frequency::FrequencyModel;
+use crate::multi_source_evidence::MultiSourceFrequencyEvidence;
 
 /// 会话域派生统计(KdConv,data/corpus/README.md 记 provenance),
 /// 与 canonical 数据同法嵌入,是证据视图的语料信号来源。
 const CONVERSATION_TSV: &str = include_str!("../../../data/corpus/conversation_kdconv.tsv");
+
+/// 万象归一化概率长尾阈值(2026-09:中位 ≈2.6e-6,P25 ≈2.0e-6,1e-6 ≈ 最底五分位)。
+/// 只标定 wanxiang 概率,不可与 daily_prior 比较(先验是 log 域相对值)。
+pub(crate) const WANXIANG_RARE_TAIL: f64 = 1e-6;
+
+/// 词法类别(Issue #83 §6):由 MultiSourceFrequencyEvidence 在证据构建时派生。
+///
+/// 生产路径不按词面匹配;跨源在测信号 = 日常常用,单源书面质量 ≠ 日常常用。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum LexicalClass {
+    /// 会话域或保护白名单(`kdconv_ge2` / `sogou_sys_freq`)有在测信号。
+    Common,
+    /// 仅万象,且归一化频率低于万象长尾阈值(1e-6)。
+    Rare,
+    /// 仅万象且非长尾:书面单源质量,不等于日常常用。
+    DomainSpecific,
+    /// 证据不足以分类(合成夹具未接入 MSFE;生产构建不应出现)。
+    Unknown,
+}
+
+impl LexicalClass {
+    /// 由多源证据分类。wanxiang 是 canonical 前提,恒存在;
+    /// 无跨源信号时按万象概率区分 Rare / DomainSpecific。
+    ///
+    /// 会话域缺失为 `None`(未见 ≠ 零),不把缺测当成频率 0。
+    pub fn from_multi_source(msfe: &MultiSourceFrequencyEvidence) -> Self {
+        let cross_source = msfe.conversation().is_some()
+            || msfe.kdconv_ge2().is_some()
+            || msfe.sogou_sys_freq().is_some();
+        if cross_source {
+            Self::Common
+        } else if msfe.wanxiang() < WANXIANG_RARE_TAIL {
+            Self::Rare
+        } else {
+            Self::DomainSpecific
+        }
+    }
+}
 
 /// 一条 canonical 词语关系的词汇证据。
 #[derive(Clone, Debug, PartialEq)]
@@ -54,6 +93,8 @@ pub struct LexicalEvidence {
     /// 多源融合 daily-prior(MultiSourceFrequencyEvidence,§25 第 2 步):
     /// 覆盖全部 canonical 词;由 evidence set 构建时融合注入。
     daily_prior: Option<f64>,
+    /// 由 MSFE 派生的词法类别(构建时写入,优化器只读)。
+    lexical_class: LexicalClass,
 }
 
 impl LexicalEvidence {
@@ -112,7 +153,17 @@ impl LexicalEvidence {
         self.daily_prior
     }
 
+    /// 由 MSFE 派生的词法类别。
+    pub fn lexical_class(&self) -> LexicalClass {
+        self.lexical_class
+    }
+
     /// 测试构造:显式给定各信号(仅供 synthetic 测试;对集成测试可见)。
+    ///
+    /// 会话域在测 → [`LexicalClass::Common`];否则 [`LexicalClass::Unknown`]
+    /// (合成夹具没有保护白名单,不能把「conversation None」当成 wanxiang-only)。
+    /// 需要 DomainSpecific / Rare / 显式先验时用 [`Self::with_lexical_class`] /
+    /// [`Self::with_daily_prior`]。
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
     pub fn for_test(
@@ -135,7 +186,28 @@ impl LexicalEvidence {
             formal_frequency: None,
             technical_frequency: None,
             daily_prior: None,
+            lexical_class: if conversation_frequency.is_some() {
+                LexicalClass::Common
+            } else {
+                LexicalClass::Unknown
+            },
         }
+    }
+
+    /// 测试夹具:覆盖融合先验(daily_prior 不是概率,0 = 多源中位)。
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_daily_prior(mut self, daily_prior: Option<f64>) -> Self {
+        self.daily_prior = daily_prior;
+        self
+    }
+
+    /// 测试夹具:覆盖词法类别(生产路径只由 MSFE 派生)。
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_lexical_class(mut self, lexical_class: LexicalClass) -> Self {
+        self.lexical_class = lexical_class;
+        self
     }
 }
 
@@ -223,16 +295,15 @@ impl LexicalEvidenceSet {
             .collect();
         let multi_source = crate::multi_source_evidence::build_from_canonical(&prior_input);
         let prior_weights = crate::multi_source_evidence::DailyPriorWeights::default();
-        let prior_by_word: BTreeMap<String, f64> = multi_source
-            .entries()
-            .iter()
-            .map(|e| {
-                (
-                    e.word().to_string(),
-                    multi_source.daily_prior(e, &prior_weights),
-                )
-            })
-            .collect();
+        let mut prior_by_word: BTreeMap<String, f64> = BTreeMap::new();
+        let mut class_by_word: BTreeMap<String, LexicalClass> = BTreeMap::new();
+        for e in multi_source.entries() {
+            prior_by_word.insert(
+                e.word().to_string(),
+                multi_source.daily_prior(e, &prior_weights),
+            );
+            class_by_word.insert(e.word().to_string(), LexicalClass::from_multi_source(e));
+        }
         let entries = words
             .iter()
             .map(|entry| {
@@ -251,6 +322,10 @@ impl LexicalEvidenceSet {
                     formal_frequency: None,
                     technical_frequency: None,
                     daily_prior: prior_by_word.get(entry.word()).copied(),
+                    lexical_class: class_by_word
+                        .get(entry.word())
+                        .copied()
+                        .unwrap_or(LexicalClass::Unknown),
                 }
             })
             .collect();
@@ -419,6 +494,39 @@ mod tests {
         for evidence in set.entries() {
             assert_eq!(set.eligibility(evidence), Eligibility::CANONICAL_DEFAULT);
         }
+    }
+
+    #[test]
+    fn production_evidence_is_fully_classified_from_msfe() {
+        let (_, set) = evidence_set();
+        assert!(
+            set.entries()
+                .iter()
+                .all(|e| e.lexical_class() != LexicalClass::Unknown),
+            "生产构建每条证据都应从 MSFE 得到 Common/Rare/DomainSpecific"
+        );
+        let zhidao = set
+            .entries()
+            .iter()
+            .find(|e| e.word() == "知道")
+            .expect("知道 应有证据");
+        assert_eq!(zhidao.lexical_class(), LexicalClass::Common);
+        assert!(zhidao.conversation_frequency().is_some());
+        let muzhai = set
+            .entries()
+            .iter()
+            .find(|e| e.word() == "木寨")
+            .expect("木寨 应有证据");
+        assert_eq!(muzhai.lexical_class(), LexicalClass::Rare);
+        assert!(muzhai.normalized_frequency() < WANXIANG_RARE_TAIL);
+        assert!(muzhai.conversation_frequency().is_none());
+        let domain = set
+            .entries()
+            .iter()
+            .find(|e| e.lexical_class() == LexicalClass::DomainSpecific)
+            .expect("应存在书面单源(无跨源信号且非长尾)的词");
+        assert!(domain.conversation_frequency().is_none());
+        assert!(domain.normalized_frequency() >= WANXIANG_RARE_TAIL);
     }
 
     #[test]
