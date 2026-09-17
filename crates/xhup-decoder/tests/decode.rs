@@ -276,8 +276,10 @@ fn oov_open_composition_survives_low_confidence() {
 fn decode_beam_rescores_survivors_with_provided_scorer() {
     let lattice = research_life_lattice();
     let mut model = BigramModel::default();
-    model.observe("<s>", "研究生", 10);
-    model.observe("研究生", "命", 10);
+    // 证据强度须与标定后的 transition_weight = 2 相称(见 bigram.rs 标定文档):
+    // 10 次共现只在旧的 256 权重下才够翻转约 5659 Q10 的词频差。
+    model.observe("<s>", "研究生", 50);
+    model.observe("研究生", "命", 50);
     model.observe("研究", "生命", 3);
     let scorer = KdconvBigramScorer::new(model);
     let context = RuntimeContext::new("他是研究生", lattice.input().clone());
