@@ -22,6 +22,7 @@ pub mod corpus;
 pub mod cost;
 pub mod dynamic;
 pub mod evidence;
+pub mod explain;
 pub mod export_v2;
 pub mod frequency;
 pub mod knowledge;
@@ -61,6 +62,7 @@ pub use dynamic::DynamicCandidateKind;
 pub use evidence::{
     Eligibility, EvidenceCoverage, LexicalClass, LexicalEvidence, LexicalEvidenceSet,
 };
+pub use explain::explain_production_word;
 pub use frequency::{CharCodeUsage, FrequencyModel, FrequencyScale};
 pub use mapping_v2::{
     BaselineMassView, ExplainCandidate, ExplainReport, ExplainVerdict, FanoutStats, MappingV2,

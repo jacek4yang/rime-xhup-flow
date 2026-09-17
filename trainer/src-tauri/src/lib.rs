@@ -14,6 +14,7 @@ pub fn run() {
             commands::learning_export,
             commands::learning_import,
             commands::learning_reset,
+            commands::explain_word,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

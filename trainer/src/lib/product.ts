@@ -106,6 +106,8 @@ export const ERROR_CODES = [
   "reset_not_confirmed",
   "reset_failed",
   "desktop_unavailable",
+  "explain_empty_word",
+  "explain_unknown_word",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -138,4 +140,6 @@ export const productApi = {
   /** 重置学习数据(破坏性;必须传词典名作类型化二次确认)。 */
   learningReset: (confirmed: boolean): Promise<void> =>
     invokeDesktop("learning_reset", { confirmed, dictName: FLOW_USER_DICT_NAME }),
+  /** 渲染 mapping v2 单词语 ASCII 理由卡(桌面诊断)。 */
+  explainWord: (word: string): Promise<string> => invokeDesktop("explain_word", { word }),
 };
