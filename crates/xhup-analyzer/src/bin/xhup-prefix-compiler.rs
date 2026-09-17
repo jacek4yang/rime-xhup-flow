@@ -1,9 +1,11 @@
 //! `xhup-prefix-compiler`: Prefix-Space Compiler v3 命令行与对比基准工具。
 //!
 //! 用法:
-//!   xhup-prefix-compiler [--bench] [--explain <词>] [--summary] [--check]
+//!   xhup-prefix-compiler [--production] [--limit N] [--bench] [--explain <词>] [--summary] [--check]
 //!
 //! 选项:
+//!   --production 使用真实生产目标(v2_targets + daily_prior),不改写冻结映射
+//!   --limit N    生产目标上界(仅 --production;缺省 256)。测试必须显式传入
 //!   --bench      运行 v2 vs v3 确定性基准对比, 报告 KSPC, rank1, top3, 熵, 迁移成本等
 //!   --explain 词 打印指定词语在前缀空间的槽位决策解释理由卡
 //!   --summary    打印编译模型的前缀空间聚合统计
@@ -16,8 +18,10 @@ use std::str::FromStr;
 use xhup_analyzer::prefix_space::slot::{SlotCandidate, SlotPlacementSource};
 use xhup_analyzer::prefix_space::trie::PrefixTrie;
 use xhup_analyzer::prefix_space::{
-    BenchmarkMetrics, PrefixCostModel, PrefixSpaceBenchmarkReport, PrefixTarget, SolverOptions,
-    evaluate_v3_metrics, solve_prefix_space,
+    BenchmarkMetrics, DEFAULT_PRODUCTION_LIMIT, PrefixCostModel, PrefixSpaceBenchmarkReport,
+    PrefixSpaceCompiledModel, PrefixTarget, SolverOptions, build_production_universe,
+    evaluate_v3_metrics, solve_prefix_space, stats_equal_except_runtime,
+    verify_production_invariants,
 };
 use xhup_core::KeySequence;
 
@@ -140,13 +144,20 @@ fn build_fixtures() -> (Vec<PrefixTarget>, PrefixTrie) {
     (targets, trie)
 }
 
-fn run_check() -> Result<(), Box<dyn Error>> {
+fn solve(targets: &[PrefixTarget], trie: PrefixTrie) -> PrefixSpaceCompiledModel {
+    solve_prefix_space(
+        targets,
+        trie,
+        &PrefixCostModel::default(),
+        &SolverOptions::default(),
+        None,
+    )
+}
+
+fn run_fixture_check() -> Result<(), Box<dyn Error>> {
     println!("[check] Starting Prefix-Space Compiler invariant verification...");
     let (targets, initial_trie) = build_fixtures();
-    let cost_model = PrefixCostModel::default();
-    let options = SolverOptions::default();
-
-    let model = solve_prefix_space(&targets, initial_trie, &cost_model, &options, None);
+    let model = solve(&targets, initial_trie);
 
     // 不变量 1: 前缀闭合性检查 (uior 存在则 u, ui, uio 均存在)
     let uior_code = KeySequence::from_str("uior")?;
@@ -203,7 +214,7 @@ fn run_check() -> Result<(), Box<dyn Error>> {
 
     // 不变量 4: 确定性求解 (同输入必得相同输出)
     let (targets2, initial_trie2) = build_fixtures();
-    let model2 = solve_prefix_space(&targets2, initial_trie2, &cost_model, &options, None);
+    let model2 = solve(&targets2, initial_trie2);
     assert_eq!(
         model.stats, model2.stats,
         "Solver must be 100% deterministic"
@@ -225,12 +236,14 @@ fn run_check() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn run_bench() -> Result<(), Box<dyn Error>> {
-    let (targets, initial_trie) = build_fixtures();
-    let cost_model = PrefixCostModel::default();
-    let options = SolverOptions::default();
+#[cfg(test)]
+fn run_production_check(limit: usize) -> Result<(), Box<dyn Error>> {
+    run_production_actions(limit, true, false, false, None)
+}
 
-    let model = solve_prefix_space(&targets, initial_trie, &cost_model, &options, None);
+fn run_fixture_bench() -> Result<(), Box<dyn Error>> {
+    let (targets, initial_trie) = build_fixtures();
+    let model = solve(&targets, initial_trie);
     let v3_metrics = evaluate_v3_metrics(&model);
 
     // 构造对应 v2 基线指标进行对照
@@ -260,10 +273,25 @@ fn run_bench() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn usage() {
+    println!(
+        "用法: xhup-prefix-compiler [--production] [--limit N] [--bench] [--explain <词>] [--summary] [--check]\n\
+         \n\
+         --production  真实生产目标(v2_targets);不改写冻结 PRIMARY/FIXED_FIRST 映射\n\
+         --limit N     生产目标上界(仅 --production;CLI 缺省 256)\n\
+         --bench       v2 vs v3 基准(夹具)或生产 v3 指标\n\
+         --explain 词  打印指定词的槽位解释卡\n\
+         --summary     打印编译模型聚合统计\n\
+         --check       校验前缀闭合/全码保留/确定性(生产路径不写映射文件)"
+    );
+}
+
 fn main() -> Result<ExitCode, Box<dyn Error>> {
     let mut do_bench = false;
     let mut do_summary = false;
     let mut do_check = false;
+    let mut production = false;
+    let mut limit: Option<usize> = None;
     let mut explain_word = None;
 
     let mut args = std::env::args().skip(1);
@@ -272,17 +300,28 @@ fn main() -> Result<ExitCode, Box<dyn Error>> {
             "--bench" => do_bench = true,
             "--summary" => do_summary = true,
             "--check" => do_check = true,
+            "--production" => production = true,
+            "--limit" => {
+                let value = args.next().ok_or("missing value for --limit")?;
+                let parsed: usize = value.parse().map_err(|_| "invalid --limit")?;
+                if parsed == 0 {
+                    return Err("--limit must be >= 1".into());
+                }
+                limit = Some(parsed);
+            }
             "--explain" => {
                 explain_word = Some(args.next().ok_or("missing word for --explain")?);
             }
             "--help" | "-h" => {
-                println!(
-                    "用法: xhup-prefix-compiler [--bench] [--explain <词>] [--summary] [--check]"
-                );
+                usage();
                 return Ok(ExitCode::SUCCESS);
             }
             _ => return Err(format!("unknown argument: {arg}").into()),
         }
+    }
+
+    if limit.is_some() && !production {
+        return Err("--limit requires --production".into());
     }
 
     if !do_bench && !do_summary && !do_check && explain_word.is_none() {
@@ -291,33 +330,120 @@ fn main() -> Result<ExitCode, Box<dyn Error>> {
         do_check = true;
     }
 
+    let production_limit = limit.unwrap_or(DEFAULT_PRODUCTION_LIMIT);
+
+    if production {
+        run_production_actions(
+            production_limit,
+            do_check,
+            do_bench,
+            do_summary,
+            explain_word.as_deref(),
+        )?;
+    } else {
+        if do_check {
+            run_fixture_check()?;
+        }
+        if do_bench {
+            run_fixture_bench()?;
+        }
+        if explain_word.is_some() || do_summary {
+            let (targets, initial_trie) = build_fixtures();
+            let model = solve(&targets, initial_trie);
+            if let Some(word) = explain_word {
+                match model.explanations.get(&word) {
+                    Some(exp) => println!("{}", exp.render_card()),
+                    None => eprintln!("Target '{word}' not found in test universe."),
+                }
+            }
+            if do_summary {
+                println!("{:#?}", model.stats);
+            }
+        }
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
+fn run_production_actions(
+    limit: usize,
+    do_check: bool,
+    do_bench: bool,
+    do_summary: bool,
+    explain_word: Option<&str>,
+) -> Result<(), Box<dyn Error>> {
+    println!(
+        "[production] bounded Prefix-Space v3 solve (limit={limit}); does not replace frozen canonical mapping"
+    );
+    let universe = build_production_universe(Some(limit));
+    let model = solve(&universe.targets, universe.initial_trie.clone());
+
     if do_check {
-        run_check()?;
+        verify_production_invariants(&universe.targets, &model).map_err(|e| e.to_string())?;
+        println!("  ✓ Prefix-closed nodes, full_code retained, no silent drops");
+        let model2 = solve(&universe.targets, universe.initial_trie.clone());
+        assert!(
+            stats_equal_except_runtime(&model.stats, &model2.stats),
+            "production solver must be deterministic (stats except runtime)"
+        );
+        for (text, exp1) in &model.explanations {
+            let exp2 = model2
+                .explanations
+                .get(text)
+                .expect("second solve must keep every explanation");
+            assert_eq!(exp1.selected_code, exp2.selected_code);
+            assert_eq!(exp1.rank, exp2.rank);
+        }
+        println!("  ✓ Determinism: two solves equal stats / selected codes");
+        println!("  ✓ Mapping files not rewritten (compiler is metrics-only)");
+        println!("[check] Production Prefix-Space invariants verified (limit={limit}).");
     }
 
     if do_bench {
-        run_bench()?;
+        let metrics = evaluate_v3_metrics(&model);
+        println!(
+            "[bench] Prefix-Space v3 production metrics (limit={limit}); frozen canonical mapping unchanged."
+        );
+        println!("targets:              {}", universe.targets.len());
+        println!("expected_kspc:        {:.4}", metrics.expected_kspc);
+        println!("rank1_rate:           {:.4}", metrics.rank1_rate);
+        println!("top3_rate:            {:.4}", metrics.top3_rate);
+        println!("weighted_rank:        {:.4}", metrics.weighted_rank);
+        println!("prefix_utilization:   {:.4}", metrics.prefix_utilization);
+        println!("collision_entropy:    {:.4}", metrics.collision_entropy);
+        println!("migration_cost:       {:.4}", metrics.migration_cost);
+        println!("code_space_occupancy: {}", metrics.code_space_occupancy);
+        println!("solver_runtime_ms:    {}", metrics.solver_runtime_ms);
     }
 
     if let Some(word) = explain_word {
-        let (targets, initial_trie) = build_fixtures();
-        let cost_model = PrefixCostModel::default();
-        let options = SolverOptions::default();
-        let model = solve_prefix_space(&targets, initial_trie, &cost_model, &options, None);
-
-        match model.explanations.get(&word) {
+        match model.explanations.get(word) {
             Some(exp) => println!("{}", exp.render_card()),
-            None => eprintln!("Target '{}' not found in test universe.", word),
+            None => eprintln!("Target '{word}' not found in production universe (limit={limit})."),
         }
     }
 
     if do_summary {
-        let (targets, initial_trie) = build_fixtures();
-        let cost_model = PrefixCostModel::default();
-        let options = SolverOptions::default();
-        let model = solve_prefix_space(&targets, initial_trie, &cost_model, &options, None);
+        println!("[summary] production limit={limit}; frozen canonical mapping unchanged");
         println!("{:#?}", model.stats);
     }
 
-    Ok(ExitCode::SUCCESS)
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xhup_analyzer::prefix_space::TEST_PRODUCTION_LIMIT;
+
+    #[test]
+    fn fixture_check_passes() {
+        run_fixture_check().expect("fixture --check");
+    }
+
+    #[test]
+    fn production_check_requires_explicit_small_limit() {
+        run_production_check(TEST_PRODUCTION_LIMIT)
+            .expect("production --check with explicit test limit");
+    }
 }
