@@ -104,6 +104,53 @@ pub struct ContextReplayReport {
     pub metrics: ContextReplayMetrics,
 }
 
+/// 有界 [`decode_beam`](xhup_decoder::decode_beam) 相对全路径枚举的等价性读数。
+///
+/// 目的(§25 第 7 步 / §22):确认生产解码改走有界 beam 后,top1 判定与
+/// 「物化全部完整路径再排序」的参考实现**逐 token 一致**,同时给出截断规模。
+/// 任何不一致都是精度回归,必须显式可见。
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoundedDecodeMetrics {
+    /// 参与比较的歧义 token 数(有 ≥2 候选)。
+    pub compared: usize,
+    /// beam 与全路径枚举 top1 文本一致的 token 数。
+    pub top1_agreement: usize,
+    /// beam 报告截断(`BeamTruncated`)的 token 数。
+    pub truncated: usize,
+    /// 任一 scorer 下 beam 报告低置信回退的 token 数。
+    pub low_confidence: usize,
+    /// 无完整路径(两者都为空)的 token 数。
+    pub empty: usize,
+}
+
+impl BoundedDecodeMetrics {
+    /// top1 一致率(分母为 `compared`)。
+    pub fn top1_agreement_rate(&self) -> f64 {
+        ratio(self.top1_agreement, self.compared)
+    }
+
+    /// 截断占比(分母为 `compared`)。
+    pub fn truncated_rate(&self) -> f64 {
+        ratio(self.truncated, self.compared)
+    }
+}
+
+/// 有界 beam 解码的等价性报告。
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoundedDecodeReport {
+    pub schema: &'static str,
+    pub scorer: &'static str,
+    pub beam_width: usize,
+    pub top_k: usize,
+    pub min_confidence_gap: i64,
+    pub metrics: BoundedDecodeMetrics,
+}
+
+/// 报告 schema 标识(有界解码等价性)。
+pub const BOUNDED_DECODE_SCHEMA: &str = "xhup-bounded-decode-consistency/v1";
+
 /// 回放真实句子语料,比较 baseline 与已加载的上下文 scorer。
 ///
 /// `sentences` 为语料行(空行跳过);分词使用与语料统计同源的最大匹配
@@ -119,14 +166,66 @@ where
     let prices = ProductionMenus::build();
     let segmenter = Segmenter::build();
     let baseline = BaselineScorer::default();
-    let mut metrics = ContextReplayMetrics::default();
+    let mut metrics = ContextReplayMetrics {
+        sentences: count_sentences(sentences_text),
+        ..ContextReplayMetrics::default()
+    };
 
+    walk_ambiguous_tokens(sentences_text, &prices, &segmenter, |token, ranked| {
+        metrics.tokens += 1;
+        let Some((context, lattice)) = ranked else {
+            // 无同码歧义:两个 scorer 都必然命中。
+            metrics.baseline_rank1 += 1;
+            metrics.contextual_rank1 += 1;
+            return;
+        };
+        metrics.ambiguous += 1;
+        let baseline_ok = top_is(scored_top(&baseline, context, lattice), token);
+        let contextual_ok = top_is(scored_top(contextual, context, lattice), token);
+        metrics.baseline_rank1 += usize::from(baseline_ok);
+        metrics.contextual_rank1 += usize::from(contextual_ok);
+        match (baseline_ok, contextual_ok) {
+            (false, true) => metrics.context_gain += 1,
+            (true, false) => metrics.harmful_reorder += 1,
+            _ => {}
+        }
+    });
+
+    ContextReplayReport {
+        schema: CONTEXT_REPLAY_SCHEMA,
+        baseline_scorer: BaselineScorer::SCORER_ID,
+        contextual_scorer: contextual_id,
+        metrics,
+    }
+}
+
+/// 便捷入口:用真实 KDConv bigram 证据做上下文回放。
+pub fn replay_sentences_kdconv(
+    sentences_text: &str,
+    model: xhup_decoder::BigramModel,
+) -> ContextReplayReport {
+    let scorer = KdconvBigramScorer::new(model);
+    replay_sentences(sentences_text, &scorer, KdconvBigramScorer::SCORER_ID)
+}
+
+/// 遍历语料中所有「有 canonical 词码且期望词在菜单内」的 token。
+///
+/// 对每个 token 调用 `on_ambiguous(token, context, lattice)`(同码候选 ≥2)
+/// 或 `on_unambiguous(token)`(唯一候选,必然命中)。语料遍历、分词与
+/// `committed` 前文累积只在这里实现一次,保证各报告口径一致。
+fn walk_ambiguous_tokens<F>(
+    sentences_text: &str,
+    prices: &ProductionMenus,
+    segmenter: &Segmenter,
+    mut on_token: F,
+) where
+    F: FnMut(&str, Option<(&RuntimeContext, &Lattice)>),
+{
     for line in sentences_text.lines() {
         let sentence = line.trim();
         if sentence.is_empty() {
             continue;
         }
-        metrics.sentences += 1;
         let tokens = segmenter.segment(sentence);
         let mut committed = String::new();
         for token in &tokens {
@@ -149,15 +248,11 @@ where
                 continue;
             };
 
-            metrics.tokens += 1;
             if candidates.len() < 2 {
-                // 无同码歧义:两个 scorer 都必然命中,不必构造 lattice。
-                metrics.baseline_rank1 += 1;
-                metrics.contextual_rank1 += 1;
+                on_token(token, None);
                 committed.push_str(token);
                 continue;
             }
-            metrics.ambiguous += 1;
 
             let mut lattice = Lattice::new(key_seq.clone());
             let span = Span::new(0, key_seq.len()).expect("canonical 码长度 ≥ 2");
@@ -170,36 +265,72 @@ where
                     )
                     .expect("同码候选共享同一合法 span");
             }
-
             let context = RuntimeContext::new(committed.as_str(), key_seq);
-            let baseline_ok = top_is(scored_top(&baseline, &context, &lattice), token.as_str());
-            let contextual_ok = top_is(scored_top(contextual, &context, &lattice), token.as_str());
-            metrics.baseline_rank1 += usize::from(baseline_ok);
-            metrics.contextual_rank1 += usize::from(contextual_ok);
-            match (baseline_ok, contextual_ok) {
-                (false, true) => metrics.context_gain += 1,
-                (true, false) => metrics.harmful_reorder += 1,
-                _ => {}
-            }
+            on_token(token, Some((&context, &lattice)));
             committed.push_str(token);
         }
     }
-
-    ContextReplayReport {
-        schema: CONTEXT_REPLAY_SCHEMA,
-        baseline_scorer: BaselineScorer::SCORER_ID,
-        contextual_scorer: contextual_id,
-        metrics,
-    }
 }
 
-/// 便捷入口:用真实 KDConv bigram 证据做上下文回放。
-pub fn replay_sentences_kdconv(
+/// 统计语料中的句子数(与回放口径一致:非空行)。
+fn count_sentences(sentences_text: &str) -> usize {
+    sentences_text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count()
+}
+
+/// 有界 beam 解码与全路径枚举的一致性回放(§25 第 7 步 / §22)。
+///
+/// 对语料中每个同码歧义 token,分别用
+/// [`decode_beam`](xhup_decoder::decode_beam)(生产路径)与
+/// [`rank_paths`](xhup_decoder::rank_paths) + 全路径枚举(参考路径)
+/// 求 top1,统计一致性与截断规模。`beam_width >= 候选数` 时截断应为 0,
+/// 此时两者必须**逐 token 一致**;不一致即精度回归。
+pub fn bounded_decode_consistency<S>(
     sentences_text: &str,
-    model: xhup_decoder::BigramModel,
-) -> ContextReplayReport {
-    let scorer = KdconvBigramScorer::new(model);
-    replay_sentences(sentences_text, &scorer, KdconvBigramScorer::SCORER_ID)
+    scorer: &S,
+    scorer_id: &'static str,
+    config: xhup_decoder::DecodeConfig,
+) -> BoundedDecodeReport
+where
+    S: DeterministicScorer,
+{
+    let prices = ProductionMenus::build();
+    let segmenter = Segmenter::build();
+    let mut metrics = BoundedDecodeMetrics::default();
+
+    walk_ambiguous_tokens(sentences_text, &prices, &segmenter, |_token, ranked| {
+        let Some((context, lattice)) = ranked else {
+            return;
+        };
+        metrics.compared += 1;
+        let reference = scored_top(scorer, context, lattice);
+        let decoded = xhup_decoder::decode_beam(lattice, context, scorer, config);
+        match decoded.ranked().first() {
+            Some(path) => {
+                if Some(path.text()) == reference.as_deref() {
+                    metrics.top1_agreement += 1;
+                }
+            }
+            None => metrics.empty += 1,
+        }
+        if decoded.truncated() {
+            metrics.truncated += 1;
+        }
+        if decoded.fallback() == Some(xhup_decoder::FallbackReason::LowConfidence) {
+            metrics.low_confidence += 1;
+        }
+    });
+
+    BoundedDecodeReport {
+        schema: BOUNDED_DECODE_SCHEMA,
+        scorer: scorer_id,
+        beam_width: config.beam_width.get(),
+        top_k: config.top_k.get(),
+        min_confidence_gap: config.min_confidence_gap,
+        metrics,
+    }
 }
 
 fn scored_top<S: DeterministicScorer>(

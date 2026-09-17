@@ -107,3 +107,85 @@ fn report_schema_is_versioned_and_serializable() {
     assert!(json.contains("\"contextGain\""));
     assert!(json.contains("\"harmfulReorder\""));
 }
+
+// ---------------------------------------------------------------------------
+// 有界 beam 解码 vs 全路径枚举的一致性(§25 第 7 步 / §22)
+// ---------------------------------------------------------------------------
+
+use std::num::NonZeroUsize;
+
+use xhup_analyzer::context_replay::bounded_decode_consistency;
+use xhup_decoder::{DecodeConfig, KdconvBigramScorer};
+
+fn beam_config(width: usize) -> DecodeConfig {
+    DecodeConfig::new(
+        NonZeroUsize::new(width).expect("width >= 1"),
+        NonZeroUsize::new(5).expect("top_k 5 != 0"),
+        0,
+    )
+}
+
+#[test]
+fn bounded_decode_matches_exhaustive_ranking_at_wide_beam() {
+    // 生产级有界解码必须在足够宽的 beam 下与「物化全部完整路径再排序」
+    // 逐 token 一致 —— 这是 §24「bounded Beam/Viterbi 提供确定性 Top-K」
+    // 的可执行证据。实测:beam=32 时 2701 个歧义 token 全部一致且无截断。
+    let scorer = KdconvBigramScorer::new(model());
+    let report = bounded_decode_consistency(
+        SENTENCES,
+        &scorer,
+        KdconvBigramScorer::SCORER_ID,
+        beam_config(32),
+    );
+    let m = &report.metrics;
+    assert_eq!(report.schema, "xhup-bounded-decode-consistency/v1");
+    assert_eq!(report.beam_width, 32);
+    assert_eq!(m.compared, 2701, "与 context replay 的歧义 token 数一致");
+    assert_eq!(m.top1_agreement, m.compared, "宽 beam 下必须 100% 一致");
+    assert_eq!(m.truncated, 0, "宽 beam 下不得截断");
+    assert_eq!(m.empty, 0, "不得出现无完整路径");
+    assert_eq!(m.top1_agreement_rate(), 1.0);
+}
+
+#[test]
+fn narrow_beam_truncates_and_loses_agreement_monotonically() {
+    // 窄 beam 会截断并丢失与参考排序的一致性;该读数记录真实代价,
+    // 防止把 beam 调窄当成「免费优化」。
+    let scorer = KdconvBigramScorer::new(model());
+    let narrow = bounded_decode_consistency(
+        SENTENCES,
+        &scorer,
+        KdconvBigramScorer::SCORER_ID,
+        beam_config(2),
+    );
+    assert!(
+        narrow.metrics.truncated > 0,
+        "beam=2 必须出现截断(真实菜单扇出超过 2)"
+    );
+    assert!(
+        narrow.metrics.top1_agreement < narrow.metrics.compared,
+        "beam=2 必须丢失部分 top1 一致性"
+    );
+    assert!(
+        narrow.metrics.top1_agreement_rate() > 0.9,
+        "仍应保持高一致率"
+    );
+}
+
+#[test]
+fn bounded_decode_is_deterministic() {
+    let scorer = KdconvBigramScorer::new(model());
+    let a = bounded_decode_consistency(
+        SENTENCES,
+        &scorer,
+        KdconvBigramScorer::SCORER_ID,
+        beam_config(8),
+    );
+    let b = bounded_decode_consistency(
+        SENTENCES,
+        &scorer,
+        KdconvBigramScorer::SCORER_ID,
+        beam_config(8),
+    );
+    assert_eq!(a, b, "同一配置与输入必须得到同一报告");
+}

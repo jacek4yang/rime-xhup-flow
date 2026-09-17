@@ -5,18 +5,24 @@
 //!
 //! 全离线:只读显式传入的文件,不联网、不写用户数据。
 
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use xhup_analyzer::context_replay::{ContextReplayReport, replay_sentences_kdconv};
-use xhup_decoder::BigramModel;
+use xhup_analyzer::context_replay::{
+    BoundedDecodeReport, ContextReplayReport, bounded_decode_consistency, replay_sentences_kdconv,
+};
+use xhup_decoder::{BigramModel, DecodeConfig, KdconvBigramScorer};
 
 fn usage() -> ! {
     eprintln!(
         "用法: context-replay-bench --sentences <replay_fixture.txt> --bigram <kdconv_bigram.tsv>\n\
          \x20     [--json] [--baseline <context-replay-baseline.json>]\n\
+         \x20     [--bounded] [--beam N]\n\
          对真实语料逐 token 回放,输出 committed-context 的 rank1 命中与\n\
-         harmful reorder rate(§20)。baseline 只断言非计时指标。"
+         harmful reorder rate(§20)。baseline 只断言非计时指标。\n\
+         --bounded   额外输出有界 beam 解码 vs 全路径枚举的 top1 一致性\n\
+         --beam N    有界解码 beam 宽度(缺省 8)"
     );
     std::process::exit(2);
 }
@@ -26,6 +32,8 @@ fn main() -> ExitCode {
     let mut bigram: Option<PathBuf> = None;
     let mut baseline: Option<PathBuf> = None;
     let mut json = false;
+    let mut bounded = false;
+    let mut beam_width = 8usize;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -35,6 +43,17 @@ fn main() -> ExitCode {
             "--bigram" => bigram = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--baseline" => baseline = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--json" => json = true,
+            "--bounded" => bounded = true,
+            "--beam" => {
+                let value = args.next().unwrap_or_else(|| usage());
+                beam_width = match value.parse() {
+                    Ok(parsed) if parsed > 0 => parsed,
+                    _ => {
+                        eprintln!("--beam 必须 ≥ 1,实际 {value:?}");
+                        return ExitCode::FAILURE;
+                    }
+                };
+            }
             _ => usage(),
         }
     }
@@ -64,7 +83,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let report = replay_sentences_kdconv(&sentences_text, model);
+    let report = replay_sentences_kdconv(&sentences_text, model.clone());
     if json {
         println!(
             "{}",
@@ -72,6 +91,31 @@ fn main() -> ExitCode {
         );
     } else {
         print!("{}", render_text(&report));
+    }
+
+    // 有界 beam 解码 vs 全路径枚举的一致性(§25 第 7 步)。
+    if bounded {
+        let scorer = KdconvBigramScorer::new(model.clone());
+        let config = DecodeConfig::new(
+            NonZeroUsize::new(beam_width).expect("--beam 必须 ≥ 1"),
+            NonZeroUsize::new(5).expect("top_k 5 != 0"),
+            0,
+        );
+        let bounded_report = bounded_decode_consistency(
+            &sentences_text,
+            &scorer,
+            KdconvBigramScorer::SCORER_ID,
+            config,
+        );
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&bounded_report)
+                    .expect("BoundedDecodeReport 必然可序列化")
+            );
+        } else {
+            print!("{}", render_bounded_text(&bounded_report));
+        }
     }
 
     if let Some(path) = baseline {
@@ -136,6 +180,31 @@ fn render_text(report: &ContextReplayReport) -> String {
         m.harmful_reorder_rate()
     ));
     out.push_str(&format!("net_gain:              {:+.4}\n", m.net_gain()));
+    out
+}
+
+/// 有界解码一致性的确定性 ASCII 报告。
+fn render_bounded_text(report: &BoundedDecodeReport) -> String {
+    let m = &report.metrics;
+    let mut out = String::new();
+    out.push_str(&format!("schema:              {}\n", report.schema));
+    out.push_str(&format!("scorer:              {}\n", report.scorer));
+    out.push_str(&format!("beam_width:          {}\n", report.beam_width));
+    out.push_str(&format!("top_k:               {}\n", report.top_k));
+    out.push_str(&format!(
+        "min_confidence_gap:  {}\n",
+        report.min_confidence_gap
+    ));
+    out.push_str(&format!("compared:            {}\n", m.compared));
+    out.push_str(&format!("top1_agreement:      {}\n", m.top1_agreement));
+    out.push_str(&format!("truncated:           {}\n", m.truncated));
+    out.push_str(&format!("low_confidence:      {}\n", m.low_confidence));
+    out.push_str(&format!("empty:               {}\n", m.empty));
+    out.push_str(&format!(
+        "top1_agreement_rate: {:.4}\n",
+        m.top1_agreement_rate()
+    ));
+    out.push_str(&format!("truncated_rate:      {:.4}\n", m.truncated_rate()));
     out
 }
 
