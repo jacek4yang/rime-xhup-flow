@@ -21,6 +21,7 @@ pub mod context_replay;
 pub mod contextual_benchmark;
 pub mod corpus;
 pub mod cost;
+pub mod cross_segmentation;
 pub mod dynamic;
 pub mod evidence;
 pub mod explain;
