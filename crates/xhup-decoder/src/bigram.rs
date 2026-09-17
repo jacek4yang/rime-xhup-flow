@@ -100,6 +100,24 @@ impl BigramModel {
         self.unigrams.get(token).copied().unwrap_or(0)
     }
 
+    /// 全部转移观测,按 `(left, right)` 字典序(确定性)。
+    ///
+    /// 供多源证据合并与审计使用。计数为该 `(left, right)` 的累计观测值。
+    pub fn transitions(&self) -> impl Iterator<Item = (&str, &str, u64)> {
+        self.transitions.iter().flat_map(|(left, row)| {
+            row.iter()
+                .map(move |(right, &count)| (left.as_str(), right.as_str(), count))
+        })
+    }
+
+    /// 全部转移观测的计数总和(`Σ` 所有 `(left, right)` 计数)。
+    pub fn observed_total(&self) -> u64 {
+        self.transitions
+            .values()
+            .map(|row| row.values().fold(0u64, |acc, &c| acc.saturating_add(c)))
+            .fold(0u64, u64::saturating_add)
+    }
+
     /// 确定性 TSV 序列化(`(left, right)` 字典序,头部注释含审计总量)。
     pub fn to_tsv(&self) -> String {
         let mut out = String::new();

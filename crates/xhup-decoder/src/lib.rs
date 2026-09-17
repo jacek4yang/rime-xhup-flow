@@ -14,6 +14,7 @@ mod context;
 mod decode;
 mod evidence;
 mod lattice;
+mod multi_source;
 mod scoring;
 
 pub use bigram::{BOS, BigramModel, EOS, KdconvBigramBreakdown, KdconvBigramScorer};
@@ -31,6 +32,7 @@ pub use lattice::{
     CandidateEvidence, CandidateKind, EdgeCandidate, EdgeId, Lattice, LatticeEdge, LatticeError,
     LatticePath, PathSet, Span,
 };
+pub use multi_source::{MergeAudit, MergePolicy, NORMALIZE_SCALE, merge_models};
 pub use scoring::{
     BaselineScoreBreakdown, BaselineScorer, DeterministicScorer, Score, ScoredPath, rank_paths,
 };
