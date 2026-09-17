@@ -309,17 +309,16 @@ pub fn harmful_case_diagnostics(
         let Some((context, lattice)) = ranked else {
             return;
         };
-        if top_is(scored_top(&baseline, context, lattice), token) {
-            // baseline 本来就对;只有它被改错才是有害重排。
-            if top_is(scored_top(&contextual, context, lattice), token) {
-                return;
-            }
-        } else {
+        // 有害重排 = baseline 命中且上下文未命中。两次打分都只算一次,
+        // 既避免重复 rank_paths(每 token 一次全路径枚举),也让判定口径
+        // 与 replay_sentences 完全一致。
+        let baseline_top = scored_top(&baseline, context, lattice);
+        let contextual_top = scored_top(&contextual, context, lattice);
+        if !top_is(baseline_top, token) || top_is(contextual_top.clone(), token) {
             return;
         }
-        let picked = match scored_top(&contextual, context, lattice) {
-            Some(picked) => picked,
-            None => return,
+        let Some(picked) = contextual_top else {
+            return;
         };
         // committed 前文尾部 token:与 KdconvBigramScorer 的上下文窗口取法一致
         // (最长已知词优先,未知字符切断,再取窗口内最后一个)。
