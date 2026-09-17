@@ -1,0 +1,30 @@
+feat(analyzer): 跨切分评测接入 committed context 窗口模式
+
+上一个 commit 的通路在「空 committed context」下评测,导致 bigram scorer
+看起来比 baseline 更差(top1 0.3688 -> 0.1702)。根因是转移奖励在没有前文
+时只在路径内生效,而路径内二元奖励不足以替代词频证据。本 commit 补上
+committed context,使该通路能度量它本来要度量的东西。
+
+实现:--committed-context 在多 token 句子上按 token 边界切出「前文 + 当前
+窗口」,前文进入 RuntimeContext.committed_left(转移证据可用),当前窗口才是
+lattice 输入。报告新增 with_committed_context 与 contextual_windows 字段,
+并在文档中明确两条路径(单句 / 窗口)的计数之和仍须恰好覆盖总句数。
+
+真实数据读数(2000 句夹具,beam 8->32,evaluated=506):
+                            top1_text   top_k
+  baseline, 无前文           0.3688     0.4752
+  baseline, 有前文           0.4130     0.5791
+  bigram,   无前文           0.1702     0.4539
+  bigram,   有前文           0.2628     0.6640
+
+两个关键结论:
+1. **committed context 真实改善跨切分选择**:bigram 的 top-k 从 0.4539 提升
+   到 0.6640,这是「上下文改善**码级/跨切分**选择」的首个可执行证据 ——
+   与 #108 的同码词消歧通路是**不同总体**;
+2. **该 scorer 的 top1 仍低于 baseline**(0.2628 vs 0.4130):说明
+   transition_weight(256)相对词频权重对跨切分任务偏高。这是一个可操作的
+   调参线索,但本 commit 不改 scorer 权重(需独立 PR + 敏感度分析)。
+
+测试 +4(committed context 模式的显式标注与计数账、不变量、确定性、
+真实语料上 top-k 确实提升)。为控制 CI 时长,全语料评测按模式 OnceLock 缓存
+(12 项测试从 68s 降到 ~48s)。共 12 项全绿。

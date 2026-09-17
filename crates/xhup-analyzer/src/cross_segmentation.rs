@@ -84,6 +84,9 @@ pub struct CrossSegmentationMetrics {
     pub in_top_k: usize,
     /// 有界解码顶到上限仍截断的有效样本数(诚实报告,不冒充等价)。
     pub truncated_at_max: usize,
+    /// 以「已提交前文 + 当前窗口」形式评测的窗口数(仅开启 committed
+    /// context 且句子有多个 token 时计数;这些句子不再走单句路径)。
+    pub contextual_windows: usize,
 }
 
 impl CrossSegmentationMetrics {
@@ -120,6 +123,8 @@ pub struct CrossSegmentationReport {
     pub top_k: usize,
     pub beam_floor: usize,
     pub beam_ceiling: usize,
+    /// 本次评测是否使用 committed context(在 token 边界切出前文窗口)。
+    pub with_committed_context: bool,
     pub metrics: CrossSegmentationMetrics,
 }
 
@@ -135,6 +140,7 @@ pub fn evaluate_cross_segmentation<S: DeterministicScorer>(
     scorer: &S,
     scorer_id: &'static str,
     top_k: usize,
+    with_committed_context: bool,
 ) -> CrossSegmentationReport {
     let menus = WordCodeMenus::build();
     let segmenter = Segmenter::build();
@@ -162,6 +168,29 @@ pub fn evaluate_cross_segmentation<S: DeterministicScorer>(
         }
         if missing {
             metrics.skipped_no_word_code += 1;
+            continue;
+        }
+
+        // 在多 token 句子上按 token 边界切出「前文 + 当前输入」的窗口:
+        // 这是用户真实输入节奏的近似(having committed 前面几个字之后,
+        // 再输入下一段)。单 token 句子退化为空上下文(仍被计数)。
+        if codes.len() > 1 && with_committed_context {
+            let split = codes.len() - 1;
+            let committed_text: String = tokens[..split].concat();
+            let committed_codes: Vec<String> = codes[..split].to_vec();
+            let tail_tokens = &tokens[split..];
+            let tail_codes = &codes[split..];
+            metrics.contextual_windows += 1;
+            evaluate_window(
+                &menus,
+                &committed_text,
+                &committed_codes,
+                tail_tokens,
+                tail_codes,
+                scorer,
+                top_k,
+                &mut metrics,
+            );
             continue;
         }
 
@@ -197,45 +226,15 @@ pub fn evaluate_cross_segmentation<S: DeterministicScorer>(
             continue;
         };
         let context = RuntimeContext::new("", composition);
-        let config = DecodeConfig::new(
-            NonZeroUsize::new(BEAM_FLOOR).expect("beam floor != 0"),
-            NonZeroUsize::new(top_k.max(1)).expect("top_k != 0"),
-            0,
-        );
-        let (decoded, outcome) = decode_beam_adaptive(
-            lattice,
+        score_lattice(
             &context,
+            lattice,
+            expected_text,
+            &expected,
             scorer,
-            config,
-            NonZeroUsize::new(BEAM_CEILING).expect("beam ceiling != 0"),
+            top_k,
+            &mut metrics,
         );
-
-        metrics.evaluated += 1;
-        if outcome.truncated_at_max {
-            metrics.truncated_at_max += 1;
-        }
-        let ranked = decoded.ranked();
-        // 产品口径:top1 文本是否正确。
-        if ranked
-            .first()
-            .is_some_and(|path| path.text() == expected_text)
-        {
-            metrics.top1_text_correct += 1;
-        }
-        // 严格口径:top1 切分是否与语料分词逐 span 相同。
-        if ranked
-            .first()
-            .is_some_and(|path| path_matches(lattice, path.path().edge_ids(), &expected))
-        {
-            metrics.top1_span_exact += 1;
-        }
-        if ranked
-            .iter()
-            .take(top_k)
-            .any(|path| path.text() == expected_text)
-        {
-            metrics.in_top_k += 1;
-        }
     }
 
     CrossSegmentationReport {
@@ -244,7 +243,111 @@ pub fn evaluate_cross_segmentation<S: DeterministicScorer>(
         top_k,
         beam_floor: BEAM_FLOOR,
         beam_ceiling: BEAM_CEILING,
+        with_committed_context,
         metrics,
+    }
+}
+
+/// 对一段「已提交前文 + 当前输入」窗口构造 lattice 并评分。
+///
+/// 前文的按键只用于构造 [`RuntimeContext`] 的 `committed_left`(提供转移证据),
+/// 当前窗口才是 lattice 的输入。期望分段按当前窗口的 token 计算。
+#[allow(clippy::too_many_arguments)]
+fn evaluate_window<S: DeterministicScorer>(
+    menus: &WordCodeMenus,
+    committed_text: &str,
+    committed_codes: &[String],
+    tail_tokens: &[String],
+    tail_codes: &[String],
+    scorer: &S,
+    top_k: usize,
+    metrics: &mut CrossSegmentationMetrics,
+) {
+    // 窗口按键串边界(前文按键数不影响窗口,但窗口本身仍受上限约束)。
+    let _ = (menus, committed_codes);
+    let input: String = tail_codes.concat();
+    if input.is_empty() || input.len() > MAX_INPUT_KEYS {
+        metrics.skipped_input_bounds += 1;
+        return;
+    }
+
+    let mut expected: Vec<ExpectedSegment> = Vec::with_capacity(tail_tokens.len());
+    let mut position = 0usize;
+    for (token, code) in tail_tokens.iter().zip(tail_codes.iter()) {
+        expected.push((position, position + code.len(), token.clone()));
+        position += code.len();
+    }
+    let expected_text: String = tail_tokens.concat();
+
+    let built = build_production_lattice(&input, PATH_LIMIT);
+    let lattice = built.lattice();
+    if !path_exists(lattice, &expected) {
+        metrics.skipped_expected_path_absent += 1;
+        return;
+    }
+    let Ok(composition) = input.parse::<KeySequence>() else {
+        metrics.skipped_input_bounds += 1;
+        return;
+    };
+    let context = RuntimeContext::new(committed_text, composition);
+    score_lattice(
+        &context,
+        lattice,
+        expected_text,
+        &expected,
+        scorer,
+        top_k,
+        metrics,
+    );
+}
+
+/// 有界解码 + 三种口径计数(单句与窗口两条路径共用)。
+fn score_lattice<S: DeterministicScorer>(
+    context: &RuntimeContext,
+    lattice: &Lattice,
+    expected_text: String,
+    expected: &[ExpectedSegment],
+    scorer: &S,
+    top_k: usize,
+    metrics: &mut CrossSegmentationMetrics,
+) {
+    let config = DecodeConfig::new(
+        NonZeroUsize::new(BEAM_FLOOR).expect("beam floor != 0"),
+        NonZeroUsize::new(top_k.max(1)).expect("top_k != 0"),
+        0,
+    );
+    let (decoded, outcome) = decode_beam_adaptive(
+        lattice,
+        context,
+        scorer,
+        config,
+        NonZeroUsize::new(BEAM_CEILING).expect("beam ceiling != 0"),
+    );
+    metrics.evaluated += 1;
+    if outcome.truncated_at_max {
+        metrics.truncated_at_max += 1;
+    }
+    let ranked = decoded.ranked();
+    // 产品口径:top1 文本是否正确。
+    if ranked
+        .first()
+        .is_some_and(|path| path.text() == expected_text)
+    {
+        metrics.top1_text_correct += 1;
+    }
+    // 严格口径:top1 切分是否与语料分词逐 span 相同。
+    if ranked
+        .first()
+        .is_some_and(|path| path_matches(lattice, path.path().edge_ids(), expected))
+    {
+        metrics.top1_span_exact += 1;
+    }
+    if ranked
+        .iter()
+        .take(top_k)
+        .any(|path| path.text() == expected_text)
+    {
+        metrics.in_top_k += 1;
     }
 }
 
@@ -258,6 +361,7 @@ pub fn evaluate_cross_segmentation_baseline(
         &BaselineScorer::default(),
         BaselineScorer::SCORER_ID,
         top_k,
+        false,
     )
 }
 

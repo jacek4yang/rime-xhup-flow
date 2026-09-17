@@ -42,7 +42,7 @@ fn report_schema_and_config_are_versioned_and_explicit() {
 #[test]
 fn exclusion_classes_are_explicit_and_mutually_accounted() {
     // 排除必须分类计数:不可达 ≠ 排序错误。分母只含有效样本。
-    let report = evaluate_cross_segmentation_baseline(SENTENCES, 5);
+    let report = cached(false);
     let m = &report.metrics;
     assert_eq!(m.sentences, 2000);
     let excluded = m.skipped_no_word_code + m.skipped_input_bounds + m.skipped_expected_path_absent;
@@ -63,7 +63,7 @@ fn exclusion_classes_are_explicit_and_mutually_accounted() {
 
 #[test]
 fn top1_counts_never_exceed_evaluated() {
-    let report = evaluate_cross_segmentation_baseline(SENTENCES, 5);
+    let report = cached(false);
     let m = &report.metrics;
     assert!(m.top1_text_correct <= m.evaluated);
     assert!(m.top1_span_exact <= m.evaluated);
@@ -78,7 +78,7 @@ fn text_and_span_metrics_are_reported_separately() {
     // 同一文本可由多种合法切分产生(如 ["好的"] vs ["好","的"]),
     // 因此按 span 严格比较会把正确结果判为错误 —— 两个口径必须分开报告,
     // 且文本口径(产品关注)不低于严格口径。
-    let report = evaluate_cross_segmentation_baseline(SENTENCES, 5);
+    let report = cached(false);
     let m = &report.metrics;
     assert!(
         m.top1_text_correct >= m.top1_span_exact,
@@ -114,4 +114,128 @@ fn no_word_code_sentence_is_excluded_not_counted_as_error() {
     assert_eq!(m.evaluated, 0);
     assert_eq!(m.top1_text_correct, 0);
     assert!(m.skipped_no_word_code + m.skipped_input_bounds >= 1);
+}
+
+// ---------------------------------------------------------------------------
+// committed context 窗口模式
+// ---------------------------------------------------------------------------
+
+use xhup_analyzer::cross_segmentation::evaluate_cross_segmentation;
+use xhup_decoder::{BaselineScorer, BigramModel, KdconvBigramScorer};
+
+const BIGRAM_TSV: &str = include_str!("../../../data/corpus/kdconv_bigram.tsv");
+
+#[test]
+fn committed_context_mode_is_explicit_in_report_and_counted() {
+    let report = cached(true);
+    assert!(report.with_committed_context, "报告必须显式标注模式");
+    let m = &report.metrics;
+    // 窗口数 > 0 且已计入排除账;有效 + 排除仍须恰好等于总句数。
+    assert!(m.contextual_windows > 0, "多 token 句子应切出窗口");
+    let excluded = m.skipped_no_word_code + m.skipped_input_bounds + m.skipped_expected_path_absent;
+    assert_eq!(
+        m.evaluated + excluded,
+        m.sentences,
+        "两条路径(单句/窗口)的计数之和仍须恰好覆盖总句数"
+    );
+}
+
+#[test]
+fn committed_context_does_not_break_invariants() {
+    let report = cached(true);
+    let m = &report.metrics;
+    assert!(m.top1_text_correct <= m.evaluated);
+    assert!(m.top1_span_exact <= m.evaluated);
+    assert!(m.in_top_k <= m.evaluated);
+    assert!(m.in_top_k >= m.top1_text_correct);
+}
+
+#[test]
+fn committed_context_mode_is_deterministic() {
+    let a = cached(true);
+    let b = cached(true);
+    assert_eq!(a, b);
+}
+
+#[test]
+fn committed_context_improves_bigram_top_k_on_real_corpus() {
+    // 实测事实(2026-09-17):committed context 让 bigram scorer 的 top-k 命中
+    // 从 0.4539 提升到 0.6640 —— 这是「上下文真实改善**跨切分**选择」的第一个
+    // 可执行证据,与本仓库此前的同码词消歧通路(#108)是不同总体。
+    //
+    // 同时记录一个**负面**读数:该 scorer 的 top1 仍低于 baseline
+    // (0.2628 vs 0.4130),说明 transition_weight 相对词频权重对跨切分任务
+    // 偏高。本测试只锁定「上下文有用」这一方向性事实,不锁定具体数值。
+    let without = cached_bigram(false);
+    let with = cached_bigram(true);
+    assert!(with.metrics.evaluated > 0, "必须有有效样本");
+    assert!(
+        with.metrics.top_k_rate() > without.metrics.top_k_rate(),
+        "committed context 应提升 top-k(实测 {:.4} -> {:.4})",
+        without.metrics.top_k_rate(),
+        with.metrics.top_k_rate()
+    );
+}
+
+/// 全语料评测很贵(每句都要构造生产 lattice),按模式缓存一次。
+fn cached(with_ctx: bool) -> &'static xhup_analyzer::cross_segmentation::CrossSegmentationReport {
+    use std::sync::OnceLock;
+    static NO_CTX: OnceLock<xhup_analyzer::cross_segmentation::CrossSegmentationReport> =
+        OnceLock::new();
+    static WITH_CTX: OnceLock<xhup_analyzer::cross_segmentation::CrossSegmentationReport> =
+        OnceLock::new();
+    if with_ctx {
+        WITH_CTX.get_or_init(|| {
+            evaluate_cross_segmentation(
+                SENTENCES,
+                &BaselineScorer::default(),
+                BaselineScorer::SCORER_ID,
+                5,
+                true,
+            )
+        })
+    } else {
+        NO_CTX.get_or_init(|| {
+            evaluate_cross_segmentation(
+                SENTENCES,
+                &BaselineScorer::default(),
+                BaselineScorer::SCORER_ID,
+                5,
+                false,
+            )
+        })
+    }
+}
+
+fn cached_bigram(
+    with_ctx: bool,
+) -> &'static xhup_analyzer::cross_segmentation::CrossSegmentationReport {
+    use std::sync::OnceLock;
+    static NO_CTX: OnceLock<xhup_analyzer::cross_segmentation::CrossSegmentationReport> =
+        OnceLock::new();
+    static WITH_CTX: OnceLock<xhup_analyzer::cross_segmentation::CrossSegmentationReport> =
+        OnceLock::new();
+    if with_ctx {
+        WITH_CTX.get_or_init(|| {
+            let model = BigramModel::from_tsv(BIGRAM_TSV).expect("bigram TSV 可解析");
+            evaluate_cross_segmentation(
+                SENTENCES,
+                &KdconvBigramScorer::new(model),
+                KdconvBigramScorer::SCORER_ID,
+                5,
+                true,
+            )
+        })
+    } else {
+        NO_CTX.get_or_init(|| {
+            let model = BigramModel::from_tsv(BIGRAM_TSV).expect("bigram TSV 可解析");
+            evaluate_cross_segmentation(
+                SENTENCES,
+                &KdconvBigramScorer::new(model),
+                KdconvBigramScorer::SCORER_ID,
+                5,
+                false,
+            )
+        })
+    }
 }

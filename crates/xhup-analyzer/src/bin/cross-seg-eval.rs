@@ -13,7 +13,9 @@ fn usage() -> ! {
     eprintln!(
         "用法: cross-seg-eval --sentences <replay_fixture.txt> [--bigram <tsv>] [--top-k N] [--json]\n\
          在真实语料上度量跨切分(码级)top1/top-k 分段正确率。\n\
-         --bigram 提供时用 KdconvBigramScorer,否则用 BaselineScorer(对照)。"
+         --bigram 提供时用 KdconvBigramScorer,否则用 BaselineScorer(对照)。
+         --committed-context 在多 token 句子上按 token 边界切出「前文 + 当前窗口」,
+                            则前文进入 RuntimeContext.committed_left(转移证据可用)。"
     );
     std::process::exit(2);
 }
@@ -88,6 +90,7 @@ fn main() -> ExitCode {
     let mut bigram: Option<PathBuf> = None;
     let mut top_k = 5usize;
     let mut json = false;
+    let mut with_committed_context = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -96,6 +99,7 @@ fn main() -> ExitCode {
             }
             "--bigram" => bigram = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--json" => json = true,
+            "--committed-context" => with_committed_context = true,
             "--top-k" => {
                 let value = args.next().unwrap_or_else(|| usage());
                 top_k = match value.parse() {
@@ -120,9 +124,13 @@ fn main() -> ExitCode {
     };
 
     let report = match bigram {
-        None => {
-            xhup_analyzer::cross_segmentation::evaluate_cross_segmentation_baseline(&text, top_k)
-        }
+        None => xhup_analyzer::cross_segmentation::evaluate_cross_segmentation(
+            &text,
+            &xhup_decoder::BaselineScorer::default(),
+            xhup_decoder::BaselineScorer::SCORER_ID,
+            top_k,
+            with_committed_context,
+        ),
         Some(path) => {
             let bigram_text = match std::fs::read_to_string(&path) {
                 Ok(text) => text,
@@ -139,7 +147,13 @@ fn main() -> ExitCode {
                 }
             };
             let scorer = KdconvBigramScorer::new(model);
-            evaluate_cross_segmentation(&text, &scorer, KdconvBigramScorer::SCORER_ID, top_k)
+            evaluate_cross_segmentation(
+                &text,
+                &scorer,
+                KdconvBigramScorer::SCORER_ID,
+                top_k,
+                with_committed_context,
+            )
         }
     };
 
