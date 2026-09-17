@@ -208,6 +208,97 @@ pub fn replay_sentences_kdconv(
     replay_sentences(sentences_text, &scorer, KdconvBigramScorer::SCORER_ID)
 }
 
+/// 单个有害重排样本的证据明细(设计 §6 弱证据降级策略的依据)。
+///
+/// 字段只包含**语料**中的词与聚合计数,不含任何用户数据:输入语料本身是
+/// 入库的公开衍生夹具(Apache-2.0)。
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarmfulCase {
+    /// committed 前文的尾部 token(语料词)。
+    pub committed_tail: String,
+    /// 语料真实的词(baseline 选中、上下文改错的那个)。
+    pub expected: String,
+    /// 上下文 scorer 实际选中的词。
+    pub picked: String,
+    /// 前文 → 期望词的转移计数。
+    pub expected_evidence: u64,
+    /// 前文 → 实际选中词的转移计数。
+    pub picked_evidence: u64,
+}
+
+impl HarmfulCase {
+    /// 竞争者比期望词强多少(正数 = 上下文被更强的证据带走)。
+    pub fn evidence_margin(&self) -> i64 {
+        self.picked_evidence as i64 - self.expected_evidence as i64
+    }
+
+    /// 是否为「证据近乎持平」的样本(差距 ≤ 1)。
+    ///
+    /// 若有害样本主要落在这一类,说明单纯加宽证据阈值收效有限 —— 问题在
+    /// **证据本身不足以区分真实近义歧义**(如「他的/它的」),而不是阈值太松。
+    pub fn is_near_tie(&self) -> bool {
+        self.evidence_margin().abs() <= 1
+    }
+}
+
+/// 采集有害重排样本的证据明细(最多 `limit` 条,确定性序)。
+///
+/// 用于回答 §6 的核心问题:「上下文什么时候会错,能否用证据强度预测?」
+/// 按 (前文, 期望词) 去重后按期望词字典序输出,保证可复现。
+pub fn harmful_case_diagnostics(
+    sentences_text: &str,
+    model: &xhup_decoder::BigramModel,
+    limit: usize,
+) -> Vec<HarmfulCase> {
+    let prices = ProductionMenus::build();
+    let segmenter = Segmenter::build();
+    let baseline = BaselineScorer::default();
+    let contextual = KdconvBigramScorer::new(model.clone());
+    let mut seen = std::collections::BTreeSet::new();
+    let mut found: Vec<HarmfulCase> = Vec::new();
+
+    walk_ambiguous_tokens(sentences_text, &prices, &segmenter, |token, ranked| {
+        let Some((context, lattice)) = ranked else {
+            return;
+        };
+        if top_is(scored_top(&baseline, context, lattice), token) {
+            // baseline 本来就对;只有它被改错才是有害重排。
+            if top_is(scored_top(&contextual, context, lattice), token) {
+                return;
+            }
+        } else {
+            return;
+        }
+        let picked = match scored_top(&contextual, context, lattice) {
+            Some(picked) => picked,
+            None => return,
+        };
+        // committed 前文尾部 token:与 KdconvBigramScorer 的上下文窗口取法一致
+        // (最长已知词优先,未知字符切断,再取窗口内最后一个)。
+        let tail = tail_token(model, context.committed_left(), 4).unwrap_or_default();
+        if !seen.insert((tail.clone(), token.to_string())) {
+            return;
+        }
+        found.push(HarmfulCase {
+            committed_tail: tail.clone(),
+            expected: token.to_string(),
+            picked: picked.clone(),
+            expected_evidence: model.transition_count(&tail, token),
+            picked_evidence: model.transition_count(&tail, &picked),
+        });
+    });
+
+    found.sort_by(|a, b| {
+        a.expected
+            .cmp(&b.expected)
+            .then(a.committed_tail.cmp(&b.committed_tail))
+            .then(a.picked.cmp(&b.picked))
+    });
+    found.truncate(limit);
+    found
+}
+
 /// 遍历语料中所有「有 canonical 词码且期望词在菜单内」的 token。
 ///
 /// 对每个 token 调用 `on_ambiguous(token, context, lattice)`(同码候选 ≥2)
@@ -331,6 +422,50 @@ where
         min_confidence_gap: config.min_confidence_gap,
         metrics,
     }
+}
+
+/// 取 committed 前文的尾部 token(与 `KdconvBigramScorer` 的窗口语义一致)。
+///
+/// 最长已知词(2..=4 字)优先,否则单字;未知字符切断整条上下文链;
+/// 最后保留窗口内最近的 `max_tokens` 个。只用公开的 [`BigramModel::unigram_count`]
+/// 判定「是否已知」,因此不需要改动 `xhup-decoder`。
+fn tail_token(model: &xhup_decoder::BigramModel, text: &str, max_tokens: usize) -> Option<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut tokens: Vec<String> = Vec::new();
+    let mut pos = 0;
+    while pos < chars.len() {
+        let mut matched = None;
+        for len in (2..=4).rev() {
+            if pos + len <= chars.len() {
+                let candidate: String = chars[pos..pos + len].iter().collect();
+                if model.unigram_count(&candidate) > 0 {
+                    matched = Some((candidate, len));
+                    break;
+                }
+            }
+        }
+        match matched {
+            Some((token, len)) => {
+                tokens.push(token);
+                pos += len;
+            }
+            None => {
+                let single = chars[pos].to_string();
+                if model.unigram_count(&single) > 0 {
+                    tokens.push(single);
+                } else {
+                    // 未知字符:切断上下文链(与 corpus 边界语义一致)。
+                    tokens.clear();
+                }
+                pos += 1;
+            }
+        }
+    }
+    if tokens.len() > max_tokens {
+        let drop_count = tokens.len() - max_tokens;
+        tokens.drain(..drop_count);
+    }
+    tokens.pop()
 }
 
 fn scored_top<S: DeterministicScorer>(

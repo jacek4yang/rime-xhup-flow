@@ -10,7 +10,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use xhup_analyzer::context_replay::{
-    BoundedDecodeReport, ContextReplayReport, bounded_decode_consistency, replay_sentences_kdconv,
+    BoundedDecodeReport, ContextReplayReport, bounded_decode_consistency, harmful_case_diagnostics,
+    replay_sentences_kdconv,
 };
 use xhup_decoder::{BigramModel, DecodeConfig, KdconvBigramScorer};
 
@@ -22,7 +23,8 @@ fn usage() -> ! {
          对真实语料逐 token 回放,输出 committed-context 的 rank1 命中与\n\
          harmful reorder rate(§20)。baseline 只断言非计时指标。\n\
          --bounded   额外输出有界 beam 解码 vs 全路径枚举的 top1 一致性\n\
-         --beam N    有界解码 beam 宽度(缺省 8)"
+         --beam N    有界解码 beam 宽度(缺省 8)
+         --harmful   额外输出有害重排样本的证据明细(§6 降级策略依据)"
     );
     std::process::exit(2);
 }
@@ -33,6 +35,7 @@ fn main() -> ExitCode {
     let mut baseline: Option<PathBuf> = None;
     let mut json = false;
     let mut bounded = false;
+    let mut harmful = false;
     let mut beam_width = 8usize;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -44,6 +47,7 @@ fn main() -> ExitCode {
             "--baseline" => baseline = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--json" => json = true,
             "--bounded" => bounded = true,
+            "--harmful" => harmful = true,
             "--beam" => {
                 let value = args.next().unwrap_or_else(|| usage());
                 beam_width = match value.parse() {
@@ -115,6 +119,25 @@ fn main() -> ExitCode {
             );
         } else {
             print!("{}", render_bounded_text(&bounded_report));
+        }
+    }
+
+    // 有害重排的证据明细(§6)。只含语料词与聚合计数,不含用户数据。
+    if harmful {
+        let cases = harmful_case_diagnostics(&sentences_text, &model, 32);
+        let near_ties = cases.iter().filter(|c| c.is_near_tie()).count();
+        println!("harmful_samples: {}", cases.len());
+        println!("harmful_near_ties: {near_ties}");
+        for case in &cases {
+            println!(
+                "  tail={} expected={} ({} ) picked={} ({}) margin={}",
+                case.committed_tail,
+                case.expected,
+                case.expected_evidence,
+                case.picked,
+                case.picked_evidence,
+                case.evidence_margin()
+            );
         }
     }
 

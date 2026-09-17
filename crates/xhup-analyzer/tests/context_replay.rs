@@ -189,3 +189,47 @@ fn bounded_decode_is_deterministic() {
     );
     assert_eq!(a, b, "同一配置与输入必须得到同一报告");
 }
+
+// ---------------------------------------------------------------------------
+// 有害重排的证据诊断(§6 弱证据降级策略依据)
+// ---------------------------------------------------------------------------
+
+use xhup_analyzer::context_replay::harmful_case_diagnostics;
+
+#[test]
+fn harmful_diagnostics_expose_evidence_not_near_ties() {
+    // 实测事实(2026-09-17):两个有害样本都不是「证据近乎持平」,而是
+    // 「证据与本句真实用词不一致」—— 他的/它的 是同音词(tade),差异在
+    // 指代对象而非转移强度。因此单纯加宽阈值无法修复这类错误。
+    // 本测试把该结论固化为断言:若证据分布变化,读数会显式改变。
+    let model = model();
+    let cases = harmful_case_diagnostics(SENTENCES, &model, 32);
+    assert!(!cases.is_empty(), "真实语料上确实存在有害样本");
+    assert_eq!(
+        cases.iter().filter(|c| c.is_near_tie()).count(),
+        0,
+        "有害样本不得全部退化为证据持平(否则应改用阈值策略)"
+    );
+    // 每个样本都必须与诊断口径一致:期望/选中词不同,且都来自语料。
+    for case in &cases {
+        assert_ne!(case.expected, case.picked, "有害 = 选中与期望不同");
+        assert!(!case.committed_tail.is_empty(), "必须取到前文尾 token");
+        assert_eq!(
+            case.evidence_margin(),
+            case.picked_evidence as i64 - case.expected_evidence as i64
+        );
+    }
+}
+
+#[test]
+fn harmful_diagnostics_are_deterministic_and_bounded() {
+    let a = harmful_case_diagnostics(SENTENCES, &model(), 1);
+    let b = harmful_case_diagnostics(SENTENCES, &model(), 1);
+    assert_eq!(a, b, "同一输入必须得到同一诊断");
+    assert!(a.len() <= 1, "limit 必须被尊重");
+}
+
+#[test]
+fn harmful_diagnostics_empty_corpus_yields_nothing() {
+    assert!(harmful_case_diagnostics("", &model(), 32).is_empty());
+}
