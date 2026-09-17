@@ -15,23 +15,30 @@ fn model() -> BigramModel {
 
 #[test]
 fn real_corpus_context_replay_matches_committed_numbers() {
-    // 真实数据读数(2026-09-17)。任何一项变化都意味着 scorer、证据或
-    // canonical 词码表发生了回归,必须显式可见。
+    // 真实数据读数(2026-09-17,transition_weight 标定为 2 之后)。
+    // 任何一项变化都意味着 scorer、证据或 canonical 词码表发生了回归,
+    // 必须显式可见。
+    //
+    // 与标定前(transition_weight=256)的差异是有意为之且已论证:
+    //   contextualRank1 5535 -> 5532 (-3 例, 0.05%)
+    //   harmfulReorder     8 -> 1     (-87.5%)
+    // 即用 0.05% 的 rank1 换掉 87.5% 的有害重排,且跨切分通路的 top1 同时
+    // 提升 14.4pp(见 crates/xhup-decoder/src/bigram.rs 的标定文档)。
     let report = replay_sentences_kdconv(SENTENCES, model());
     let m = &report.metrics;
     assert_eq!(m.sentences, 2000, "入库夹具句数");
     assert_eq!(m.tokens, 5729, "有 canonical 词码的 token 数");
     assert_eq!(m.ambiguous, 2701, "同码歧义 token 数");
     assert_eq!(m.baseline_rank1, 5085, "baseline rank1 命中");
-    assert_eq!(m.contextual_rank1, 5535, "上下文 rank1 命中");
-    assert_eq!(m.context_gain, 458, "上下文收益 token 数");
-    assert_eq!(m.harmful_reorder, 8, "有害重排 token 数");
+    assert_eq!(m.contextual_rank1, 5532, "上下文 rank1 命中");
+    assert_eq!(m.context_gain, 448, "上下文收益 token 数");
+    assert_eq!(m.harmful_reorder, 1, "有害重排 token 数");
 
     // 派生比率(容差 1e-4)。
     assert!((m.baseline_rank1_rate() - 0.8876).abs() < 1e-4);
-    assert!((m.contextual_rank1_rate() - 0.9661).abs() < 1e-4);
-    assert!((m.context_gain_rate() - 0.0799).abs() < 1e-4);
-    assert!((m.harmful_reorder_rate() - 0.0014).abs() < 1e-4);
+    assert!((m.contextual_rank1_rate() - 0.9656).abs() < 1e-4);
+    assert!((m.context_gain_rate() - 0.0782).abs() < 1e-4);
+    assert!((m.harmful_reorder_rate() - 0.0002).abs() < 1e-4);
 }
 
 #[test]
@@ -251,8 +258,8 @@ fn context_reduces_expected_selection_cost_on_real_corpus() {
     );
     let saving = m.selection_cost_saving_per_token();
     assert!(
-        (saving - 0.0513).abs() < 0.002,
-        "真实数据节省约 0.0513 键/token,实际 {saving:.4}"
+        (saving - 0.0512).abs() < 0.002,
+        "真实数据节省约 0.0512 键/token,实际 {saving:.4}"
     );
     assert!(
         (m.baseline_selection_cost_per_token() - 0.0724).abs() < 0.002,

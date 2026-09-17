@@ -5,7 +5,7 @@
     "sentencesSha256": "b5441ed3f92e685b217f8656f9f554410731267c593d247e3280901e52a98d30",
     "bigram": "data/corpus/kdconv_bigram.tsv",
     "bigramSchema": "kdconv-bigram/v1",
-    "scorers": "word-frequency-segmentation/v1 -> kdconv-bigram/v1"
+    "scorers": "word-frequency-segmentation/v1 -> kdconv-bigram/v1 (transition_weight=2)"
   },
   "note": "context replay 的非计时指标精确基线;计时不设跨机器门槛。选择成本单位为 Q10(1024 = 1 键)。",
   "metrics": {
@@ -13,10 +13,10 @@
     "tokens": 5729,
     "ambiguous": 2701,
     "baselineRank1": 5085,
-    "contextualRank1": 5535,
-    "contextGain": 458,
-    "harmfulReorder": 8,
+    "contextualRank1": 5532,
+    "contextGain": 448,
+    "harmfulReorder": 1,
     "baselineSelectionCostQ10": 424448,
-    "contextualSelectionCostQ10": 123392
+    "contextualSelectionCostQ10": 124416
   }
 }

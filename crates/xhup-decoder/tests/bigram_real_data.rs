@@ -85,12 +85,27 @@ fn committed_context_uses_real_transition_evidence() {
     assert!(edu_grad && de_life, "真实转移证据应存在");
 
     // 教育 → 研究生|命:首段奖励;的 → 研究|生命:首段奖励。两者都有证据时
-    // 排序由 (baseline + 首段奖励) 决定,验证 breakdown 与得分一致即可,
-    // 不硬编码特定翻转方向(证据强弱由真实语料决定)。
+    // 排序由 (baseline + 首段奖励) 决定。
+    //
+    // 标定后的语义(transition_weight = 2):极弱证据**不应**翻转约 33 倍的
+    // 词频差。实测 log2_q10(3) × 2 = 4096 < 词频差 5659,故「教育」(3 次
+    // 共现)不足以把「研究生|命」翻到首位 —— 这是**正确**行为,而非回归:
+    // 旧的 transition_weight=256 会让 3 次共现压过 5659 Q10 的词频证据。
+    // 本测试因此断言的是「奖励被真实计入 + 不足以翻转过强词频差」。
     let context = RuntimeContext::new("教育", "yjjqugmk".parse().unwrap());
     let paths = complete_paths(&lattice, 32);
     let ranked = rank_paths(&scorer, &context, &lattice, paths.paths());
-    assert!(ranked[0].breakdown().transition_reward > 0);
-    let expected_first = if edu_grad { "研究生" } else { "研究" };
-    assert_eq!(ranked[0].segments()[0], expected_first);
+    // 上下文证据必须被真实计入(breakdown 非零)。
+    assert!(
+        ranked
+            .iter()
+            .any(|path| path.breakdown().transition_reward > 0),
+        "真实转移证据必须体现在 breakdown 中"
+    );
+    // 3 次共现在标定权重下不足以翻转过强的词频差。
+    assert_eq!(
+        ranked[0].segments().join("|"),
+        "研究|生命",
+        "弱证据不得压过数量级更高的词频证据"
+    );
 }

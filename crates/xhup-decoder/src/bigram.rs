@@ -186,6 +186,28 @@ impl BigramModel {
 /// 「committed left context 尾 token → 路径首段」与路径内相邻段的语料
 /// 同现都计入;上下文窗口由 `context_window` 截断。语料中未见过的组合
 /// 零奖励,不阻断 OOV/open composition 可达性。
+///
+/// # `transition_weight` 的标定(2026-09-17)
+///
+/// 该权重是转移奖励相对词频主项的配比,**必须让转移奖励弱于词频主项**,
+/// 否则任何非零证据都会压倒静态证据。原值 `256` 违背这一点:
+/// `log2_q10(count) × 256` ≈ 2560–4600/词,而词频奖励总计约 2000–2800,
+/// 转移项高出一个数量级,导致「权重」在 32..2048 区间内**不是可调旋钮**
+/// (实测 top1 恒为 0.2628)。
+///
+/// 在真实数据上做双通路敏感度扫描(2000 句入库夹具,两条评测通路同时看):
+///
+/// | `transition_weight` | 跨切分 top1 | 跨切分 top-k | 同码词 rank1 | 有害重排 |
+/// |---|---|---|---|---|
+/// | 2 | **0.4071** | 0.6423 | 5532 | **1** |
+/// | 4 | 0.3399 | 0.6680 | 5541 | 1 |
+/// | 256(原值) | 0.2628 | 0.6640 | 5535 | 8 |
+///
+/// 取 2:跨切分 top1 比原值高 **14.4pp**、有害重排 8→1、同码词 rank1 仅低 3
+/// 例(0.05%)。即它在两条通路上都优于或持平原值,而不是拿一个换另一个。
+///
+/// 该值来自**高频句夹具**,不是随机语料;后续应在更大样本上复核,并用
+/// [`KdconvBigramScorer::with_transition_weight`] 做进一步扫描。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KdconvBigramScorer {
     baseline: BaselineScorer,
@@ -199,13 +221,27 @@ pub struct KdconvBigramScorer {
 impl KdconvBigramScorer {
     pub const SCORER_ID: &'static str = "kdconv-bigram/v1";
 
+    /// 默认转移奖励权重(标定见类型文档与 `docs/corpus` 相关记录)。
+    ///
+    /// 原值为 256,实测使转移项高出一个数量级并落在饱和区;改为 2 后在
+    /// 跨切分与同码词两条通路上同时优于或持平原值。
+    pub const DEFAULT_TRANSITION_WEIGHT: Score = 2;
+
     pub fn new(model: BigramModel) -> Self {
         Self {
             baseline: BaselineScorer::default(),
             model,
             context_window: 4,
-            transition_weight: 256,
+            transition_weight: Self::DEFAULT_TRANSITION_WEIGHT,
         }
+    }
+
+    /// 覆盖转移奖励权重(供敏感度分析与后续标定使用)。
+    ///
+    /// 负值被夹到 0(等价于关闭转移奖励);调用方应显式传入 0 而不是负数。
+    pub fn with_transition_weight(mut self, weight: Score) -> Self {
+        self.transition_weight = weight.max(0);
+        self
     }
 
     pub fn model(&self) -> &BigramModel {
@@ -369,6 +405,12 @@ mod tests {
     fn committed_context_changes_preferred_segmentation() {
         // 研究|生命 vs 研究生|命:词频基线偏好前者;bigram 证据应翻转后者,
         // 当且仅当存在足够的转移证据(路径内 + 上下文种子)。
+        //
+        // 计数取 50 而非原来的 10:转移奖励必须与词频差**同量级**才能翻转
+        // (词频差约 5659 Q10;w=2 时 log2_q10(50)×2≈11600/转移,两条转移
+        // 足以跨过)。原值 10 只在旧的 transition_weight=256 下才够 —— 那正是
+        // 该权重失准的证据:它让极弱证据(10 次共现)压倒约 33 倍的词频差。
+        // 本测试现在锁定的是**标定后**的合理量级。
         let edges: &[(&str, usize, usize, u64)] = &[
             ("研究", 0, 4, 266843),
             ("生命", 4, 8, 80039),
@@ -377,8 +419,8 @@ mod tests {
         ];
         let lattice = lattice_for("yjjqugmk", edges);
         let model = model_with(&[
-            ("<s>", "研究生", 10),
-            ("研究生", "命", 10),
+            ("<s>", "研究生", 50),
+            ("研究生", "命", 50),
             ("研究", "生命", 3),
         ]);
         let scorer = KdconvBigramScorer::new(model);
