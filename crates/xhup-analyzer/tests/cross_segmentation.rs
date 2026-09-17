@@ -103,7 +103,7 @@ fn overlong_input_is_excluded_by_some_explicit_class() {
     assert_eq!(m.evaluated, 0, "超长输入不得进入有效样本");
     let excluded = m.skipped_no_word_code + m.skipped_input_bounds + m.skipped_expected_path_absent;
     assert_eq!(excluded, 1, "必须恰好被一个排除分类捕获:{m:?}");
-    assert!(MAX_INPUT_KEYS >= 4, "上限至少要容纳一个双字词");
+    const { assert!(MAX_INPUT_KEYS >= 4) };
 }
 
 #[test]
