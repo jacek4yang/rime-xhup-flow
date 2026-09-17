@@ -13,8 +13,29 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use xhup_core::KeySequence;
 use xhup_decoder::{
-    BaselineScorer, CandidateKind, EdgeCandidate, EdgeId, Lattice, RuntimeContext, Span, rank_paths,
+    BaselineScorer, CandidateKind, DeterministicScorer, EdgeCandidate, EdgeId, KdconvBigramScorer,
+    Lattice, RuntimeContext, Span, rank_paths,
 };
+
+pub mod scores;
+
+pub use scores::{ScoreDelta, ScorerComparison, compare_runs, outcome_of};
+
+/// scorer 的稳定标识(写入报告 `scorer` 字段)。
+///
+/// 每种 scorer 必须返回唯一且版本化的字符串,便于报告溯源与 A/B 对齐。
+/// baseline 与 bigram 的 ID 由其自身常量定义,这里只做统一入口。
+pub trait ScorerIdentity {
+    const SCORER_ID: &'static str;
+}
+
+impl ScorerIdentity for BaselineScorer {
+    const SCORER_ID: &'static str = BaselineScorer::SCORER_ID;
+}
+
+impl ScorerIdentity for KdconvBigramScorer {
+    const SCORER_ID: &'static str = KdconvBigramScorer::SCORER_ID;
+}
 
 pub const BENCHMARK_SCHEMA: &str = "xhup-contextual-benchmark/v1";
 pub const BASELINE_SCHEMA: &str = "xhup-contextual-baseline/v1";
@@ -229,16 +250,73 @@ pub struct LatencyPercentiles {
     pub p99: u128,
 }
 
-pub struct BenchmarkRunner {
-    scorer: BaselineScorer,
+/// 单条 case 在某个 scorer 下的判定结果。
+///
+/// 用于跨 scorer A/B 差分(`scores::compare_reports`):同一 case 在
+/// baseline 与上下文 scorer 下可能得到不同 top1,差分即「上下文增益」。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaseOutcome {
+    /// top1 文本是否等于期望文本(诊断用,不计入增益)。
+    pub text_correct: bool,
+    /// top1 路径是否精确等于期望 edge 序列。
+    pub path_correct: bool,
+    /// 期望路径是否落在 top-k 内。
+    pub in_top_k: bool,
+    /// 参考枚举器是否在 `maxPathsPerCase` 处截断。
+    pub truncated: bool,
 }
 
-impl BenchmarkRunner {
-    pub fn new(scorer: BaselineScorer) -> Self {
+/// 一次 runner 执行的完整产物:聚合指标 + 逐 case 判定。
+///
+/// 聚合报告只含计数,不含用户文本;逐 case 判定按 `case_id` 键控,
+/// 便于 A/B 对齐而不引入文本。
+pub struct BenchmarkRun {
+    report: BenchmarkReport,
+    outcomes: BTreeMap<String, CaseOutcome>,
+}
+
+impl BenchmarkRun {
+    pub fn report(&self) -> &BenchmarkReport {
+        &self.report
+    }
+
+    /// 逐 case 判定(`case_id` → 判定)。
+    pub fn outcomes(&self) -> &BTreeMap<String, CaseOutcome> {
+        &self.outcomes
+    }
+
+    pub fn into_report(self) -> BenchmarkReport {
+        self.report
+    }
+}
+
+/// 通用 scorer 的 benchmark runner。
+///
+/// 泛型化后同一 fixture 可以在 `BaselineScorer`(忽略上下文)与
+/// `KdconvBigramScorer`(使用 committed context)上跑同一套指标,
+/// 这是「上下文是否真的改变首选路径」的唯一可量化入口。
+pub struct BenchmarkRunner<S> {
+    scorer: S,
+}
+
+impl<S> BenchmarkRunner<S> {
+    pub fn new(scorer: S) -> Self {
         Self { scorer }
     }
 
-    pub fn run(&self, suite: &BenchmarkSuite) -> BenchmarkReport {
+    /// scorer 标识(写入报告,便于识别报告由哪个 scorer 产出)。
+    pub fn scorer_id(&self) -> &'static str
+    where
+        S: ScorerIdentity,
+    {
+        S::SCORER_ID
+    }
+}
+
+impl<S: DeterministicScorer + ScorerIdentity> BenchmarkRunner<S> {
+    /// 执行 benchmark,返回聚合报告与逐 case 判定。
+    pub fn run(&self, suite: &BenchmarkSuite) -> BenchmarkRun {
         let contextual_inputs = contextual_inputs(&suite.cases);
         let mut top1_text_correct = 0;
         let mut top1_path_correct = 0;
@@ -252,6 +330,8 @@ impl BenchmarkRunner {
         let mut active_positions = 0;
         let mut latencies = Vec::with_capacity(suite.cases.len());
 
+        let mut outcomes = BTreeMap::new();
+
         for case in &suite.cases {
             let started = Instant::now();
             let paths = case.lattice.complete_paths(suite.max_paths_per_case);
@@ -260,14 +340,22 @@ impl BenchmarkRunner {
 
             let top = ranked.first().expect("suite 校验保证至少一条完整路径");
             let path_correct = top.path().edge_ids() == case.expected_edge_ids.as_ref();
+            let in_top_k = ranked
+                .iter()
+                .take(suite.top_k)
+                .any(|path| path.path().edge_ids() == case.expected_edge_ids.as_ref());
+            outcomes.insert(
+                case.id().to_string(),
+                CaseOutcome {
+                    text_correct: top.text() == case.expected_text,
+                    path_correct,
+                    in_top_k,
+                    truncated: paths.truncated(),
+                },
+            );
             top1_text_correct += usize::from(top.text() == case.expected_text);
             top1_path_correct += usize::from(path_correct);
-            top_k_path_correct += usize::from(
-                ranked
-                    .iter()
-                    .take(suite.top_k)
-                    .any(|path| path.path().edge_ids() == case.expected_edge_ids.as_ref()),
-            );
+            top_k_path_correct += usize::from(in_top_k);
             if contextual_inputs.contains(&case.context.composition().to_string()) {
                 contextual_case_count += 1;
                 contextual_top1_correct += usize::from(path_correct);
@@ -285,38 +373,41 @@ impl BenchmarkRunner {
                 .count();
         }
 
-        BenchmarkReport {
-            schema: REPORT_SCHEMA,
-            benchmark_schema: BENCHMARK_SCHEMA,
-            scorer: BaselineScorer::SCORER_ID,
-            case_count: suite.cases.len(),
-            development_cases: suite
-                .cases
-                .iter()
-                .filter(|case| case.split == BenchmarkSplit::Development)
-                .count(),
-            evaluation_cases: suite
-                .cases
-                .iter()
-                .filter(|case| case.split == BenchmarkSplit::Evaluation)
-                .count(),
-            top_k: suite.top_k,
-            top1_text_correct,
-            top1_path_correct,
-            top_k_path_correct,
-            contextual_case_count,
-            contextual_top1_correct,
-            truncated_cases,
-            total_complete_paths,
-            maximum_complete_paths,
-            mean_candidate_fanout: ratio(total_edges, active_positions),
-            mean_complete_paths: ratio(total_complete_paths, suite.cases.len()),
-            latency_micros: percentiles(&mut latencies),
+        BenchmarkRun {
+            report: BenchmarkReport {
+                schema: REPORT_SCHEMA,
+                benchmark_schema: BENCHMARK_SCHEMA,
+                scorer: S::SCORER_ID,
+                case_count: suite.cases.len(),
+                development_cases: suite
+                    .cases
+                    .iter()
+                    .filter(|case| case.split == BenchmarkSplit::Development)
+                    .count(),
+                evaluation_cases: suite
+                    .cases
+                    .iter()
+                    .filter(|case| case.split == BenchmarkSplit::Evaluation)
+                    .count(),
+                top_k: suite.top_k,
+                top1_text_correct,
+                top1_path_correct,
+                top_k_path_correct,
+                contextual_case_count,
+                contextual_top1_correct,
+                truncated_cases,
+                total_complete_paths,
+                maximum_complete_paths,
+                mean_candidate_fanout: ratio(total_edges, active_positions),
+                mean_complete_paths: ratio(total_complete_paths, suite.cases.len()),
+                latency_micros: percentiles(&mut latencies),
+            },
+            outcomes,
         }
     }
 }
 
-impl Default for BenchmarkRunner {
+impl Default for BenchmarkRunner<BaselineScorer> {
     fn default() -> Self {
         Self::new(BaselineScorer::default())
     }

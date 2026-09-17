@@ -6,7 +6,9 @@ const BASELINE: &str = include_str!("../../../data/benchmarks/contextual-baselin
 #[test]
 fn committed_fixture_matches_foundation_baseline() {
     let suite = BenchmarkSuite::from_json(FIXTURE).unwrap();
-    let report = BenchmarkRunner::default().run(&suite);
+    let run = BenchmarkRunner::default().run(&suite);
+    let report = run.report();
+    assert_eq!(report.scorer, "word-frequency-segmentation/v1");
     assert_eq!(report.case_count, 4);
     assert_eq!(report.development_cases, 2);
     assert_eq!(report.evaluation_cases, 2);
@@ -20,7 +22,17 @@ fn committed_fixture_matches_foundation_baseline() {
     assert_eq!(report.truncated_cases, 0);
     assert_eq!(report.segmentation_accuracy(), 0.5);
     assert_eq!(report.contextual_disambiguation_accuracy(), 0.5);
-    assert!(check_baseline_json(&report, BASELINE).unwrap().is_empty());
+    // 逐 case 判定与聚合计数必须一致(防止两套统计漂移)。
+    assert_eq!(run.outcomes().len(), 4);
+    assert_eq!(
+        run.outcomes().values().filter(|o| o.path_correct).count(),
+        report.top1_path_correct
+    );
+    assert_eq!(
+        run.outcomes().values().filter(|o| o.in_top_k).count(),
+        report.top_k_path_correct
+    );
+    assert!(check_baseline_json(report, BASELINE).unwrap().is_empty());
 }
 
 #[test]
