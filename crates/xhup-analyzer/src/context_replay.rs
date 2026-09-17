@@ -62,6 +62,29 @@ pub struct ContextReplayMetrics {
     pub context_gain: usize,
     /// baseline 命中、上下文未命中的 token 数(有害重排)。
     pub harmful_reorder: usize,
+    /// baseline 下期望候选选择成本合计(Q10 单位,见 [`SELECTION_COST_Q10`])。
+    ///
+    /// §1 的核心主张是「少按一键但候选在第 8 位可能更差」,因此只看 rank1
+    /// 命中率不够:必须看**期望选择成本**。这里对每个参与 token 累加其
+    /// top1 命中与否对应的选择成本。
+    pub baseline_selection_cost_q10: u64,
+    /// 上下文 scorer 下期望候选选择成本合计(Q10 单位)。
+    pub contextual_selection_cost_q10: u64,
+}
+
+/// 候选选择成本的 Q10 标度(与 `replay::ReplayCostModel` 的 rank 成本同源)。
+///
+/// 索引 = 实际候选位 − 1;`rank1 = 0`(直接首选),`rank2 = 0.5 键`,
+/// `rank3 = 1.0 键`,其余 = 2.0 键。选择不是免费的:这正是 §1「短码存在
+/// 不等于短码有用」的量化方式。
+pub const SELECTION_COST_Q10: [u64; 4] = [0, 512, 1024, 2048];
+
+/// 按 1-based rank 取选择成本(Q10);rank 超过 4 时用末档。
+pub fn selection_cost_q10(rank: usize) -> u64 {
+    if rank == 0 {
+        return SELECTION_COST_Q10[3];
+    }
+    SELECTION_COST_Q10[(rank - 1).min(SELECTION_COST_Q10.len() - 1)]
 }
 
 impl ContextReplayMetrics {
@@ -86,6 +109,21 @@ impl ContextReplayMetrics {
     /// 歧义占比(诊断:语料中真正需要上下文消歧的比例)。
     pub fn ambiguity_rate(&self) -> f64 {
         ratio(self.ambiguous, self.tokens)
+    }
+
+    /// baseline 的期望选择成本(每 token,键)。
+    pub fn baseline_selection_cost_per_token(&self) -> f64 {
+        ratio_u64(self.baseline_selection_cost_q10, self.tokens) / 1024.0
+    }
+
+    /// 上下文 scorer 的期望选择成本(每 token,键)。
+    pub fn contextual_selection_cost_per_token(&self) -> f64 {
+        ratio_u64(self.contextual_selection_cost_q10, self.tokens) / 1024.0
+    }
+
+    /// 上下文带来的期望选择成本节省(每 token,键;正数 = 上下文更好)。
+    pub fn selection_cost_saving_per_token(&self) -> f64 {
+        self.baseline_selection_cost_per_token() - self.contextual_selection_cost_per_token()
     }
 
     /// 净收益(可负)。
@@ -174,14 +212,18 @@ where
     walk_ambiguous_tokens(sentences_text, &prices, &segmenter, |token, ranked| {
         metrics.tokens += 1;
         let Some((context, lattice)) = ranked else {
-            // 无同码歧义:两个 scorer 都必然命中。
+            // 无同码歧义:两个 scorer 都必然命中,选择成本为 0。
             metrics.baseline_rank1 += 1;
             metrics.contextual_rank1 += 1;
             return;
         };
         metrics.ambiguous += 1;
-        let baseline_ok = top_is(scored_top(&baseline, context, lattice), token);
-        let contextual_ok = top_is(scored_top(contextual, context, lattice), token);
+        let baseline_rank = scored_rank(&baseline, context, lattice, token);
+        let contextual_rank = scored_rank(contextual, context, lattice, token);
+        metrics.baseline_selection_cost_q10 += selection_cost_q10(baseline_rank);
+        metrics.contextual_selection_cost_q10 += selection_cost_q10(contextual_rank);
+        let baseline_ok = baseline_rank == 1;
+        let contextual_ok = contextual_rank == 1;
         metrics.baseline_rank1 += usize::from(baseline_ok);
         metrics.contextual_rank1 += usize::from(contextual_ok);
         match (baseline_ok, contextual_ok) {
@@ -478,6 +520,22 @@ fn scored_top<S: DeterministicScorer>(
     ranked.first().map(|path| path.text().to_string())
 }
 
+/// 期望文本在排名中的 1-based 位置;未出现返回 0(视为最差档,见
+/// [`selection_cost_q10`])。
+fn scored_rank<S: DeterministicScorer>(
+    scorer: &S,
+    context: &RuntimeContext,
+    lattice: &Lattice,
+    expected: &str,
+) -> usize {
+    let paths = lattice.complete_paths(PATH_LIMIT);
+    let ranked = xhup_decoder::rank_paths(scorer, context, lattice, paths.paths());
+    ranked
+        .iter()
+        .position(|path| path.text() == expected)
+        .map_or(0, |index| index + 1)
+}
+
 fn top_is(top: Option<String>, expected: &str) -> bool {
     top.as_deref() == Some(expected)
 }
@@ -511,6 +569,13 @@ impl ProductionMenus {
 }
 
 fn ratio(numerator: usize, denominator: usize) -> f64 {
+    if denominator == 0 {
+        return 0.0;
+    }
+    numerator as f64 / denominator as f64
+}
+
+fn ratio_u64(numerator: u64, denominator: usize) -> f64 {
     if denominator == 0 {
         return 0.0;
     }

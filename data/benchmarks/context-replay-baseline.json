@@ -7,7 +7,7 @@
     "bigramSchema": "kdconv-bigram/v1",
     "scorers": "word-frequency-segmentation/v1 -> kdconv-bigram/v1"
   },
-  "note": "context replay 的非计时指标精确基线;计时不设跨机器门槛。",
+  "note": "context replay 的非计时指标精确基线;计时不设跨机器门槛。选择成本单位为 Q10(1024 = 1 键)。",
   "metrics": {
     "sentences": 2000,
     "tokens": 5729,
@@ -15,6 +15,8 @@
     "baselineRank1": 5085,
     "contextualRank1": 5535,
     "contextGain": 458,
-    "harmfulReorder": 8
+    "harmfulReorder": 8,
+    "baselineSelectionCostQ10": 424448,
+    "contextualSelectionCostQ10": 123392
   }
 }

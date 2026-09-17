@@ -203,6 +203,19 @@ fn render_text(report: &ContextReplayReport) -> String {
         m.harmful_reorder_rate()
     ));
     out.push_str(&format!("net_gain:              {:+.4}\n", m.net_gain()));
+    // §1:rank1 命中率不是全部 —— 「少按一键但候选在第 8 位」可能更差。
+    out.push_str(&format!(
+        "baseline_sel_cost/tok:   {:.4}\n",
+        m.baseline_selection_cost_per_token()
+    ));
+    out.push_str(&format!(
+        "contextual_sel_cost/tok: {:.4}\n",
+        m.contextual_selection_cost_per_token()
+    ));
+    out.push_str(&format!(
+        "selection_saving/token:  {:+.4}\n",
+        m.selection_cost_saving_per_token()
+    ));
     out
 }
 
@@ -257,6 +270,14 @@ fn check_baseline(
         ("contextualRank1", m.contextual_rank1),
         ("contextGain", m.context_gain),
         ("harmfulReorder", m.harmful_reorder),
+        (
+            "baselineSelectionCostQ10",
+            m.baseline_selection_cost_q10 as usize,
+        ),
+        (
+            "contextualSelectionCostQ10",
+            m.contextual_selection_cost_q10 as usize,
+        ),
     ];
     let metrics = expected
         .get("metrics")

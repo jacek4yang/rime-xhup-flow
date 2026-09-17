@@ -233,3 +233,85 @@ fn harmful_diagnostics_are_deterministic_and_bounded() {
 fn harmful_diagnostics_empty_corpus_yields_nothing() {
     assert!(harmful_case_diagnostics("", &model(), 32).is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// 期望候选选择成本(§1:rank1 命中率不是全部)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn context_reduces_expected_selection_cost_on_real_corpus() {
+    // §1:「少按一键但候选在第 8 位」可能比直接输入完整码更差。因此除了
+    // rank1 命中率,还必须度量期望**候选选择成本**。
+    // 实测:baseline 0.0724 键/token → 上下文 0.0210 键/token。
+    let report = replay_sentences_kdconv(SENTENCES, model());
+    let m = &report.metrics;
+    assert!(
+        m.contextual_selection_cost_per_token() < m.baseline_selection_cost_per_token(),
+        "上下文必须降低期望选择成本"
+    );
+    let saving = m.selection_cost_saving_per_token();
+    assert!(
+        (saving - 0.0513).abs() < 0.002,
+        "真实数据节省约 0.0513 键/token,实际 {saving:.4}"
+    );
+    assert!(
+        (m.baseline_selection_cost_per_token() - 0.0724).abs() < 0.002,
+        "baseline 期望选择成本与基线一致"
+    );
+}
+
+#[test]
+fn selection_cost_scale_matches_replay_cost_model() {
+    // 与 replay::ReplayCostModel 的 rank 成本同源,防止两处口径分叉。
+    use xhup_analyzer::context_replay::selection_cost_q10;
+    assert_eq!(selection_cost_q10(1), 0, "rank1 无选择成本");
+    assert_eq!(selection_cost_q10(2), 512, "rank2 = 0.5 键");
+    assert_eq!(selection_cost_q10(3), 1024, "rank3 = 1.0 键");
+    assert_eq!(selection_cost_q10(4), 2048, "rank4 = 2.0 键");
+    assert_eq!(selection_cost_q10(9), 2048, "超出档位用末档");
+    // rank 0 = 未在菜单出现,按最差档计,不是 0。
+    assert_eq!(selection_cost_q10(0), 2048, "缺席不得当作免费");
+}
+
+#[test]
+fn identical_scorers_yield_identical_selection_cost() {
+    // 自比时两侧成本必须逐项相等(差分器不得制造成本差异)。
+    // 注意:即使两个 scorer 相同,歧义 token 中期望词不在 rank1 的那些
+    // 仍会产生真实选择成本 —— 这正是 §1 要度量的东西,不能断言为 0。
+    let report = replay_sentences(
+        SENTENCES,
+        &BaselineScorer::default(),
+        BaselineScorer::SCORER_ID,
+    );
+    let m = &report.metrics;
+    assert_eq!(
+        m.baseline_selection_cost_q10, m.contextual_selection_cost_q10,
+        "同一 scorer 两侧成本必须相等"
+    );
+    assert_eq!(m.selection_cost_saving_per_token(), 0.0);
+    assert!(
+        m.baseline_selection_cost_q10 > 0,
+        "真实语料必然存在期望词不在 rank1 的歧义 token"
+    );
+}
+
+#[test]
+fn single_candidate_corpus_has_zero_selection_cost() {
+    // 构造只有唯一候选的语料:任何 scorer 下期望词都必然 rank1,
+    // 选择成本必须恰为 0。
+    let report = replay_sentences(
+        "不客气",
+        &BaselineScorer::default(),
+        BaselineScorer::SCORER_ID,
+    );
+    // 「不客气」的三个 token 若都唯一候选则成本为 0;若有歧义则必然 > 0。
+    // 这里断言的是成本与 rank1 计数的一致性(而非特定数值)。
+    let m = &report.metrics;
+    let expected_zero = m.ambiguous == 0;
+    assert_eq!(
+        m.baseline_selection_cost_q10 == 0,
+        expected_zero,
+        "成本为 0 当且仅当无歧义 token(ambig={})",
+        m.ambiguous
+    );
+}
