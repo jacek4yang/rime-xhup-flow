@@ -72,11 +72,16 @@ pub struct ContextReplayMetrics {
     pub contextual_selection_cost_q10: u64,
 }
 
-/// 候选选择成本的 Q10 标度(与 `replay::ReplayCostModel` 的 rank 成本同源)。
+/// 候选选择成本的 Q10 标度(rank 1..=4 与 `replay::ReplayCostModel` 的
+/// `rank_cost = [0.0, 0.5, 1.0, 2.0]` **逐项相等**,`Q10 = 成本 × 1024`)。
 ///
 /// 索引 = 实际候选位 − 1;`rank1 = 0`(直接首选),`rank2 = 0.5 键`,
 /// `rank3 = 1.0 键`,其余 = 2.0 键。选择不是免费的:这正是 §1「短码存在
 /// 不等于短码有用」的量化方式。
+///
+/// **`rank = 0`(期望词不在菜单中)是本模块的显式扩展**:`ReplayCostModel`
+/// 只在「词有输入方案」时计算 rank,永不出现 0,故无对应档位。这里把缺席
+/// 按最差档(2.0 键)计 —— 缺席不是免费,否则会低估上下文收益。
 pub const SELECTION_COST_Q10: [u64; 4] = [0, 512, 1024, 2048];
 
 /// 按 1-based rank 取选择成本(Q10);rank 超过 4 时用末档。
