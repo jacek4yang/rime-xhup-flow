@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use xhup_decoder::{
     BaselineScorer, BigramModel, CandidateKind, DecodeConfig, EdgeCandidate, FallbackReason,
     KdconvBigramScorer, Lattice, LatticePath, RuntimeContext, ScoredPath, Span, decode_beam,
-    rank_paths,
+    decode_beam_adaptive, rank_paths,
 };
 
 fn nz(n: usize) -> NonZeroUsize {
@@ -291,4 +291,116 @@ fn decode_beam_rescores_survivors_with_provided_scorer() {
     );
     assert_same_ranked(decoded.ranked(), ranked.as_slice());
     assert_eq!(decoded.ranked()[0].segments(), ["研究生", "命"]);
+}
+
+// ---------------------------------------------------------------------------
+// 自适应扩宽：在 [beam_width, max_width] 内保证与穷举排序等价
+// ---------------------------------------------------------------------------
+
+/// 构造一个**扇出很大**的 lattice：一个位置上有 n 个候选，全部直达末尾。
+/// 用于验证窄 beam 会截断、自适应扩宽能恢复等价。
+fn wide_fanout_lattice(n: usize) -> Lattice {
+    let mut lattice = Lattice::new("ab".parse().unwrap());
+    let span = Span::new(0, 2).unwrap();
+    for i in 0..n {
+        // 频率递增，使排序唯一确定、便于断言。
+        lattice
+            .add_edge(span, edge(&format!("c{i:03}"), (i as u64 + 1) * 10))
+            .unwrap();
+    }
+    lattice
+}
+
+#[test]
+fn adaptive_decode_widens_until_exhaustive_equivalence() {
+    let lattice = wide_fanout_lattice(20);
+    let context = RuntimeContext::new("", lattice.input().clone());
+    let scorer = BaselineScorer::default();
+    let config = DecodeConfig::new(nz(2), nz(5), 0);
+
+    // 窄 beam 必然截断 —— 先确认前提成立。
+    let narrow = decode_beam(&lattice, &context, &scorer, config);
+    assert!(narrow.truncated(), "扇出 20 > beam 2，必须截断");
+
+    // 自适应扩宽到 32 应当覆盖扇出 20。宽度按 2 -> 4 -> 8 -> 16 -> 32 倍增，
+    // 直到某一档不再截断（16 仍小于扇出 20，故最终落在 32）。
+    let (decoded, outcome) = decode_beam_adaptive(&lattice, &context, &scorer, config, nz(32));
+    assert!(!outcome.truncated_at_max, "beam 32 足以覆盖扇出 20");
+    assert_eq!(
+        outcome.used_width, 32,
+        "2->4->8->16 仍截断，32 才覆盖扇出 20"
+    );
+    assert!(!decoded.truncated(), "扩宽后不应再截断");
+
+    // 与穷举排序逐路径一致(top_k=5)。
+    let paths = lattice.complete_paths(nz(64));
+    assert!(!paths.truncated());
+    let ranked = rank_paths(&scorer, &context, &lattice, paths.paths());
+    assert_same_ranked(decoded.ranked(), &ranked[..5]);
+}
+
+#[test]
+fn adaptive_decode_reports_truncation_when_ceiling_is_insufficient() {
+    let lattice = wide_fanout_lattice(40);
+    let context = RuntimeContext::new("", lattice.input().clone());
+    let scorer = BaselineScorer::default();
+    let config = DecodeConfig::new(nz(2), nz(5), 0);
+
+    let (decoded, outcome) = decode_beam_adaptive(&lattice, &context, &scorer, config, nz(16));
+    assert_eq!(outcome.used_width, 16, "必须顶到上限");
+    assert!(outcome.truncated_at_max, "扇出 40 > 上限 16，必须诚实报告");
+    assert!(decoded.truncated());
+    assert_eq!(decoded.fallback(), Some(FallbackReason::BeamTruncated));
+}
+
+#[test]
+fn adaptive_decode_matches_plain_decode_when_no_truncation() {
+    // 宽 beam 下自适应分支不得改变任何结果（纯等价性回归守卫）。
+    let lattice = research_life_lattice();
+    let context = RuntimeContext::new("这个课题关注", lattice.input().clone());
+    let scorer = KdconvBigramScorer::new(BigramModel::default());
+    let config = DecodeConfig::new(nz(32), nz(5), 0);
+
+    let plain = decode_beam(&lattice, &context, &scorer, config);
+    let (adaptive, outcome) = decode_beam_adaptive(&lattice, &context, &scorer, config, nz(32));
+    assert_eq!(outcome.used_width, 32, "一开始就不截断则不得扩宽");
+    assert!(!outcome.truncated_at_max);
+    assert_same_ranked(plain.ranked(), adaptive.ranked());
+}
+
+#[test]
+fn adaptive_decode_never_narrows_below_floor_or_exceeds_ceiling() {
+    // 上限小于起始宽度时，实际宽度不得低于 floor。
+    let lattice = wide_fanout_lattice(4);
+    let context = RuntimeContext::new("", lattice.input().clone());
+    let scorer = BaselineScorer::default();
+    let config = DecodeConfig::new(nz(8), nz(5), 0);
+    let (_, outcome) = decode_beam_adaptive(&lattice, &context, &scorer, config, nz(2));
+    assert!(outcome.used_width >= 8, "不得低于 beam_width");
+    assert_eq!(outcome.used_width, 8, "上限被 floor 抬升");
+}
+
+#[test]
+fn adaptive_decode_is_deterministic() {
+    let lattice = wide_fanout_lattice(20);
+    let context = RuntimeContext::new("", lattice.input().clone());
+    let scorer = BaselineScorer::default();
+    let config = DecodeConfig::new(nz(2), nz(5), 0);
+    let (a, ao) = decode_beam_adaptive(&lattice, &context, &scorer, config, nz(32));
+    let (b, bo) = decode_beam_adaptive(&lattice, &context, &scorer, config, nz(32));
+    assert_eq!(ao, bo);
+    assert_same_ranked(a.ranked(), b.ranked());
+}
+
+#[test]
+fn adaptive_decode_empty_lattice_is_empty_not_panic() {
+    let lattice = Lattice::new("ab".parse().unwrap());
+    let context = RuntimeContext::new("", lattice.input().clone());
+    let scorer = BaselineScorer::default();
+    let config = DecodeConfig::new(nz(2), nz(5), 0);
+    let (decoded, outcome) = decode_beam_adaptive(&lattice, &context, &scorer, config, nz(32));
+    assert!(decoded.ranked().is_empty());
+    assert!(!decoded.truncated());
+    assert!(!outcome.truncated_at_max);
+    assert_eq!(decoded.fallback(), None);
 }
