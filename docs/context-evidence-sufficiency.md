@@ -87,18 +87,85 @@ cargo run --locked -p xhup-analyzer --bin contextual-bench -- \
 
 即「committed context 改变首选路径」的实现链路已验证,缺的是**覆盖**。
 
+## 实测结论 4:真实句子回放给出正收益(+8.0pp)
+
+`contextual-v1.json` 的 4 例人工 fixture 读不到增益(结论 1),但**真实句子
+回放**可以。`context-replay-bench` 对入库夹具
+`data/corpus/replay_fixture.txt`(2000 句 KdConv 派生,Apache-2.0,SHA256 pin)
+最大匹配分词后逐 token 回放,每个 token 用「已提交前文 + 该 token 的
+canonical 词码」构造**生产真实菜单**:
+
+```bash
+cargo run --release --locked -p xhup-analyzer --bin context-replay-bench -- \
+  --sentences data/corpus/replay_fixture.txt \
+  --bigram data/corpus/kdconv_bigram.tsv \
+  --baseline data/benchmarks/context-replay-baseline.json
+```
+
+| 指标 | 值 |
+|---|---|
+| tokens(有 canonical 词码) | 5729 |
+| ambiguous(同码歧义) | 2701 (47.1%) |
+| baseline rank1 | 5085 (88.76%) |
+| contextual rank1 | **5535 (96.61%)** |
+| context_gain | **+458 (+7.99pp)** |
+| harmful_reorder | 8 (0.14%) |
+| net_gain | **+0.0785** |
+
+**这是上下文解码收益的首个真实语料量化证据。**
+
+8 个 harmful 经诊断为**同一处真实近义歧义**:`你知道` + code `tade`
+(`他的` 227 vs `它的` 230),不是系统性退化。
+
+### 为什么 fixture 读不到而句子回放能读到
+
+- fixture 用的是**人工选定的切分对**,其决胜转移恰好都不在 KDConv 中;
+- 句子回放用的是**语料里真实相邻的词对**,天然落在 KDConv 覆盖内。
+
+这解释了 1.6% 的「码表内歧义证据覆盖率」为何不阻碍真实回放取得收益:
+两者度量的对象不同。**但不代表覆盖率问题已解决** —— 生产运行时面对的是
+用户实际按键序列,不是语料分词结果。
+
+## 实测结论 5:有界 beam 与穷举排序在 beam≥32 时完全一致
+
+`decode_beam`(生产路径)与 `rank_paths` + 全路径枚举(参考路径)在同一
+2701 个歧义 token 上的 top1 一致性:
+
+| beam_width | top1_agreement | truncated |
+|---|---|---|
+| 2 | 0.9563 | 0.5639 |
+| 4 | 0.9959 | 0.1807 |
+| 8(当前 `DecodeConfig` 默认) | 0.9981 | 0.0111 |
+| 16 | 0.9996 | 0.0022 |
+| **32** | **1.0000** | **0.0000** |
+| 64 | 1.0000 | 0.0000 |
+
+结论:
+
+- 真实菜单扇出未超过 32,故 `beam_width ≥ 32` 无截断且与穷举**逐 token 一致**;
+- 当前默认 `beam_width = 8` 有 **0.19% 的 top1 偏差**(约 5/2701);
+  该代价此前从未被量化;
+- 窄 beam(2/4)会显著截断并丢失一致性,不能当作「免费优化」。
+
 ## 已知限制(不谎报)
 
 - 本结论只覆盖 `xhup-decoder` 的 lattice 级 scorer,不涉及 librime 实机菜单。
-- KDConv 是任务导向对话(电影/音乐/旅游),域偏差已知;计数 ≥1 在会话域
-  噪声水平附近,不宜作为生产重排的唯一依据。
-- `harmful_reorder_rate = 0` 目前是「上下文几乎不触发」的结果,不是「上下文
-  被充分验证安全」的结果。补足证据源后该指标必须重新测量。
+- **只回放有 canonical 词码的 token**(词码层 4/6/8 键);无词码 token 走单字
+  组句,由 `replay` 静态层与 open-composition 可达性测试覆盖。因此
+  **+7.99pp 不等于全链路 KSPC/rank 改进**。
+- KDConv 是任务导向对话(电影/音乐/旅游),域偏差已知。
+- `harmful_reorder_rate = 0.14%` 尚未成为 CI 硬门禁(先度量、后设门);
+  它提示 §6 需要显式的弱证据降级策略。
+- `data/corpus/replay_fixture.txt` 是**高频句**夹具(去重后按出现次数降序取
+  top-2000),不等于随机语料分布。
 
 ## 下一步(依赖关系显式)
 
-1. 引入第二转移证据源(§25 第 6 步),目标:让 5308 个歧义实例中有证据的
-   比例显著高于 1.6%;
+1. 引入第二转移证据源(§25 第 6 步),目标:提升 5308 个码表内歧义的证据
+   覆盖率(当前 1.6%),因为生产运行时面对的是用户按键序列而非语料分词;
 2. 证据到位后,按 §6 为弱证据设计显式降级阈值,并把 `harmful_reorder_rate`
    纳入 CI 门禁(与 misleading-hint rate 同等地位);
-3. fixture 扩展时保持 development/evaluation 分离,避免用 evaluation case 调参。
+3. 把 `decode_beam` 接入实际生产路径(当前只在基准中对比),并评估把
+   `beam_width` 从 8 提到 32 的延迟代价(§22);
+4. fixture 扩展时保持 development/evaluation 分离,避免用 evaluation case 调参。
+
