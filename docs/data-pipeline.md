@@ -22,7 +22,7 @@ docs/lua-runtime.md;优化目标见 docs/input-model-v2.md。
 | thunlp/THUOCL | MIT(GitHub 副本) | 分类域 DF 分布(IT/财经/法律等 12 类) | 待导入;NOTICE 加学术引用声明(官网旧条款与 MIT 并存,按 MIT 执行) |
 | fxsjy/jieba `dict.txt` | MIT | unigram 交叉验证(书面语偏向,年份偏旧) | 待导入 |
 | thu-coai/KdConv | Apache-2.0 | 会话域(4500 对话/8.6 万发言,任务型) | 待导入 |
-| zake7749/Gossiping-Chinese-Corpus(PTT) | Apache-2.0 | 会话域(繁体问答,OpenCC 转简后入派生统计) | 待导入 |
+| zake7749/Gossiping-Chinese-Corpus(PTT) | Apache-2.0 | 会话域(繁体问答,OpenCC 转简后入派生统计) | **已导入**(2026-09-17;conversation_ptt.tsv + ptt_bigram.tsv,见 data/corpus/README.md) |
 | WenetSpeech 转写文本 | 仓库 Apache-2.0;数据集 CC BY 4.0 待官网坐实 | 口语域 | 坐实许可前不动 |
 
 ### 1.2 仅本地参考(不入库、不入派生物)
