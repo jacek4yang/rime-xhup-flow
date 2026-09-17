@@ -127,7 +127,7 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        match check_baseline_json(&report, &baseline_text) {
+        match check_baseline_json(report, &baseline_text) {
             Ok(failures) if failures.is_empty() => {
                 eprintln!("contextual baseline 断言通过");
             }
