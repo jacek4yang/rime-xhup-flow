@@ -94,3 +94,57 @@
   fallback +1pp;改善方向不限。canonical v2 基线实测:KSPC 1.8971、
   rank1 96.9544%、rank≤3 99.9120%、兜底 37.0093%(夹具为高频句,
   与全量 92,558 句基线 2.068/95.3%/99.4%/37.9% 略有差异属预期)。
+
+## conversation_ptt.tsv 与 ptt_bigram.tsv(PTT 八卦版会话域,2026-09-17)
+
+Issue #83 §25 第 6 步「committed-context 第二证据源」的落地数据。KDConv
+(92,558 句)覆盖不足:canonical v2 PRIMARY 的 5,308 个可二分歧义实例中,
+仅 1.6% 有任何 in-path 转移证据。PTT 为**独立**会话域来源,语料量大 9.3 倍。
+
+- **来源**:[zake7749/Gossiping-Chinese-Corpus](https://github.com/zake7749/Gossiping-Chinese-Corpus)
+  `data/Gossiping-QA-Dataset.txt`(PTT 八卦版 2015–2017 文章标题 + 推文配对,
+  每行 `标题<TAB>推文`,418,202 行)。
+- **许可**:**Apache-2.0**(`LICENSE.ptt` 为 vendor 副本)。
+- **版本 pin**:commit `65b7e3630a560223a2b4d702d78d120d5ff1e8dd`。
+- **来源文件 SHA256**:
+  `cf5ef0a931a8a14444a9854aa13cf6e7516b3ec4922b7cde5d45d13ed825ae79`。
+- **预处理**:繁体→简体使用 OpenCC `t2s`(`opencc-python-reimplemented 0.1.7`);
+  这是**生成端依赖**,运行时与构建端不依赖 OpenCC。
+- **生成命令**(可复现,字节级确定性):
+
+  ```bash
+  python3 data/corpus/scripts/ptt_to_sentences.py <Gossiping-QA-Dataset.txt> /tmp/ptt_sentences.txt
+  cargo run --locked -p xhup-analyzer --bin corpus-stats -- \
+    --input /tmp/ptt_sentences.txt --output data/corpus/conversation_ptt.tsv \
+    --bigram /tmp/ptt_bigram_full.tsv
+  python3 data/corpus/scripts/ptt_bigram_prune.py /tmp/ptt_bigram_full.tsv \
+    data/corpus/ptt_bigram.tsv 2   # count >= 2,见下「裁剪依据」
+  ```
+
+- **入库文件 SHA256**:
+  - `ptt_bigram.tsv`:`ae1960ce5a3d1f4ddd459f1863c9de4264263748bb006b81f3e619fdf1f67e05`
+  - `conversation_ptt.tsv`:`eb4a73b835c797623d973f184aa1163e23bad4ae5b2d83335df827d1a938f9bc`
+
+- **规模**:861,745 句 / 5,965,161 token / 75,749 词;完整转移对 2,660,452。
+- **`ptt_bigram.tsv` 裁剪依据**(count ≥ 2,604,171 行 ≈ 8.7 MB):
+  对 5,308 个码表内歧义的证据覆盖率,按 PTT 侧计数阈值扫描(与 KDConv
+  按**求和**合并):
+
+  | PTT 阈值 | 有证据 | ≥2 | ≥5 | PTT 行数 | 体积 |
+  |---|---|---|---|---|---|
+  | 无 KDConv | 83 (1.56%) | 30 | 9 | — | 3.7 MB |
+  | ≥1 | 287 (5.41%) | 103 | 27 | 2,660,452 | 41.0 MB |
+  | **≥2** | **143 (2.69%)** | **97** | **27** | **604,171** | **8.7 MB** |
+  | ≥3 | 117 (2.20%) | 66 | 27 | 318,681 | 4.5 MB |
+  | ≥5 | 96 (1.81%) | 44 | 25 | 161,195 | 2.2 MB |
+
+  取 ≥2:用 21% 体积保留 ≥2/≥5 两档几乎全部增益(97/103、27/27);
+  降到 ≥3 会损失 32% 的 ≥2 证据。孤立转移对(count=1)在噪声大的 PTT
+  上更可能是分词或转简伪影,故丢弃。
+- **格式**:与 `kdconv_bigram.tsv` 完全一致(`left<TAB>right<TAB>count`,
+  头部注释记来源/规模/阈值)。
+- **域偏差**:PTT 为繁体问答 + 推文口语,噪声明显高于 KdConv(网语、错别字、
+  推文格式残留);转简可能引入个别误转。用于**补充转移证据覆盖**,不作为
+  唯一会话域代表。
+- **用途**:`KdconvBigramScorer` 的第二证据源(与 KDConv 求和合并),提升
+  committed-context 的真实消歧覆盖率。
