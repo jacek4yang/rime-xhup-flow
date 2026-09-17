@@ -46,6 +46,7 @@ pub mod shortcut_oracle;
 pub mod sweep;
 pub mod sweep_v2;
 pub mod two_key_study;
+pub mod user_model;
 pub mod xhup_prior;
 
 pub use candidates::{

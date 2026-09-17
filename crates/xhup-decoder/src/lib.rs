@@ -19,7 +19,10 @@ mod scoring;
 pub use bigram::{BOS, BigramModel, EOS, KdconvBigramBreakdown, KdconvBigramScorer};
 pub use builder::{BuildStats, BuiltLattice, LatticeBuilder, SourceCandidate};
 pub use context::RuntimeContext;
-pub use decode::{DecodeConfig, DecodeResult, FallbackReason, decode_beam};
+pub use decode::{
+    AdaptiveOutcome, DEFAULT_MAX_BEAM_WIDTH, DecodeConfig, DecodeResult, FallbackReason,
+    decode_beam, decode_beam_adaptive,
+};
 pub use evidence::{
     CandidateSource, FusedCandidate, FusedEdge, FusedEdgeId, LatticeBounds, LatticeBuildStats,
     LatticeFusionBuilder, SourceEvidence,
