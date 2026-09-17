@@ -26,18 +26,18 @@ misleading-hint rate ≈ 0。本管线把「广告出去的简码」(quick-hint 
 | useful_with_selection | 词在菜单但非首选(需选择/翻页,仍有键节省) |
 | misleading | 词不在该码菜单(广告了却命不中)—— 门槛 0 |
 | misleading_rate | misleading / total(§24 DoD 量化断言) |
-| expected_effort_saving | Σ P(word) × (全码长 − 简码长),P=万象归一化频率 |
+| expected_effort_saving | Σ w(word) × (全码长 − 简码长);w 来自 daily-prior(log 域相对值,0=中位)经 exp 转为正质量,在先验图上归一化使 Σw=1;缺失先验的词跳过,不填 0。daily-prior 不是概率,不可与 1e-6 比较、不可直接当 P(word) |
 | collision_mass | Σ (fanout−1)/fanout(简码位重码质量) |
 | prefix_utilization | 不同提示码数 / 提示总条数 |
-| top1000_shallow_coverage | 频率先验 top-1000 词获得 ≤3 键简码的比例 |
+| top1000_shallow_coverage | daily-prior 降序(词形升序兜底) top-1000 词获得 ≤3 键简码的比例;缺失先验的词不进入 top-N |
 
 ## 当前生产数据基线(2026-09-16,canonical v2 全层)
 
 - total 68,842;useful 50,795;useful_with_selection 18,047;
 - **misleading 0(rate 0.000000,门禁通过)**;
-- expected_effort_saving 1.339 键/词(词频加权);
+- expected_effort_saving 1.339 键/词(当时用万象归一化频率加权;此后改用 daily-prior exp 归一化);
 - collision_mass 19,274.9;prefix_utilization 0.754;
-- top1000_shallow_coverage 0.769。
+- top1000_shallow_coverage 0.769(当时用万象频率降序;此后改用 daily-prior 降序)。
 
 ## 哨兵红线(§21)
 

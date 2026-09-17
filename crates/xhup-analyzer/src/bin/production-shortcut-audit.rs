@@ -8,9 +8,13 @@
 //! - rank 来源:canonical 真实菜单占用(CodeOccupancy,与
 //!   static-shortcut-audit --dump-static-menu-manifest 同源);
 //! - 输出:确定性 TSV(头部聚合指标 + 逐条判定);
+//! - expected_effort_saving / top-N 浅层覆盖使用 LexicalEvidenceSet
+//!   daily-prior(log 域相对值,exp 归一化;缺失跳过)。misleading 判定
+//!   仍纯 rank,与加权无关;
 //! - `--threshold`:misleading-hint rate 门禁(0 ≤ t ≤ 1);超标即退出码 1。
 //!   CI 以 `--threshold 0.0` 断言「misleading = 0」(§3 合同)。
 
+use std::collections::BTreeMap;
 use std::process::ExitCode;
 
 use xhup_analyzer::shortcut_audit::{ShortcutAuditInput, audit_tsv, run_audit};
@@ -48,19 +52,25 @@ fn main() -> ExitCode {
 
     let occupancy = xhup_analyzer::occupancy::CodeOccupancy::build_current_production();
     let (hints, full_lens) = xhup_generator::lua_hints_view_with_full_lens();
-    // 词频:万象归一化(与 evidence/sweep 同口径)。
+    // daily-prior:log 域相对值(0 = 中位),不是概率;不可与 1e-6 比较,
+    // 也不可直接当 P(word)。审计侧 exp 转为正质量后在先验图上归一化。
+    // 缺失先验的词显式跳过,不填 0。
     let data = xhup_analyzer::build_analysis();
-    let total: f64 = data.words.iter().map(|e| e.frequency_score() as f64).sum();
-    let normalized: std::collections::BTreeMap<String, f64> = data
-        .words
-        .iter()
-        .map(|e| (e.word().to_string(), e.frequency_score() as f64 / total))
-        .collect();
+    let evidence = xhup_analyzer::LexicalEvidenceSet::build(&data.words, &data.frequency);
+    let mut daily_prior = BTreeMap::new();
+    let mut normalized = BTreeMap::new();
+    for entry in evidence.entries() {
+        normalized.insert(entry.word().to_string(), entry.normalized_frequency());
+        if let Some(prior) = entry.daily_prior() {
+            daily_prior.insert(entry.word().to_string(), prior);
+        }
+    }
 
     let input = ShortcutAuditInput {
         hints: &hints,
         full_code_lens: &full_lens,
         normalized_frequency: &normalized,
+        daily_prior: Some(&daily_prior),
         occupancy: &occupancy,
         top_n: 1000,
     };
