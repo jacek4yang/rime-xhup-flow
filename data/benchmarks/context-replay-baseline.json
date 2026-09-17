@@ -1,0 +1,20 @@
+{
+  "schema": "xhup-context-replay-baseline/v1",
+  "source": {
+    "sentences": "data/corpus/replay_fixture.txt",
+    "sentencesSha256": "b5441ed3f92e685b217f8656f9f554410731267c593d247e3280901e52a98d30",
+    "bigram": "data/corpus/kdconv_bigram.tsv",
+    "bigramSchema": "kdconv-bigram/v1",
+    "scorers": "word-frequency-segmentation/v1 -> kdconv-bigram/v1"
+  },
+  "note": "context replay 的非计时指标精确基线;计时不设跨机器门槛。",
+  "metrics": {
+    "sentences": 2000,
+    "tokens": 5729,
+    "ambiguous": 2701,
+    "baselineRank1": 5085,
+    "contextualRank1": 5535,
+    "contextGain": 458,
+    "harmfulReorder": 8
+  }
+}
