@@ -108,6 +108,8 @@ export const ERROR_CODES = [
   "desktop_unavailable",
   "explain_empty_word",
   "explain_unknown_word",
+  "hint_empty_word",
+  "hint_absent",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -142,4 +144,6 @@ export const productApi = {
     invokeDesktop("learning_reset", { confirmed, dictName: FLOW_USER_DICT_NAME }),
   /** 渲染 mapping v2 单词语 ASCII 理由卡(桌面诊断)。 */
   explainWord: (word: string): Promise<string> => invokeDesktop("explain_word", { word }),
+  /** 渲染简码提示 ASCII 解释卡:回答「候选行的 ~<简码> 是否名副其实」(§3)。 */
+  explainHint: (word: string): Promise<string> => invokeDesktop("explain_hint", { word }),
 };

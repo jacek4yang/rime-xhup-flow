@@ -337,9 +337,50 @@ pub fn explain_word(word: String) -> Result<String, CommandError> {
     })
 }
 
+/// 对单个词渲染**简码提示** ASCII 解释卡(桌面诊断;不改 IME UI)。
+///
+/// 与 `explain_word`(optimizer v2 码位决策)不同,本命令回答的是
+/// 「候选行上显示的 `~<简码>` 是否名副其实」(Issue #83 §3)。
+/// 空输入拒绝;该词没有提示时返回 `hint_absent`,由调用方给文案。
+#[tauri::command]
+pub fn explain_hint(word: String) -> Result<String, CommandError> {
+    let word = word.trim();
+    if word.is_empty() {
+        return Err(CommandError::new(
+            "hint_empty_word",
+            "请输入一个词语".to_string(),
+        ));
+    }
+    xhup_analyzer::shortcut_explain::explain_shortcut_hint(word)
+        .map(|hint| hint.render_card())
+        .ok_or_else(|| {
+            CommandError::new(
+                "hint_absent",
+                "该词没有简码提示(候选行不显示 ~<简码>)".to_string(),
+            )
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::explain_word;
+
+    #[test]
+    fn explain_hint_rejects_empty_and_reports_absence() {
+        use super::explain_hint;
+        for input in ["", "   ", "	
+"] {
+            let error = explain_hint(input.to_string()).expect_err("空输入必须拒绝");
+            assert_eq!(error.code, "hint_empty_word");
+        }
+        // 有提示的词必须渲染出 ASCII 标签卡片。
+        let card = explain_hint("我们".to_string()).expect("高频词应有提示");
+        assert!(card.contains("verdict"), "卡片必须含判定行");
+        assert!(card.contains("menu rank"), "卡片必须含菜单 rank 行");
+        // 无提示的词必须走 hint_absent,而不是伪造空卡。
+        let absent = explain_hint("xyznotaword".to_string()).expect_err("未知词应报缺失");
+        assert_eq!(absent.code, "hint_absent");
+    }
 
     #[test]
     fn explain_word_rejects_empty() {

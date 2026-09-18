@@ -189,4 +189,48 @@ describe("ControlCenterView", () => {
       }),
     );
   });
+
+  it("桌面端显示简码提示有效性卡,点击后展示提示解释", async () => {
+    const user = userEvent.setup();
+    let resolveHint: ((card: string) => void) | undefined;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "product_status") return Promise.resolve(freshStatus());
+      if (command === "explain_hint") {
+        return new Promise<string>((resolve) => {
+          resolveHint = resolve;
+        });
+      }
+      return Promise.reject(new Error(`unexpected command: ${command}`));
+    });
+    render(<ControlCenterView />);
+    // 两张卡片的标签/按钮必须可区分(否则无障碍与测试都会歧义)。
+    expect(screen.getByRole("button", { name: "检查提示" })).toBeDisabled();
+    await user.type(screen.getByLabelText("提示词"), "我们");
+    await user.click(screen.getByRole("button", { name: "检查提示" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("explain_hint", { word: "我们" }),
+    );
+    resolveHint!("word 我们\nverdict USEFUL\n");
+    expect(await screen.findByText(/verdict/)).toBeInTheDocument();
+  });
+
+  it("简码提示缺失时展示错误文案", async () => {
+    const user = userEvent.setup();
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "product_status") return Promise.resolve(freshStatus());
+      if (command === "explain_hint") {
+        // 注意:这里 mock 的是**原始 invoke** 层,不经过 invokeDesktop 的
+        // {code,message} -> CommandError 归一化,因此断言的是兜底文案
+        // (errorText 对 Error 返回 message)。code -> 文案的映射由
+        // native.test.ts 与 i18n 测试覆盖。
+        return Promise.reject(new Error("该词没有简码提示"));
+      }
+      return Promise.reject(new Error(`unexpected command: ${command}`));
+    });
+    render(<ControlCenterView />);
+    await user.type(screen.getByLabelText("提示词"), "阿本");
+    await user.click(screen.getByRole("button", { name: "检查提示" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("该词没有简码提示");
+  });
+
 });

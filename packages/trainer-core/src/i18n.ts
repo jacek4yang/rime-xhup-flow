@@ -274,6 +274,11 @@ const zh = {
   "product.explainWord": "词语",
   "product.explainAction": "解释",
   "product.explainLoading": "正在生成解释…",
+  "product.hintTitle": "简码提示有效性",
+  "product.hintWord": "提示词",
+  "product.hintAction": "检查提示",
+  "product.hintDescription":
+    "查看候选行上显示的 ~<简码> 是否名副其实:输入该简码能否直接得到该词(rank 1),还是需要翻页,或该词根本不在该码菜单中。",
   "product.failed": "操作失败:{reason}",
   "product.redeployTitle": "重新部署",
   "product.redeployHint": "写入方案后需要重新部署才会生效。",
@@ -314,6 +319,9 @@ const zh = {
   "errorCodes.explain_empty_word": "请输入一个词语。",
   "errorCodes.explain_unknown_word":
     "该词不在 mapping v2 候选宇宙(无证据或无合法候选)。",
+  "errorCodes.hint_empty_word": "请输入一个词语。",
+  "errorCodes.hint_absent":
+    "该词没有简码提示(它的候选行不显示 ~<简码>)。",
   "errorBoundary.title": "界面出现错误",
   "errorBoundary.retry": "重试",
   "errorBoundary.copy": "复制错误信息",
@@ -760,6 +768,11 @@ const en: Record<I18nKey, string> = {
   "product.explainWord": "Word",
   "product.explainAction": "Explain",
   "product.explainLoading": "Generating explanation…",
+  "product.hintTitle": "Shortcut hint validity",
+  "product.hintWord": "Hint word",
+  "product.hintAction": "Check hint",
+  "product.hintDescription":
+    "Check whether the ~<code> shown on a candidate row is honest: typing it either selects the word first (rank 1), requires paging, or the word is not in that code's menu at all.",
   "product.failed": "Operation failed: {reason}",
   "product.redeployTitle": "Redeploy",
   "product.redeployHint": "The schema only takes effect after a redeploy.",
@@ -804,6 +817,9 @@ const en: Record<I18nKey, string> = {
   "errorCodes.explain_empty_word": "Enter a word.",
   "errorCodes.explain_unknown_word":
     "Word is not in the mapping v2 candidate universe (no evidence or no legal candidate).",
+  "errorCodes.hint_empty_word": "Enter a word.",
+  "errorCodes.hint_absent":
+    "This word has no shortcut hint (its candidate row shows no ~<code>).",
   "errorBoundary.title": "Something went wrong",
   "errorBoundary.retry": "Retry",
   "errorBoundary.copy": "Copy error details",

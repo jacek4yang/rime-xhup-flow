@@ -115,6 +115,10 @@ export function ControlCenterView() {
   const [explainCard, setExplainCard] = useState<string | null>(null);
   const [explainBusy, setExplainBusy] = useState(false);
   const [explainError, setExplainError] = useState<string | null>(null);
+  const [hintQuery, setHintQuery] = useState("");
+  const [hintCard, setHintCard] = useState<string | null>(null);
+  const [hintBusy, setHintBusy] = useState(false);
+  const [hintError, setHintError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     productApi
@@ -158,6 +162,19 @@ export function ControlCenterView() {
       .catch((cause: unknown) => setExplainError(errorText(cause, t)))
       .finally(() => setExplainBusy(false));
   }, [explainBusy, explainQuery, t]);
+
+  const runHint = useCallback(() => {
+    const word = hintQuery.trim();
+    if (word === "" || hintBusy) return;
+    setHintBusy(true);
+    setHintError(null);
+    setHintCard(null);
+    productApi
+      .explainHint(word)
+      .then(setHintCard)
+      .catch((cause: unknown) => setHintError(errorText(cause, t)))
+      .finally(() => setHintBusy(false));
+  }, [hintBusy, hintQuery, t]);
 
   const openPlan = (kind: MaintenanceKind) => {
     setNotice(null);
@@ -589,6 +606,61 @@ export function ControlCenterView() {
               aria-label={t("product.explainTitle")}
             >
               {explainCard}
+            </pre>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("product.hintTitle")}</CardTitle>
+          <CardDescription>{t("product.hintDescription")}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <form
+            className="flex flex-col gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              runHint();
+            }}
+          >
+            <label htmlFor="hint-word" className="text-sm font-medium">
+              {t("product.hintWord")}
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <input
+                id="hint-word"
+                type="text"
+                value={hintQuery}
+                onChange={(event) => setHintQuery(event.target.value)}
+                className="min-h-11 flex-1 rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
+                disabled={hintBusy}
+              />
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={hintBusy || hintQuery.trim() === ""}
+              >
+                {t("product.hintAction")}
+              </Button>
+            </div>
+          </form>
+          {hintBusy && (
+            <p className="text-sm text-muted-foreground" aria-live="polite">
+              {t("product.explainLoading")}
+            </p>
+          )}
+          {hintError && (
+            <p role="alert" className="text-sm text-destructive">
+              {hintError}
+            </p>
+          )}
+          {hintCard && (
+            <pre
+              className="max-h-64 overflow-auto rounded-md bg-muted p-3 font-mono text-xs"
+              aria-label={t("product.hintTitle")}
+            >
+              {hintCard}
             </pre>
           )}
         </CardContent>
