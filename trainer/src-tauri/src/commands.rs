@@ -368,8 +368,10 @@ mod tests {
     #[test]
     fn explain_hint_rejects_empty_and_reports_absence() {
         use super::explain_hint;
-        for input in ["", "   ", "	
-"] {
+        for input in [
+            "", "   ", "	
+",
+        ] {
             let error = explain_hint(input.to_string()).expect_err("空输入必须拒绝");
             assert_eq!(error.code, "hint_empty_word");
         }
