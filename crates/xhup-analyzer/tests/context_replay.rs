@@ -322,3 +322,64 @@ fn single_candidate_corpus_has_zero_selection_cost() {
         m.ambiguous
     );
 }
+
+// ---------------------------------------------------------------------------
+// 解码延迟基线(§22:p50/p95/p99 此前无基线)
+// ---------------------------------------------------------------------------
+
+use xhup_analyzer::context_replay::{REPLAY_LATENCY_SCHEMA, replay_latency};
+
+#[test]
+fn replay_latency_reports_ordered_percentiles() {
+    // 计时只报告、不设跨机器门槛;但百分位必须**有序**且样本数正确,
+    // 否则读数本身不可信。
+    let scorer = KdconvBigramScorer::new(model());
+    let report = replay_latency(SENTENCES, &scorer, KdconvBigramScorer::SCORER_ID, 8);
+    assert_eq!(report.schema, REPLAY_LATENCY_SCHEMA);
+    assert_eq!(report.beam_width, 8);
+    let l = &report.latency;
+    assert_eq!(l.samples, 2701, "应与歧义 token 数一致");
+    assert!(
+        l.p50_micros <= l.p95_micros && l.p95_micros <= l.p99_micros,
+        "百分位必须有序: p50={} p95={} p99={}",
+        l.p50_micros,
+        l.p95_micros,
+        l.p99_micros
+    );
+    assert!(l.p99_micros <= l.max_micros, "p99 不得超过 max");
+}
+
+#[test]
+fn replay_latency_is_bounded_and_recorded() {
+    // 记录当前量级(2026-09-18,开发机):p50=7µs p95=42µs p99=95µs max=350µs。
+    // 本测试**不**把该数值当跨机器门槛(§22 明确禁止),只断言量级合理:
+    // p99 在人类可感知阈值(约 10ms)以内一个数量级以上。
+    let scorer = KdconvBigramScorer::new(model());
+    let report = replay_latency(SENTENCES, &scorer, KdconvBigramScorer::SCORER_ID, 8);
+    let l = &report.latency;
+    assert!(
+        l.p99_micros < 10_000,
+        "p99 应远低于 10ms 感知阈值,实际 {}µs",
+        l.p99_micros
+    );
+    assert!(l.max_micros < 100_000, "max 不应出现秒级尖峰");
+}
+
+#[test]
+fn empty_corpus_latency_is_zero_without_panic() {
+    let scorer = KdconvBigramScorer::new(model());
+    let report = replay_latency("", &scorer, KdconvBigramScorer::SCORER_ID, 8);
+    assert_eq!(report.latency.samples, 0);
+    assert_eq!(report.latency.p50_micros, 0);
+    assert_eq!(report.latency.p99_micros, 0);
+    assert_eq!(report.latency.max_micros, 0);
+}
+
+#[test]
+fn latency_report_serializes_as_ascii() {
+    let scorer = KdconvBigramScorer::new(model());
+    let report = replay_latency(SENTENCES, &scorer, KdconvBigramScorer::SCORER_ID, 8);
+    let json = serde_json::to_string(&report).expect("可序列化");
+    assert!(json.is_ascii(), "序列化必须纯 ASCII");
+    assert!(json.contains("\"p50Micros\""));
+}
