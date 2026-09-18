@@ -71,3 +71,31 @@ librime 编译与 runtime 审计耗时以 CI 日志为准(Ubuntu runner 上
   需要在 PR 说明中解释;
 - 生成产物保持确定性(同输入字节级一致),性能对比因此可比;
 - 不为速度引入非确定性缓存或改变冻结映射。
+
+## 上下文解码延迟(2026-09-18,首次基线)
+
+§22 要求测 `decoder p50/p95/p99`,此前仓库中**没有任何基线**。以下为首次测量。
+
+**测量口径**:release 构建;对 `data/corpus/replay_fixture.txt`(2000 句)中
+每个**同码歧义 token** 计时;计时范围 = 「参考路径枚举 + 排序」与
+「`decode_beam_adaptive` 有界解码」两次打分之和(即生产解码路径的开销)。
+菜单构造与语料分词不计入(不随按键变化)。
+
+```bash
+cargo run --release --locked -p xhup-analyzer --bin context-replay-bench --   --sentences data/corpus/replay_fixture.txt   --bigram data/corpus/kdconv_bigram.tsv --latency
+```
+
+| 指标 | 值(开发机,Windows x86_64) |
+| --- | ---: |
+| 样本数 | 2,701 |
+| p50 | **7 µs** |
+| p95 | **42 µs** |
+| p99 | **95 µs** |
+| max | 350 µs |
+
+**不作为跨机器门槛**(§22 明确禁止设机器相关硬阈值);上表只记录量级与趋势。
+p99 约 95 µs,比人类可感知阈值(约 10 ms)低两个数量级,余量充足。
+
+注意:该延迟只覆盖 **Rust 侧离线评测路径**。上下文能力**尚未接入产品运行时**
+(见 Issue #83 的架构说明),因此这不是端到端输入延迟。运行时接入后必须重测
+并同时测 Lua memory/GC(§22 要求,当前无基线)。

@@ -26,6 +26,7 @@
 
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
+use std::time::Instant;
 
 use serde::Serialize;
 use xhup_core::KeySequence;
@@ -584,4 +585,96 @@ fn ratio_u64(numerator: u64, denominator: usize) -> f64 {
         return 0.0;
     }
     numerator as f64 / denominator as f64
+}
+
+/// 解码延迟的百分位(微秒)。
+///
+/// §22 要求测 `decoder p50/p95/p99`,此前仓库中**没有任何基线**。计时只报告、
+/// 不设跨机器门槛(与 `contextual_benchmark` 的既有口径一致)。
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayLatency {
+    /// 样本数(被计时的 token 数)。
+    pub samples: usize,
+    pub p50_micros: u128,
+    pub p95_micros: u128,
+    pub p99_micros: u128,
+    /// 最大单次(定位长尾用;百分位会掩盖极少数尖峰)。
+    pub max_micros: u128,
+}
+
+/// 一次延迟测量(含评分器与配置,便于溯源)。
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayLatencyReport {
+    pub schema: &'static str,
+    pub scorer: &'static str,
+    pub beam_width: usize,
+    pub latency: ReplayLatency,
+}
+
+/// 延迟报告 schema 标识。
+pub const REPLAY_LATENCY_SCHEMA: &str = "xhup-context-replay-latency/v1";
+
+/// 测量真实语料上每个歧义 token 的解码延迟(微秒百分位)。
+///
+/// 计时范围:构造候选菜单之后、`rank_paths`(参考路径枚举)与
+/// `decode_beam`(有界解码)**两次**打分之和 —— 即生产解码路径的开销。
+/// 菜单构造与语料分词不计入(它们不随按键变化)。
+pub fn replay_latency<S>(
+    sentences_text: &str,
+    scorer: &S,
+    scorer_id: &'static str,
+    beam_width: usize,
+) -> ReplayLatencyReport
+where
+    S: DeterministicScorer,
+{
+    let prices = ProductionMenus::build();
+    let segmenter = Segmenter::build();
+    let mut samples: Vec<u128> = Vec::new();
+    let beam = NonZeroUsize::new(beam_width.max(1)).expect("beam >= 1");
+    let config =
+        xhup_decoder::DecodeConfig::new(beam, NonZeroUsize::new(5).expect("top_k 5 != 0"), 0);
+
+    walk_ambiguous_tokens(sentences_text, &prices, &segmenter, |_token, ranked| {
+        let Some((context, lattice)) = ranked else {
+            return;
+        };
+        let started = Instant::now();
+        // 参考路径枚举 + 排序(既有参考实现)。
+        let _ = scored_top(scorer, context, lattice);
+        // 有界解码(生产路径候选)。
+        let _ = xhup_decoder::decode_beam_adaptive(
+            lattice,
+            context,
+            scorer,
+            config,
+            xhup_decoder::DEFAULT_MAX_BEAM_WIDTH,
+        );
+        samples.push(started.elapsed().as_micros());
+    });
+
+    samples.sort_unstable();
+    let latency = ReplayLatency {
+        samples: samples.len(),
+        p50_micros: percentile(&samples, 50),
+        p95_micros: percentile(&samples, 95),
+        p99_micros: percentile(&samples, 99),
+        max_micros: samples.last().copied().unwrap_or(0),
+    };
+    ReplayLatencyReport {
+        schema: REPLAY_LATENCY_SCHEMA,
+        scorer: scorer_id,
+        beam_width: beam_width.max(1),
+        latency,
+    }
+}
+
+fn percentile(sorted: &[u128], percentile: usize) -> u128 {
+    if sorted.is_empty() {
+        return 0;
+    }
+    let rank = (sorted.len() * percentile).div_ceil(100);
+    sorted[rank.saturating_sub(1).min(sorted.len() - 1)]
 }

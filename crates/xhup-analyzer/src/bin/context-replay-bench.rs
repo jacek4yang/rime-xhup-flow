@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use xhup_analyzer::context_replay::{
-    BoundedDecodeReport, ContextReplayReport, bounded_decode_consistency, harmful_case_diagnostics,
-    replay_sentences_kdconv,
+    BoundedDecodeReport, ContextReplayReport, ReplayLatencyReport, bounded_decode_consistency,
+    harmful_case_diagnostics, replay_latency, replay_sentences_kdconv,
 };
 use xhup_decoder::{BigramModel, DecodeConfig, KdconvBigramScorer};
 
@@ -24,7 +24,8 @@ fn usage() -> ! {
          harmful reorder rate(§20)。baseline 只断言非计时指标。\n\
          --bounded   额外输出有界 beam 解码 vs 全路径枚举的 top1 一致性\n\
          --beam N    有界解码 beam 宽度(缺省 8)
-         --harmful   额外输出有害重排样本的证据明细(§6 降级策略依据)"
+         --harmful   额外输出有害重排样本的证据明细(§6 降级策略依据)
+         --latency   额外输出解码延迟 p50/p95/p99(§22;仅报告不设门槛)"
     );
     std::process::exit(2);
 }
@@ -36,6 +37,7 @@ fn main() -> ExitCode {
     let mut json = false;
     let mut bounded = false;
     let mut harmful = false;
+    let mut latency = false;
     let mut beam_width = 8usize;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -48,6 +50,7 @@ fn main() -> ExitCode {
             "--json" => json = true,
             "--bounded" => bounded = true,
             "--harmful" => harmful = true,
+            "--latency" => latency = true,
             "--beam" => {
                 let value = args.next().unwrap_or_else(|| usage());
                 beam_width = match value.parse() {
@@ -141,6 +144,20 @@ fn main() -> ExitCode {
         }
     }
 
+    // 解码延迟(§22)。仅报告,不设跨机器门槛。
+    if latency {
+        let scorer = KdconvBigramScorer::new(model.clone());
+        let report = replay_latency(&sentences_text, &scorer, KdconvBigramScorer::SCORER_ID, 8);
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).expect("ReplayLatencyReport 可序列化")
+            );
+        } else {
+            print!("{}", render_latency(&report));
+        }
+    }
+
     if let Some(path) = baseline {
         let expected_text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
@@ -215,6 +232,53 @@ fn render_text(report: &ContextReplayReport) -> String {
     out.push_str(&format!(
         "selection_saving/token:  {:+.4}\n",
         m.selection_cost_saving_per_token()
+    ));
+    out
+}
+
+/// 解码延迟的确定性 ASCII 报告(微秒)。
+fn render_latency(report: &ReplayLatencyReport) -> String {
+    let l = &report.latency;
+    let mut out = String::new();
+    out.push_str(&format!(
+        "schema:              {}
+",
+        report.schema
+    ));
+    out.push_str(&format!(
+        "scorer:              {}
+",
+        report.scorer
+    ));
+    out.push_str(&format!(
+        "beam_width:          {}
+",
+        report.beam_width
+    ));
+    out.push_str(&format!(
+        "samples:             {}
+",
+        l.samples
+    ));
+    out.push_str(&format!(
+        "latency_p50_micros:  {}
+",
+        l.p50_micros
+    ));
+    out.push_str(&format!(
+        "latency_p95_micros:  {}
+",
+        l.p95_micros
+    ));
+    out.push_str(&format!(
+        "latency_p99_micros:  {}
+",
+        l.p99_micros
+    ));
+    out.push_str(&format!(
+        "latency_max_micros:  {}
+",
+        l.max_micros
     ));
     out
 }
