@@ -119,7 +119,19 @@ done
 cc $CFLAGS -o "$work/audit" "$SCRIPT_DIR/runtime_flow_audit.c" \
   $(pkg-config --cflags --libs rime)
 
-AUDIT_SHARDS=2
+# 审计分片数。默认 2 与历史 CI 行为一致;可用环境变量覆盖以便在**实验分支**
+# 上验证「更多分片能否缩短墙钟而不触发 OOM」——本 job 是 CI 最长的门禁
+# (3h16m–5h00m,曾在 #113 上撞满 300 分钟超时)。
+#
+# 注意:每分片都会 `cp -a` 一份完整数据目录并加载完整 librime 词典,因此
+# 提高分片数会增加峰值内存;默认值保持 2 正是出于该内存余量的保守选择。
+# 门禁语义与分片数无关(分片只是把同一份 manifest 切分并行处理)。
+AUDIT_SHARDS=${XHUP_AUDIT_SHARDS:-2}
+if ! [[ "$AUDIT_SHARDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "XHUP_AUDIT_SHARDS 必须是正整数,实际: $AUDIT_SHARDS" >&2
+  exit 2
+fi
+
 manifest_rows=$(grep -vc '^#' "$MANIFEST")
 manifest_shards=()
 for ((i = 0; i < AUDIT_SHARDS; ++i)); do
@@ -161,8 +173,41 @@ for ((i = 0; i < AUDIT_SHARDS; ++i)); do
   audit_logs+=("$log")
 done
 audit_status=0
+audit_rss_peaks=()
+for i in "${!audit_pids[@]}"; do
+  pid="${audit_pids[$i]}"
+  # 采样该分片进程的峰值 RSS(§22 要求测量 deploy/runtime 内存;CI 无基线)。
+  # 后台采样,避免 wait 期间拿不到数据。
+  (
+    peak=0
+    while kill -0 "$pid" 2>/dev/null; do
+      # 优先 VmHWM(历史峰值 RSS,单调不减,不依赖采样频率);
+      # 该字段在部分环境(如 Git-Bash 的 /proc 仿真)不存在,此时退回
+      # VmRSS(当前值)并对子进程一起采样,取观察到的最大值。
+      # 若两者都取不到,保持 0 —— **不得**伪造读数。
+      for p in "$pid" $(pgrep -P "$pid" 2>/dev/null); do
+        status_file="/proc/$p/status"
+        [ -r "$status_file" ] || continue
+        hwm=$(awk '/^VmHWM:/ { print $2 }' "$status_file" 2>/dev/null || true)
+        [ -z "${hwm:-}" ] && hwm=$(awk '/^VmRSS:/ { print $2 }' "$status_file" 2>/dev/null || true)
+        if [ -n "${hwm:-}" ] && [ "$hwm" -gt "$peak" ] 2>/dev/null; then peak=$hwm; fi
+      done
+      sleep 2
+    done
+    if [ "$peak" -eq 0 ]; then
+      echo "警告: 无法采样分片 $i 的 RSS(VmHWM/VmRSS 均不可读)" >&2
+    fi
+    echo "$peak" > "$work/audit-rss-$i"
+  ) &
+  audit_rss_peaks+=("$!")
+done
 for pid in "${audit_pids[@]}"; do
   if ! wait "$pid"; then audit_status=1; fi
+done
+for sampler in "${audit_rss_peaks[@]}"; do wait "$sampler" 2>/dev/null || true; done
+for i in "${!audit_pids[@]}"; do
+  rss=$(cat "$work/audit-rss-$i" 2>/dev/null || echo 0)
+  echo "librime 审计分片 $i 峰值 RSS: ${rss} KiB"
 done
 for log in "${audit_logs[@]}"; do cat "$log"; done
 [[ "$audit_status" -eq 0 ]] || exit 1
@@ -302,8 +347,41 @@ for ((i = 0; i < AUDIT_SHARDS; ++i)); do
   audit_logs+=("$log")
 done
 audit_status=0
+audit_rss_peaks=()
+for i in "${!audit_pids[@]}"; do
+  pid="${audit_pids[$i]}"
+  # 采样该分片进程的峰值 RSS(§22 要求测量 deploy/runtime 内存;CI 无基线)。
+  # 后台采样,避免 wait 期间拿不到数据。
+  (
+    peak=0
+    while kill -0 "$pid" 2>/dev/null; do
+      # 优先 VmHWM(历史峰值 RSS,单调不减,不依赖采样频率);
+      # 该字段在部分环境(如 Git-Bash 的 /proc 仿真)不存在,此时退回
+      # VmRSS(当前值)并对子进程一起采样,取观察到的最大值。
+      # 若两者都取不到,保持 0 —— **不得**伪造读数。
+      for p in "$pid" $(pgrep -P "$pid" 2>/dev/null); do
+        status_file="/proc/$p/status"
+        [ -r "$status_file" ] || continue
+        hwm=$(awk '/^VmHWM:/ { print $2 }' "$status_file" 2>/dev/null || true)
+        [ -z "${hwm:-}" ] && hwm=$(awk '/^VmRSS:/ { print $2 }' "$status_file" 2>/dev/null || true)
+        if [ -n "${hwm:-}" ] && [ "$hwm" -gt "$peak" ] 2>/dev/null; then peak=$hwm; fi
+      done
+      sleep 2
+    done
+    if [ "$peak" -eq 0 ]; then
+      echo "警告: 无法采样分片 $i 的 RSS(VmHWM/VmRSS 均不可读)" >&2
+    fi
+    echo "$peak" > "$work/audit-rss-$i"
+  ) &
+  audit_rss_peaks+=("$!")
+done
 for pid in "${audit_pids[@]}"; do
   if ! wait "$pid"; then audit_status=1; fi
+done
+for sampler in "${audit_rss_peaks[@]}"; do wait "$sampler" 2>/dev/null || true; done
+for i in "${!audit_pids[@]}"; do
+  rss=$(cat "$work/audit-rss-$i" 2>/dev/null || echo 0)
+  echo "librime 审计分片 $i 峰值 RSS: ${rss} KiB"
 done
 for log in "${audit_logs[@]}"; do cat "$log"; done
 [[ "$audit_status" -eq 0 ]] || exit 1

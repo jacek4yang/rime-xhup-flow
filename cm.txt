@@ -1,27 +1,28 @@
-ci: 上下文回放回归门禁(context gain / harmful reorder)
+ci(librime): 审计分片数可配置(默认不变)+ 每分片峰值 RSS 报告
 
-把既有但未接入 CI 的 context-replay-bench 变成门禁,放在 **rust job** 而非
-librime job —— 它是纯 Rust 评测,不该占用 5 小时的关键路径(该 job 已在
-#113 上实际触发过 300 分钟超时)。
+背景:librime job 是 CI 最长门禁(实测 3h16m–5h00m,曾在 PR #113 上撞满
+300 分钟超时被取消),而 tests/librime/run-flow-audit.sh 把分片数硬编码为 2,
+同文件的 ci.yml 注释又写着「本地四分片基线约 3 小时」—— 即本地用 4、CI 用 2。
+该参数此前既不可调、也无从判断调高的代价。
 
-门禁断言(精确比较,不含计时):
-- sentences / tokens / ambiguous
-- baselineRank1 / contextualRank1 / contextGain
-- harmfulReorder(§20 指标)
-- baselineSelectionCostQ10 / contextualSelectionCostQ10(§1 期望选择成本)
+本 commit(不改变默认行为):
+1. AUDIT_SHARDS 改为 ${XHUP_AUDIT_SHARDS:-2},并校验为正整数(非法即退出);
+2. 审计分片启动后采样每分片进程的峰值 RSS 并打印 —— §22 要求测量
+   deploy/runtime 内存,此前 CI 无任何基线;
+3. ci.yml 注释说明该 env 的存在、代价(每分片各加载一份完整词典 ⇒ 峰值内存
+   上升)与「默认 2 是刻意保守」。
 
-任一项漂移即退出码 1。已手工验证:
-  正确基线 -> exit 0
-  篡改 harmfulReorder -> exit 1
+采样实现:优先 /proc/<pid>/status 的 VmHWM(历史峰值,单调不减,不依赖采样
+频率);该字段在部分环境不存在时退回 VmRSS(当前值)并连带采样子进程,取观测
+最大;**两者都取不到时保持 0 并打印警告,不伪造读数**。
 
-测试 +5(在二进制内,覆盖门禁本身的可失败性 —— 门禁必须能失败才有意义):
-- committed 基线必须通过;
-- 四类指标漂移(harmfulReorder / contextualRank1 / contextGain / tokens)
-  逐一必须被检出;
-- schema 不符必须报错(而非静默通过);
-- 缺 metrics 字段必须报错;
-- 基线缺少某个受门禁指标必须显式报出(不得当作「无要求」)。
+诚实的验证状态:
+- 默认值保留已本地验证(unset -> 2;XHUP_AUDIT_SHARDS=4 -> 4;非法值 -> 退出 2);
+- `bash -n` 语法通过;YAML 结构校验通过;
+- **RSS 采样路径未在本地验证**:本机 Git-Bash 的 /proc 仿真不提供 VmHWM,
+  且无 librime 环境无法跑该脚本。该路径只能在真实 Linux runner 上确认 ——
+  评审时应留意 CI 日志中「librime 审计分片 N 峰值 RSS」一行是否出现真实数值
+  (而非 0 或警告)。
 
-背景:§24 DoD 要求 harmful reorder rate 可门禁;标定后该值已降到 0.02%,
-进入可门禁水平。#113 建立的跨切分通路暂不入门禁(其读数对 committed
-context 窗口配置敏感,且需更大留出样本),留待后续。
+刻意**不**改默认值为 4:提高分片数可能触发 runner OOM,而 OOM 的失败模式是
+「红」而非「慢」,风险不对称;应先由维护者/实验分支用上述 RSS 读数判断。
