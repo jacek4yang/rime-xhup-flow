@@ -96,20 +96,17 @@ fn every_advertised_hint_explains_without_contradiction() {
     ];
     let mut explained = 0usize;
     for word in candidates {
-        match explain_shortcut_hint(word) {
-            Some(hint) => {
-                explained += 1;
-                assert_eq!(hint.word, word);
-                assert!(!hint.shortcut_code.is_empty(), "{word}: 提示码不得为空");
-                assert!(!hint.render_card().is_empty());
-                // 判定与 rank 必须一致(再次校验,防止未来改动破坏不变量)。
-                match hint.menu_rank {
-                    Some(1) => assert_eq!(hint.verdict, ShortcutVerdict::Useful),
-                    Some(_) => assert_eq!(hint.verdict, ShortcutVerdict::UsefulWithSelection),
-                    None => assert_eq!(hint.verdict, ShortcutVerdict::Misleading),
-                }
+        if let Some(hint) = explain_shortcut_hint(word) {
+            explained += 1;
+            assert_eq!(hint.word, word);
+            assert!(!hint.shortcut_code.is_empty(), "{word}: 提示码不得为空");
+            assert!(!hint.render_card().is_empty());
+            // 判定与 rank 必须一致(再次校验,防止未来改动破坏不变量)。
+            match hint.menu_rank {
+                Some(1) => assert_eq!(hint.verdict, ShortcutVerdict::Useful),
+                Some(_) => assert_eq!(hint.verdict, ShortcutVerdict::UsefulWithSelection),
+                None => assert_eq!(hint.verdict, ShortcutVerdict::Misleading),
             }
-            None => {}
         }
     }
     assert!(explained > 0, "至少应有部分高频词带提示");
