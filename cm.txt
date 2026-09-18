@@ -1,25 +1,27 @@
-docs(decoder): 补记 transition_weight 标定值的适用范围(留出域核查)
+ci: 上下文回放回归门禁(context gain / harmful reorder)
 
-#114 把 transition_weight 从 256 标定为 2,并注明「基于高频句夹具,应在更大
-样本复核」。本轮用**留出域**语料完成了该复核,结果要求更正表述。
+把既有但未接入 CI 的 context-replay-bench 变成门禁,放在 **rust job** 而非
+librime job —— 它是纯 Rust 评测,不该占用 5 小时的关键路径(该 job 已在
+#113 上实际触发过 300 分钟超时)。
 
-留出语料:PTT 20,000 句 / 76,692 token(与标定用的 KDConv 高频句夹具不同域,
-且不在标定样本内);转移证据仍为 KDConv bigram。
+门禁断言(精确比较,不含计时):
+- sentences / tokens / ambiguous
+- baselineRank1 / contextualRank1 / contextGain
+- harmfulReorder(§20 指标)
+- baselineSelectionCostQ10 / contextualSelectionCostQ10(§1 期望选择成本)
 
-实测(net = gain - harm):
-  weight  留出域 net   留出域 harm
-     1        +55          18
-     2        +81          28
-     4       +114          45
-   8/16/256  +112          50
+任一项漂移即退出码 1。已手工验证:
+  正确基线 -> exit 0
+  篡改 harmfulReorder -> exit 1
 
-结论:
-1. 留出域上净收益随权重**上升**并在 8 处饱和,故 **2 不是跨域最优值**;
-2. 但**不能**据此为原值 256 辩护 —— 留出域上 8 与 256 逐项完全相同,
-   原因是 KDConv 转移表对 PTT 句子覆盖极稀疏(多数位置无证据可加,
-   权重不起作用)。即该「上升」是在转移证据近零的条件下得到的;
-3. 保持默认 2 不变;正确下一步是**在有转移覆盖的前提下做同域标定**
-   (回到 §25 第 6 步的第二证据源问题),而非继续调此权重。
+测试 +5(在二进制内,覆盖门禁本身的可失败性 —— 门禁必须能失败才有意义):
+- committed 基线必须通过;
+- 四类指标漂移(harmfulReorder / contextualRank1 / contextGain / tokens)
+  逐一必须被检出;
+- schema 不符必须报错(而非静默通过);
+- 缺 metrics 字段必须报错;
+- 基线缺少某个受门禁指标必须显式报出(不得当作「无要求」)。
 
-已在类型文档中写明该权重标定意义的**适用条件**(转移证据密集时才成立),
-避免后续代理把 2 当成普适最优值。
+背景:§24 DoD 要求 harmful reorder rate 可门禁;标定后该值已降到 0.02%,
+进入可门禁水平。#113 建立的跨切分通路暂不入门禁(其读数对 committed
+context 窗口配置敏感,且需更大留出样本),留待后续。
