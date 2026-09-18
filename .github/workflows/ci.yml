@@ -96,6 +96,18 @@ jobs:
           --input data/corpus/replay_fixture.txt
           --baseline data/corpus/replay_baseline.json
 
+      # 上下文回放回归门禁(§20 harmful reorder rate / §24 DoD):
+      # 真实语料逐 token 回放,断言 committed-context 的相对基线读数不退化。
+      # 基线含 rank1 命中、上下文收益、有害重排与期望选择成本;任何一项
+      # 漂移即红(精确比较,不含计时)。放在 Rust job 而非 librime job,
+      # 因为它是纯 Rust 评测,不该占用 5 小时的关键路径。
+      - name: 上下文回放回归门禁(context gain / harmful reorder)
+        run: >
+          cargo run --locked -p xhup-analyzer --bin context-replay-bench --
+          --sentences data/corpus/replay_fixture.txt
+          --bigram data/corpus/kdconv_bigram.tsv
+          --baseline data/benchmarks/context-replay-baseline.json
+
       - name: 知识库来源与证据审计
         run: cargo run --locked -p xhup-analyzer --bin knowledge-audit -- --check
 

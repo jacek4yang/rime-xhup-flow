@@ -293,3 +293,93 @@ fn check_baseline(
     }
     Ok(failures)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xhup_analyzer::context_replay::{
+        ContextReplayMetrics, ContextReplayReport, replay_sentences_kdconv,
+    };
+
+    const SENTENCES: &str = include_str!("../../../../data/corpus/replay_fixture.txt");
+    const BIGRAM: &str = include_str!("../../../../data/corpus/kdconv_bigram.tsv");
+
+    fn report() -> ContextReplayReport {
+        replay_sentences_kdconv(
+            SENTENCES,
+            xhup_decoder::BigramModel::from_tsv(BIGRAM).expect("bigram TSV 可解析"),
+        )
+    }
+
+    /// 门禁必须能**通过**:committed 基线应与当前读数一致。
+    #[test]
+    fn committed_baseline_passes() {
+        let baseline = include_str!("../../../../data/benchmarks/context-replay-baseline.json");
+        let failures = check_baseline(&report(), baseline).expect("基线 JSON 合法");
+        assert!(
+            failures.is_empty(),
+            "committed 基线应与当前读数一致,实际差异: {failures:?}"
+        );
+    }
+
+    /// 门禁必须能**失败**:任一指标漂移都要被检出(否则门禁形同虚设)。
+    #[test]
+    fn metric_drift_is_detected() {
+        let baseline = include_str!("../../../../data/benchmarks/context-replay-baseline.json");
+        let good = report();
+        // 构造漂移:把报告的每个受门禁指标分别改一位,逐一断言被检出。
+        let mut cases: Vec<(String, ContextReplayMetrics)> = Vec::new();
+        let mut bumped = good.metrics;
+        bumped.harmful_reorder += 1;
+        cases.push(("harmfulReorder".into(), bumped));
+        let mut bumped = good.metrics;
+        bumped.contextual_rank1 += 1;
+        cases.push(("contextualRank1".into(), bumped));
+        let mut bumped = good.metrics;
+        bumped.context_gain += 1;
+        cases.push(("contextGain".into(), bumped));
+        let mut bumped = good.metrics;
+        bumped.tokens += 1;
+        cases.push(("tokens".into(), bumped));
+
+        for (name, metrics) in cases {
+            let drifted = ContextReplayReport { metrics, ..good };
+            let failures = check_baseline(&drifted, baseline).expect("基线 JSON 合法");
+            assert!(
+                failures.iter().any(|f| f.contains(&name)),
+                "指标 {name} 漂移必须被门禁检出,实际差异: {failures:?}"
+            );
+        }
+    }
+
+    /// 基线 schema 不对时必须报错,而不是静默通过。
+    #[test]
+    fn wrong_schema_is_rejected() {
+        let bad = r#"{"schema":"some-other/v1","metrics":{}}"#;
+        assert!(check_baseline(&report(), bad).is_err());
+    }
+
+    /// 缺少 metrics 字段时必须报错。
+    #[test]
+    fn missing_metrics_is_rejected() {
+        let bad = r#"{"schema":"xhup-context-replay-baseline/v1"}"#;
+        assert!(check_baseline(&report(), bad).is_err());
+    }
+
+    /// 基线缺少某个受门禁指标时必须报错(不能当作「无要求」)。
+    #[test]
+    fn missing_metric_is_reported() {
+        let baseline = include_str!("../../../../data/benchmarks/context-replay-baseline.json");
+        let mut value: serde_json::Value = serde_json::from_str(baseline).expect("合法 JSON");
+        value["metrics"]
+            .as_object_mut()
+            .expect("metrics 为对象")
+            .remove("harmfulReorder");
+        let text = serde_json::to_string(&value).expect("可序列化");
+        let failures = check_baseline(&report(), &text).expect("仍应可解析");
+        assert!(
+            failures.iter().any(|f| f.contains("harmfulReorder")),
+            "基线缺指标必须显式报出: {failures:?}"
+        );
+    }
+}
