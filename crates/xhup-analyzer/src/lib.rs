@@ -44,6 +44,7 @@ pub mod replay;
 pub mod report;
 pub mod rules;
 pub mod shortcut_audit;
+pub mod shortcut_explain;
 pub mod shortcut_oracle;
 pub mod sweep;
 pub mod sweep_v2;
