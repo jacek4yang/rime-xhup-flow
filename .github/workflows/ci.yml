@@ -189,6 +189,13 @@ jobs:
     runs-on: ubuntu-latest
     # 1,301,434 条 extended 词汇逐条经真实 librime 查询，并在学习后复核完整
     # static 菜单；本地四分片基线约 3 小时，保留完整门禁并为 runner 波动留余量。
+    #
+    # 分片数由 tests/librime/run-flow-audit.sh 的 XHUP_AUDIT_SHARDS 控制
+    # (默认 2 = 历史 CI 行为)。该 job 是 CI 最长的门禁(实测 3h16m–5h00m,
+    # 曾在 PR #113 上撞满本超时被取消)。若要在**实验分支**上评估提高分片数
+    # 能否缩短墙钟,在此设 env 即可;提高分片会增加峰值内存(每分片各加载
+    # 一份完整词典),审计脚本会打印每分片峰值 RSS 供判断。门禁语义与分片
+    # 数无关。**默认值不变**是刻意的保守选择。
     timeout-minutes: 300
 
     steps:
