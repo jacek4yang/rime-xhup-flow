@@ -632,6 +632,26 @@ jobs:
           cp "$apk" "artifacts/android/xhup-flow-trainer-v$ver-android-universal${suffix}.apk"
           ls -l artifacts/android/
 
+      # APK 体积报告(移动端最相关的交付指标;§22 要求 Android memory,
+      # 此前无任何基线)。只报告 + 设一个**宽松的防劣化上限**,不设跨机器
+      # 精细门槛:APK 体积在同一构建配置下是确定性的,异常膨胀(如误打包
+      # 调试符号或重复资源)才是要拦的信号。
+      - name: APK 体积报告
+        run: |
+          set -euo pipefail
+          apk=$(ls artifacts/android/*.apk)
+          bytes=$(stat -c%s "$apk")
+          mb=$(awk -v b="$bytes" 'BEGIN { printf "%.1f", b/1048576 }')
+          echo "APK 体积: ${bytes} 字节(${mb} MiB)"
+          echo "### Android APK 体积: ${mb} MiB" >> "$GITHUB_STEP_SUMMARY"
+          # 上限 256 MiB:远超任何正常构建(含 librime 词典资源),
+          # 只在「误打包了整个 target/ 或调试产物」这类真问题上触发。
+          limit=$((256 * 1048576))
+          if (( bytes > limit )); then
+            echo "::error::APK 体积 ${mb} MiB 超过 256 MiB 上限 —— 疑似误打包调试符号或重复资源"
+            exit 1
+          fi
+
       - name: 上传 Android 产物
         uses: actions/upload-artifact@v7
         with:
