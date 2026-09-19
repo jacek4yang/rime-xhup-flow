@@ -632,6 +632,35 @@ jobs:
           cp "$apk" "artifacts/android/xhup-flow-trainer-v$ver-android-universal${suffix}.apk"
           ls -l artifacts/android/
 
+      # APK 体积报告(移动端最相关的交付指标;§22 要求 Android memory,
+      # 此前无任何基线)。只报告 + 设一个**宽松的防劣化上限**,不设跨机器
+      # 精细门槛:APK 体积在同一构建配置下是确定性的,异常膨胀(如误打包
+      # 调试符号或重复资源)才是要拦的信号。
+      - name: APK 体积报告
+        run: |
+          set -euo pipefail
+          apk=$(ls artifacts/android/*.apk)
+          bytes=$(stat -c%s "$apk")
+          mb=$(awk -v b="$bytes" 'BEGIN { printf "%.1f", b/1048576 }')
+          echo "APK 体积: ${bytes} 字节(${mb} MiB)"
+          echo "### Android APK 体积: ${mb} MiB" >> "$GITHUB_STEP_SUMMARY"
+          # 上限 768 MiB。取值依据(2026-09-19 首次实测,而非估算):
+          # universal APK 打包 **4 个 ABI**(arm64-v8a / armeabi-v7a / x86 /
+          # x86_64)的 `libtrainer_lib.so`,实测总体积 582.1 MiB(约 146 MiB/ABI)。
+          # 该体积本身偏大(workspace 未配置 release LTO/strip),但那是**独立
+          # 的优化议题**;本步骤只作「防灾难性劣化」的守卫,故上限取实测值
+          # 之上约 30% 余量,只在真正误打包(如整个 target/ 或未 strip 的
+          # 调试产物混入)时触发。
+          #
+          # 注意:该上限**不是**体积预算。把 582 MiB 降到合理范围需要
+          # ABI 拆分 + release profile 调优,属构建配置变更与产品决策,
+          # 不在本步骤职责内(已在 Issue #83 记录为独立待办)。
+          limit=$((768 * 1048576))
+          if (( bytes > limit )); then
+            echo "::error::APK 体积 ${mb} MiB 超过 768 MiB 上限 —— 疑似误打包调试符号或重复资源"
+            exit 1
+          fi
+
       - name: 上传 Android 产物
         uses: actions/upload-artifact@v7
         with:
