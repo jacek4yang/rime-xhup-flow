@@ -16,6 +16,7 @@ mod evidence;
 mod lattice;
 mod multi_source;
 mod scoring;
+mod user_boost;
 
 pub use bigram::{BOS, BigramModel, EOS, KdconvBigramBreakdown, KdconvBigramScorer};
 pub use builder::{BuildStats, BuiltLattice, LatticeBuilder, SourceCandidate};
@@ -36,3 +37,4 @@ pub use multi_source::{MergeAudit, MergePolicy, NORMALIZE_SCALE, merge_models};
 pub use scoring::{
     BaselineScoreBreakdown, BaselineScorer, DeterministicScorer, Score, ScoredPath, rank_paths,
 };
+pub use user_boost::{USER_BOOST_SCORER_ID, UserBoostBreakdown, UserBoostScorer};

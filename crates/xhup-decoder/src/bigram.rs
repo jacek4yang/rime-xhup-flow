@@ -11,6 +11,7 @@
 //! baseline 一致,提供干净的 A/B 对照。
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use crate::scoring::{BaselineScoreBreakdown, BaselineScorer, Score, log2_q10};
 use crate::{DeterministicScorer, Lattice, LatticePath, RuntimeContext};
@@ -228,7 +229,10 @@ impl BigramModel {
 ///
 /// 该值来自**高频句夹具**,其标定意义只在**转移证据密集**场景成立;证据稀疏
 /// 时该权重近乎无效。可用 [`KdconvBigramScorer::with_transition_weight`] 扫描。
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// 用户 overlay 闭包类型(词, 当前序号) → 非负 Q10 加分。
+type UserOverlayFn = dyn Fn(&str, u64) -> Score + Send + Sync;
+
+#[derive(Clone)]
 pub struct KdconvBigramScorer {
     baseline: BaselineScorer,
     model: BigramModel,
@@ -236,6 +240,22 @@ pub struct KdconvBigramScorer {
     context_window: usize,
     /// Q10 log2(count + 1) 的缩放系数(转移奖励弱于词频主项)。
     transition_weight: Score,
+    /// 本地用户自适应 overlay(§16/§25 第 9 步):词 → 非负 Q10 加分。
+    ///
+    /// `None` = 未启用,得分与纯 bigram scorer 严格一致。加分由上游
+    /// `UserModel` 封顶(≤ MAX_BOOST_Q10),此处只透传非负值。
+    /// 手写 `Debug`:闭包不可 `Debug`,且绝不能打印用户词(§5)。
+    user_overlay: Option<std::sync::Arc<UserOverlayFn>>,
+}
+
+impl fmt::Debug for KdconvBigramScorer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KdconvBigramScorer")
+            .field("context_window", &self.context_window)
+            .field("transition_weight", &self.transition_weight)
+            .field("has_user_overlay", &self.user_overlay.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl KdconvBigramScorer {
@@ -253,7 +273,26 @@ impl KdconvBigramScorer {
             model,
             context_window: 4,
             transition_weight: Self::DEFAULT_TRANSITION_WEIGHT,
+            user_overlay: None,
         }
+    }
+
+    /// 附加本地用户自适应 overlay(§16/§25 第 9 步)。
+    ///
+    /// `lookup(word, now_seq)` 返回该词的非负 Q10 加分(0 = 无信号)。
+    /// 附加后,路径各段的用户加分叠加在 baseline + 转移奖励之上;
+    /// 返回全 0 的 lookup 与未附加严格等价(A/B 对照)。
+    pub fn with_user_overlay<F>(mut self, lookup: F) -> Self
+    where
+        F: Fn(&str, u64) -> Score + Send + Sync + 'static,
+    {
+        self.user_overlay = Some(std::sync::Arc::new(lookup));
+        self
+    }
+
+    /// 是否已附加用户 overlay(诊断用)。
+    pub fn has_user_overlay(&self) -> bool {
+        self.user_overlay.is_some()
     }
 
     /// 覆盖转移奖励权重(供敏感度分析与后续标定使用)。
@@ -332,7 +371,22 @@ impl DeterministicScorer for KdconvBigramScorer {
             previous = Some(segment);
         }
 
-        let total = baseline_score.saturating_add(transition_reward);
+        // 本地用户自适应 overlay(§16):逐段累计非负加分;未附加或全零
+        // 时与纯 bigram 得分严格一致。序号用 committed 上下文长度(单调,
+        // 与 UserModel 的 recency 语义对齐)。
+        let user_boost = match &self.user_overlay {
+            None => 0,
+            Some(lookup) => {
+                let now_seq = context.committed_left_chars() as u64;
+                segments.iter().fold(0_i64, |sum, segment| {
+                    sum.saturating_add(lookup(segment, now_seq).max(0))
+                })
+            }
+        };
+
+        let total = baseline_score
+            .saturating_add(transition_reward)
+            .saturating_add(user_boost);
         (
             total,
             KdconvBigramBreakdown {

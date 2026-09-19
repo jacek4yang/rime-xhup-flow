@@ -25,7 +25,8 @@ fn usage() -> ! {
          --bounded   额外输出有界 beam 解码 vs 全路径枚举的 top1 一致性\n\
          --beam N    有界解码 beam 宽度(缺省 8)
          --harmful   额外输出有害重排样本的证据明细(§6 降级策略依据)
-         --latency   额外输出解码延迟 p50/p95/p99(§22;仅报告不设门槛)"
+         --latency   额外输出解码延迟 p50/p95/p99(§22;仅报告不设门槛)
+         --simulate-user  附加本地用户 overlay A/B(§25 第 9 步,离线模拟)"
     );
     std::process::exit(2);
 }
@@ -38,6 +39,7 @@ fn main() -> ExitCode {
     let mut bounded = false;
     let mut harmful = false;
     let mut latency = false;
+    let mut simulate_user = false;
     let mut beam_width = 8usize;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -51,6 +53,7 @@ fn main() -> ExitCode {
             "--bounded" => bounded = true,
             "--harmful" => harmful = true,
             "--latency" => latency = true,
+            "--simulate-user" => simulate_user = true,
             "--beam" => {
                 let value = args.next().unwrap_or_else(|| usage());
                 beam_width = match value.parse() {
@@ -155,6 +158,77 @@ fn main() -> ExitCode {
             );
         } else {
             print!("{}", render_latency(&report));
+        }
+    }
+
+    // 本地用户自适应 overlay 的 A/B(§25 第 9 步)。
+    //
+    // --simulate-user:对语料分词后的每个 token observe 一次(离线模拟
+    // 「用户把语料都输入过一遍」),再跑一遍回放,输出 overlay 前后的
+    // rank1/有害重排/选择成本对比。这不持久化任何数据,也不产生真实
+    // 用户状态;它度量的是「个人 overlay 的**上限收益**」。
+    if simulate_user {
+        let mut user = xhup_analyzer::user_model::UserModel::new();
+        let mut seq = 0u64;
+        let segmenter = xhup_analyzer::Segmenter::build();
+        for line in sentences_text.lines() {
+            let sentence = line.trim();
+            if sentence.is_empty() {
+                continue;
+            }
+            for token in segmenter.segment(sentence) {
+                user.observe(&token, seq);
+                seq += 1;
+            }
+        }
+        let user_words = user.len();
+        let with = xhup_analyzer::context_replay::replay_sentences_kdconv_user(
+            &sentences_text,
+            model.clone(),
+            &user,
+        );
+        if json {
+            let payload = serde_json::json!({
+                "schema": "xhup-user-overlay-ab/v1",
+                "userWords": user_words,
+                "withoutOverlay": {
+                    "contextualRank1": report.metrics.contextual_rank1,
+                    "harmfulReorder": report.metrics.harmful_reorder,
+                    "contextualSelectionCostQ10": report.metrics.contextual_selection_cost_q10,
+                },
+                "withOverlay": {
+                    "contextualRank1": with.metrics.contextual_rank1,
+                    "harmfulReorder": with.metrics.harmful_reorder,
+                    "contextualSelectionCostQ10": with.metrics.contextual_selection_cost_q10,
+                },
+            });
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&payload).expect("payload 可序列化")
+            );
+        } else {
+            println!("== 本地用户 overlay A/B(simulate-user) ==");
+            println!("user_words:            {user_words}");
+            println!(
+                "rank1 without/with:    {} -> {} ({:+})",
+                report.metrics.contextual_rank1,
+                with.metrics.contextual_rank1,
+                with.metrics.contextual_rank1 as i64 - report.metrics.contextual_rank1 as i64
+            );
+            println!(
+                "harm without/with:     {} -> {} ({:+})",
+                report.metrics.harmful_reorder,
+                with.metrics.harmful_reorder,
+                with.metrics.harmful_reorder as i64 - report.metrics.harmful_reorder as i64
+            );
+            println!(
+                "cost/token without:    {:.4} 键",
+                report.metrics.contextual_selection_cost_per_token()
+            );
+            println!(
+                "cost/token with:       {:.4} 键",
+                with.metrics.contextual_selection_cost_per_token()
+            );
         }
     }
 
