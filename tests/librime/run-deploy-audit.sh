@@ -68,7 +68,27 @@ schema_list:
 EOF
 
 echo "== 真实部署路径(rime_deployer --build,无手工词典编译) =="
-rime_deployer --build "$deploy_dir" "$shared_dir" >/dev/null
+# 采样 --build 的峰值 RSS(§22 deploy peak RSS;此前 CI 无基线)。
+# 与 run-flow-audit.sh 同一技术:优先 VmHWM(历史峰值,单调不减),
+# 缺失时退回 VmRSS;两者都不可读时打印警告,不伪造读数。
+rime_deployer --build "$deploy_dir" "$shared_dir" >/dev/null &
+deploy_pid=$!
+deploy_peak=0
+while kill -0 "$deploy_pid" 2>/dev/null; do
+  for p in "$deploy_pid" $(pgrep -P "$deploy_pid" 2>/dev/null); do
+    status_file="/proc/$p/status"
+    [ -r "$status_file" ] || continue
+    hwm=$(awk '/^VmHWM:/ { print $2 }' "$status_file" 2>/dev/null || true)
+    [ -z "${hwm:-}" ] && hwm=$(awk '/^VmRSS:/ { print $2 }' "$status_file" 2>/dev/null || true)
+    if [ -n "${hwm:-}" ] && [ "$hwm" -gt "$deploy_peak" ] 2>/dev/null; then deploy_peak=$hwm; fi
+  done
+  sleep 1
+done
+wait "$deploy_pid" || { echo "rime_deployer --build 失败" >&2; exit 1; }
+if [ "$deploy_peak" -eq 0 ]; then
+  echo "警告: 无法采样 rime_deployer --build 的 RSS" >&2
+fi
+echo "rime_deployer --build 峰值 RSS: ${deploy_peak} KiB"
 
 fail=0
 for dict in \
