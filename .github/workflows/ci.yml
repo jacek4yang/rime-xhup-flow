@@ -275,6 +275,11 @@ jobs:
       - name: Lua quick_hint 模块级仿真(真实生成数据 + require 路径约定)
         run: lua5.4 tests/lua/sim_quick_hint.lua /tmp/xhup-flow-package
 
+      # Lua 运行时内存基线(§22 Lua memory / GC;此前无任何基线)。
+      # 只报告数值 + 断言「无泄漏」这一机器无关性质;不设跨机器内存门槛。
+      - name: Lua 运行时内存基线(§22 memory / GC)
+        run: lua5.4 tests/lua/measure_memory.lua /tmp/xhup-flow-package
+
       - name: xhup-cli doctor 运行环境与 Lua 合同诊断
         run: target/debug/xhup-cli doctor --user-data-dir /tmp/xhup-flow-package
 
