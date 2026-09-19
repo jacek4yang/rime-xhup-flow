@@ -383,3 +383,60 @@ fn latency_report_serializes_as_ascii() {
     assert!(json.is_ascii(), "序列化必须纯 ASCII");
     assert!(json.contains("\"p50Micros\""));
 }
+
+// ---------------------------------------------------------------------------
+// 本地用户自适应 overlay 的消费侧验收(§25 第 9 步 / §16)
+// ---------------------------------------------------------------------------
+
+use xhup_analyzer::context_replay::replay_sentences_kdconv_user;
+use xhup_analyzer::user_model::UserModel;
+
+#[test]
+fn empty_user_model_matches_pure_bigram_replay_exactly() {
+    // A/B 对照契约:空模型(未启用本地自适应)必须与纯 bigram 结果
+    // 逐项一致 —— 用户层是纯 overlay,不改变无信号场景。
+    let without = replay_sentences_kdconv(SENTENCES, model());
+    let with = replay_sentences_kdconv_user(SENTENCES, model(), &UserModel::new());
+    assert_eq!(without, with, "空用户模型不得改变任何指标");
+}
+
+#[test]
+fn learned_corpus_tokens_improve_rank1_without_new_harm() {
+    // 离线模拟「用户把语料 token 都选了一遍」:对语料真实出现的每个
+    // 词 observe 一次,度量本地 overlay 的增量收益与代价。断言的是
+    // 真实数据读数,不是具体词的排序。
+    let bigram = model();
+    let mut user = UserModel::new();
+    let mut seq = 0u64;
+    for line in SENTENCES.lines() {
+        for token in line.split(' ').filter(|t| !t.is_empty()) {
+            user.observe(token, seq);
+            seq += 1;
+        }
+    }
+    assert!(!user.is_empty(), "语料必须产生非空用户信号");
+
+    let without = replay_sentences_kdconv(SENTENCES, bigram.clone());
+    let with = replay_sentences_kdconv_user(SENTENCES, bigram, &user);
+    let (a, b) = (&without.metrics, &with.metrics);
+    assert_eq!(a.tokens, b.tokens, "用户 overlay 不得改变回放 token 集");
+    assert!(
+        b.contextual_rank1 >= a.contextual_rank1,
+        "本地学习不得降低 rank1 命中(with={} < without={})",
+        b.contextual_rank1,
+        a.contextual_rank1
+    );
+    // 加分非负 ⇒ 每个原本命中的 token 仍命中(单调性)。
+    assert!(
+        b.harmful_reorder <= a.harmful_reorder,
+        "非负 overlay 不得制造新的有害重排"
+    );
+}
+
+#[test]
+fn user_model_report_is_serializable_and_ascii() {
+    let report = replay_sentences_kdconv_user("这个景点的地址在哪呢？", model(), &UserModel::new());
+    let json = serde_json::to_string(&report).expect("报告必须可序列化");
+    assert!(json.is_ascii(), "序列化输出必须是纯 ASCII:{json}");
+    assert!(json.contains("\"contextualGain\"") || json.contains("\"contextGain\""));
+}
