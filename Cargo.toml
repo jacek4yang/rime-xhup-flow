@@ -13,3 +13,26 @@ members = [
 edition = "2024"
 version = "1.0.0"
 license = "LGPL-3.0-only"
+
+# Release profile:交付体积与运行时优化(§22 端到端部署优化)。
+#
+# 2026-09-19 实测(Issue #83):Android universal APK 582.1 MiB —— 4 个 ABI
+# 的 libtrainer_lib.so 均未 strip、无跨 crate 优化,约 146 MiB/ABI。
+# 本 profile 是体积优化的第一步,只改产物形态,不改任何 crate 源码:
+#
+# - `strip = "symbols"`:符号表不进交付产物。桌面端崩溃排查走本地
+#   `cargo build` 复现与断言日志;正式发布的崩溃回溯符号化策略未定义,
+#   若未来需要,应配合分发的 symbol 文件而非把符号留在每个用户手里。
+# - `lto = "fat"`:跨 crate 内联与死代码消除,同时降低运行时开销。
+# - `codegen-units = 1`:最大优化空间(构建时间换体积/性能,CI 可接受)。
+# - `panic = "abort"`:Tauri 前端已把错误收敛为 `CommandError` 返回值;
+#   abort 避免 unwind 表与着陆垫进入二进制。注意:该设置对全部
+#   workspace 成员生效,测试 profile 不受影响。
+#
+# 桌面(Windows/macOS/Linux)与 Android 交付走同一 release profile,
+# 体积收益是全局的;PR 中给出 Android APK 的 before/after 实测对比。
+[profile.release]
+strip = "symbols"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
