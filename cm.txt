@@ -1,0 +1,16 @@
+perf(librime): 部署路径峰值 RSS 采样(§22 deploy peak RSS)
+
+§22 要求测 first deploy time / deploy peak RSS。此前 deploy 阶段的内存只
+在文档里有一个来源不明的历史数值(约 1.08 GB),CI 中无任何测量。
+
+本 commit 给 tests/librime/run-deploy-audit.sh 的 rime_deployer --build
+加峰值 RSS 采样,与 run-flow-audit.sh(#118)同一技术:
+- 优先 /proc/<pid>/status 的 VmHWM(历史峰值,单调不减,不依赖采样频率);
+- 缺失时退回 VmRSS 并连带采样子进程,取观测最大值;
+- 两者都不可读时打印警告并保持 0 —— **不伪造读数**。
+
+关键正确性:--build 改为后台运行后 `wait` 的退出码必须继续传播。
+已本地验证:成功任务 peak 正常记录;失败任务 rc=3 原样传出(不会被
+采样循环吞掉),因此审计不会把失败的部署当成通过。
+
+只加测量,不改任何断言或门禁语义。
