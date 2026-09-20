@@ -35,6 +35,7 @@ fn artifact_set_is_exact_and_ordered() {
             "xhup_flow_learn.schema.yaml",
             "lua/xhup_flow/annotation.lua",
             "lua/xhup_flow/quick_hint.lua",
+            "lua/xhup_flow/context_ranker.lua",
             "lua/xhup_flow/init.lua",
             "lua/xhup_flow/data/quick_hints.lua",
             "xhup_flow.schema.yaml",
@@ -166,8 +167,10 @@ fn schema_semantics() {
         "learn translator 配置不符合学习语义"
     );
     // uniquifier:同一词在静态与动态层重合时去重,动态候选只追加在后。
-    // Lua 简码提示:filters 链 quick_hint → uniquifier(注解类 filter 在
-    // 前,text 级去重兜底在最后,见 schema 模板注释);开关默认开(reset 1)。
+    // Lua 简码提示:filters 链 quick_hint → context_ranker → uniquifier
+    // (注解/调序类 filter 在前,text 级去重兜底在最后,见 schema 模板
+    // 注释);quick_hint 开关默认开(reset 1),context_ranker 默认关
+    // (reset 0,纯透传,行为与无此 filter 一致)。
     let filter_entries: Vec<&str> = schema
         .lines()
         .skip_while(|line| *line != "  filters:")
@@ -177,8 +180,12 @@ fn schema_semantics() {
         .collect();
     assert_eq!(
         filter_entries,
-        ["    - lua_filter@*xhup_flow.quick_hint", "    - uniquifier"],
-        "filters 链应为 quick_hint → uniquifier"
+        [
+            "    - lua_filter@*xhup_flow.quick_hint",
+            "    - lua_filter@*xhup_flow.context_ranker",
+            "    - uniquifier",
+        ],
+        "filters 链应为 quick_hint → context_ranker → uniquifier"
     );
     assert!(
         schema.contains("- name: quick_hint\n    reset: 1"),
@@ -188,12 +195,27 @@ fn schema_semantics() {
         schema.contains("- name: debug_candidate_annotations\n    reset: 0"),
         "debug_candidate_annotations 开关应默认关闭"
     );
+    assert!(
+        schema.contains("- name: context_ranker\n    reset: 0"),
+        "context_ranker 开关应默认关闭(守护上线)"
+    );
     // Lua 产物:模块源码与生成数据俱在,数据与 canonical 简码映射一致。
     let annotation = contents_of(&artifacts, "lua/xhup_flow/annotation.lua");
     assert!(annotation.contains("format_shortcut_hint"));
     let module = contents_of(&artifacts, "lua/xhup_flow/quick_hint.lua");
     assert!(module.contains("xhup_flow.data.quick_hints"));
     assert!(module.contains("xhup_flow.annotation"));
+    let ranker_module = contents_of(&artifacts, "lua/xhup_flow/context_ranker.lua");
+    assert!(ranker_module.contains("bounded_reorder"));
+    assert!(
+        ranker_module.contains("is_fixed_first"),
+        "context_ranker 必须包含静态强固定识别"
+    );
+    let init_module = contents_of(&artifacts, "lua/xhup_flow/init.lua");
+    assert!(
+        init_module.contains("context_ranker"),
+        "init 合同诊断应覆盖 context_ranker"
+    );
     let data = contents_of(&artifacts, "lua/xhup_flow/data/quick_hints.lua");
     assert!(
         data.contains("[\"时间\"] = \"uij\""),
@@ -253,21 +275,26 @@ fn schema_excludes_non_portable_or_deferred_features() {
     ] {
         assert!(!schema.contains(forbidden), "方案不应包含 `{forbidden}`");
     }
-    // Lua 唯一许可例外:quick_hint 简码提示(2.0 mandatory Lua 合同组件);
-    // 其余任何 lua 组件引用仍然禁止。
+    // Lua 许可例外:quick_hint 简码提示与 context_ranker 有界调序
+    // (2.0 mandatory Lua 合同组件);其余任何 lua 组件引用仍然禁止。
     let lua_lines: Vec<&str> = schema
         .lines()
         .filter(|line| line.contains("lua_") && !line.trim_start().starts_with('#'))
         .collect();
     assert_eq!(
         lua_lines,
-        ["    - lua_filter@*xhup_flow.quick_hint"],
-        "方案只允许 quick_hint 一个 Lua 组件引用"
+        [
+            "    - lua_filter@*xhup_flow.quick_hint",
+            "    - lua_filter@*xhup_flow.context_ranker",
+        ],
+        "方案只允许 quick_hint 与 context_ranker 两个 Lua 组件引用"
     );
-    // 行内斜杠只允许出现在注释与 quick_hint 模块路径中。
+    // 行内斜杠只允许出现在注释与许可 Lua 模块路径中。
     for line in schema.lines() {
         let code = line.split('#').next().unwrap_or(line);
-        if code.contains("lua_filter@*xhup_flow.quick_hint") {
+        if code.contains("lua_filter@*xhup_flow.quick_hint")
+            || code.contains("lua_filter@*xhup_flow.context_ranker")
+        {
             continue;
         }
         assert!(!code.contains('/'), "方案非注释配置不应包含 `/`: {line}");
