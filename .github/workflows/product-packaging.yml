@@ -26,6 +26,7 @@ on:
       - "trainer/**"
       - "tests/**"
       - "Cargo.lock"
+      - "Cargo.toml"
       - "rust-toolchain.toml"
   workflow_dispatch:
     # 人工 RC 演练入口(publish=false:不打 tag、不发 Release、不签名)。
