@@ -256,6 +256,29 @@ pub fn replay_sentences_kdconv(
     replay_sentences(sentences_text, &scorer, KdconvBigramScorer::SCORER_ID)
 }
 
+/// 回放真实句子语料,比较 baseline 与「bigram + 本地用户自适应」scorer。
+///
+/// 这是 §25 第 9 步(本地用户学习)的**消费侧验收通路**:
+///
+/// - `bigram` 提供 committed-context 转移证据(全局先验);
+/// - `user_model` 提供个人选择 overlay(有界加分,`xhup-user-model/v1`);
+/// - 期望词同时作为「用户选过的词」喂给模型 —— 语义是「**如果**用户
+///   一直选这个词,本地学习能否把它顶上来」,即离线模拟 `observe()` 后
+///   的即时重排。语料词本身是入库公开夹具,不构成用户隐私数据;
+/// - 空模型与 `replay_sentences_kdconv` 结果严格一致(A/B 对照)。
+///
+/// 加分语义与封顶在 [`crate::user_model::UserModel`];本函数只消费。
+pub fn replay_sentences_kdconv_user(
+    sentences_text: &str,
+    bigram: xhup_decoder::BigramModel,
+    user_model: &crate::user_model::UserModel,
+) -> ContextReplayReport {
+    let user = user_model.clone();
+    let scorer = KdconvBigramScorer::new(bigram.clone())
+        .with_user_overlay(move |word, now| user.boost_q10(word, now));
+    replay_sentences(sentences_text, &scorer, KdconvBigramScorer::SCORER_ID)
+}
+
 /// 单个有害重排样本的证据明细(设计 §6 弱证据降级策略的依据)。
 ///
 /// 字段只包含**语料**中的词与聚合计数,不含任何用户数据:输入语料本身是
