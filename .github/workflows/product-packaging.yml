@@ -669,6 +669,51 @@ jobs:
           path: artifacts/android/
           retention-days: 7
 
+      # arm64-only 测量构建(#83 ABI 拆分待办的数据来源)。刻意不进入
+      # 发布清单:artifact 名不带 product-packaging- 前缀,manifest 的
+      # download pattern 不会拾取;发布契约(4-ABI universal)保持不变。
+      # 双通道限定 arm64:
+      # - `-t aarch64` 控制 Rust 编译目标(tauri CLI 自有逻辑,两轮实测
+      #   证明 gradle 属性控制不了它 —— 它是 CLI 的 per-target 调度);
+      # - gradle.properties 追加 abiList 控制 universal flavor 的
+      #   abiFilters(打包进 APK 的 ABI),构建结束恢复文件。
+      - name: arm64-only 测量构建
+        run: |
+          set -euo pipefail
+          props="trainer/src-tauri/gen/android/gradle.properties"
+          cp "$props" "$props.bak"
+          restore_props() { mv "$props.bak" "$props"; }
+          trap restore_props EXIT
+          {
+            echo ""
+            echo "abiList=arm64-v8a"
+            echo "archList=arm64"
+            echo "targetList=aarch64"
+          } >> "$props"
+          export NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          pnpm -C trainer tauri android build --apk -t aarch64 --config "${{ steps.meta.outputs.config }}"
+
+      - name: arm64 APK 体积报告
+        run: |
+          set -euo pipefail
+          ver="${{ steps.meta.outputs.app_version }}"
+          apk_dir="trainer/src-tauri/gen/android/app/build/outputs/apk/universal/release"
+          apk="$apk_dir/app-universal-release-unsigned.apk"
+          [[ -s "$apk" ]] || { echo "::error::arm64 APK 不存在或为 0 字节: $apk"; exit 1; }
+          mkdir -p artifacts/android-arm64
+          cp "$apk" "artifacts/android-arm64/xhup-flow-trainer-v$ver-android-arm64-UNSIGNED.apk"
+          bytes=$(stat -c%s "$apk")
+          mb=$(awk -v b="$bytes" 'BEGIN { printf "%.1f", b/1048576 }')
+          echo "arm64-only APK 体积: ${bytes} 字节(${mb} MiB)"
+          echo "### Android arm64-only APK 体积: ${mb} MiB" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传 arm64 测量产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-arm64-measure
+          path: artifacts/android-arm64/
+          retention-days: 7
+
   # ---------- 汇总:SHA256SUMS + BUILD-INFO(仅产物清单,不发布) ----------
   release-manifest:
     name: 发布清单
