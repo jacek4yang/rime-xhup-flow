@@ -7,6 +7,7 @@
 
 pub mod doctor;
 pub mod learning;
+pub mod user_state;
 
 use std::error::Error;
 use std::fmt;
@@ -20,6 +21,50 @@ use std::path::{Path, PathBuf};
 struct LearningArgs {
     #[command(subcommand)]
     action: LearningAction,
+}
+
+/// 本地自适应状态子命令参数(包装 [`user_state`] 模块)。
+#[derive(Debug, Args)]
+struct UserStateArgs {
+    #[command(subcommand)]
+    action: UserStateAction,
+}
+
+#[derive(Debug, Subcommand)]
+enum UserStateAction {
+    /// 查询本地自适应状态(快照存在性 / 规模 / 健康度;不输出词形)
+    Status {
+        /// Rime 用户数据目录
+        #[arg(long)]
+        user_data_dir: PathBuf,
+    },
+    /// 导出本地自适应状态快照(逐字节复制,可移植)
+    Export {
+        /// Rime 用户数据目录
+        #[arg(long)]
+        user_data_dir: PathBuf,
+        /// 快照输出目录(缺省写入用户数据目录)
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
+    },
+    /// 从快照恢复本地自适应状态(跨安装迁移;校验失败不触碰本地状态)
+    Import {
+        /// Rime 用户数据目录
+        #[arg(long)]
+        user_data_dir: PathBuf,
+        /// 快照文件(xhup_flow_user_model.tsv)
+        #[arg(long)]
+        snapshot: PathBuf,
+    },
+    /// 重置本地自适应状态(破坏性;只删除 xhup_flow_user_model.tsv,需 --yes)
+    Reset {
+        /// Rime 用户数据目录
+        #[arg(long)]
+        user_data_dir: PathBuf,
+        /// 确认破坏性重置
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -69,6 +114,7 @@ enum LearningAction {
 }
 
 use clap::{Args, Parser, Subcommand};
+use xhup_analyzer::user_model::UserModelLoad;
 use xhup_generator::{TRAINER_DATA_FILENAME, generate_rime_artifacts, generate_trainer_dataset};
 
 /// XHUP Flow 命令行工具的参数模型(经 clap 解析构造)。
@@ -85,6 +131,8 @@ enum Command {
     Generate(GenerateArgs),
     /// 用户词学习管理(status / export / import / reset)
     Learning(LearningArgs),
+    /// 本地自适应状态管理(status / export / import / reset;§16)
+    UserState(UserStateArgs),
     /// 运行环境与 Lua 合同诊断 (doctor)
     Doctor(DoctorArgs),
 }
@@ -156,6 +204,8 @@ pub enum CliError {
     },
     /// 学习管理失败(status / export / import / reset)。
     Learning(learning::LearningError),
+    /// 本地自适应状态管理失败。
+    UserState(user_state::UserStateError),
     /// 诊断检查失败。
     Doctor(doctor::DoctorError),
 }
@@ -178,6 +228,7 @@ impl fmt::Display for CliError {
                 write!(f, "无法替换最终产物 {}: {source}", artifact.display())
             }
             Self::Learning(source) => write!(f, "{source}"),
+            Self::UserState(source) => write!(f, "{source}"),
             Self::Doctor(source) => write!(f, "{source}"),
         }
     }
@@ -190,6 +241,7 @@ impl Error for CliError {
             | Self::WriteTemporaryFile { source, .. }
             | Self::ReplaceArtifact { source, .. } => Some(source),
             Self::Learning(source) => Some(source),
+            Self::UserState(source) => Some(source),
             Self::Doctor(source) => Some(source),
             Self::OutputNotDirectory { .. } => None,
         }
@@ -199,6 +251,12 @@ impl Error for CliError {
 impl From<learning::LearningError> for CliError {
     fn from(source: learning::LearningError) -> Self {
         Self::Learning(source)
+    }
+}
+
+impl From<user_state::UserStateError> for CliError {
+    fn from(source: user_state::UserStateError) -> Self {
+        Self::UserState(source)
     }
 }
 
@@ -283,6 +341,46 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
             LearningAction::Reset { user_data_dir, yes } => {
                 learning::reset(&user_data_dir, yes)?;
                 println!("已重置用户词典 {}", learning::FLOW_USER_DICT_NAME);
+                Ok(())
+            }
+        },
+        Command::UserState(args) => match args.action {
+            UserStateAction::Status { user_data_dir } => {
+                let file = user_state::path(&user_data_dir);
+                let (model, status) = user_state::load(&user_data_dir)?;
+                println!("状态快照: {}", file.display());
+                match status {
+                    UserModelLoad::Ok if model.is_empty() => {
+                        println!("状态: 空(尚无本地自适应数据或已重置)");
+                    }
+                    UserModelLoad::Ok => {
+                        println!("状态: 正常(已学习 {} 个词)", model.len());
+                    }
+                    reason => {
+                        println!("状态: 降级 —— {reason}");
+                    }
+                }
+                Ok(())
+            }
+            UserStateAction::Export {
+                user_data_dir,
+                output_dir,
+            } => {
+                let target = user_state::export(&user_data_dir, output_dir.as_deref())?;
+                println!("已导出快照: {}", target.display());
+                Ok(())
+            }
+            UserStateAction::Import {
+                user_data_dir,
+                snapshot,
+            } => {
+                user_state::import(&user_data_dir, &snapshot)?;
+                println!("已从快照恢复: {}", snapshot.display());
+                Ok(())
+            }
+            UserStateAction::Reset { user_data_dir, yes } => {
+                user_state::reset(&user_data_dir, yes)?;
+                println!("已重置本地自适应状态 {}", user_state::USER_MODEL_FILENAME);
                 Ok(())
             }
         },
