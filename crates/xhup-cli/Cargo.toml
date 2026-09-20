@@ -12,4 +12,5 @@ clap = { version = "4", default-features = false, features = [
     "usage",
     "error-context",
 ] }
+xhup-analyzer = { path = "../xhup-analyzer" }
 xhup-generator = { path = "../xhup-generator" }
