@@ -30,6 +30,12 @@ const QUICK_HINT_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/quick_
 /// Lua 命名空间入口与合同诊断模块源(入库源码,与模板同法嵌入)。
 const INIT_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/init.lua");
 
+/// 有界上下文调序模块源(§4.3;入库源码,与模板同法嵌入)。
+const CONTEXT_RANKER_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/context_ranker.lua");
+
+/// context_ranker 模块产物文件名(打包进 Rime 包 lua/xhup_flow/)。
+pub const LUA_CONTEXT_RANKER_FILENAME: &str = "lua/xhup_flow/context_ranker.lua";
+
 /// 候选注释模块源文本(逐字嵌入,未经任何改写)。
 pub fn lua_annotation_source() -> &'static str {
     ANNOTATION_SOURCE
@@ -43,6 +49,11 @@ pub fn lua_quick_hint_source() -> &'static str {
 /// Lua 命名空间入口与合同诊断模块源文本(逐字嵌入,未经任何改写)。
 pub fn lua_init_source() -> &'static str {
     INIT_SOURCE
+}
+
+/// 有界上下文调序模块源文本(逐字嵌入,未经任何改写)。
+pub fn lua_context_ranker_source() -> &'static str {
+    CONTEXT_RANKER_SOURCE
 }
 
 /// 生成简码提示数据模块文本(Lua table,词 → 最简码)。

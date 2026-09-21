@@ -45,6 +45,11 @@ switches:
   - name: debug_candidate_annotations
     reset: 0
     states: [常规注释, 调试注释]
+  # 有界上下文调序(§4.3):默认关闭 = 纯透传,行为与无此 filter 一致。
+  # 开启后:刚提交的词形在窗口内整组提前(静态强固定映射永不降位)。
+  - name: context_ranker
+    reset: 0
+    states: [关闭调序, 上下文调序]
 
 engine:
   processors:
@@ -76,6 +81,10 @@ engine:
     # 可兜底消化该重复);次序颠倒不影响提示语义(每候选至多注解一次,
     # 由本仓库 Lua 单测与 runtime 审计共同断言)。
     - lua_filter@*xhup_flow.quick_hint
+    # 有界上下文调序(§4.3):默认由 context_ranker 开关关闭(纯透传);
+    # 位于 uniquifier 之前(与 quick_hint 同序约束,由 uniquifier 兜底
+    # 消化 lua_filter 协程 translation 的末位重复)。
+    - lua_filter@*xhup_flow.context_ranker
     - uniquifier
 
 speller:

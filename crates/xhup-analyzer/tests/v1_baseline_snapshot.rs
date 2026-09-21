@@ -124,12 +124,13 @@ fn generated_package_bytes_match_v1_release_snapshot() {
         "v1 历史发布快照记录 36845122 源码字节"
     );
 
-    // 当前 2.0 便携包扩充 annotation.lua 与 init.lua (共 16 个产物):
+    // 当前 2.0 便携包扩充 annotation.lua、context_ranker.lua 与 init.lua
+    // (共 17 个产物;context_ranker 见 #128,§4.3 有界上下文调序):
     let artifacts = generate_rime_artifacts();
     assert_eq!(
         artifacts.len(),
-        16,
-        "2.0 包扩充候选注释与运行时初始化诊断模块"
+        17,
+        "2.0 包扩充候选注释、有界上下文调序与运行时初始化诊断模块"
     );
 
     // 冻结产物字节恒定性由 artifact_content_matches_independent_v1_release_hashes

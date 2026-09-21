@@ -1,6 +1,6 @@
 # Lua 运行时策略层架构(XHUP Flow)
 
-状态:**quick_hint、annotation 与 mandatory Lua 合同诊断已落地**(#59, #88, CI 全绿);
+状态:**quick_hint、annotation、context_ranker 与 mandatory Lua 合同诊断已落地**(#59, #88, #128, CI 全绿);
 其余模块按本文规划推进。依据:docs/research-runtime-and-references.md;
 本文只记录决策、权衡与不变量。
 
@@ -77,6 +77,7 @@ lua/xhup_flow/
 ├── init.lua                # 命名空间出口(可选,*语法不依赖它)
 ├── annotation.lua          # 候选注释格式化(极简 ASCII、清洗装饰标记、类型解耦)
 ├── quick_hint.lua          # 简码提示(filter,委托 annotation 格式化 comment)
+├── context_ranker.lua      # 有界上下文调序(filter,默认关闭,三桶稳定重排)
 ├── candidate_control.lua   # 本地置顶/降频/隐藏(processor+filter 双入口)
 ├── context_ranker.lua      # 有界上下文调序(filter,仅前 3~5 候选)
 ├── sentence_policy.lua     # 简码与组句交互策略(随 Flow 重设计落地)

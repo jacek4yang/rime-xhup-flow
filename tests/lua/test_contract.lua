@@ -40,6 +40,10 @@ check("quick_hints 条目计数", report.components.quick_hints_data.count, 2)
 check("quick_hint filter 组件状态", report.components.quick_hint.ok, true)
 check("quick_hint 导出 init", report.components.quick_hint.has_init, true)
 check("quick_hint 导出 func", report.components.quick_hint.has_func, true)
+check("context_ranker 组件状态", report.components.context_ranker.ok, true)
+check("context_ranker 导出 init", report.components.context_ranker.has_init, true)
+check("context_ranker 导出 func", report.components.context_ranker.has_func, true)
+check("context_ranker 导出 bounded_reorder", report.components.context_ranker.has_bounded_reorder, true)
 check("无报错", #report.errors, 0)
 
 -- 3. 诊断格式化输出

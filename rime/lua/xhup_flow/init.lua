@@ -19,6 +19,10 @@ function M.quick_hint()
   return require("xhup_flow.quick_hint")
 end
 
+function M.context_ranker()
+  return require("xhup_flow.context_ranker")
+end
+
 function M.quick_hints_data()
   return require("xhup_flow.data.quick_hints")
 end
@@ -79,6 +83,21 @@ function M.check_contract()
     report.ok = false
     report.components.quick_hint = { ok = false, error = tostring(qh_or_err) }
     table.insert(report.errors, "quick_hint 模块加载失败: " .. tostring(qh_or_err))
+  end
+
+  -- 4. 检查 context_ranker filter 模块(§4.3;默认关闭,纯透传)
+  local ok_cr, cr_or_err = pcall(require, "xhup_flow.context_ranker")
+  if ok_cr and type(cr_or_err) == "table" then
+    report.components.context_ranker = {
+      ok = true,
+      has_init = type(cr_or_err.init) == "function",
+      has_func = type(cr_or_err.func) == "function",
+      has_bounded_reorder = type(cr_or_err.bounded_reorder) == "function",
+    }
+  else
+    report.ok = false
+    report.components.context_ranker = { ok = false, error = tostring(cr_or_err) }
+    table.insert(report.errors, "context_ranker 模块加载失败: " .. tostring(cr_or_err))
   end
 
   return report
