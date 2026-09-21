@@ -37,6 +37,7 @@ pub const OWNED_FILES: &[&str] = &[
     "xhup_flow_words.dict.yaml",
     "lua/xhup_flow/annotation.lua",
     "lua/xhup_flow/quick_hint.lua",
+    "lua/xhup_flow/context_ranker.lua",
     "lua/xhup_flow/init.lua",
     "lua/xhup_flow/data/quick_hints.lua",
 ];
@@ -1579,12 +1580,18 @@ mod tests {
 
         // 1. Weasel 平台: 内置支持，全部 Lua 模块在场 -> Satisfied
         let status_weasel = install_status(&user, RimeClient::Weasel, Some(&package));
+        // Lua 模块计数来源与实现一致:OWNED_FILES 的 lua/xhup_flow/ 前缀
+        // 条目数(新增模块文件时此处自动跟随,不重复维护常量)。
+        let expected_lua_files = OWNED_FILES
+            .iter()
+            .filter(|f| f.starts_with("lua/xhup_flow/"))
+            .count();
         match evaluate_lua_contract(&status_weasel) {
             LuaContractStatus::Satisfied {
                 lua_files_count,
                 platform_support,
             } => {
-                assert_eq!(lua_files_count, 4);
+                assert_eq!(lua_files_count, expected_lua_files);
                 assert!(platform_support.contains("小狼毫内置"));
             }
             other => panic!("期望 Satisfied, 实际 {other:?}"),
@@ -1607,7 +1614,7 @@ mod tests {
             LuaContractStatus::Satisfied {
                 lua_files_count, ..
             } => {
-                assert_eq!(lua_files_count, 4);
+                assert_eq!(lua_files_count, expected_lua_files);
             }
             other => panic!("期望 Satisfied, 实际 {other:?}"),
         }

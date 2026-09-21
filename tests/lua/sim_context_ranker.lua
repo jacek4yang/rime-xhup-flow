@@ -38,7 +38,7 @@ check("时间 → uij", hints["时间"], "uij")
 local sample, seen = 0, 0
 for text, code in pairs(hints) do
   seen = seen + 1
-  if seen % 69 == 0 then
+  if seen % 68 == 0 then
     local cands = {
       { type = "table", text = text },
       { type = "user_table", text = "___非证据词形___" },
