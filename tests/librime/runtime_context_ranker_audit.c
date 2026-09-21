@@ -56,9 +56,9 @@ static void capture_texts(char *out, size_t cap) {
   if (!rime->get_context(session, &context)) {
     return;
   }
-  RimeMenu *menu = &context.menu;
-  for (int i = 0; i < menu.num_candidates && used + 4 < cap; ++i) {
-    const char *text = menu.candidates[i].text;
+  const RimeMenu *menu = &context.menu;
+  for (int i = 0; i < menu->num_candidates && used + 4 < cap; ++i) {
+    const char *text = menu->candidates[i].text;
     if (!text) {
       continue;
     }
