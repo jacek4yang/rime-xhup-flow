@@ -120,11 +120,14 @@ function M.init(env)
       end
       if ok_text and type(text) == "string" and text ~= "" then
         env.last_commit = text
+        io.stderr:write("[context_ranker] notifier: last_commit=", text, "\n")
       else
         env.last_commit = nil
+        io.stderr:write("[context_ranker] notifier: empty evidence\n")
       end
     end)
   end)
+  io.stderr:write("[context_ranker] init: notifier connect ok=", tostring(ok_notifier), "\n")
   if not ok_notifier then
     -- notifier 不可用:证据恒空 = 恒等透传(降级为纯静态行为,安全)。
     env.last_commit = nil
@@ -140,6 +143,9 @@ function M.func(translation, env)
     end
     return
   end
+
+  io.stderr:write("[context_ranker] func: option on, last=",
+                  tostring(env.last_commit), "\n")
 
   -- 证据 = 最近一次上屏文本(commit_notifier 记录;nil/空 = 无证据恒等)。
   local context_text = env.last_commit
