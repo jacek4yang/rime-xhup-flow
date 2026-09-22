@@ -35,6 +35,8 @@ static void report(int ok, const char *name, const char *detail) {
     }
     printf("\n");
   }
+  /* 段落式断点输出:即使后续场景段错误,已完成的检查结果也可见于日志。 */
+  fflush(stdout);
 }
 
 static RimeSessionId session;
@@ -145,6 +147,8 @@ int main(int argc, char **argv) {
   static char first_text[256];
 
   /* ---- 场景 1:默认关闭 = 恒等透传(与开启但无证据逐项一致) ---- */
+  printf("-- 场景 1:默认关闭恒等 --\n");
+  fflush(stdout);
   rime->set_option(session, "context_ranker", 0);
   type_keys("uijm");
   capture_texts(order_off, sizeof(order_off));
@@ -158,6 +162,8 @@ int main(int argc, char **argv) {
          "无提交历史:context_ranker 开/关候选序列逐项相同(无证据恒等)", NULL);
 
   /* ---- 场景 2:提交「时间」后重复输入 uijm → 证据词形窗口内提前 ---- */
+  printf("-- 场景 2:重复词有界提升 --\n");
+  fflush(stdout);
   commit_rank("uijm", 1); /* 上屏「时间」(静态 rank-1) */
   type_keys("uijm");
   capture_texts(order_on, sizeof(order_on));
@@ -186,6 +192,8 @@ int main(int argc, char **argv) {
   }
 
   /* ---- 场景 3:静态强固定映射 rank-1 永不降位 ---- */
+  printf("-- 场景 3:固定 rank-1 不降位 --\n");
+  fflush(stdout);
   /* 输入固定码 uij:静态层第一位必是「时间」,开启调序后仍第一位。 */
   type_keys("uij");
   int fixed_first = candidate_at(1, first_text, sizeof(first_text));
@@ -195,6 +203,8 @@ int main(int argc, char **argv) {
          fixed_first ? first_text : "(无候选)");
 
   /* ---- 场景 4:OOV 可达性(词表外组合不被调序吞掉) ---- */
+  printf("-- 场景 4:OOV 可达性 --\n");
+  fflush(stdout);
   /* 逐字两键音码原语组合(与 flow 组句同路径):开启前后都应产出候选。 */
   commit_rank("uijm", 1);
   type_keys("uiui");
