@@ -234,5 +234,10 @@ int main(int argc, char **argv) {
 
   printf("== context_ranker runtime 审计:%d 项检查,%d 项失败 ==\n",
          checks, failures);
+  fflush(stdout);
+  /* 显式清理:会话销毁 + 引擎终结,避免进程退出时 librime 内部状态
+   * (用户会话/翻译链)的清理路径触发段错误,掩盖真实审计结果。 */
+  rime->destroy_session(session);
+  rime->finalize();
   return failures == 0 ? 0 : 1;
 }
