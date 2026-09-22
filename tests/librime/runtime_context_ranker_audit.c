@@ -161,13 +161,39 @@ int main(int argc, char **argv) {
   report(strcmp(order_off, order_on) == 0,
          "无提交历史:context_ranker 开/关候选序列逐项相同(无证据恒等)", NULL);
 
-  /* ---- 场景 2:提交「时间」后重复输入 uijm → 证据词形窗口内提前 ---- */
+  /* ---- 场景 2:重复词有界提升 ----
+   * 证据词形必须**原本不在第一位**,提升才可观测:取第 2 候选为证据词
+   * (数据驱动,不硬编码词形 —— 词形由当前词典与候选序决定),上屏后
+   * 重输同码,断言它被提升进前 bound 窗口。第 1 候选(上例中为全码
+   * 本字)作为非证据对照,允许在窗口内有界换位,但不得被删减。 */
   printf("-- 场景 2:重复词有界提升 --\n");
   fflush(stdout);
-  commit_rank("uijm", 1); /* 上屏「时间」(静态 rank-1) */
+  char evidence[256];
+  rime->set_option(session, "context_ranker", 0);
+  type_keys("uijm");
+  if (!candidate_at(2, evidence, sizeof(evidence)) || !evidence[0]) {
+    fprintf(stderr, "uijm 第 2 候选不存在,无法构造重复词场景\n");
+    return 2;
+  }
+  clear_all();
+  /* 上屏证据词(第 2 候选)。 */
+  type_keys("uijm");
+  if (!rime->select_candidate(session, 1)) {
+    fprintf(stderr, "select_candidate(2) 失败\n");
+    return 2;
+  }
+  {
+    RIME_STRUCT(RimeCommit, commit);
+    if (rime->get_commit(session, &commit)) {
+      rime->free_commit(&commit);
+    }
+  }
+  /* 开启:证据词应被提升进前 3。 */
+  rime->set_option(session, "context_ranker", 1);
   type_keys("uijm");
   capture_texts(order_on, sizeof(order_on));
   clear_all();
+  /* 关闭:对照(证据词保持在原位附近)。 */
   rime->set_option(session, "context_ranker", 0);
   type_keys("uijm");
   capture_texts(order_off_again, sizeof(order_off_again));
@@ -176,18 +202,26 @@ int main(int argc, char **argv) {
   report(strcmp(order_on, order_off_again) != 0,
          "重复词场景:开启后候选次序与关闭不同(证据生效)", NULL);
   {
-    /* 证据词形(时间)在开启后应位于前 bound(3)个候选内。 */
     int hit = 0;
     for (int rank = 1; rank <= 3 && !hit; ++rank) {
       if (candidate_at(rank, first_text, sizeof(first_text)) &&
-          strcmp(first_text, "时间") == 0) {
+          strcmp(first_text, evidence) == 0) {
         hit = 1;
       }
     }
-    report(hit, "重复词场景:证据词形位于前 3 候选内(有界提升)", NULL);
-    /* 候选集合不变:开启/关闭的多重集一致(排序后比较由文本序列
-     * 包含关系近似 —— 逐项比较对序敏感,此处断言两者均含「时间」)。 */
-    report(strstr(order_on, "时间") != NULL && strstr(order_off_again, "时间") != NULL,
+    /* 注意:上面 clear 后菜单为空,重新输入读取。 */
+    type_keys("uijm");
+    hit = 0;
+    for (int rank = 1; rank <= 3 && !hit; ++rank) {
+      if (candidate_at(rank, first_text, sizeof(first_text)) &&
+          strcmp(first_text, evidence) == 0) {
+        hit = 1;
+      }
+    }
+    clear_all();
+    report(hit, "重复词场景:证据词形位于前 3 候选内(有界提升)", evidence);
+    report(strstr(order_on, evidence) != NULL &&
+               strstr(order_off_again, evidence) != NULL,
            "候选集合不删减:开/关均含证据词形", NULL);
   }
 
