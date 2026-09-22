@@ -102,6 +102,33 @@ function M.init(env)
   -- 简码映射与 quick_hint 同源:用于识别静态强固定 rank-1。
   local ok_hints, loaded = pcall(function() return require("xhup_flow.data.quick_hints") end)
   env.hints = (ok_hints and type(loaded) == "table") and loaded or {}
+  -- 本地证据源:commit_notifier 记录最近一次上屏文本(librime-lua 标准
+  -- API,跨版本稳定;模块内存态,零 IO 零持久化,进程退出即消失)。
+  -- notifier 回调无参数(Signal 约定),经闭包取 context;读取链双回退:
+  -- get_commit_text() → commit_history:back().text,全部 pcall 包裹,
+  -- 任一不可用 = 证据恒空 = 恒等透传(安全降级)。
+  env.last_commit = nil
+  local ok_notifier = pcall(function()
+    env.engine.context.commit_notifier:connect(function()
+      local c = env.engine.context
+      local ok_text, text = pcall(function() return c:get_commit_text() end)
+      if not (ok_text and type(text) == "string" and text ~= "") then
+        ok_text, text = pcall(function()
+          local entry = c.commit_history and c.commit_history:back() or nil
+          return entry and entry.text or nil
+        end)
+      end
+      if ok_text and type(text) == "string" and text ~= "" then
+        env.last_commit = text
+      else
+        env.last_commit = nil
+      end
+    end)
+  end)
+  if not ok_notifier then
+    -- notifier 不可用:证据恒空 = 恒等透传(降级为纯静态行为,安全)。
+    env.last_commit = nil
+  end
 end
 
 function M.func(translation, env)
@@ -114,10 +141,9 @@ function M.func(translation, env)
     return
   end
 
-  local ok_ctx, context_text = pcall(function()
-    return env.engine.context:get_commit_text()
-  end)
-  if not ok_ctx or context_text == nil or context_text == "" then
+  -- 证据 = 最近一次上屏文本(commit_notifier 记录;nil/空 = 无证据恒等)。
+  local context_text = env.last_commit
+  if context_text == nil or context_text == "" then
     for cand in translation:iter() do
       yield(cand)
     end
