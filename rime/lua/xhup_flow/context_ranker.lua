@@ -104,12 +104,20 @@ function M.init(env)
   env.hints = (ok_hints and type(loaded) == "table") and loaded or {}
   -- 本地证据源:commit_notifier 记录最近一次上屏文本(librime-lua 标准
   -- API,跨版本稳定;模块内存态,零 IO 零持久化,进程退出即消失)。
-  -- 不用 context:get_commit_text():该 API 在部分 librime-lua 版本缺失,
-  -- 且提交事件语义由 notifier 显式给出,证据窗口更精确。
+  -- notifier 回调无参数(Signal 约定),经闭包取 context;读取链双回退:
+  -- get_commit_text() → commit_history:back().text,全部 pcall 包裹,
+  -- 任一不可用 = 证据恒空 = 恒等透传(安全降级)。
   env.last_commit = nil
   local ok_notifier = pcall(function()
-    env.engine.context.commit_notifier:connect(function(ctx)
-      local ok_text, text = pcall(function() return ctx:get_commit_text() end)
+    env.engine.context.commit_notifier:connect(function()
+      local c = env.engine.context
+      local ok_text, text = pcall(function() return c:get_commit_text() end)
+      if not (ok_text and type(text) == "string" and text ~= "") then
+        ok_text, text = pcall(function()
+          local entry = c.commit_history and c.commit_history:back() or nil
+          return entry and entry.text or nil
+        end)
+      end
       if ok_text and type(text) == "string" and text ~= "" then
         env.last_commit = text
       else
