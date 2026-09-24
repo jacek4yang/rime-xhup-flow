@@ -169,8 +169,8 @@ fn schema_semantics() {
     // uniquifier:同一词在静态与动态层重合时去重,动态候选只追加在后。
     // Lua 简码提示:filters 链 quick_hint → context_ranker → uniquifier
     // (注解/调序类 filter 在前,text 级去重兜底在最后,见 schema 模板
-    // 注释);quick_hint 开关默认开(reset 1),context_ranker 默认关
-    // (reset 0,纯透传,行为与无此 filter 一致)。
+    // 注释);quick_hint 与 context_ranker 开关默认均开(reset 1;后者
+    // 生产翻转依据 #129 真实插件审计全绿)。
     let filter_entries: Vec<&str> = schema
         .lines()
         .skip_while(|line| *line != "  filters:")
@@ -196,8 +196,8 @@ fn schema_semantics() {
         "debug_candidate_annotations 开关应默认关闭"
     );
     assert!(
-        schema.contains("- name: context_ranker\n    reset: 0"),
-        "context_ranker 开关应默认关闭(守护上线)"
+        schema.contains("- name: context_ranker\n    reset: 1"),
+        "context_ranker 开关应生产默认开启(依据 #129 真实插件审计全绿)"
     );
     // Lua 产物:模块源码与生成数据俱在,数据与 canonical 简码映射一致。
     let annotation = contents_of(&artifacts, "lua/xhup_flow/annotation.lua");
