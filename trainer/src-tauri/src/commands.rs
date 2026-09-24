@@ -361,6 +361,24 @@ pub fn explain_hint(word: String) -> Result<String, CommandError> {
         })
 }
 
+/// 批量解释(诊断面板;一次最多 [`xhup_analyzer::MAX_EXPLAIN_BATCH`] 词)。
+///
+/// 逐词隔离:未知词/无提示不中断整批;超限整体拒绝(`batch_too_large`)。
+/// 返回(逐词结果, 聚合读数)二元组,序列化给前端渲染。
+#[tauri::command]
+pub fn explain_words_batch(
+    words: Vec<String>,
+) -> Result<
+    (
+        Vec<xhup_analyzer::WordExplanation>,
+        xhup_analyzer::BatchExplanationStats,
+    ),
+    CommandError,
+> {
+    xhup_analyzer::explain_words_batch(&words)
+        .map_err(|reason| CommandError::new("batch_too_large", reason))
+}
+
 #[cfg(test)]
 mod tests {
     use super::explain_word;
