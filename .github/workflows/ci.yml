@@ -185,18 +185,13 @@ jobs:
           if-no-files-found: error
 
   librime:
-    name: librime runtime integration
+    name: librime runtime smoke
     runs-on: ubuntu-latest
-    # 1,301,434 条 extended 词汇逐条经真实 librime 查询，并在学习后复核完整
-    # static 菜单；本地四分片基线约 3 小时，保留完整门禁并为 runner 波动留余量。
-    #
-    # 分片数由 tests/librime/run-flow-audit.sh 的 XHUP_AUDIT_SHARDS 控制
-    # (默认 2 = 历史 CI 行为)。该 job 是 CI 最长的门禁(实测 3h16m–5h00m,
-    # 曾在 PR #113 上撞满本超时被取消)。若要在**实验分支**上评估提高分片数
-    # 能否缩短墙钟,在此设 env 即可;提高分片会增加峰值内存(每分片各加载
-    # 一份完整词典),审计脚本会打印每分片峰值 RSS 供判断。门禁语义与分片
-    # 数无关。**默认值不变**是刻意的保守选择。
-    timeout-minutes: 300
+    # 轻量冒烟(#132):真实 librime 会话 + Lua 合同/单测/仿真 + 真实插件
+    # Lua 审计 + 日常输入控制,全部分钟级。穷尽式审计(全静态等值 1.3M 项
+    # 流程、rime_deployer --build 全量部署)已移至 full-regression.yml
+    # (main push / nightly / 手动),不在 PR 关键路径上。
+    timeout-minutes: 40
 
     steps:
       - name: 检出仓库
@@ -233,21 +228,8 @@ jobs:
       - name: 生成 Rime 包
         run: cargo run -p xhup-cli --locked -- generate rime --output /tmp/xhup-flow-package
 
-      - name: 导出全静态菜单 manifest 并构建 xhup-cli
-        run: |
-          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
-            --dump-static-menu-manifest /tmp/static-menu.manifest
-          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
-            --dump-extended-reachability-manifest /tmp/extended-reachability.manifest
-          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
-            --dump-extended-reachability-manifest /tmp/extended-reachability.second.manifest
-          cmp /tmp/extended-reachability.manifest /tmp/extended-reachability.second.manifest
-          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
-            --dump-open-composition-manifest /tmp/open-composition.manifest
-          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
-            --dump-open-composition-manifest /tmp/open-composition.second.manifest
-          cmp /tmp/open-composition.manifest /tmp/open-composition.second.manifest
-          cargo build -p xhup-cli --locked
+      - name: 构建 xhup-cli(doctor 与学习管理使用)
+        run: cargo build -p xhup-cli --locked
 
       # 纯静态回退与无插件降级门禁: xhup_flow_static 保持零 Lua 运行,
       # 主方案 xhup_flow 在无插件环境亦能安全回退(docs/lua-runtime.md §2)。
@@ -296,21 +278,13 @@ jobs:
         run: tests/librime/run-context-ranker-audit.sh /tmp/xhup-flow-package
 
       # Production Shortcut Audit(§3/§9/§10;§24 DoD misleading-hint rate 门禁):
-      # 全部 advertised shortcut(quick-hint 提示视图,与 Lua 运行时同一实现)
-      # 逐条对照 canonical 真实菜单;任何 misleading 即门禁红(阈值 0)。
+      # 全部 advertised shortcut(quick-hint 提示视图)逐条对照 canonical
+      # 真实菜单;任何 misleading 即门禁红(阈值 0)。纯 Rust 评测(分钟级),
+      # 留在 PR CI;穷尽式 librime 流程审计见 full-regression.yml。
       - name: Production Shortcut Audit(misleading-hint rate 门禁)
         run: >
           cargo run --locked -p xhup-analyzer --bin production-shortcut-audit --
           --output /tmp/shortcut-audit.tsv --threshold 0.0
-
-      - name: librime Flow 引擎审计(全静态等值 + 组句 + 学习持久化 + 学习管理)
-        run: >
-          tests/librime/run-flow-audit.sh /tmp/xhup-flow-package
-          /tmp/static-menu.manifest target/debug/xhup-cli
-          /tmp/extended-reachability.manifest /tmp/open-composition.manifest
-
-      - name: librime 真实部署路径审计(rime_deployer --build 全量构建 + 冒烟)
-        run: tests/librime/run-deploy-audit.sh /tmp/xhup-flow-package
 
       - name: librime 日常输入控制(ASCII/标点/数字选择/翻页/Escape/Enter)
         run: tests/librime/run-ime-controls.sh /tmp/xhup-flow-package

@@ -1,0 +1,132 @@
+name: Full Regression
+
+# 全量回归工作流:承载从 PR CI 移出的重型验证(#132)。
+#
+# 与 ci.yml 的分工:
+# - ci.yml(每个 PR / main push):快速确定性检查 —— fmt/clippy/测试、
+#   trainer 前端、轻量 librime 冒烟(分钟级);
+# - 本工作流(仅 main push / nightly / 手动):穷尽式 librime 审计、
+#   语料/可达性/兼容性全量门禁 —— 小时级,不在 PR 关键路径上。
+#
+# 触发:
+# - push main:每次合并落地即全量复核(发布前状态始终有完整回归背书);
+# - schedule:夜间兜底(捕获依赖漂移、环境变化导致的慢腐化);
+# - workflow_dispatch:手动触发(发布前复核、实验分支全量验证)。
+#
+# 不在 pull_request 上触发是刻意设计:任何 PR 都不能意外触发数小时的
+# 穷尽回归(消费 runner 配额、拖慢合并);PR 的快速门禁在 ci.yml。
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # 每天 02:30 UTC(夜间;GitHub Actions 定时任务使用 UTC)。
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # main push 与 nightly/手动可并行;同类触发取消旧的(cancel-in-progress)。
+  group: full-regression-${{ github.event.schedule || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 与 ci.yml 的 librime job 相同的部署基座。
+  NDK_VERSION: "27.2.12479018"
+
+jobs:
+  # ---------- 穷尽式 librime 审计(从 ci.yml 原样迁移) ----------
+  #
+  # 1,301,434 条 extended 词汇逐条经真实 librime 查询,并在学习后复核
+  # 完整 static 菜单;本地四分片基线约 3 小时。分片数由
+  # tests/librime/run-flow-audit.sh 的 XHUP_AUDIT_SHARDS 控制(默认 2)。
+  librime-full:
+    name: librime 全量审计(全静态等值 + 组句 + 学习 + 部署)
+    runs-on: ubuntu-latest
+    # 实测 3h16m–5h00m,曾撞满 300 分钟超时(#113);360 留余量。
+    timeout-minutes: 360
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7
+
+      - name: 准备 Rust 工具链
+        run: rustup show
+
+      - name: 缓存 Cargo 下载
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rust-librime-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '**/Cargo.toml') }}
+          restore-keys: |
+            rust-librime-${{ runner.os }}-
+
+      - name: 安装 librime 运行时与开发文件(不含 Lua 插件)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            librime-dev \
+            librime-bin \
+            rime-prelude \
+            pkg-config
+
+      - name: 安装 librime-lua 插件与 Lua 解释器
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            librime-plugin-lua \
+            lua5.4
+
+      - name: 打印 librime 环境
+        run: |
+          rime_deployer --help 2>&1 | head -3 || true
+          pkg-config --modversion rime || true
+          dpkg-query -W librime-dev librime-bin rime-prelude || true
+
+      - name: 生成 Rime 包
+        run: cargo run -p xhup-cli --locked -- generate rime --output /tmp/xhup-flow-package
+
+      - name: 导出全静态菜单 manifest 并构建 xhup-cli
+        run: |
+          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
+            --dump-static-menu-manifest /tmp/static-menu.manifest
+          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
+            --dump-extended-reachability-manifest /tmp/extended-reachability.manifest
+          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
+            --dump-extended-reachability-manifest /tmp/extended-reachability.second.manifest
+          cmp /tmp/extended-reachability.manifest /tmp/extended-reachability.second.manifest
+          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
+            --dump-open-composition-manifest /tmp/open-composition.manifest
+          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
+            --dump-open-composition-manifest /tmp/open-composition.second.manifest
+          cmp /tmp/open-composition.manifest /tmp/open-composition.second.manifest
+          cargo build -p xhup-cli --locked
+
+      # 纯静态回退与无插件降级门禁(与 ci.yml 的冒烟同一脚本,全量上下文)。
+      - name: librime session 冒烟(纯静态回退 + canonical v2 哨兵)
+        run: tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
+
+      - name: xhup-cli doctor 运行环境与 Lua 合同诊断
+        run: target/debug/xhup-cli doctor --user-data-dir /tmp/xhup-flow-package
+
+      - name: librime Flow 引擎审计(全静态等值 + 组句 + 学习持久化 + 学习管理)
+        run: >
+          tests/librime/run-flow-audit.sh /tmp/xhup-flow-package
+          /tmp/static-menu.manifest target/debug/xhup-cli
+          /tmp/extended-reachability.manifest /tmp/open-composition.manifest
+
+      - name: librime 真实部署路径审计(rime_deployer --build 全量构建 + 冒烟)
+        run: tests/librime/run-deploy-audit.sh /tmp/xhup-flow-package
+
+      - name: librime 日常输入控制(ASCII/标点/数字选择/翻页/Escape/Enter)
+        run: tests/librime/run-ime-controls.sh /tmp/xhup-flow-package
+
+      - name: librime Lua quick_hint 审计(真实插件:提示注释 + 次序不变)
+        run: tests/librime/run-lua-audit.sh /tmp/xhup-flow-package
+
+      - name: librime Lua context_ranker 审计(真实插件:恒等 + 有界提升 + 固定 rank-1 + OOV)
+        run: tests/librime/run-context-ranker-audit.sh /tmp/xhup-flow-package

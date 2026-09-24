@@ -17,17 +17,9 @@ name: Product Packaging
 # - SHA256SUMS.txt + BUILD-INFO.txt(release-manifest 汇总)
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/product-packaging.yml"
-      - "crates/**"
-      - "data/**"
-      - "rime/**"
-      - "trainer/**"
-      - "tests/**"
-      - "Cargo.lock"
-      - "Cargo.toml"
-      - "rust-toolchain.toml"
+  # 不在 pull_request 触发(#132):完整五平台打包 + arm64 测量是小时级
+  # 产物流水线,不属于 PR 快速门禁。RC/正式发布经 workflow_call 被
+  # xhup-flow-rc-release.yml 复用;人工演练/复打包走 workflow_dispatch。
   workflow_dispatch:
     # 人工 RC 演练入口(publish=false:不打 tag、不发 Release、不签名)。
     inputs:
@@ -51,6 +43,11 @@ on:
         type: string
         required: false
         default: "PR-REVIEW"
+      measure_arm64:
+        description: "额外构建 arm64-only 测量 APK(体积读数;常态关闭)"
+        type: boolean
+        required: false
+        default: false
   # 供 RC/stable 发布工作流复用(xhup-flow-rc-release.yml);
   # Android 签名仅在 sign_android=true 且调用方传入 secrets 时发生。
   workflow_call:
@@ -75,12 +72,17 @@ on:
         type: string
         required: false
         default: "PR-REVIEW"
+      measure_arm64:
+        description: "额外构建 arm64-only 测量 APK(体积读数;常态关闭)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: product-packaging-${{ github.event.pull_request.number || github.ref }}
+  group: product-packaging-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -677,7 +679,10 @@ jobs:
       #   证明 gradle 属性控制不了它 —— 它是 CLI 的 per-target 调度);
       # - gradle.properties 追加 abiList 控制 universal flavor 的
       #   abiFilters(打包进 APK 的 ABI),构建结束恢复文件。
+      # 仅在显式输入时运行(#132):测量构建 = 额外一次完整 Android 工具链
+      # 编译;PR/发布常态不需要,人工演练按需开启。
       - name: arm64-only 测量构建
+        if: inputs.measure_arm64 == true
         run: |
           set -euo pipefail
           props="trainer/src-tauri/gen/android/gradle.properties"
@@ -694,6 +699,7 @@ jobs:
           pnpm -C trainer tauri android build --apk -t aarch64 --config "${{ steps.meta.outputs.config }}"
 
       - name: arm64 APK 体积报告
+        if: inputs.measure_arm64 == true
         run: |
           set -euo pipefail
           ver="${{ steps.meta.outputs.app_version }}"
@@ -708,6 +714,7 @@ jobs:
           echo "### Android arm64-only APK 体积: ${mb} MiB" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 上传 arm64 测量产物
+        if: inputs.measure_arm64 == true
         uses: actions/upload-artifact@v7
         with:
           name: android-arm64-measure

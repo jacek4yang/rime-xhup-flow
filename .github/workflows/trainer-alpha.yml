@@ -1,13 +1,10 @@
 name: Trainer Alpha
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/trainer-alpha.yml"
-      - "trainer/**"
-      - "docs/testing/trainer-alpha-windows-android.md"
+  # 不在 pull_request 触发(#132):Windows MSI + Android APK 双平台打包
+  # 是小时级产物流水线,不属于 PR 快速门禁;Trainer 的正确性检查由 ci.yml
+  # 的 trainer 前端 job(pnpm test/build)承担。本工作流保留手动 Alpha
+  # 发布入口(publish=true 创建 GitHub Pre-release)。
   workflow_dispatch:
     inputs:
       version:
@@ -28,7 +25,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: trainer-alpha-${{ github.ref }}-${{ inputs.version || github.event.pull_request.number }}
+  group: trainer-alpha-${{ github.ref }}-${{ inputs.version }}
   cancel-in-progress: false
 
 jobs:
@@ -50,47 +47,34 @@ jobs:
       - name: 解析并校验发布元数据
         id: meta
         env:
-          EVENT_NAME: ${{ github.event_name }}
           REF: ${{ github.ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_VCODE: ${{ inputs.android_version_code }}
           INPUT_PUBLISH: ${{ inputs.publish }}
         run: |
           set -euo pipefail
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            version="$INPUT_VERSION"
-            vcode="$INPUT_VCODE"
-            publish="$INPUT_PUBLISH"
-            # 手动触发一律走真实签名链路(含演练),保证 publish=true 前签名路径已验证
-            sign_android="true"
-            if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-alpha\.[1-9][0-9]*$ ]]; then
-              echo "::error::版本号 '$version' 不合法,必须形如 1.0.0-alpha.1(semver-alpha.N,core 与 tauri.conf.json 一致)"
-              exit 1
-            fi
-            if ! [[ "$vcode" =~ ^[1-9][0-9]*$ ]]; then
-              echo "::error::android_version_code '$vcode' 不合法,必须是 >= 1 的正整数"
-              exit 1
-            fi
-            if [[ "$publish" == "true" && "$REF" != "refs/heads/main" ]]; then
-              echo "::error::publish=true 只允许在 main 分支上运行(当前 ref: $REF)"
-              exit 1
-            fi
-          else
-            # PR 预览:core 跟随 tauri.conf.json(产品版本唯一事实来源之一),
-            # 避免产品升版后 alpha 命名空间与包内嵌版本漂移。
-            alpha_core="$(node -p "JSON.parse(require('fs').readFileSync('trainer/src-tauri/tauri.conf.json','utf8')).version")"
-            version="${alpha_core}-alpha.ci.${PR_NUMBER}"
-            vcode="1"
-            sign_android="false"
-            publish="false"
+          # 仅 workflow_dispatch 触发(#132 移除 PR 触发);版本与 vcode 必填。
+          version="$INPUT_VERSION"
+          vcode="$INPUT_VCODE"
+          publish="$INPUT_PUBLISH"
+          # 手动触发一律走真实签名链路(含演练),保证 publish=true 前签名路径已验证
+          sign_android="true"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-alpha\.[1-9][0-9]*$ ]]; then
+            echo "::error::版本号 '$version' 不合法,必须形如 1.0.0-alpha.1(semver-alpha.N,core 与 tauri.conf.json 一致)"
+            exit 1
+          fi
+          if ! [[ "$vcode" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::android_version_code '$vcode' 不合法,必须是 >= 1 的正整数"
+            exit 1
+          fi
+          if [[ "$publish" == "true" && "$REF" != "refs/heads/main" ]]; then
+            echo "::error::publish=true 只允许在 main 分支上运行(当前 ref: $REF)"
+            exit 1
           fi
           # MSI/WiX 要求 prerelease 为纯数字,因此 Windows 打包使用派生版本:
-          # 1.0.0-alpha.1 -> 1.0.0-1;1.0.0-alpha.ci.18 -> 1.0.0-18
+          # 1.0.0-alpha.1 -> 1.0.0-1
           # 对外文件名与 Release 仍使用完整 Alpha 版本字符串。
           if [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-alpha\.([0-9]+)$ ]]; then
-            win_version="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
-          elif [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-alpha\.ci\.([0-9]+)$ ]]; then
             win_version="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
           else
             echo "::error::无法从 '$version' 派生 Windows 兼容版本"
@@ -375,7 +359,7 @@ jobs:
   publish:
     name: 发布 GitHub Pre-release
     needs: [validate, windows, android]
-    if: github.event_name == 'workflow_dispatch' && needs.validate.outputs.publish == 'true'
+    if: needs.validate.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
