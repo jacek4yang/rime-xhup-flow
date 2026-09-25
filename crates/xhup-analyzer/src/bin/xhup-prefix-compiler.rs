@@ -11,6 +11,7 @@
 //!   --summary    打印编译模型的前缀空间聚合统计
 //!   --check      校验前缀闭合树、前缀延续非提交边界、可达性等核心不变量
 
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::process::ExitCode;
 
@@ -19,8 +20,8 @@ use xhup_analyzer::prefix_space::slot::{SlotCandidate, SlotPlacementSource};
 use xhup_analyzer::prefix_space::trie::PrefixTrie;
 use xhup_analyzer::prefix_space::{
     BenchmarkMetrics, DEFAULT_PRODUCTION_LIMIT, PrefixCostModel, PrefixSpaceBenchmarkReport,
-    PrefixSpaceCompiledModel, PrefixTarget, SolverOptions, build_production_universe,
-    evaluate_v3_metrics, solve_prefix_space, stats_equal_except_runtime,
+    PrefixSpaceCompiledModel, PrefixSpaceStats, PrefixTarget, SolverOptions,
+    build_production_universe, evaluate_v3_metrics, solve_prefix_space, stats_equal_except_runtime,
     verify_production_invariants,
 };
 use xhup_core::KeySequence;
@@ -238,7 +239,7 @@ fn run_fixture_check() -> Result<(), Box<dyn Error>> {
 
 #[cfg(test)]
 fn run_production_check(limit: usize) -> Result<(), Box<dyn Error>> {
-    run_production_actions(limit, true, false, false, None)
+    run_production_actions(limit, true, false, false, None, false)
 }
 
 fn run_fixture_bench() -> Result<(), Box<dyn Error>> {
@@ -290,6 +291,7 @@ fn main() -> Result<ExitCode, Box<dyn Error>> {
     let mut do_bench = false;
     let mut do_summary = false;
     let mut do_check = false;
+    let mut do_compare_baseline = false;
     let mut production = false;
     let mut limit: Option<usize> = None;
     let mut explain_word = None;
@@ -312,6 +314,7 @@ fn main() -> Result<ExitCode, Box<dyn Error>> {
             "--explain" => {
                 explain_word = Some(args.next().ok_or("missing word for --explain")?);
             }
+            "--compare-baseline" => do_compare_baseline = true,
             "--help" | "-h" => {
                 usage();
                 return Ok(ExitCode::SUCCESS);
@@ -324,7 +327,7 @@ fn main() -> Result<ExitCode, Box<dyn Error>> {
         return Err("--limit requires --production".into());
     }
 
-    if !do_bench && !do_summary && !do_check && explain_word.is_none() {
+    if !do_bench && !do_summary && !do_check && !do_compare_baseline && explain_word.is_none() {
         // 缺省执行基准对比与检查
         do_bench = true;
         do_check = true;
@@ -339,6 +342,7 @@ fn main() -> Result<ExitCode, Box<dyn Error>> {
             do_bench,
             do_summary,
             explain_word.as_deref(),
+            do_compare_baseline,
         )?;
     } else {
         if do_check {
@@ -365,12 +369,122 @@ fn main() -> Result<ExitCode, Box<dyn Error>> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// 构造 v2 基线编译模型:把冻结 canonical advertised shortcut(生成器
+/// hints 视图,与 Lua quick_hint 运行时同一数据)按频率序播种进 Trie。
+///
+/// 播种语义:每个目标词在其 canonical 简码上占 rank-1 槽(source
+/// LegacyShortcut);同码碰撞按目标频率序自然形成 rank 2,3……与真实
+/// 菜单的确定性次序原则一致(菜单由静态排序决定,频率序是其主键)。
+/// 不调用求解器 —— 这是「冻结映射」的忠实表达。
+///
+/// 统计口径与 solver 聚合一致:逐词取其实际槽位 rank 与码长算
+/// weighted_rank / expected_kspc;未获简码槽位的词按全码口径计入。
+fn build_v2_baseline_model(
+    targets: &[PrefixTarget],
+    initial_trie: &PrefixTrie,
+) -> Result<PrefixSpaceCompiledModel, Box<dyn Error>> {
+    let hints = xhup_generator::lua_hints_view();
+    let mut trie = initial_trie.clone();
+    let mut seeded = 0usize;
+    for target in targets {
+        let Some(shortcut) = hints.get(target.text.as_str()) else {
+            continue;
+        };
+        let code = KeySequence::from_str(shortcut)?;
+        // 冻结简码必须严格短于全码(hints 视图不变量);异常则跳过,
+        // 该词按全码口径计入统计。
+        if code.len() >= target.full_code.len() {
+            continue;
+        }
+        trie.insert_candidate(
+            &code,
+            SlotCandidate::new(
+                target.text.clone(),
+                target.full_code.clone(),
+                1,
+                SlotPlacementSource::LegacyShortcut,
+                target.mass,
+                true,
+            ),
+        );
+        seeded += 1;
+    }
+    eprintln!("[v2-baseline] seeded {seeded} canonical shortcut slots");
+
+    // 逐词统计(与 solver 聚合口径一致)。
+    let occupied = trie.all_occupied_codes();
+    let mut stats = PrefixSpaceStats {
+        total_targets: targets.len(),
+        total_nodes: trie.len(),
+        occupied_codes: occupied.len(),
+        ..Default::default()
+    };
+    let mut weighted_rank_sum = 0.0;
+    let mut total_mass_sum = 0.0;
+    let mut weighted_kspc_sum = 0.0;
+    let mut slot_counts_entropy = Vec::new();
+    for target in targets {
+        // 实际槽位:遍历该词所在的所有码位,取码长最短者(其 canonical
+        // 简码;同词若同时命中前缀码与全码,短者优先,与 v2 现实一致)。
+        let mut best: Option<(usize, usize)> = None; // (len, rank)
+        for (code, slots) in &occupied {
+            if let Some(rank) = slots.iter().position(|s| s.text == target.text) {
+                let len = code.len();
+                if best.map(|(b, _)| len < b).unwrap_or(true) {
+                    best = Some((len, rank + 1));
+                }
+            }
+        }
+        let (effective_len, effective_rank) = match best {
+            Some((len, rank)) => (len, rank),
+            None => (target.full_code.len(), 1),
+        };
+        if effective_rank == 1 {
+            stats.rank1_targets += 1;
+        }
+        if effective_rank <= 3 {
+            stats.top3_targets += 1;
+        }
+        weighted_rank_sum += target.mass * effective_rank as f64;
+        let select_keys = if effective_rank == 1 { 0.0 } else { 1.0 };
+        weighted_kspc_sum += target.mass * (effective_len as f64 + select_keys);
+        total_mass_sum += target.mass;
+        // v2 基线:映射即现状,迁移成本恒为 0。
+    }
+    for (_, slots) in &occupied {
+        stats.total_slot_assignments += slots.len();
+        slot_counts_entropy.push(slots.len() as f64);
+    }
+    if total_mass_sum > 0.0 {
+        stats.weighted_rank = weighted_rank_sum / total_mass_sum;
+        stats.expected_kspc = weighted_kspc_sum / total_mass_sum;
+    }
+    let total_slots_f = stats.total_slot_assignments as f64;
+    if total_slots_f > 0.0 {
+        let mut entropy = 0.0;
+        for c in slot_counts_entropy {
+            let p = c / total_slots_f;
+            if p > 0.0 {
+                entropy -= p * p.ln();
+            }
+        }
+        stats.collision_entropy = entropy;
+    }
+
+    Ok(PrefixSpaceCompiledModel {
+        trie,
+        explanations: BTreeMap::new(),
+        stats,
+    })
+}
+
 fn run_production_actions(
     limit: usize,
     do_check: bool,
     do_bench: bool,
     do_summary: bool,
     explain_word: Option<&str>,
+    do_compare_baseline: bool,
 ) -> Result<(), Box<dyn Error>> {
     println!(
         "[production] bounded Prefix-Space v3 solve (limit={limit}); does not replace frozen canonical mapping"
@@ -414,6 +528,28 @@ fn run_production_actions(
         println!("migration_cost:       {:.4}", metrics.migration_cost);
         println!("code_space_occupancy: {}", metrics.code_space_occupancy);
         println!("solver_runtime_ms:    {}", metrics.solver_runtime_ms);
+    }
+
+    if do_compare_baseline {
+        // 真实数据 v2/v3 对照(#83 R2;§C「优化器必须跑在真实生产数据上」)。
+        // v2 侧 = 冻结 canonical advertised shortcut(生成器 hints 视图,
+        // 与 Lua 运行时同一数据)按频率序播种 Trie 后走同一指标管线;
+        // v3 侧 = 求解器 placement 走同一管线。两者共享目标宇宙与质量
+        // 证据,唯一差异是码位来源 —— 这才是同口径对照。
+        let baseline = build_v2_baseline_model(&universe.targets, &universe.initial_trie)?;
+        let v2_metrics = evaluate_v3_metrics(&baseline);
+        let v3_metrics = evaluate_v3_metrics(&model);
+        println!(
+            "[compare] v2(frozen canonical) vs v3(solver) on the same {limit}-target production universe:"
+        );
+        print!(
+            "{}",
+            PrefixSpaceBenchmarkReport {
+                v2: v2_metrics,
+                v3: v3_metrics
+            }
+            .render_table()
+        );
     }
 
     if let Some(word) = explain_word {
