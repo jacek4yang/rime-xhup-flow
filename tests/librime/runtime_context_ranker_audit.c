@@ -319,7 +319,7 @@ int main(int argc, char **argv) {
     int fixed_still_first = candidate_at(1, first_text, sizeof(first_text));
     clear_all();
     report(fixed_still_first && strcmp(first_text, "时间") == 0,
-           "重启后:固定码 uij 第一位仍是静态 rank-1「时间」",
+           "重启前:固定码 uij 第一位仍是静态 rank-1「时间」",
            fixed_still_first ? first_text : "(无候选)");
   }
 
@@ -348,7 +348,7 @@ int main(int argc, char **argv) {
     int fixed_first2 = candidate_at(1, first_text, sizeof(first_text));
     clear_all();
     report(fixed_first2 && strcmp(first_text, "时间") == 0,
-           "重启后:固定码 uij 第一位仍是静态 rank-1「时间」",
+           "重启前:固定码 uij 第一位仍是静态 rank-1「时间」",
            fixed_first2 ? first_text : "(无候选)");
   }
 

@@ -162,27 +162,30 @@ function M.init(env)
     -- 把内存计数表挂到模块共享状态(context_ranker 经 require 读同一份;
     -- engine userdata 不接受字段赋值,见 M.state 注释)。
     M.state.counts = env.counts
-    -- 连接提交观察(始终连接;回调内检查开关,关闭时不计数不写盘)。
+    -- 连接提交观察(始终连接):
+    -- - last_commit 无条件记录(进程内存态,退出即消失,隐私无害;
+    --   context_ranker 的重复词桶证据不依赖 user_memory 开关);
+    -- - 计数/写盘仅在实际开启时(开关状态实时读取 —— 不能在 init
+    --   缓存:schema 开关 reset 0 在会话创建后才可能被置 true)。
     pcall(function()
         env.engine.context.commit_notifier:connect(function()
             local text = nil
             pcall(function()
                 text = env.engine.context:get_commit_text()
             end)
-            -- 开关状态实时读取(不能在 init 缓存:schema 开关 reset 0 在
-            -- 会话创建后才会被用户/审计置 true,缓存会永久错过)。
+            if type(text) ~= "string" or text == "" then
+                return
+            end
+            M.state.last_commit = text
             local live_enabled = false
             pcall(function() live_enabled = env.engine.context:get_option("user_memory") end)
-            if not live_enabled or type(text) ~= "string" or text == "" then
+            if not live_enabled then
                 return
             end
             env.seq = env.seq + 1
             env.counts[text] = (env.counts[text] or 0) + 1
             env.pending = env.pending + 1
             env.dirty = true
-            -- 最近上屏文本暴露给同引擎组件(context_ranker 重复词桶证据;
-            -- get_commit_text 在部分版本返回当前输入而非已提交文本,不可靠)。
-            M.state.last_commit = text
             if env.pending >= M.FLUSH_EVERY then
                 M.flush(env)
             end
