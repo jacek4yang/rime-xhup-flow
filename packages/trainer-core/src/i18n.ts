@@ -279,6 +279,16 @@ const zh = {
   "product.hintAction": "检查提示",
   "product.hintDescription":
     "查看候选行上显示的 ~<简码> 是否名副其实:输入该简码能否直接得到该词(rank 1),还是需要翻页,或该词根本不在该码菜单中。",
+  "product.batchTitle": "批量诊断",
+  "product.batchDescription":
+    "一次解释多个词(空白/逗号分隔,去重后最多 200 个):展开每个词查看 mapping 卡与简码提示卡;首次查询可能较慢。",
+  "product.batchWords": "词表",
+  "product.batchAction": "批量解释",
+  "product.batchLoading": "正在批量生成解释…",
+  "product.batchStats": "共 {total} 个词:{withMapping} 个有 mapping 卡,{withHint} 个有简码提示。",
+  "product.batchOk": "完整",
+  "product.batchNoMapping": "无 mapping",
+  "product.batchNoHint": "无简码提示",
   "product.failed": "操作失败:{reason}",
   "product.redeployTitle": "重新部署",
   "product.redeployHint": "写入方案后需要重新部署才会生效。",
@@ -773,6 +783,17 @@ const en: Record<I18nKey, string> = {
   "product.hintAction": "Check hint",
   "product.hintDescription":
     "Check whether the ~<code> shown on a candidate row is honest: typing it either selects the word first (rank 1), requires paging, or the word is not in that code's menu at all.",
+  "product.batchTitle": "Batch diagnostics",
+  "product.batchDescription":
+    "Explain several words at once (separated by spaces/commas, up to 200 after dedupe): expand each word to see its mapping card and shortcut hint card. The first query may be slow.",
+  "product.batchWords": "Word list",
+  "product.batchAction": "Explain batch",
+  "product.batchLoading": "Generating batch explanations…",
+  "product.batchStats":
+    "{total} words: {withMapping} with a mapping card, {withHint} with a shortcut hint.",
+  "product.batchOk": "complete",
+  "product.batchNoMapping": "no mapping",
+  "product.batchNoHint": "no hint",
   "product.failed": "Operation failed: {reason}",
   "product.redeployTitle": "Redeploy",
   "product.redeployHint": "The schema only takes effect after a redeploy.",

@@ -146,4 +146,14 @@ export const productApi = {
   explainWord: (word: string): Promise<string> => invokeDesktop("explain_word", { word }),
   /** 渲染简码提示 ASCII 解释卡:回答「候选行的 ~<简码> 是否名副其实」(§3)。 */
   explainHint: (word: string): Promise<string> => invokeDesktop("explain_hint", { word }),
+  /** 批量解释(去重后有界 ≤ 200;未知词逐词判负,不影响其他词)。 */
+  explainWordsBatch: (words: string[]): Promise<WordExplanationDto[]> =>
+    invokeDesktop("explain_words_batch", { words }),
 };
+
+/** 批量解释的单词条目(Rust WordExplanation 序列化形态,camelCase)。 */
+export interface WordExplanationDto {
+  word: string;
+  mappingCard: string | null;
+  hintCard: string | null;
+}
