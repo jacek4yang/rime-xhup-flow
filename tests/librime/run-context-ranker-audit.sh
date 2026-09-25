@@ -86,5 +86,9 @@ echo "== Lua context_ranker runtime 审计(真实 librime-lua) =="
 # 两阶段闭环:5A(观察+写盘)在同一进程;5B(重启后验证)经第二次
 # 进程调用(librime 不能进程内二次 initialize)——TSV 快照在 deploy
 # 目录跨进程持久,等效真实重启。
-(cd "$deploy_dir" && "$work/audit" "$SHARED_DATA_DIR" .)
-(cd "$deploy_dir" && XHUP_AUDIT_PHASE=2 "$work/audit" "$SHARED_DATA_DIR" .)
+# 两阶段都必须执行(即使 5A 有失败也要跑 5B —— 闭环诊断需要完整
+# 读数);退出码最后统一非零。
+rc=0
+(cd "$deploy_dir" && "$work/audit" "$SHARED_DATA_DIR" .) || rc=1
+(cd "$deploy_dir" && XHUP_AUDIT_PHASE=2 "$work/audit" "$SHARED_DATA_DIR" .) || rc=1
+exit $rc

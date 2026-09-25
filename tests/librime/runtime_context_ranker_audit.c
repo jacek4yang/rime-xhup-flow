@@ -223,9 +223,14 @@ int main(int argc, char **argv) {
     }
     clear_all();
     report(hit, "重复词场景:证据词形位于前 3 候选内(有界提升)", evidence);
-    report(strstr(order_on, evidence) != NULL &&
-               strstr(order_off_again, evidence) != NULL,
-           "候选集合不删减:开/关均含证据词形", NULL);
+    {
+      int on_has = strstr(order_on, evidence) != NULL;
+      int off_has = strstr(order_off_again, evidence) != NULL;
+      char diag[600];
+      snprintf(diag, sizeof(diag), "on_has=%d off_has=%d on_head=%.40s off_head=%.40s",
+               on_has, off_has, order_on, order_off_again);
+      report(on_has && off_has,
+             "候选集合不删减:开/关均含证据词形", diag);
   }
 
   /* ---- 场景 3:静态强固定映射 rank-1 永不降位 ---- */
