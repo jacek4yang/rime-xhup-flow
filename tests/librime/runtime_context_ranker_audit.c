@@ -266,8 +266,7 @@ int main(int argc, char **argv) {
   report(oov_on && oov_off,
          "OOV 组合路径:开/关均有候选可达(调序不吞路径)", NULL);
 
-  printf("  /* ---- 场景 5:用户记忆闭环(观察 → 写盘 → 重启 → 排序变化) ----
-   * R4 第二层的端到端真实插件断言:
+  /* ---- 场景 5:用户记忆闭环(观察 → 写盘 → 重启 → 排序变化) ----
    * a. 开启 user_memory + context_ranker;
    * b. 对同一码的第 2 候选(数据驱动)连续上屏 FLUSH_EVERY 次以上,
    *    触发周期写盘;断言 TSV 快照文件已产生;
