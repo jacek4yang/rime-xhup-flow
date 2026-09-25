@@ -134,6 +134,7 @@ function M.func(translation, env)
   end
 
   local input_code = env.engine.context.input
+  local head, head_meta = {}, {}
   local n = 0
   for cand in translation:iter() do
     if n < env.bound then
