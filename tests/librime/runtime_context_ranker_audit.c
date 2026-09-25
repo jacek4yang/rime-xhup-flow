@@ -266,7 +266,100 @@ int main(int argc, char **argv) {
   report(oov_on && oov_off,
          "OOV 组合路径:开/关均有候选可达(调序不吞路径)", NULL);
 
-  printf("== context_ranker runtime 审计:%d 项检查,%d 项失败 ==\n",
+  printf("  /* ---- 场景 5:用户记忆闭环(观察 → 写盘 → 重启 → 排序变化) ----
+   * R4 第二层的端到端真实插件断言:
+   * a. 开启 user_memory + context_ranker;
+   * b. 对同一码的第 2 候选(数据驱动)连续上屏 FLUSH_EVERY 次以上,
+   *    触发周期写盘;断言 TSV 快照文件已产生;
+   * c. destroy_session + finalize(模拟重启);
+   * d. 重新 initialize + create_session;两开关开启;重输同码;
+   *    断言证据词形位于前 bound 窗口内(持久化记忆跨重启生效);
+   * e. 固定码静态 rank-1 仍最前(用户桶不越静态契约)。 */
+  printf("-- 场景 5:用户记忆闭环(观察→写盘→重启→排序) --\n");
+  fflush(stdout);
+  {
+    /* 证据词:同码第 2 候选(数据驱动,不硬编码词形)。 */
+    char evidence[256];
+    rime->set_option(session, "context_ranker", 1);
+    rime->set_option(session, "user_memory", 1);
+    type_keys("uijm");
+    if (!candidate_at(2, evidence, sizeof(evidence)) || !evidence[0]) {
+      report(0, "场景 5 前置:uijm 第 2 候选存在", "(缺失)");
+      printf("== context_ranker runtime 审计:%d 项检查,%d 项失败 ==\n",
+             checks, failures);
+      fflush(stdout);
+      rime->destroy_session(session);
+      rime->finalize();
+      return failures == 0 ? 0 : 1;
+    }
+    clear_all();
+    /* 连续上屏 FLUSH_EVERY 次,触发周期写盘。 */
+    for (int i = 0; i < 25; ++i) {
+      type_keys("uijm");
+      if (!rime->select_candidate(session, 1)) {
+        fprintf(stderr, "场景 5:select_candidate(2) 失败\n");
+        return 2;
+      }
+      RIME_STRUCT(RimeCommit, commit);
+      if (rime->get_commit(session, &commit)) {
+        rime->free_commit(&commit);
+      }
+    }
+    /* 断言 TSV 快照已在工作目录产生(user_memory 默认相对路径)。 */
+    {
+      FILE *f = fopen("xhup_flow_user_model.tsv", "rb");
+      report(f != NULL, "用户记忆快照 TSV 已周期落盘", "xhup_flow_user_model.tsv");
+      if (f) {
+        fclose(f);
+      }
+    }
+    /* 模拟重启:销毁会话并终结引擎。 */
+    rime->destroy_session(session);
+    rime->finalize();
+
+    /* 重启:重新初始化引擎。 */
+    RIME_STRUCT(RimeTraits, traits2);
+    traits2.app_name = "rime.xhup-flow-context-ranker-audit-restart";
+    traits2.shared_data_dir = argv[1];
+    traits2.user_data_dir = argv[2];
+    traits2.distribution_name = "xhup-flow-context-ranker-audit-restart";
+    traits2.distribution_code_name = "xhup-flow-context-ranker-audit-restart";
+    traits2.distribution_version = "0";
+    rime->setup(&traits2);
+    rime->initialize(&traits2);
+    if (rime->is_maintenance_mode && rime->is_maintenance_mode()) {
+      rime->join_maintenance_thread();
+    }
+    session = rime->create_session();
+    if (!session || !rime->select_schema(session, "xhup_flow")) {
+      fprintf(stderr, "重启后会话创建失败\n");
+      return 2;
+    }
+    rime->set_option(session, "context_ranker", 1);
+    rime->set_option(session, "user_memory", 1);
+    type_keys("uijm");
+    int learned_hit = 0;
+    for (int rank = 1; rank <= 3 && !learned_hit; ++rank) {
+      if (candidate_at(rank, first_text, sizeof(first_text)) &&
+          strcmp(first_text, evidence) == 0) {
+        learned_hit = 1;
+      }
+    }
+    clear_all();
+    report(learned_hit,
+           "重启后:用户记忆词形位于前 3 候选内(持久化记忆跨重启生效)",
+           learned_hit ? NULL : evidence);
+
+    /* 固定码静态 rank-1 仍最前(用户记忆桶不越静态契约)。 */
+    type_keys("uij");
+    int fixed_still_first = candidate_at(1, first_text, sizeof(first_text));
+    clear_all();
+    report(fixed_still_first && strcmp(first_text, "时间") == 0,
+           "重启后:固定码 uij 第一位仍是静态 rank-1「时间」",
+           fixed_still_first ? first_text : "(无候选)");
+  }
+
+== context_ranker runtime 审计:%d 项检查,%d 项失败 ==\n",
          checks, failures);
   fflush(stdout);
   /* 显式清理:会话销毁 + 引擎终结,避免进程退出时 librime 内部状态

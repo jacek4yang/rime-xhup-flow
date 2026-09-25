@@ -80,4 +80,7 @@ print("PASS  Lua check_contract() 含 context_ranker: " .. report.version)
 '
 
 echo "== Lua context_ranker runtime 审计(真实 librime-lua) =="
-"$work/audit" "$SHARED_DATA_DIR" "$deploy_dir"
+# 审计在 deploy 目录内执行:user_memory 组件的快照默认写到进程工作目录
+# (相对路径),cd 进 deploy 即把 TSV 落在与 librime 用户数据一致的位置,
+# 重启场景可真实读到。
+(cd "$deploy_dir" && "$work/audit" "$SHARED_DATA_DIR" .)
