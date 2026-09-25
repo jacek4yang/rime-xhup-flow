@@ -1,24 +1,23 @@
--- XHUP Flow 有界上下文调序 filter(docs/lua-runtime.md §4.3)。
+-- XHUP Flow 有界上下文调序 filter(§4.3,含 R4 用户记忆消费)。
 --
 -- librime-lua `*module` 组件(schema 以 `lua_filter@*xhup_flow.context_ranker`
 -- 注册,零 rime.lua)。
 --
--- 语义契约(§4.3 与 AGENTS 硬性规则):
--- 1. **有界调序**:只允许前 `bound`(默认 3,可配)个候选参与相邻交换;
---    绝不扫描全候选流,绝不把任何候选移出前 bound 窗口之外。
--- 2. **静态强固定映射不参与调序**:一级简码/FF/ZR 的 rank-1(primary
---    translator 的 `table` 候选在输入码 == 其映射码时)永远保持原位,
---    冻结静态契约不受本地状态影响。
--- 3. **低置信度 = 不动**:调序证据是「刚提交的文本与候选词形完全相同」
---    (重复词场景);无提交历史、上下文为空、证据弱 → 透传不重排。
--- 4. **默认关闭**:方案开关 `context_ranker` 默认 reset: 0,行为与无此
---    filter 严格一致(纯透传);显式开启后才可能重排(受 1-3 约束)。
--- 5. **绝不改变候选文本与注释**(只调次序);**绝不特判具体词形** ——
---    证据函数是纯谓词,输入词形集合之外零知识。
--- 6. 零 IO:证据来自 `context:get_commit_text()`(librime-lua 运行时
---    内存态),不读文件、无网络、无遥测。
---
--- 性能:每段最多缓存 bound 个候选,决策 O(1);透传路径零分配。
+-- 语义契约(§4.3/§24 与 #83 R4):
+-- 1. **有界**:只允许前 `bound`(默认 3,可配 2..5)个候选参与调序;
+--    绝不扫描全候选流,绝不把任何候选移出窗口之外。
+-- 2. **静态强固定映射不参与降位**:一级简码/FF/ZR 的 rank-1(primary
+--    translator 的 `table` 候选在输入码 == 其映射码时)永远保持最前,
+--    冻结静态契约不受任何运行时状态影响。
+-- 3. **低置信度 = 不动**:证据是窗口内的明确信号(重复词 / 用户记忆),
+--    无证据 → 透传不重排。
+-- 4. **分桶优先级**:重复词(最近选择)> 用户记忆(历史频率)> 静态序;
+--    每桶保持原相对次序(稳定、确定性、零词形特判)。
+-- 5. **绝不改变候选文本与注释**(只调次序);绝不特判具体词形。
+-- 6. 零 IO:证据来自 commit_notifier 内存态与同 schema user_memory
+--    组件暴露的内存计数表;不读文件、无网络、无遥测。
+-- 7. **默认可关**:方案开关 `context_ranker` 生产开启(#130,依据
+--    #129 审计);关闭 = 纯透传。
 
 -- 纯决策逻辑(脱离 librime 可单测)。
 local M = {}
@@ -43,34 +42,41 @@ end
 -- 有界重排(纯函数,单测核心):
 -- 输入 cands:前 bound 个候选的 {type, text} 数组(最多 bound 个);
 -- 输入 context_text:刚提交的文本(可为 nil/空);
+-- 输入 user_counts:本地用户记忆计数表({word: count};可为 nil);
 -- 返回:重排后的索引数组(每元素为原索引 1..n),透传时为恒等。
 --
--- 语义 = 窗口内**稳定三桶**(每桶保持原相对次序,确定性、零特判):
+-- 语义 = 窗口内**稳定分桶**(每桶保持原相对次序,确定性、零特判):
 --   1. 静态强固定映射(is_fixed_first)—— 冻结静态契约,永远最前;
 --   2. 证据词形(text == context_text)的非固定候选 —— 整组提前;
---   3. 其余候选。
--- 无证据或无固定候选时退化为恒等/纯证据提升,行为可解释。
-local function bounded_reorder(cands, context_text, bound, hints, input_code)
+--   3. 用户记忆词形(在 user_counts 中出现)的非固定候选 —— 整组提前;
+--   4. 其余候选。
+-- 用户记忆桶(3)优先级低于重复词桶(2):最近选择 > 历史频率。
+-- 无任何证据时退化为恒等,行为可解释。
+local function bounded_reorder(cands, context_text, bound, hints, input_code, user_counts)
   local n = #cands
   local order = {}
   for i = 1, n do
     order[i] = i
   end
-  if context_text == nil or context_text == "" or n < 2 then
+  local has_context = context_text ~= nil and context_text ~= ""
+  local has_user = user_counts ~= nil and next(user_counts) ~= nil
+  if (not has_context and not has_user) or n < 2 then
     return order
   end
-  local fixed, matched, rest = {}, {}, {}
+  local fixed, matched, learned, rest = {}, {}, {}, {}
   for i = 1, n do
     local c = cands[i]
     if is_fixed_first(c.type, c.text, input_code, hints) then
       table.insert(fixed, i)
-    elseif c.text == context_text then
+    elseif has_context and c.text == context_text then
       table.insert(matched, i)
+    elseif has_user and user_counts[c.text] then
+      table.insert(learned, i)
     else
       table.insert(rest, i)
     end
   end
-  if #matched == 0 then
+  if #matched == 0 and #learned == 0 then
     return order
   end
   local result = {}
@@ -78,6 +84,9 @@ local function bounded_reorder(cands, context_text, bound, hints, input_code)
     table.insert(result, idx)
   end
   for _, idx in ipairs(matched) do
+    table.insert(result, idx)
+  end
+  for _, idx in ipairs(learned) do
     table.insert(result, idx)
   end
   for _, idx in ipairs(rest) do
@@ -102,53 +111,29 @@ function M.init(env)
   -- 简码映射与 quick_hint 同源:用于识别静态强固定 rank-1。
   local ok_hints, loaded = pcall(function() return require("xhup_flow.data.quick_hints") end)
   env.hints = (ok_hints and type(loaded) == "table") and loaded or {}
-  -- 本地证据源:commit_notifier 记录最近一次上屏文本(librime-lua 标准
-  -- API,跨版本稳定;模块内存态,零 IO 零持久化,进程退出即消失)。
-  -- notifier 回调无参数(Signal 约定),经闭包取 context;读取链双回退:
-  -- get_commit_text() → commit_history:back().text,全部 pcall 包裹,
-  -- 任一不可用 = 证据恒空 = 恒等透传(安全降级)。
-  env.last_commit = nil
-  local ok_notifier = pcall(function()
-    env.engine.context.commit_notifier:connect(function()
-      local c = env.engine.context
-      local ok_text, text = pcall(function() return c:get_commit_text() end)
-      if not (ok_text and type(text) == "string" and text ~= "") then
-        ok_text, text = pcall(function()
-          local entry = c.commit_history and c.commit_history:back() or nil
-          return entry and entry.text or nil
-        end)
-      end
-      if ok_text and type(text) == "string" and text ~= "" then
-        env.last_commit = text
-      else
-        env.last_commit = nil
-      end
-    end)
-  end)
-  if not ok_notifier then
-    -- notifier 不可用:证据恒空 = 恒等透传(降级为纯静态行为,安全)。
-    env.last_commit = nil
-  end
 end
 
 function M.func(translation, env)
   local enabled = env.engine.context:get_option("context_ranker")
   if not enabled then
-    -- 默认关闭:严格透传,与无此 filter 完全一致。
+    -- 关闭:严格透传,与无此 filter 完全一致。
     for cand in translation:iter() do
       yield(cand)
     end
     return
   end
 
-  -- 证据 = 最近一次上屏文本(commit_notifier 记录;nil/空 = 无证据恒等)。
-  local context_text = env.last_commit
-  if context_text == nil or context_text == "" then
-    for cand in translation:iter() do
-      yield(cand)
-    end
-    return
-  end
+  -- 证据 1:最近上屏文本(commit_notifier 内存态)。
+  local context_text = nil
+  pcall(function()
+    context_text = env.engine.context:get_commit_text()
+  end)
+  -- 证据 2:本地用户记忆计数表。user_memory 组件(同 schema)在 init
+  -- 时把内存计数表挂到 engine 上;缺失 = 桶 3 关闭(纯重复词模式)。
+  local user_counts = nil
+  pcall(function()
+    user_counts = env.engine.user_memory_counts
+  end)
 
   local input_code = env.engine.context.input
   -- 缓冲前 bound 个候选做决策;其余照序透传(绝不扫描全流)。
@@ -161,7 +146,7 @@ function M.func(translation, env)
       head_meta[n] = { type = cand.type, text = cand.text }
     else
       -- 决策一次,吐出窗口,再重新缓冲(流式;窗口外的候选不受影响)。
-      for _, idx in ipairs(M.bounded_reorder(head_meta, context_text, env.bound, env.hints, input_code)) do
+      for _, idx in ipairs(M.bounded_reorder(head_meta, context_text, env.bound, env.hints, input_code, user_counts)) do
         yield(head[idx])
       end
       head, head_meta = {}, {}
@@ -170,7 +155,7 @@ function M.func(translation, env)
     end
   end
   if n > 0 then
-    for _, idx in ipairs(M.bounded_reorder(head_meta, context_text, env.bound, env.hints, input_code)) do
+    for _, idx in ipairs(M.bounded_reorder(head_meta, context_text, env.bound, env.hints, input_code, user_counts)) do
       yield(head[idx])
     end
   end

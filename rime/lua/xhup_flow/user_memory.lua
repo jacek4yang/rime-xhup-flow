@@ -152,6 +152,12 @@ function M.init(env)
     if counts then
         env.counts = counts
     end
+    -- 把内存计数表暴露给同引擎的其他组件(context_ranker 的用户记忆
+    -- 桶消费它;表引用共享 —— 每次计数变更立即可见,零拷贝零轮询)。
+    -- 只暴露内存表,不暴露写盘路径/任何可写文件句柄。
+    pcall(function()
+        env.engine.user_memory_counts = env.counts
+    end)
     -- 连接提交观察(始终连接;回调内检查开关,关闭时不计数不写盘)。
     pcall(function()
         env.engine.context.commit_notifier:connect(function()
