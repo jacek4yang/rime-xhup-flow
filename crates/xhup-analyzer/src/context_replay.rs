@@ -279,6 +279,42 @@ pub fn replay_sentences_kdconv_user(
     replay_sentences(sentences_text, &scorer, KdconvBigramScorer::SCORER_ID)
 }
 
+/// 回放真实句子,使用 **KDConv + PTT 合并证据**(§13/§25 第 6 步第二证据源)。
+///
+/// `merge_policy` 决定两源转移计数的合并方式。**测量结论(2026-09-26,
+/// 2000 句 KDConv 重放,2701 个同码歧义 token,PR 记录)**:
+///
+/// | 策略 | contextual rank1 | context_gain | 选择成本 Q10 |
+/// |---|---|---|---|
+/// | 仅 KDConv | 5532 | 448 | 124 416 |
+/// | RawSum | 5527 | 443 | 127 488 |
+/// | MaxEvidence | 5527 | 443 | 127 488 |
+/// | PerSourceNormalized | 5531 | 447 | 125 440 |
+///
+/// KDConv 语料域(影视/音乐/旅行)与重放夹具同源,PTT(论坛问答)是
+/// **异域**补强:合并后共同 pair 的证据相加会轻微稀释同域相对差异
+/// (例如 `的→经典` PTT 70 vs `的→景点` KDConv 140,RawSum 后差距收窄),
+/// 5 个 token 由对转负。因此:
+///
+/// - 合并**按测量**不改善 KDConv 域回放;PTT 的价值是给 KDConv 覆盖不到
+///   的转移对补证据(两源 pair 交集仅 30 398 / KDConv 232 987 ≈ 13%);
+/// - 生产合并策略(或按域混合权重)是后续标定工作;本函数先交付
+///   **可测量、可解释的合并通道**,把策略选择留给真实数据决策。
+///
+/// 其余口径与 [`replay_sentences_kdconv`] 完全一致(A/B 可比)。
+pub fn replay_sentences_merged(
+    sentences_text: &str,
+    kdconv: xhup_decoder::BigramModel,
+    ptt: xhup_decoder::BigramModel,
+    merge_policy: xhup_decoder::MergePolicy,
+) -> (ContextReplayReport, xhup_decoder::MergeAudit) {
+    let (merged, audit) =
+        xhup_decoder::merge_models(&[("kdconv", &kdconv), ("ptt", &ptt)], merge_policy);
+    let scorer = KdconvBigramScorer::new(merged);
+    let report = replay_sentences(sentences_text, &scorer, KdconvBigramScorer::SCORER_ID);
+    (report, audit)
+}
+
 /// 单个有害重排样本的证据明细(设计 §6 弱证据降级策略的依据)。
 ///
 /// 字段只包含**语料**中的词与聚合计数,不含任何用户数据:输入语料本身是
@@ -700,4 +736,54 @@ fn percentile(sorted: &[u128], percentile: usize) -> u128 {
     }
     let rank = (sorted.len() * percentile).div_ceil(100);
     sorted[rank.saturating_sub(1).min(sorted.len() - 1)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SENTENCES: &str = include_str!("../../../data/corpus/replay_fixture.txt");
+    const KDCONV: &str = include_str!("../../../data/corpus/kdconv_bigram.tsv");
+    const PTT: &str = include_str!("../../../data/corpus/ptt_bigram.tsv");
+
+    /// 合并证据回放:审计口径与单源一致,且合并至少保留两源全部转移对。
+    #[test]
+    fn merged_replay_produces_audit_and_preserves_both_sources() {
+        let kd = xhup_decoder::BigramModel::from_tsv(KDCONV).expect("kdconv 可解析");
+        let pt = xhup_decoder::BigramModel::from_tsv(PTT).expect("ptt 可解析");
+        let kd_pairs = kd.pair_count();
+        let pt_pairs = pt.pair_count();
+        let (report, audit) =
+            replay_sentences_merged(SENTENCES, kd, pt, xhup_decoder::MergePolicy::RawSum);
+        assert_eq!(audit.policy, "raw-sum/v1");
+        assert_eq!(audit.sources.len(), 2);
+        assert_eq!(
+            report.contextual_scorer,
+            xhup_decoder::KdconvBigramScorer::SCORER_ID
+        );
+        // RawSum 唯一转移对数 = 两源去重并集;至少各源自述规模的最大值,
+        // 至多两源之和(交集不为空时严格小于)。
+        assert!(audit.merged_pairs >= kd_pairs.max(pt_pairs));
+        assert!(audit.merged_pairs <= kd_pairs + pt_pairs);
+    }
+
+    /// 合并证据必须保留两源的独占转移对(合并通道的完整性与可解释性)。
+    #[test]
+    fn merged_replay_keeps_source_unique_pairs() {
+        let kd = xhup_decoder::BigramModel::from_tsv(KDCONV).expect("kdconv 可解析");
+        let pt = xhup_decoder::BigramModel::from_tsv(PTT).expect("ptt 可解析");
+        let (merged, audit) = xhup_decoder::merge_models(
+            &[("kdconv", &kd), ("ptt", &pt)],
+            xhup_decoder::MergePolicy::RawSum,
+        );
+        // KDConv 独占(PTT 无)与 PTT 独占(KDConv 无)都保留。
+        for (l, r) in [("<s>", "是的"), ("这个", "景点")] {
+            assert!(kd.transition_count(l, r) > 0);
+            assert!(
+                pt.transition_count(l, r) == 0
+                    || merged.transition_count(l, r) >= kd.transition_count(l, r)
+            );
+        }
+        assert!(audit.merged_pairs > kd.pair_count(), "PTT 独占对必须并入");
+    }
 }

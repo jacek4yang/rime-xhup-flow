@@ -26,7 +26,10 @@ fn usage() -> ! {
          --beam N    有界解码 beam 宽度(缺省 8)
          --harmful   额外输出有害重排样本的证据明细(§6 降级策略依据)
          --latency   额外输出解码延迟 p50/p95/p99(§22;仅报告不设门槛)
-         --simulate-user  附加本地用户 overlay A/B(§25 第 9 步,离线模拟)"
+         --simulate-user  附加本地用户 overlay A/B(§25 第 9 步,离线模拟)
+         --ptt <ptt_bigram.tsv>   附加 PTT 第二证据源(§13/§25 第 6 步):
+                          主报告改用 KDConv+PTT 合并证据(RawSum),并输出
+                          合并审计(唯一转移对数/两源规模)。"
     );
     std::process::exit(2);
 }
@@ -34,6 +37,7 @@ fn usage() -> ! {
 fn main() -> ExitCode {
     let mut sentences: Option<PathBuf> = None;
     let mut bigram: Option<PathBuf> = None;
+    let mut ptt: Option<PathBuf> = None;
     let mut baseline: Option<PathBuf> = None;
     let mut json = false;
     let mut bounded = false;
@@ -48,6 +52,7 @@ fn main() -> ExitCode {
                 sentences = Some(PathBuf::from(args.next().unwrap_or_else(|| usage())))
             }
             "--bigram" => bigram = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
+            "--ptt" => ptt = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--baseline" => baseline = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--json" => json = true,
             "--bounded" => bounded = true,
@@ -93,14 +98,64 @@ fn main() -> ExitCode {
         }
     };
 
-    let report = replay_sentences_kdconv(&sentences_text, model.clone());
+    // 可选第二证据源(§13):给出 --ptt 时主报告改用合并证据。
+    let mut merged_audit: Option<xhup_decoder::MergeAudit> = None;
+    let report = match &ptt {
+        None => replay_sentences_kdconv(&sentences_text, model.clone()),
+        Some(ptt_path) => {
+            let ptt_text = match std::fs::read_to_string(ptt_path) {
+                Ok(text) => text,
+                Err(error) => {
+                    eprintln!("无法读取 PTT bigram {}: {error}", ptt_path.display());
+                    return ExitCode::FAILURE;
+                }
+            };
+            let ptt_model = match BigramModel::from_tsv(&ptt_text) {
+                Ok(model) => model,
+                Err(error) => {
+                    eprintln!("PTT bigram TSV 非法: {error}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            let (merged, audit) = xhup_analyzer::context_replay::replay_sentences_merged(
+                &sentences_text,
+                model.clone(),
+                ptt_model,
+                xhup_decoder::MergePolicy::RawSum,
+            );
+            merged_audit = Some(audit);
+            merged
+        }
+    };
     if json {
         println!(
             "{}",
             serde_json::to_string_pretty(&report).expect("ContextReplayReport 必然可序列化")
         );
+        if let Some(audit) = &merged_audit {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "schema": "xhup-merge-audit/v1",
+                    "policy": audit.policy,
+                    "mergedPairs": audit.merged_pairs,
+                    "sources": audit.sources.iter().map(|(id, total)| serde_json::json!({
+                        "id": id, "observedTotal": total
+                    })).collect::<Vec<_>>(),
+                }))
+                .expect("merge audit 必然可序列化")
+            );
+        }
     } else {
         print!("{}", render_text(&report));
+        if let Some(audit) = &merged_audit {
+            println!("== KDConv+PTT 合并审计(RawSum) ==");
+            println!("policy:        {}", audit.policy);
+            println!("merged_pairs:  {}", audit.merged_pairs);
+            for (id, total) in &audit.sources {
+                println!("source:        {id} observed_total={total}");
+            }
+        }
     }
 
     // 有界 beam 解码 vs 全路径枚举的一致性(§25 第 7 步)。
