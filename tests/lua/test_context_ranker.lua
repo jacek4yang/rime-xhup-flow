@@ -113,7 +113,26 @@ check("bound=2 窗口内证据提升",
   table.concat(ranker.bounded_reorder({ cands_cascade[1], cands_cascade[2] }, "已见", 2, hints, "uiij"), ","),
   "2,1")
 
--- 8. 零词形特判:换一组完全不同的词形,规则仍然成立(纯谓词)
+-- 8. 用户记忆桶:窗口内历史记忆词形整组提前,优先级低于重复词桶
+local user_counts = { ["已见"] = 5, ["时间"] = 9 }
+local cands_user = {
+  { type = "table", text = "上海" },
+  { type = "user_table", text = "已见" },
+}
+check("用户记忆词形提前(无重复词证据)",
+  table.concat(ranker.bounded_reorder(cands_user, nil, 3, hints2, "bjxx", user_counts), ","),
+  "2,1")
+check("重复词桶优先于用户记忆桶",
+  table.concat(ranker.bounded_reorder(cands_user, "上海", 3, hints2, "bjxx", user_counts), ","),
+  "1,2")
+check("空记忆表 = 无用户桶",
+  table.concat(ranker.bounded_reorder(cands_user, nil, 3, hints2, "bjxx", {}), ","),
+  "1,2")
+check("nil 记忆表 = 无用户桶",
+  table.concat(ranker.bounded_reorder(cands_user, nil, 3, hints2, "bjxx", nil), ","),
+  "1,2")
+
+-- 9. 零词形特判:换一组完全不同的词形,规则仍然成立(纯谓词)
 local hints2 = { ["北京"] = "bj" }
 local cands_other = {
   { type = "table", text = "上海" },

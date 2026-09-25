@@ -80,4 +80,15 @@ print("PASS  Lua check_contract() 含 context_ranker: " .. report.version)
 '
 
 echo "== Lua context_ranker runtime 审计(真实 librime-lua) =="
-"$work/audit" "$SHARED_DATA_DIR" "$deploy_dir"
+# 审计在 deploy 目录内执行:user_memory 组件的快照默认写到进程工作目录
+# (相对路径),cd 进 deploy 即把 TSV 落在与 librime 用户数据一致的位置,
+# 重启场景可真实读到。
+# 两阶段闭环:5A(观察+写盘)在同一进程;5B(重启后验证)经第二次
+# 进程调用(librime 不能进程内二次 initialize)——TSV 快照在 deploy
+# 目录跨进程持久,等效真实重启。
+# 两阶段都必须执行(即使 5A 有失败也要跑 5B —— 闭环诊断需要完整
+# 读数);退出码最后统一非零。
+rc=0
+(cd "$deploy_dir" && "$work/audit" "$SHARED_DATA_DIR" .) || rc=1
+(cd "$deploy_dir" && XHUP_AUDIT_PHASE=2 "$work/audit" "$SHARED_DATA_DIR" .) || rc=1
+exit $rc

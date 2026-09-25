@@ -53,6 +53,19 @@ for text, code in pairs(hints) do
 end
 check("抽样规模", sample >= 1000, true)
 
+-- 2.5 用户记忆桶在真实数据上工作:历史记忆词形(真实映射表内)整组提前
+local cands_um = {
+  { type = "table", text = "时间" },
+  { type = "user_table", text = "已见" },
+}
+local real_user_counts = { ["已见"] = 3 }
+check("真实词形用户记忆提前(非固定码)",
+  order_text(cands_um, ranker.bounded_reorder(cands_um, nil, 3, hints, "uijm", real_user_counts)),
+  "已见,时间")
+check("固定码下时间恒居最前(用户桶不越静态契约)",
+  table.concat(ranker.bounded_reorder(cands_um, nil, 3, hints, "uij", real_user_counts), ","),
+  "1,2")
+
 -- 3. 证据提升在真实词形上工作:
 --    用户刚提交「已见」(非固定映射词形)时,窗口内它应整组提前。
 local cands = {
