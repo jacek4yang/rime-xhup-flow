@@ -23,6 +23,10 @@ function M.context_ranker()
   return require("xhup_flow.context_ranker")
 end
 
+function M.user_memory()
+  return require("xhup_flow.user_memory")
+end
+
 function M.quick_hints_data()
   return require("xhup_flow.data.quick_hints")
 end
@@ -98,6 +102,22 @@ function M.check_contract()
     report.ok = false
     report.components.context_ranker = { ok = false, error = tostring(cr_or_err) }
     table.insert(report.errors, "context_ranker 模块加载失败: " .. tostring(cr_or_err))
+  end
+
+  -- 5. 检查 user_memory filter 模块(§16/R4;观察组件,纯透传)
+  local ok_um, um_or_err = pcall(require, "xhup_flow.user_memory")
+  if ok_um and type(um_or_err) == "table" then
+    report.components.user_memory = {
+      ok = true,
+      has_init = type(um_or_err.init) == "function",
+      has_func = type(um_or_err.func) == "function",
+      has_parse_tsv = type(um_or_err.parse_tsv) == "function",
+      has_atomic_write = type(um_or_err.atomic_write) == "function",
+    }
+  else
+    report.ok = false
+    report.components.user_memory = { ok = false, error = tostring(um_or_err) }
+    table.insert(report.errors, "user_memory 模块加载失败: " .. tostring(um_or_err))
   end
 
   return report

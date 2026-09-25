@@ -251,6 +251,9 @@ jobs:
       - name: Lua context_ranker 纯逻辑单测(lua5.4,不依赖 librime)
         run: lua5.4 tests/lua/test_context_ranker.lua
 
+      - name: Lua user_memory 纯逻辑单测(lua5.4,不依赖 librime)
+        run: lua5.4 tests/lua/test_user_memory.lua
+
       - name: Lua native_lookup 纯逻辑单测(lua5.4,不依赖 librime)
         run: lua5.4 tests/lua/test_native_lookup.lua
 

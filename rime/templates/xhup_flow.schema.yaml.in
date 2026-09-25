@@ -52,6 +52,11 @@ switches:
   - name: context_ranker
     reset: 1
     states: [关闭调序, 上下文调序]
+  # 本地用户记忆观察(§16/R4):默认关闭 —— 不观察不写盘,行为与无此
+  # 组件一致;开启后记录实际上屏词形到版本化 TSV(隐私:只存词形+计数)。
+  - name: user_memory
+    reset: 0
+    states: [关闭记忆, 本地记忆]
 
 engine:
   processors:
@@ -87,6 +92,11 @@ engine:
     # 位于 uniquifier 之前(与 quick_hint 同序约束,由 uniquifier 兜底
     # 消化 lua_filter 协程 translation 的末位重复)。
     - lua_filter@*xhup_flow.context_ranker
+    # 本地用户记忆观察(§16/R4):默认关闭(reset 0)—— 关闭 = 不观察
+    # 不写盘;开启后按 commit_notifier 记录实际上屏词形,周期性原子写
+    # 版本化 TSV(与 xhup-cli user-state 同一文件格式)。本组件不改
+    # 候选流(排序消费是后续 PR);位于 uniquifier 之前,纯透传。
+    - lua_filter@*xhup_flow.user_memory
     - uniquifier
 
 speller:

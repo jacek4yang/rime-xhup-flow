@@ -33,6 +33,12 @@ const INIT_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/init.lua");
 /// 有界上下文调序模块源(§4.3;入库源码,与模板同法嵌入)。
 const CONTEXT_RANKER_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/context_ranker.lua");
 
+/// 本地用户记忆观察组件源(#83 R4;入库源码,同法嵌入)。
+const USER_MEMORY_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/user_memory.lua");
+
+/// user_memory 模块产物文件名(打包进 Rime 包 lua/xhup_flow/)。
+pub const LUA_USER_MEMORY_FILENAME: &str = "lua/xhup_flow/user_memory.lua";
+
 /// context_ranker 模块产物文件名(打包进 Rime 包 lua/xhup_flow/)。
 pub const LUA_CONTEXT_RANKER_FILENAME: &str = "lua/xhup_flow/context_ranker.lua";
 
@@ -54,6 +60,11 @@ pub fn lua_init_source() -> &'static str {
 /// 有界上下文调序模块源文本(逐字嵌入,未经任何改写)。
 pub fn lua_context_ranker_source() -> &'static str {
     CONTEXT_RANKER_SOURCE
+}
+
+/// 本地用户记忆观察组件源文本(逐字嵌入,未经任何改写)。
+pub fn lua_user_memory_source() -> &'static str {
+    USER_MEMORY_SOURCE
 }
 
 /// 生成简码提示数据模块文本(Lua table,词 → 最简码)。
