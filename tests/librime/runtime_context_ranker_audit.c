@@ -281,7 +281,6 @@ int main(int argc, char **argv) {
   fflush(stdout);
   {
     /* 证据词:同码第 2 候选(数据驱动,不硬编码词形)。 */
-    char evidence[256];
     rime->set_option(session, "context_ranker", 1);
     rime->set_option(session, "user_memory", 1);
     type_keys("uijm");
