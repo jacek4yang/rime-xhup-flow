@@ -25,6 +25,13 @@
 
 local M = {}
 
+-- 模块级共享状态:同引擎的 context_ranker 经 require 读到同一份表
+-- (Lua require 缓存;engine userdata 不接受任意字段赋值,实测静默
+-- 失败 —— 此前经 engine 传状态的设计因此失效)。
+-- counts: {word: count};last_commit: 最近上屏文本(重复词桶证据);
+-- 两者都是内存态,进程退出即消失,隐私边界同文件状态。
+M.state = { counts = {}, last_commit = nil }
+
 -- TSV 快照文件名(与 xhup-cli user_state / #127 一致)。
 M.SNAPSHOT_FILENAME = "xhup_flow_user_model.tsv"
 -- 模式行(版本由 schema 行承载)。
@@ -152,12 +159,9 @@ function M.init(env)
     if counts then
         env.counts = counts
     end
-    -- 把内存计数表暴露给同引擎的其他组件(context_ranker 的用户记忆
-    -- 桶消费它;表引用共享 —— 每次计数变更立即可见,零拷贝零轮询)。
-    -- 只暴露内存表,不暴露写盘路径/任何可写文件句柄。
-    pcall(function()
-        env.engine.user_memory_counts = env.counts
-    end)
+    -- 把内存计数表挂到模块共享状态(context_ranker 经 require 读同一份;
+    -- engine userdata 不接受字段赋值,见 M.state 注释)。
+    M.state.counts = env.counts
     -- 连接提交观察(始终连接;回调内检查开关,关闭时不计数不写盘)。
     pcall(function()
         env.engine.context.commit_notifier:connect(function()
@@ -178,7 +182,7 @@ function M.init(env)
             env.dirty = true
             -- 最近上屏文本暴露给同引擎组件(context_ranker 重复词桶证据;
             -- get_commit_text 在部分版本返回当前输入而非已提交文本,不可靠)。
-            env.engine.user_memory_last_commit = text
+            M.state.last_commit = text
             if env.pending >= M.FLUSH_EVERY then
                 M.flush(env)
             end

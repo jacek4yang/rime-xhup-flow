@@ -123,21 +123,17 @@ function M.func(translation, env)
     return
   end
 
-  -- 证据 1:最近上屏文本。user_memory 组件经 commit_notifier 记录的
-  -- 真实已提交文本(get_commit_text 在部分 librime-lua 版本返回当前
-  -- 输入串而非提交文本,实测不可靠);组件缺失 = 无重复词证据。
-    context_text = env.engine.context:get_commit_text()
-    context_text = env.engine.user_memory_last_commit
-  -- 证据 2:本地用户记忆计数表。user_memory 组件(同 schema)在 init
-  -- 时把内存计数表挂到 engine 上;缺失 = 桶 3 关闭(纯重复词模式)。
+  -- 证据源:user_memory 模块共享状态(经 require 读同一份 M.state;
+  -- engine userdata 不接受字段赋值,实测静默失败)。
+  local um_ok, um = pcall(require, "xhup_flow.user_memory")
+  local context_text = nil
   local user_counts = nil
-  pcall(function()
-    user_counts = env.engine.user_memory_counts
-  end)
+  if um_ok and type(um) == "table" and type(um.state) == "table" then
+    context_text = um.state.last_commit
+    user_counts = um.state.counts
+  end
 
-  io.stderr:write("[CR] ctx=", tostring(context_text), " user=", tostring(user_counts ~= nil), " bound=", env.bound, "\n")
-  -- 缓冲前 bound 个候选做决策;其余照序透传(绝不扫描全流)。
-  local head, head_meta = {}, {}
+  local input_code = env.engine.context.input
   local n = 0
   for cand in translation:iter() do
     if n < env.bound then
