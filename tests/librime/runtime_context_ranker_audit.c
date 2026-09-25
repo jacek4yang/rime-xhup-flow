@@ -231,8 +231,8 @@ int main(int argc, char **argv) {
                on_has, off_has, order_on, order_off_again);
       report(on_has && off_has,
              "候选集合不删减:开/关均含证据词形", diag);
+    }
   }
-
   /* ---- 场景 3:静态强固定映射 rank-1 永不降位 ---- */
   printf("-- 场景 3:固定 rank-1 不降位 --\n");
   fflush(stdout);
