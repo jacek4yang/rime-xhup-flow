@@ -165,7 +165,11 @@ function M.init(env)
             pcall(function()
                 text = env.engine.context:get_commit_text()
             end)
-            if not env.enabled or type(text) ~= "string" or text == "" then
+            -- 开关状态实时读取(不能在 init 缓存:schema 开关 reset 0 在
+            -- 会话创建后才会被用户/审计置 true,缓存会永久错过)。
+            local live_enabled = false
+            pcall(function() live_enabled = env.engine.context:get_option("user_memory") end)
+            if not live_enabled or type(text) ~= "string" or text == "" then
                 return
             end
             env.seq = env.seq + 1

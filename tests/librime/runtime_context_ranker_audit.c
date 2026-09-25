@@ -41,6 +41,9 @@ static void report(int ok, const char *name, const char *detail) {
 
 static RimeSessionId session;
 
+/* 场景 5 的证据词(数据驱动);5A 写入 5B 读用(跨进程经 TSV 持久)。 */
+static char evidence_word[256];
+
 static void type_keys(const char *keys) {
   for (const char *p = keys; *p; ++p) {
     if (!rime->process_key(session, *p, 0)) {
@@ -171,7 +174,7 @@ int main(int argc, char **argv) {
   char evidence[256];
   rime->set_option(session, "context_ranker", 0);
   type_keys("uijm");
-  if (!candidate_at(2, evidence, sizeof(evidence)) || !evidence[0]) {
+  if (!candidate_at(2, evidence_word, sizeof(evidence_word)) || !evidence_word[0]) {
     fprintf(stderr, "uijm 第 2 候选不存在,无法构造重复词场景\n");
     return 2;
   }
@@ -205,7 +208,7 @@ int main(int argc, char **argv) {
     int hit = 0;
     for (int rank = 1; rank <= 3 && !hit; ++rank) {
       if (candidate_at(rank, first_text, sizeof(first_text)) &&
-          strcmp(first_text, evidence) == 0) {
+          strcmp(first_text, evidence_word) == 0) {
         hit = 1;
       }
     }
@@ -214,7 +217,7 @@ int main(int argc, char **argv) {
     hit = 0;
     for (int rank = 1; rank <= 3 && !hit; ++rank) {
       if (candidate_at(rank, first_text, sizeof(first_text)) &&
-          strcmp(first_text, evidence) == 0) {
+          strcmp(first_text, evidence_word) == 0) {
         hit = 1;
       }
     }
@@ -282,7 +285,7 @@ int main(int argc, char **argv) {
     rime->set_option(session, "context_ranker", 1);
     rime->set_option(session, "user_memory", 1);
     type_keys("uijm");
-    if (!candidate_at(2, evidence, sizeof(evidence)) || !evidence[0]) {
+    if (!candidate_at(2, evidence_word, sizeof(evidence_word)) || !evidence_word[0]) {
       report(0, "场景 5 前置:uijm 第 2 候选存在", "(缺失)");
       printf("== context_ranker runtime 审计:%d 项检查,%d 项失败 ==\n",
              checks, failures);
@@ -312,43 +315,6 @@ int main(int argc, char **argv) {
         fclose(f);
       }
     }
-    /* 模拟重启:销毁会话并终结引擎。 */
-    rime->destroy_session(session);
-    rime->finalize();
-
-    /* 重启:重新初始化引擎。 */
-    RIME_STRUCT(RimeTraits, traits2);
-    traits2.app_name = "rime.xhup-flow-context-ranker-audit-restart";
-    traits2.shared_data_dir = argv[1];
-    traits2.user_data_dir = argv[2];
-    traits2.distribution_name = "xhup-flow-context-ranker-audit-restart";
-    traits2.distribution_code_name = "xhup-flow-context-ranker-audit-restart";
-    traits2.distribution_version = "0";
-    rime->setup(&traits2);
-    rime->initialize(&traits2);
-    if (rime->is_maintenance_mode && rime->is_maintenance_mode()) {
-      rime->join_maintenance_thread();
-    }
-    session = rime->create_session();
-    if (!session || !rime->select_schema(session, "xhup_flow")) {
-      fprintf(stderr, "重启后会话创建失败\n");
-      return 2;
-    }
-    rime->set_option(session, "context_ranker", 1);
-    rime->set_option(session, "user_memory", 1);
-    type_keys("uijm");
-    int learned_hit = 0;
-    for (int rank = 1; rank <= 3 && !learned_hit; ++rank) {
-      if (candidate_at(rank, first_text, sizeof(first_text)) &&
-          strcmp(first_text, evidence) == 0) {
-        learned_hit = 1;
-      }
-    }
-    clear_all();
-    report(learned_hit,
-           "重启后:用户记忆词形位于前 3 候选内(持久化记忆跨重启生效)",
-           learned_hit ? NULL : evidence);
-
     /* 固定码静态 rank-1 仍最前(用户记忆桶不越静态契约)。 */
     type_keys("uij");
     int fixed_still_first = candidate_at(1, first_text, sizeof(first_text));
@@ -356,6 +322,35 @@ int main(int argc, char **argv) {
     report(fixed_still_first && strcmp(first_text, "时间") == 0,
            "重启后:固定码 uij 第一位仍是静态 rank-1「时间」",
            fixed_still_first ? first_text : "(无候选)");
+  }
+
+  /* ---- 场景 5B(独立进程调用,经 XHUP_AUDIT_PHASE=2 门控):重启后验证 ----
+   * librime 不能在进程内二次 initialize(glog InitGoogleLogging 重复检查
+   * 会 abort),「重启」由驱动脚本第二次调用本二进制完成;TSV 快照在
+   * 工作目录跨进程持久,等效真实重启。 */
+  const char *phase = getenv("XHUP_AUDIT_PHASE");
+  if (phase && strcmp(phase, "2") == 0) {
+    rime->set_option(session, "context_ranker", 1);
+    rime->set_option(session, "user_memory", 1);
+    type_keys("uijm");
+    int learned_hit = 0;
+    for (int rank = 1; rank <= 3 && !learned_hit; ++rank) {
+      if (candidate_at(rank, first_text, sizeof(first_text)) &&
+          strcmp(first_text, evidence_word) == 0) {
+        learned_hit = 1;
+      }
+    }
+    clear_all();
+    report(learned_hit,
+           "重启后(独立进程):用户记忆词形位于前 3 候选内(持久化生效)",
+           learned_hit ? NULL : evidence_word);
+
+    type_keys("uij");
+    int fixed_first2 = candidate_at(1, first_text, sizeof(first_text));
+    clear_all();
+    report(fixed_first2 && strcmp(first_text, "时间") == 0,
+           "重启后:固定码 uij 第一位仍是静态 rank-1「时间」",
+           fixed_first2 ? first_text : "(无候选)");
   }
 
   printf("== context_ranker runtime 审计:%d 项检查,%d 项失败 ==\n",
