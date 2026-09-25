@@ -135,7 +135,7 @@ function M.func(translation, env)
     user_counts = env.engine.user_memory_counts
   end)
 
-  local input_code = env.engine.context.input
+  io.stderr:write("[CR] ctx=", tostring(context_text), " user=", tostring(user_counts ~= nil), " bound=", env.bound, "\n")
   -- 缓冲前 bound 个候选做决策;其余照序透传(绝不扫描全流)。
   local head, head_meta = {}, {}
   local n = 0
