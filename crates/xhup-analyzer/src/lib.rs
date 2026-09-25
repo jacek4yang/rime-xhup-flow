@@ -67,6 +67,7 @@ pub use evidence::{
     Eligibility, EvidenceCoverage, LexicalClass, LexicalEvidence, LexicalEvidenceSet,
 };
 pub use explain::explain_production_word;
+pub use explain::{BatchExplanationStats, MAX_EXPLAIN_BATCH, WordExplanation, explain_words_batch};
 pub use frequency::{CharCodeUsage, FrequencyModel, FrequencyScale};
 pub use mapping_v2::{
     BaselineMassView, ExplainCandidate, ExplainReport, ExplainVerdict, FanoutStats, MappingV2,
