@@ -123,11 +123,11 @@ function M.func(translation, env)
     return
   end
 
-  -- 证据 1:最近上屏文本(commit_notifier 内存态)。
-  local context_text = nil
-  pcall(function()
+  -- 证据 1:最近上屏文本。user_memory 组件经 commit_notifier 记录的
+  -- 真实已提交文本(get_commit_text 在部分 librime-lua 版本返回当前
+  -- 输入串而非提交文本,实测不可靠);组件缺失 = 无重复词证据。
     context_text = env.engine.context:get_commit_text()
-  end)
+    context_text = env.engine.user_memory_last_commit
   -- 证据 2:本地用户记忆计数表。user_memory 组件(同 schema)在 init
   -- 时把内存计数表挂到 engine 上;缺失 = 桶 3 关闭(纯重复词模式)。
   local user_counts = nil

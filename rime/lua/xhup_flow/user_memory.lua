@@ -172,6 +172,9 @@ function M.init(env)
             env.counts[text] = (env.counts[text] or 0) + 1
             env.pending = env.pending + 1
             env.dirty = true
+            -- 最近上屏文本暴露给同引擎组件(context_ranker 重复词桶证据;
+            -- get_commit_text 在部分版本返回当前输入而非已提交文本,不可靠)。
+            env.engine.user_memory_last_commit = text
             if env.pending >= M.FLUSH_EVERY then
                 M.flush(env)
             end
