@@ -4485,6 +4485,8 @@ name = "xhup-cli"
 version = "2.0.0-rc.1"
 dependencies = [
  "clap",
+ "serde",
+ "serde_json",
  "xhup-analyzer",
  "xhup-generator",
 ]

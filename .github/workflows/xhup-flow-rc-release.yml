@@ -116,12 +116,31 @@ jobs:
               exit 1
             fi
           fi
+          # 机器可读 GA 门禁(#148 §3):清单 release/acceptance-v<core>.json。
+          # RC:结构合法且无 FAIL 即可(UNVERIFIED 放行 —— 硬件验收可后补);
+          # stable:全部必查项 PASS/N/A + accepted_rc 记录 + 版本一致,
+          # 违例逐行输出为 ::error::(指明平台/检查项),无人工绕过。
+          manifest="release/acceptance-v$core.json"
+          gate_args=(validate-acceptance --manifest "$manifest")
+          gate_mode="rc"
+          if [[ "$is_rc" == "false" ]]; then
+            gate_args+=(--stable --expect-version "$version")
+            gate_mode="stable"
+          fi
+          cargo run -q -p xhup-cli --locked -- "${gate_args[@]}" \
+            || { echo "::error::GA 验收门禁($gate_mode)未通过: $manifest"; exit 1; }
           {
             echo "version=$version"
             echo "core=$core"
             echo "is_rc=$is_rc"
             echo "publish=$publish"
             echo "android_version_code=$INPUT_VCODE"
+            # 稳定版发布说明用真实验收状态(#148 §3):逐平台压缩为
+            # "platform=worst_state",由 acceptance 模块确定性推导。
+            acc_summary="$(cargo run -q -p xhup-cli --locked -- acceptance-summary --manifest "$manifest")"
+            {
+              while IFS= read -r line; do echo "acceptance_$line"; done <<< "$acc_summary"
+            } >> "$GITHUB_OUTPUT"
           } >> "$GITHUB_OUTPUT"
           {
             if [[ "$is_rc" == "true" ]]; then kind="RC(Pre-release)"; else kind="正式版(stable)"; fi
@@ -200,32 +219,40 @@ jobs:
           echo "发布前校验通过:资产齐备、校验和一致"
 
       - name: 组装发布说明(草稿,人工复核)
+        env:
+          ACC_WINDOWS: ${{ needs.validate.outputs.acceptance_windows }}
+          ACC_LINUX: ${{ needs.validate.outputs.acceptance_linux }}
+          ACC_MACOS: ${{ needs.validate.outputs.acceptance_macos }}
+          ACC_ANDROID: ${{ needs.validate.outputs.acceptance_android }}
         run: |
           set -euo pipefail
           notes="$RUNNER_TEMP/RELEASE-NOTES.md"
+          # 平台状态来自机器可读验收清单的确定性推导(validate 输出),
+          # 不得手写硬编码 —— 稳定版门禁保证无 UNVERIFIED/FAIL 才会走到这里。
           if [[ "$IS_RC" == "true" ]]; then
             title_suffix="(Release Candidate)"
-            banner="> **草稿 Pre-release**:各平台人工验收状态均为 UNVERIFIED,
+            banner="> **草稿 Pre-release**:各平台人工验收状态以机器可读清单
+          > release/acceptance-v$CORE.json 为准(UNVERIFIED = 待真机验收),
           > 人工复核本说明并更新验收状态后手动发布。"
             acceptance="
-          ## 人工验收状态
+          ## 人工验收状态(源:release/acceptance-v$CORE.json)
 
-          - Windows: **UNVERIFIED**
-          - macOS: **UNVERIFIED**
-          - Linux: **UNVERIFIED**
-          - Android: **UNVERIFIED**
+          - Windows: **${ACC_WINDOWS:-UNVERIFIED}**
+          - Linux: **${ACC_LINUX:-UNVERIFIED}**
+          - macOS: **${ACC_MACOS:-UNVERIFIED}**
+          - Android: **${ACC_ANDROID:-UNVERIFIED}**
           "
           else
             title_suffix=""
-            banner="> 首个正式稳定版本。各平台人工验收状态见下方,
-          > 人工复核本说明后发布(正式版,非 Pre-release)。"
+            banner="> 正式稳定版本。各平台验收状态来自机器可读清单
+          > release/acceptance-v$CORE.json(稳定门禁要求全部 PASS/N/A)。
             acceptance="
-          ## 人工验收状态
+          ## 平台验收状态(源:release/acceptance-v$CORE.json,门禁强制全 PASS/N/A)
 
-          - Windows: **UNVERIFIED**
-          - macOS: **UNVERIFIED**
-          - Linux: **UNVERIFIED**
-          - Android: **UNVERIFIED**
+          - Windows: **${ACC_WINDOWS:-UNVERIFIED}**
+          - Linux: **${ACC_LINUX:-UNVERIFIED}**
+          - macOS: **${ACC_MACOS:-UNVERIFIED}**
+          - Android: **${ACC_ANDROID:-UNVERIFIED}**
           "
           fi
           cat > "$notes" <<EOF

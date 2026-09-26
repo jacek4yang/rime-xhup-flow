@@ -31,6 +31,9 @@ pub const CORE_RIME_FILES: &[&str] = &[
 pub const LUA_RUNTIME_FILES: &[&str] = &[
     "lua/xhup_flow/annotation.lua",
     "lua/xhup_flow/quick_hint.lua",
+    "lua/xhup_flow/context_ranker.lua",
+    "lua/xhup_flow/user_memory.lua",
+    "lua/xhup_flow/joint_decoder.lua",
     "lua/xhup_flow/init.lua",
     "lua/xhup_flow/data/quick_hints.lua",
 ];
@@ -88,7 +91,11 @@ impl DoctorReport {
         ));
 
         if self.missing_core_files.is_empty() {
-            out.push_str("核心方案与词典: 完整 (12/12)\n");
+            out.push_str(&format!(
+                "核心方案与词典: 完整 ({}/{})\n",
+                CORE_RIME_FILES.len(),
+                CORE_RIME_FILES.len()
+            ));
         } else {
             out.push_str(&format!(
                 "核心方案与词典: 缺失 {} 个文件 ({})\n",
@@ -98,7 +105,11 @@ impl DoctorReport {
         }
 
         if self.missing_lua_files.is_empty() {
-            out.push_str("Lua 运行时模块: 完整 (4/4)\n");
+            out.push_str(&format!(
+                "Lua 运行时模块: 完整 ({}/{})\n",
+                LUA_RUNTIME_FILES.len(),
+                LUA_RUNTIME_FILES.len()
+            ));
         } else {
             out.push_str(&format!(
                 "Lua 运行时模块: 缺失 {} 个模块 ({})\n",
@@ -335,7 +346,7 @@ mod tests {
         }
         let report = inspect_installation_with(&dir, Some("xhup_flow"), None, &|_| true).unwrap();
         assert!(!report.lua_contract_ok);
-        assert_eq!(report.missing_lua_files.len(), 4);
+        assert_eq!(report.missing_lua_files.len(), LUA_RUNTIME_FILES.len());
         let text = report.format_report();
         assert!(text.contains("未满足 (FAIL)"));
 
