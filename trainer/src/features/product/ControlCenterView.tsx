@@ -46,6 +46,7 @@ import {
   type PlanDto,
   type ProductStatusDto,
   type RimeClient,
+  type WordExplanationDto,
 } from "@/lib/product";
 
 const CLIENT_LABELS: Record<RimeClient, I18nKey> = {
@@ -119,6 +120,11 @@ export function ControlCenterView() {
   const [hintCard, setHintCard] = useState<string | null>(null);
   const [hintBusy, setHintBusy] = useState(false);
   const [hintError, setHintError] = useState<string | null>(null);
+  const [batchQuery, setBatchQuery] = useState("");
+  const [batchItems, setBatchItems] = useState<WordExplanationDto[] | null>(null);
+  const [batchStats, setBatchStats] = useState<{ total: number; withMapping: number; withHint: number } | null>(null);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     productApi
@@ -175,6 +181,32 @@ export function ControlCenterView() {
       .catch((cause: unknown) => setHintError(errorText(cause, t)))
       .finally(() => setHintBusy(false));
   }, [hintBusy, hintQuery, t]);
+
+  /** 批量解释:空白/逗号分隔,去重后交给后端(后端再有界拒绝)。 */
+  const runBatch = useCallback(() => {
+    if (batchBusy) return;
+    const words = batchQuery
+      .split(/[\s,，、]+/)
+      .map((word) => word.trim())
+      .filter((word) => word !== "");
+    if (words.length === 0) return;
+    setBatchBusy(true);
+    setBatchError(null);
+    setBatchItems(null);
+    setBatchStats(null);
+    productApi
+      .explainWordsBatch(words)
+      .then((items) => {
+        setBatchItems(items);
+        setBatchStats({
+          total: items.length,
+          withMapping: items.filter((item) => item.mappingCard !== null).length,
+          withHint: items.filter((item) => item.hintCard !== null).length,
+        });
+      })
+      .catch((cause: unknown) => setBatchError(errorText(cause, t)))
+      .finally(() => setBatchBusy(false));
+  }, [batchBusy, batchQuery, t]);
 
   const openPlan = (kind: MaintenanceKind) => {
     setNotice(null);
@@ -662,6 +694,96 @@ export function ControlCenterView() {
             >
               {hintCard}
             </pre>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("product.batchTitle")}</CardTitle>
+          <CardDescription>{t("product.batchDescription")}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <form
+            className="flex flex-col gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              runBatch();
+            }}
+          >
+            <label htmlFor="batch-words" className="text-sm font-medium">
+              {t("product.batchWords")}
+            </label>
+            <textarea
+              id="batch-words"
+              value={batchQuery}
+              onChange={(event) => setBatchQuery(event.target.value)}
+              rows={3}
+              className="min-h-11 flex-1 rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
+              disabled={batchBusy}
+              aria-label={t("product.batchWords")}
+            />
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={batchBusy || batchQuery.trim() === ""}
+            >
+              {t("product.batchAction")}
+            </Button>
+          </form>
+          {batchBusy && (
+            <p className="text-sm text-muted-foreground" aria-live="polite">
+              {t("product.batchLoading")}
+            </p>
+          )}
+          {batchError && (
+            <p role="alert" className="text-sm text-destructive">
+              {batchError}
+            </p>
+          )}
+          {batchStats && (
+            <p className="text-sm text-muted-foreground">
+              {t("product.batchStats", {
+                total: batchStats.total,
+                withMapping: batchStats.withMapping,
+                withHint: batchStats.withHint,
+              })}
+            </p>
+          )}
+          {batchItems && (
+            <div className="flex flex-col gap-2" aria-label={t("product.batchTitle")}>
+              {batchItems.map((item) => (
+                <details
+                  key={item.word}
+                  className="rounded-md border border-border"
+                >
+                  <summary className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2 text-sm">
+                    <span className="font-mono">{item.word}</span>
+                    {item.mappingCard === null && (
+                      <Badge variant="secondary">{t("product.batchNoMapping")}</Badge>
+                    )}
+                    {item.hintCard === null && item.mappingCard !== null && (
+                      <Badge variant="outline">{t("product.batchNoHint")}</Badge>
+                    )}
+                    {item.mappingCard !== null && item.hintCard !== null && (
+                      <Badge>{t("product.batchOk")}</Badge>
+                    )}
+                  </summary>
+                  <div className="flex flex-col gap-2 border-t border-border px-3 py-2">
+                    {item.mappingCard !== null && (
+                      <pre className="max-h-48 overflow-auto rounded-md bg-muted p-2 font-mono text-xs">
+                        {item.mappingCard}
+                      </pre>
+                    )}
+                    {item.hintCard !== null && (
+                      <pre className="max-h-48 overflow-auto rounded-md bg-muted p-2 font-mono text-xs">
+                        {item.hintCard}
+                      </pre>
+                    )}
+                  </div>
+                </details>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
