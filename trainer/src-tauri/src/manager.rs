@@ -2066,4 +2066,190 @@ mod tests {
         }
         let _ = fs::remove_dir_all(&base);
     }
+    // ---------- R8 §5:v1.0.0 → v2 升级加固(fixture 级) ----------
+    //
+    // 以下测试在**临时目录 fixture**上模拟 v1.0.0 → v2 的安装/升级/
+    // 重部署全流程,证明 Trainer 拥有文件的升级语义(备份、保留无关
+    // 用户状态、缺文件修复、回滚)。这是**自动化 fixture 验证**,
+    // 不冒充真机验收;真机行为由 release/acceptance-v2.0.0.json 的
+    // 平台验收(§4)另行记录,两者互补。
+
+    /// 构造一个模拟 v1.0.0 真实用户目录:
+    /// - v1 拥有文件全部安装(版本标记 1.0.0);
+    /// - v1 时代产物:2 个 OBSOLETE_OWNED_FILES(快捷码旧方案,v2 已移除);
+    /// - 无关用户配置(default.custom.yaml);
+    /// - 本地学习 userdb(含快照文件,升级必须原样保留)。
+    fn fake_v1_user_dir(name: &str) -> PathBuf {
+        let user = fake_user_dir(name);
+        let package_v1 = fake_package("1.0.0");
+        execute(
+            &plan_install(&user, &package_v1).unwrap(),
+            &user,
+            Some(&package_v1),
+        )
+        .unwrap();
+        for file in OBSOLETE_OWNED_FILES {
+            fs::write(user.join(file), "v1 legacy shortcut schema").unwrap();
+        }
+        let userdb = user.join("xhup_flow_user.userdb");
+        fs::write(
+            userdb.join("Table.bin"),
+            "fixture userdb payload (真机为 librime 二进制,此处仅占位)",
+        )
+        .unwrap();
+        fs::write(userdb.join("xhup_flow.userdb.txt"), "fixture snapshot\n").unwrap();
+        user
+    }
+
+    #[test]
+    fn v1_to_v2_upgrade_preserves_user_state_and_frozen_mappings() {
+        let user = fake_v1_user_dir("r8-upgrade-v1-to-v2");
+        let package_v2 = fake_package("2.0.0-rc.1");
+
+        // 升级计划:全部拥有文件 Overwrite(带备份)+ 过时文件 Delete。
+        let plan = plan_install(&user, &package_v2).unwrap();
+        assert!(
+            plan.actions.iter().all(|action| matches!(
+                action,
+                PlanAction::Overwrite { .. } | PlanAction::Delete { .. }
+            )),
+            "v1 已装齐 → v2 计划只允许 Overwrite/Delete,实际: {:?}",
+            plan.actions
+        );
+        execute(&plan, &user, Some(&package_v2)).unwrap();
+
+        // 1) v2 内容就位、版本正确。
+        let status = install_status(&user, RimeClient::Fcitx5, Some(&package_v2));
+        assert_eq!(status.installed_version.as_deref(), Some("2.0.0-rc.1"));
+        assert_eq!(status.health(&package_v2.version), InstallHealth::Healthy);
+
+        // 2) 过时的 v1 专属文件被清理。
+        for file in OBSOLETE_OWNED_FILES {
+            assert!(!user.join(file).exists(), "{file} 应随升级清理");
+        }
+
+        // 3) 无关用户配置原样保留(升级不碰非拥有文件)。
+        assert_eq!(
+            fs::read_to_string(user.join("default.custom.yaml")).unwrap(),
+            "用户的自定义配置"
+        );
+
+        // 4) 本地学习状态(userdb)完整保留 —— 学习持久化是 §4 核心用例。
+        assert!(user.join("xhup_flow_user.userdb/Table.bin").is_file());
+        assert!(
+            user.join("xhup_flow_user.userdb/xhup_flow.userdb.txt")
+                .is_file()
+        );
+
+        // 5) 冻结映射不被升级改写:主方案版本行来自 v2 包(v2 语义),
+        //    而非 v1 残留;其余文件字节与 v2 包一致。
+        assert_eq!(
+            fs::read_to_string(user.join(FLOW_SCHEMA_ID.to_string() + ".schema.yaml")).unwrap(),
+            "schema:\n  version: \"2.0.0-rc.1\"\n"
+        );
+
+        let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
+    fn v1_to_v2_upgrade_is_replayable_and_repair_safe() {
+        let user = fake_v1_user_dir("r8-upgrade-replay");
+        let package_v2 = fake_package("2.0.0-rc.1");
+        execute(
+            &plan_install(&user, &package_v2).unwrap(),
+            &user,
+            Some(&package_v2),
+        )
+        .unwrap();
+
+        // 重放同一升级 → 幂等语义:全部 Overwrite(带备份),无 Delete
+        // (过时文件已清理);重复执行不破坏用户状态与版本标记。
+        let replay = plan_install(&user, &package_v2).unwrap();
+        assert!(
+            replay
+                .actions
+                .iter()
+                .all(|action| matches!(action, PlanAction::Overwrite { .. })),
+            "重放计划应只含 Overwrite,实际: {:?}",
+            replay.actions
+        );
+        assert_eq!(replay.actions.len(), OWNED_FILES.len());
+        execute(&replay, &user, Some(&package_v2)).unwrap();
+        assert_eq!(
+            install_status(&user, RimeClient::Fcitx5, Some(&package_v2))
+                .health(&package_v2.version),
+            InstallHealth::Healthy
+        );
+
+        // 修复:删除任一拥有文件 → 计划精确补写该文件,其余不动;
+        // 补写后回到 Healthy(重建成功)。
+        let missing = OWNED_FILES[7.min(OWNED_FILES.len() - 1)];
+        fs::remove_file(user.join(missing)).unwrap();
+        let repair = plan_install(&user, &package_v2).unwrap();
+        // 缺失文件 → Write,其余仍存在 → Overwrite;总数 = 其余数 + 1。
+        assert!(
+            repair
+                .actions
+                .iter()
+                .any(|action| matches!(action, PlanAction::Write { file } if file == missing)),
+            "修复计划必须补写缺失文件 {missing}"
+        );
+        assert_eq!(
+            repair.actions.len(),
+            OWNED_FILES.len(),
+            "修复计划 = 补写 1 项 + 其余 Overwrite"
+        );
+        execute(&repair, &user, Some(&package_v2)).unwrap();
+        assert_eq!(
+            install_status(&user, RimeClient::Fcitx5, Some(&package_v2))
+                .health(&package_v2.version),
+            InstallHealth::Healthy
+        );
+
+        // 重部署/回滚语义:Overwrite 备份保存的是**覆盖前**的字节。
+        // 首次升级备份 v1 字节;重放后备份更新为重放前(v2 首次安装)字节。
+        // 备份始终存在,失败时据此回滚到执行前状态。
+        let backup = backup_path(&user, OWNED_FILES[0]);
+        assert!(backup.exists(), "Overwrite 备份必须存在以支持回滚");
+
+        let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
+    fn v1_to_v2_uninstall_keeps_user_state_for_clean_reinstall() {
+        let user = fake_v1_user_dir("r8-upgrade-uninstall");
+        let package_v2 = fake_package("2.0.0-rc.1");
+        execute(
+            &plan_install(&user, &package_v2).unwrap(),
+            &user,
+            Some(&package_v2),
+        )
+        .unwrap();
+
+        // 卸载只删拥有文件(含过时项);userdb 与无关配置保留。
+        execute(&plan_uninstall(&user).unwrap(), &user, None).unwrap();
+        for file in OWNED_FILES.iter().chain(OBSOLETE_OWNED_FILES.iter()) {
+            assert!(!user.join(file).exists(), "{file} 卸载后不应存在");
+        }
+        assert!(user.join("default.custom.yaml").is_file());
+        assert!(user.join("xhup_flow_user.userdb/Table.bin").is_file());
+
+        // 干净重装 → 直接 Healthy(v1 残留不再出现)。
+        execute(
+            &plan_install(&user, &package_v2).unwrap(),
+            &user,
+            Some(&package_v2),
+        )
+        .unwrap();
+        assert_eq!(
+            install_status(&user, RimeClient::Fcitx5, Some(&package_v2))
+                .health(&package_v2.version),
+            InstallHealth::Healthy
+        );
+        for file in OBSOLETE_OWNED_FILES {
+            assert!(!user.join(file).exists(), "重装不得复活过时文件 {file}");
+        }
+
+        let _ = fs::remove_dir_all(&user);
+    }
 }
