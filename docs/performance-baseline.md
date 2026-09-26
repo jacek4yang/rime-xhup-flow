@@ -150,3 +150,28 @@ lua5.4 tests/lua/measure_memory.lua /tmp/pkg
 即使按最保守的独立解释器读数,提示表本身约 7.7 MB。若未来把更多证据
 (如转移表)搬进 Lua,必须在此基线上增量评估 —— 这也是 Issue #83 中
 「路线 A 需要约 15 MB 常驻」估算的同一量级来源。
+
+
+## Android APK 形态测量(#83 R6,2026-09 记录)
+
+CI 真实构建实测(product-packaging 工作流,release profile 后):
+
+| 形态 | 大小 | ABI 内容 |
+| --- | ---: | --- |
+| 优化前 4-ABI universal(无 release profile) | 582.1 MiB | arm64-v8a + armeabi-v7a + x86 + x86_64,约 146 MiB/ABI |
+| 优化后 4-ABI universal(release profile) | **551.0 MiB** | 同上 |
+| arm64-only(#126 测量构建) | **139.6 MiB** | 仅 arm64-v8a(−74.7%) |
+
+**R6 布局决策(依测量)**:
+
+- **主发布产物 = arm64-v8a 单 ABI APK**(139.6 MiB):覆盖现代设备
+  (Android 8+ 主流机型均为 arm64-v8a);大小从 551 → 139.6 MiB;
+- universal 4-ABI 包仅在需要兼容 armeabi-v7a/x86 老设备时作为
+  **附加产物**产出(551.0 MiB,签名路径同一);
+- 兼容性假设:放弃 armeabi-v7a/x86 影响的设备占比随年份持续缩小;
+  x86 主要用于模拟器,不影响真机;
+- 实施机制已就绪(#126/#132):product-packaging 的 `measure_arm64`
+  输入 + gradle.properties `abiList=arm64-v8a / archList=arm64 /
+  targetList=aarch64` 双通道限定;RC 发布工作流在 cut rc1 时把
+  arm64-only 提升为默认 Android 产物(工作流改动属 R7 RC 阶段);
+- 词汇零删减:大小收益全部来自 ABI 维度,词库/语言覆盖不变。
