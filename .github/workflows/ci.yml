@@ -256,6 +256,8 @@ jobs:
 
       - name: Lua native_lookup 纯逻辑单测(lua5.4,不依赖 librime)
         run: lua5.4 tests/lua/test_native_lookup.lua
+      - name: Lua joint_decoder 决策逻辑单测(lua5.4,不依赖 librime)
+        run: lua5.4 tests/lua/test_joint_decoder.lua
 
       - name: Lua joint lattice 夹具一致性(Rust/Lua 共享夹具)
         run: lua5.4 tests/lua/sim_native_lookup.lua

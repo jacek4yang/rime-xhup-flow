@@ -27,6 +27,10 @@ function M.user_memory()
   return require("xhup_flow.user_memory")
 end
 
+function M.joint_decoder()
+  return require("xhup_flow.joint_decoder")
+end
+
 function M.quick_hints_data()
   return require("xhup_flow.data.quick_hints")
 end
@@ -118,6 +122,21 @@ function M.check_contract()
     report.ok = false
     report.components.user_memory = { ok = false, error = tostring(um_or_err) }
     table.insert(report.errors, "user_memory 模块加载失败: " .. tostring(um_or_err))
+  end
+
+  -- 6. 检查 joint_decoder filter 模块(§11/§14 R3;守护诊断,默认透传)
+  local ok_jd, jd_or_err = pcall(require, "xhup_flow.joint_decoder")
+  if ok_jd and type(jd_or_err) == "table" then
+    report.components.joint_decoder = {
+      ok = true,
+      has_init = type(jd_or_err.init) == "function",
+      has_func = type(jd_or_err.func) == "function",
+      has_bounded_promote = type(jd_or_err.bounded_promote) == "function",
+    }
+  else
+    report.ok = false
+    report.components.joint_decoder = { ok = false, error = tostring(jd_or_err) }
+    table.insert(report.errors, "joint_decoder 模块加载失败: " .. tostring(jd_or_err))
   end
 
   return report

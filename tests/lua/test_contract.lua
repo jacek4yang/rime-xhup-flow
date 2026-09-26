@@ -44,6 +44,10 @@ check("context_ranker 组件状态", report.components.context_ranker.ok, true)
 check("context_ranker 导出 init", report.components.context_ranker.has_init, true)
 check("context_ranker 导出 func", report.components.context_ranker.has_func, true)
 check("context_ranker 导出 bounded_reorder", report.components.context_ranker.has_bounded_reorder, true)
+check("joint_decoder 组件状态", report.components.joint_decoder.ok, true)
+check("joint_decoder 拥有 init", report.components.joint_decoder.has_init, true)
+check("joint_decoder 拥有 func", report.components.joint_decoder.has_func, true)
+check("joint_decoder 拥有 bounded_promote", report.components.joint_decoder.has_bounded_promote, true)
 check("无报错", #report.errors, 0)
 
 -- 3. 诊断格式化输出
