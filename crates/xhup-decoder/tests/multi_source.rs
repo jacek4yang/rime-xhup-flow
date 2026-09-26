@@ -1,6 +1,8 @@
 //! 多源转移证据合并的契约与真实数据测试(Issue #83 §25 第 6 步)。
 
-use xhup_decoder::{BigramModel, MergePolicy, NORMALIZE_SCALE, merge_models};
+use xhup_decoder::{
+    BigramModel, MergePolicy, NORMALIZE_SCALE, merge_models, merge_models_weighted,
+};
 
 const KDCONV: &str = include_str!("../../../data/corpus/kdconv_bigram.tsv");
 const PTT: &str = include_str!("../../../data/corpus/ptt_bigram.tsv");
@@ -203,4 +205,70 @@ fn real_normalization_compresses_ptt_unique_evidence() {
         scaled < raw,
         "归一化应压缩 PTT 独占证据(raw={raw}, scaled={scaled})"
     );
+}
+
+// ---------------------------------------------------------------------------
+// 带权重合并(PR #137 测量的按域标定通道)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn weighted_merge_scales_source_evidence_deterministically() {
+    // PTT 权重减半:共同 pair 的 PTT 贡献减半,独占对按比例缩放。
+    let kd = BigramModel::from_tsv(KDCONV).expect("kdconv");
+    let pt = BigramModel::from_tsv(PTT).expect("ptt");
+    let pt_pair = pt.transition_count("大学", "学生"); // PTT 独占(> 0)
+    assert!(pt_pair > 0);
+    // 权重语义:直接整数缩放 count * weight(weight=0 排除,1 原样,
+    // 4 = 四倍;除法缩放由调用方传分数权重前的缩比自行完成)。
+    for (weight, expect_exact) in [
+        (0u64, Some(0)),
+        (1, Some(pt_pair)),
+        (4, Some(pt_pair * 4)),
+        (8, Some(pt_pair * 8)),
+    ] {
+        let (merged, audit) = merge_models_weighted(
+            &[("kdconv", &kd, 1), ("ptt", &pt, weight)],
+            MergePolicy::RawSum,
+        );
+        let actual = merged.transition_count("大学", "学生");
+        // PTT 独占对:数值恰为 pt_pair * weight(整数缩放语义)。
+        match expect_exact {
+            Some(expected) => assert_eq!(actual, expected, "weight={weight}"),
+            None => assert!(actual > 0 && actual <= pt_pair, "weight={weight}: {actual}"),
+        }
+        // 审计记录缩放后的观察总量:权重 0 源的总量为 0(仍可解释)。
+        let ptt_total = audit
+            .sources
+            .iter()
+            .find(|(id, _)| *id == "ptt")
+            .map(|(_, t)| *t)
+            .expect("ptt in audit");
+        if weight == 0 {
+            assert_eq!(ptt_total, 0);
+        } else {
+            assert_eq!(ptt_total, pt.observed_total() * weight);
+        }
+    }
+}
+
+#[test]
+fn weighted_merge_with_all_ones_matches_plain_merge() {
+    let kd = BigramModel::from_tsv(KDCONV).expect("kdconv");
+    let pt = BigramModel::from_tsv(PTT).expect("ptt");
+    let (plain, plain_audit) = merge_models(&[("kdconv", &kd), ("ptt", &pt)], MergePolicy::RawSum);
+    let (weighted, weighted_audit) =
+        merge_models_weighted(&[("kdconv", &kd, 1), ("ptt", &pt, 1)], MergePolicy::RawSum);
+    assert_eq!(plain.to_tsv(), weighted.to_tsv(), "权重全 1 必须逐字节一致");
+    assert_eq!(plain_audit.merged_pairs, weighted_audit.merged_pairs);
+    assert_eq!(plain_audit.sources, weighted_audit.sources);
+}
+
+#[test]
+fn weighted_zero_excludes_a_source_completely() {
+    let kd = BigramModel::from_tsv(KDCONV).expect("kdconv");
+    let pt = BigramModel::from_tsv(PTT).expect("ptt");
+    let (excluded, _) =
+        merge_models_weighted(&[("kdconv", &kd, 1), ("ptt", &pt, 0)], MergePolicy::RawSum);
+    let (single, _) = merge_models(&[("kdconv", &kd)], MergePolicy::RawSum);
+    assert_eq!(excluded.to_tsv(), single.to_tsv(), "权重 0 = 该源完全排除");
 }
