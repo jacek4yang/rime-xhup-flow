@@ -94,6 +94,13 @@ pub struct WordExplanation {
     pub mapping_card: Option<String>,
     /// 简码提示卡;`None` = 无提示(候选行不显示 ~<简码>)。
     pub hint_card: Option<String>,
+    /// 提示判定的结构化事实(§3 三判:useful/selection/misleading);
+    /// None = 无提示。Trainer 过滤(misleading/high-cost/shallow)基于此字段,不解析 ASCII 卡。
+    pub hint_verdict: Option<&'static str>,
+    /// 提示码省键数(全码长 - 简码长);None = 无提示;0 = 无省键价值。
+    pub hint_keys_saved: Option<usize>,
+    /// 提示码在真实菜单中的 rank(1 = rank-1 即选);None = 不在该菜单。
+    pub hint_menu_rank: Option<usize>,
 }
 
 impl WordExplanation {
@@ -172,8 +179,8 @@ pub fn explain_words_batch(
     let mut with_hint = 0usize;
     for word in ordered {
         let mapping_card = reports.get(word).map(render_explain);
-        let hint_card =
-            crate::shortcut_explain::explain_shortcut_hint(word).map(|hint| hint.render_card());
+        let hint = crate::shortcut_explain::explain_shortcut_hint(word);
+        let hint_card = hint.as_ref().map(|h| h.render_card());
         if mapping_card.is_some() {
             with_mapping += 1;
         }
@@ -183,6 +190,9 @@ pub fn explain_words_batch(
         out.push(WordExplanation {
             word: word.to_string(),
             mapping_card,
+            hint_verdict: hint.as_ref().map(|h| h.verdict_label_static()),
+            hint_keys_saved: hint.as_ref().map(|h| h.keystrokes_saved()),
+            hint_menu_rank: hint.as_ref().and_then(|h| h.menu_rank),
             hint_card,
         });
     }
