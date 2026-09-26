@@ -274,7 +274,12 @@ jobs:
             exit 1
           fi
           cfg="$RUNNER_TEMP/packaging-config.json"
-          printf '{"version":"%s"}' "$ver" > "$cfg"
+          # MSI/WiX 拒绝非数字 prerelease 标识符(2.0.0-rc.1 → 打包失败),
+          # NSIS 无此限制。两包共用 config,bundle 内部版本统一取
+          # win_version(2.0.0-10001,数值型,≤ 65535);产物文件名随后
+          # 统一重命名回 app_version(2.0.0-rc.1),发布命名不受影响。
+          # (v1 时代 ver 无 prerelease,raw==win_version,缺陷未暴露。)
+          printf '{"version":"%s"}' "$win_version" > "$cfg"
           {
             echo "app_version=$ver"
             echo "win_version=$win_version"
