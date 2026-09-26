@@ -14,3 +14,5 @@ clap = { version = "4", default-features = false, features = [
 ] }
 xhup-analyzer = { path = "../xhup-analyzer" }
 xhup-generator = { path = "../xhup-generator" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }

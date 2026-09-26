@@ -5,6 +5,7 @@
 //! `rime_dict_manager`)提供,本 crate 不重复任何业务逻辑。
 #![forbid(unsafe_code)]
 
+pub mod acceptance;
 pub mod doctor;
 pub mod learning;
 pub mod user_state;
@@ -135,6 +136,30 @@ enum Command {
     UserState(UserStateArgs),
     /// 运行环境与 Lua 合同诊断 (doctor)
     Doctor(DoctorArgs),
+    /// 校验 GA 验收清单(release/acceptance-*.json;#148)
+    ValidateAcceptance(ValidateAcceptanceArgs),
+    /// 输出逐平台最差验收状态(platform=STATE;供发布说明引用)
+    AcceptanceSummary(AcceptanceSummaryArgs),
+}
+
+#[derive(Debug, Args)]
+struct ValidateAcceptanceArgs {
+    /// 验收清单 JSON 路径
+    #[arg(long)]
+    manifest: PathBuf,
+    /// 期望版本(stable 门禁:清单 version 必须等于该值)
+    #[arg(long)]
+    expect_version: Option<String>,
+    /// 稳定版门禁(全部必查项必须 PASS/N/A;缺省按 RC 门禁放行 UNVERIFIED)
+    #[arg(long)]
+    stable: bool,
+}
+
+#[derive(Debug, Args)]
+struct AcceptanceSummaryArgs {
+    /// 验收清单 JSON 路径
+    #[arg(long)]
+    manifest: PathBuf,
 }
 
 #[derive(Debug, Args)]
@@ -208,6 +233,25 @@ pub enum CliError {
     UserState(user_state::UserStateError),
     /// 诊断检查失败。
     Doctor(doctor::DoctorError),
+    /// 验收清单无法读取。
+    AcceptanceRead {
+        /// 清单路径。
+        path: PathBuf,
+        /// 底层 I/O 错误。
+        source: io::Error,
+    },
+    /// 验收清单不是合法 JSON 或结构不符。
+    AcceptanceInvalid {
+        /// 清单路径。
+        path: PathBuf,
+        /// serde/结构错误描述。
+        source: String,
+    },
+    /// 验收清单存在阻塞发布项。
+    AcceptanceViolations {
+        /// 违例数量。
+        count: usize,
+    },
 }
 
 impl fmt::Display for CliError {
@@ -230,6 +274,16 @@ impl fmt::Display for CliError {
             Self::Learning(source) => write!(f, "{source}"),
             Self::UserState(source) => write!(f, "{source}"),
             Self::Doctor(source) => write!(f, "{source}"),
+            Self::AcceptanceInvalid { path, source } => {
+                write!(f, "验收清单 {} 不合法: {source}", path.display())
+            }
+            Self::AcceptanceRead { path, source } => {
+                write!(f, "无法读取验收清单 {}: {source}", path.display())
+            }
+            Self::AcceptanceViolations { count } => write!(
+                f,
+                "验收清单存在 {count} 项阻塞发布(逐项见上方 ::error:: 行)"
+            ),
         }
     }
 }
@@ -239,11 +293,14 @@ impl Error for CliError {
         match self {
             Self::CreateDirectory { source, .. }
             | Self::WriteTemporaryFile { source, .. }
-            | Self::ReplaceArtifact { source, .. } => Some(source),
+            | Self::ReplaceArtifact { source, .. }
+            | Self::AcceptanceRead { source, .. } => Some(source),
             Self::Learning(source) => Some(source),
             Self::UserState(source) => Some(source),
             Self::Doctor(source) => Some(source),
-            Self::OutputNotDirectory { .. } => None,
+            Self::OutputNotDirectory { .. }
+            | Self::AcceptanceInvalid { .. }
+            | Self::AcceptanceViolations { .. } => None,
         }
     }
 }
@@ -384,6 +441,58 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                 Ok(())
             }
         },
+        Command::ValidateAcceptance(args) => {
+            let json =
+                fs::read_to_string(&args.manifest).map_err(|source| CliError::AcceptanceRead {
+                    path: args.manifest.clone(),
+                    source,
+                })?;
+            let manifest = acceptance::parse_manifest(&json).map_err(|source| {
+                CliError::AcceptanceInvalid {
+                    path: args.manifest.clone(),
+                    source: source.to_string(),
+                }
+            })?;
+            let violations = if args.stable {
+                let expected = args.expect_version.as_deref().unwrap_or("2.0.0");
+                acceptance::check_stable(&manifest, expected)
+            } else {
+                acceptance::check_rc(&manifest)
+            };
+            if violations.is_empty() {
+                let mode = if args.stable { "stable" } else { "rc" };
+                println!(
+                    "验收清单校验通过({mode} 门禁): {} v{}",
+                    args.manifest.display(),
+                    manifest.version
+                );
+                Ok(())
+            } else {
+                for violation in &violations {
+                    eprintln!("::error::{violation}");
+                }
+                Err(CliError::AcceptanceViolations {
+                    count: violations.len(),
+                })
+            }
+        }
+        Command::AcceptanceSummary(args) => {
+            let json =
+                fs::read_to_string(&args.manifest).map_err(|source| CliError::AcceptanceRead {
+                    path: args.manifest.clone(),
+                    source,
+                })?;
+            let manifest = acceptance::parse_manifest(&json).map_err(|source| {
+                CliError::AcceptanceInvalid {
+                    path: args.manifest.clone(),
+                    source: source.to_string(),
+                }
+            })?;
+            for line in acceptance::per_platform_summary(&manifest) {
+                println!("{line}");
+            }
+            Ok(())
+        }
         Command::Doctor(args) => {
             let report = doctor::inspect_installation(
                 &args.user_data_dir,
