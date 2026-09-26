@@ -166,6 +166,10 @@ jobs:
       VERSION: ${{ needs.validate.outputs.version }}
       CORE: ${{ needs.validate.outputs.core }}
       IS_RC: ${{ needs.validate.outputs.is_rc }}
+      # Rime 源包文件名携带其内嵌版本(schema version 行 = workspace 版本,
+      # 含 -rc.N 后缀);不能用 CORE(剥后缀)拼名,RC 路径下会校验失败。
+      # v1 时代 CORE == VERSION == 1.0.0,两者巧合一致,缺陷未暴露。
+      RIME_VERSION: ${{ needs.build.outputs.rime_version }}
 
     steps:
       - name: 下载全部产物
@@ -180,7 +184,7 @@ jobs:
           set -euo pipefail
           cd artifacts
           for f in \
-            "xhup-flow-rime-v$CORE.zip" \
+            "xhup-flow-rime-v$RIME_VERSION.zip" \
             "xhup-flow-trainer-v$VERSION-windows-x64-setup.exe" \
             "xhup-flow-trainer-v$VERSION-windows-x64.msi" \
             "xhup-flow-trainer-v$VERSION-macos-universal.dmg" \
@@ -271,7 +275,7 @@ jobs:
 
           ### 仅使用 Rime 输入方案(已有 Rime 客户端)
 
-          1. 下载 \`xhup-flow-rime-v$CORE.zip\`;
+          1. 下载 \`xhup-flow-rime-v$RIME_VERSION.zip\`;
           2. 找到 Rime 用户数据目录(小狼毫: %%APPDATA%%\\Rime;
              鼠须管: ~/Library/Rime;fcitx5: ~/.local/share/fcitx5/rime;
              ibus: ~/.config/ibus/rime);
@@ -290,7 +294,7 @@ jobs:
 
           | 文件 | 平台 | 签名状态 |
           | ---- | ---- | ---- |
-          | \`xhup-flow-rime-v$CORE.zip\` | 平台中立 Rime 源包 | N/A(SHA256 校验) |
+          | \`xhup-flow-rime-v$RIME_VERSION.zip\` | 平台中立 Rime 源包 | N/A(SHA256 校验) |
           | \`xhup-flow-trainer-v$VERSION-windows-x64-setup.exe\` | Windows(NSIS) | UNSIGNED |
           | \`xhup-flow-trainer-v$VERSION-windows-x64.msi\` | Windows(MSI) | UNSIGNED |
           | \`xhup-flow-trainer-v$VERSION-macos-universal.dmg\` | macOS(aarch64+x86_64) | UNSIGNED + UNNOTARIZED |
@@ -345,7 +349,7 @@ jobs:
             --notes-file "$RUNNER_TEMP/RELEASE-NOTES.md" \
             "${prerelease_flag[@]}" --draft \
             --target "$GITHUB_SHA" \
-            "xhup-flow-rime-v$CORE.zip" \
+            "xhup-flow-rime-v$RIME_VERSION.zip" \
             "xhup-flow-trainer-v$VERSION-windows-x64-setup.exe" \
             "xhup-flow-trainer-v$VERSION-windows-x64.msi" \
             "xhup-flow-trainer-v$VERSION-macos-universal.dmg" \
