@@ -148,6 +148,9 @@ jobs:
       android_version_code: ${{ needs.validate.outputs.android_version_code }}
       sign_android: ${{ needs.validate.outputs.publish == 'true' }}
       build_state: ${{ needs.validate.outputs.publish != 'true' && 'RC-REHEARSAL' || (needs.validate.outputs.is_rc == 'true' && 'RC-PUBLISH' || 'RELEASE') }}
+      # R6 决策(#143):arm64-v8a 单 ABI(实测 139.6 MiB)为主发布产物,
+      # universal 4-ABI(551.0 MiB)保留为兼容附加资产。
+      arm64_default: true
 
   publish:
     name: 创建草稿 Release
@@ -183,6 +186,7 @@ jobs:
             "xhup-flow-trainer-v$VERSION-macos-universal.dmg" \
             "xhup-flow-trainer-v$VERSION-linux-amd64.deb" \
             "xhup-flow-trainer-v$VERSION-linux-x86_64.rpm" \
+            "xhup-flow-trainer-v$VERSION-android-arm64.apk" \
             "xhup-flow-trainer-v$VERSION-android-universal.apk" \
             SHA256SUMS.txt CANONICAL-SHA256SUMS.txt BUILD-INFO.txt; do
             [[ -s "$f" ]] || { echo "::error::缺少发布资产或为 0 字节: $f"; exit 1; }
@@ -292,7 +296,8 @@ jobs:
           | \`xhup-flow-trainer-v$VERSION-macos-universal.dmg\` | macOS(aarch64+x86_64) | UNSIGNED + UNNOTARIZED |
           | \`xhup-flow-trainer-v$VERSION-linux-amd64.deb\` | Linux(deb) | N/A |
           | \`xhup-flow-trainer-v$VERSION-linux-x86_64.rpm\` | Linux(rpm) | N/A |
-          | \`xhup-flow-trainer-v$VERSION-android-universal.apk\` | Android(通用) | SIGNED |
+          | \`xhup-flow-trainer-v$VERSION-android-arm64.apk\` | Android(主产物,arm64-v8a) | SIGNED |
+          | \`xhup-flow-trainer-v$VERSION-android-universal.apk\` | Android(兼容附加,4-ABI) | SIGNED |
 
           - 完整性:安装前比对 \`SHA256SUMS.txt\`。
           - 构建元数据:\`BUILD-INFO.txt\`;规范数据确定性哈希:
@@ -346,6 +351,7 @@ jobs:
             "xhup-flow-trainer-v$VERSION-macos-universal.dmg" \
             "xhup-flow-trainer-v$VERSION-linux-amd64.deb" \
             "xhup-flow-trainer-v$VERSION-linux-x86_64.rpm" \
+            "xhup-flow-trainer-v$VERSION-android-arm64.apk" \
             "xhup-flow-trainer-v$VERSION-android-universal.apk" \
             SHA256SUMS.txt CANONICAL-SHA256SUMS.txt BUILD-INFO.txt
           url="$(gh release view "xhup-flow-v$VERSION" --json url -q .url)"
