@@ -122,6 +122,7 @@ export function ControlCenterView() {
   const [hintError, setHintError] = useState<string | null>(null);
   const [batchQuery, setBatchQuery] = useState("");
   const [batchItems, setBatchItems] = useState<WordExplanationDto[] | null>(null);
+  const [batchFilter, setBatchFilter] = useState<"all" | "misleading" | "nohint" | "shallow">("all");
   const [batchStats, setBatchStats] = useState<{ total: number; withMapping: number; withHint: number } | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
@@ -752,7 +753,62 @@ export function ControlCenterView() {
           )}
           {batchItems && (
             <div className="flex flex-col gap-2" aria-label={t("product.batchTitle")}>
-              {batchItems.map((item) => (
+              {batchItems.some(
+                (item) =>
+                  (batchFilter === "misleading" &&
+                    (item.hintVerdict === "MISLEADING" || item.hintVerdict === "SELECT")) ||
+                  (batchFilter === "nohint" && item.hintCard === null && item.mappingCard !== null) ||
+                  (batchFilter === "shallow" && item.hintKeysSaved !== null && item.hintKeysSaved <= 1),
+              ) && (
+                <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant={batchFilter === "all" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setBatchFilter("all")}
+                >
+                  {t("product.batchFilterAll")}
+                </Button>
+                <Button
+                  type="button"
+                  variant={batchFilter === "misleading" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setBatchFilter("misleading")}
+                >
+                  {t("product.batchFilterMisleading")}
+                </Button>
+                <Button
+                  type="button"
+                  variant={batchFilter === "nohint" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setBatchFilter("nohint")}
+                >
+                  {t("product.batchFilterNoHint")}
+                </Button>
+                <Button
+                  type="button"
+                  variant={batchFilter === "shallow" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setBatchFilter("shallow")}
+                >
+                  {t("product.batchFilterShallow")}
+                </Button>
+                </div>
+              )}
+              {batchItems
+                .filter((item) => {
+                  if (batchFilter === "misleading") {
+                    return item.hintVerdict === "MISLEADING" || item.hintVerdict === "SELECT";
+                  }
+                  if (batchFilter === "nohint") {
+                    return item.hintCard === null && item.mappingCard !== null;
+                  }
+                  if (batchFilter === "shallow") {
+                    return item.hintKeysSaved !== null && item.hintKeysSaved <= 1;
+                  }
+                  return true;
+                })
+                .map((item) => (
                 <details
                   key={item.word}
                   className="rounded-md border border-border"

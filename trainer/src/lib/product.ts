@@ -156,4 +156,10 @@ export interface WordExplanationDto {
   word: string;
   mappingCard: string | null;
   hintCard: string | null;
+  /** 提示判定机器标签:USEFUL / SELECT / MISLEADING;null = 无提示。 */
+  hintVerdict: "USEFUL" | "SELECT" | "MISLEADING" | null;
+  /** 提示码省键数(全码长 - 简码长);null = 无提示。 */
+  hintKeysSaved: number | null;
+  /** 提示码在真实菜单中的 rank(1 = 即选);null = 不在该菜单。 */
+  hintMenuRank: number | null;
 }

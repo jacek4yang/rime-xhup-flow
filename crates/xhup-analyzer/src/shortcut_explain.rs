@@ -80,6 +80,12 @@ impl ShortcutHint {
         self.verdict == ShortcutVerdict::Useful
     }
 
+    /// 判定的稳定机器标签(USEFUL/SELECT/MISLEADING);与卡片
+    /// 文本同源,供结构化消费方(Trainer 批量过滤)直接读取。
+    pub const fn verdict_label_static(&self) -> &'static str {
+        verdict_label(self.verdict)
+    }
+
     /// 渲染纯 ASCII 解释卡(§7:无 emoji、无装饰性 Unicode)。
     pub fn render_card(&self) -> String {
         let mut out = String::new();
