@@ -1,6 +1,6 @@
 {
   "name": "@xhup/trainer-core",
-  "version": "2.0.0-rc1",
+  "version": "2.0.0-rc.1",
   "private": true,
   "type": "module",
   "description": "XHUP Flow 跨平台训练/学习核心(平台中立,无宿主依赖)",
