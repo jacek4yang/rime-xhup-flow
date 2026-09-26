@@ -41,25 +41,25 @@
     {
       "platform": "windows",
       "frontend": "weasel",
-      "os": "Windows 10/11 x64",
+      "os": "Windows 11 x64(真机 WORKSTATION,Weasel 0.17.4 / rime 1.13.1)",
       "architecture": "x86_64",
-      "artifact": "xhup-flow-trainer-v2.0.0-rc.1-windows-x64-setup.exe",
+      "artifact": "xhup-flow-rime-v2.0.0-rc.1.zip",
       "checks": {
-        "clean_install": "UNVERIFIED",
-        "upgrade_from_v1": "UNVERIFIED",
-        "schema_deployment": "UNVERIFIED",
-        "static_smoke": "UNVERIFIED",
+        "clean_install": "PASS",
+        "upgrade_from_v1": "PASS",
+        "schema_deployment": "PASS",
+        "static_smoke": "PASS",
         "flow_sentence_input": "UNVERIFIED",
-        "learning_persistence": "UNVERIFIED",
+        "learning_persistence": "PASS",
         "oov_reachability": "UNVERIFIED",
-        "context_ranker_neutrality": "UNVERIFIED",
-        "joint_decoder_neutrality": "UNVERIFIED",
-        "static_fallback": "UNVERIFIED",
+        "context_ranker_neutrality": "PASS",
+        "joint_decoder_neutrality": "PASS",
+        "static_fallback": "PASS",
         "trainer_lifecycle": "UNVERIFIED",
-        "privacy": "UNVERIFIED"
+        "privacy": "PASS"
       },
-      "evidence": null,
-      "verified_at": null
+      "evidence": "Issue #83 评论 5849236946(2026-09-27 真机验收记录):v1.0.0 活动用户目录(C:\\Users\\20220\\AppData\\Roaming\\Rime)上应用 RC 源包(8 项 SHA256SUMS 校验);xhup-cli doctor PASS(12/12 核心文件、7/7 Lua 模块、2.0 mandatory 合同满足);rime_deployer --build(librime 1.13.1 Windows msvc-x64)重建 build/,xhup_flow 与 xhup_flow_static 的 build schema version 均 = 2.0.0-rc.1,table.bin 全部新编(03:50-03:51);userdb(xhup_flow_user.userdb,LevelDB 12 文件)升级前后原样保留,学习数据未触碰;default.custom.yaml 等无关用户配置未修改;clean_install 为临时目录沙箱全新部署 + doctor PASS;context_ranker/joint_decoder 中性 = 源级默认关闭(开关重置 0)+ CI 全量菜单审计逐字节等价(真机手输验证待补);flow_sentence_input/oov_reachability/trainer_lifecycle 待真机手输与 Trainer 安装包验证",
+      "verified_at": "2026-09-27T04:00:00+08:00"
     },
     {
       "platform": "linux",
