@@ -48,6 +48,11 @@ on:
         type: boolean
         required: false
         default: false
+      arm64_default:
+        description: "arm64-only APK 作为主发布产物(universal 降为兼容附加;R6 决策落地)"
+        type: boolean
+        required: false
+        default: false
   # 供 RC/stable 发布工作流复用(xhup-flow-rc-release.yml);
   # Android 签名仅在 sign_android=true 且调用方传入 secrets 时发生。
   workflow_call:
@@ -74,6 +79,11 @@ on:
         default: "PR-REVIEW"
       measure_arm64:
         description: "额外构建 arm64-only 测量 APK(体积读数;常态关闭)"
+        type: boolean
+        required: false
+        default: false
+      arm64_default:
+        description: "arm64-only APK 作为主发布产物(universal 降为兼容附加;R6 决策落地)"
         type: boolean
         required: false
         default: false
@@ -618,6 +628,10 @@ jobs:
           export NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
           pnpm -C trainer tauri android build --apk --config "${{ steps.meta.outputs.config }}"
 
+      # arm64-only 主产物构建(R6 决策落地,#143):与 measure_arm64 相同的
+      # 三通道限定(gradle abiList + CLI -t aarch64),产物进入发布清单。
+      # 注意顺序:arm64 构建会覆盖同一输出目录的 app-universal-release.apk,
+      # 因此 universal 必须先完成校验重命名,arm64 在其后构建。
       - name: 校验并重命名产物
         run: |
           set -euo pipefail
@@ -635,34 +649,70 @@ jobs:
           cp "$apk" "artifacts/android/xhup-flow-trainer-v$ver-android-universal${suffix}.apk"
           ls -l artifacts/android/
 
+      - name: arm64-only 构建(主产物,arm64_default=true)
+        if: inputs.arm64_default == true
+        run: |
+          set -euo pipefail
+          props="trainer/src-tauri/gen/android/gradle.properties"
+          cp "$props" "$props.bak"
+          restore_props() { mv "$props.bak" "$props"; }
+          trap restore_props EXIT
+          {
+            echo ""
+            echo "abiList=arm64-v8a"
+            echo "archList=arm64"
+            echo "targetList=aarch64"
+          } >> "$props"
+          export NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          pnpm -C trainer tauri android build --apk -t aarch64 --config "${{ steps.meta.outputs.config }}"
+
+      - name: arm64 产物校验并重命名(arm64_default=true)
+        if: inputs.arm64_default == true
+        run: |
+          set -euo pipefail
+          ver="${{ steps.meta.outputs.app_version }}"
+          apk_dir="trainer/src-tauri/gen/android/app/build/outputs/apk/universal/release"
+          suffix=""
+          if [[ "${{ inputs.sign_android }}" == "true" ]]; then
+            apk64="$apk_dir/app-universal-release.apk"
+          else
+            apk64="$apk_dir/app-universal-release-unsigned.apk"
+            suffix="-UNSIGNED"
+          fi
+          [[ -s "$apk64" ]] || { echo "::error::arm64 APK 不存在或为 0 字节: $apk64"; exit 1; }
+          cp "$apk64" "artifacts/android/xhup-flow-trainer-v$ver-android-arm64${suffix}.apk"
+          ls -l artifacts/android/
+
       # APK 体积报告(移动端最相关的交付指标;§22 要求 Android memory,
       # 此前无任何基线)。只报告 + 设一个**宽松的防劣化上限**,不设跨机器
       # 精细门槛:APK 体积在同一构建配置下是确定性的,异常膨胀(如误打包
       # 调试符号或重复资源)才是要拦的信号。
+      # arm64_default=true 时逐个 APK 校验(universal + arm64)。
       - name: APK 体积报告
         run: |
           set -euo pipefail
-          apk=$(ls artifacts/android/*.apk)
-          bytes=$(stat -c%s "$apk")
-          mb=$(awk -v b="$bytes" 'BEGIN { printf "%.1f", b/1048576 }')
-          echo "APK 体积: ${bytes} 字节(${mb} MiB)"
-          echo "### Android APK 体积: ${mb} MiB" >> "$GITHUB_STEP_SUMMARY"
-          # 上限 768 MiB。取值依据(2026-09-19 首次实测,而非估算):
-          # universal APK 打包 **4 个 ABI**(arm64-v8a / armeabi-v7a / x86 /
-          # x86_64)的 `libtrainer_lib.so`,实测总体积 582.1 MiB(约 146 MiB/ABI)。
-          # 该体积本身偏大(workspace 未配置 release LTO/strip),但那是**独立
-          # 的优化议题**;本步骤只作「防灾难性劣化」的守卫,故上限取实测值
-          # 之上约 30% 余量,只在真正误打包(如整个 target/ 或未 strip 的
-          # 调试产物混入)时触发。
-          #
-          # 注意:该上限**不是**体积预算。把 582 MiB 降到合理范围需要
-          # ABI 拆分 + release profile 调优,属构建配置变更与产品决策,
-          # 不在本步骤职责内(已在 Issue #83 记录为独立待办)。
-          limit=$((768 * 1048576))
-          if (( bytes > limit )); then
-            echo "::error::APK 体积 ${mb} MiB 超过 768 MiB 上限 —— 疑似误打包调试符号或重复资源"
-            exit 1
-          fi
+          for apk in artifacts/android/*.apk; do
+            bytes=$(stat -c%s "$apk")
+            mb=$(awk -v b="$bytes" 'BEGIN { printf "%.1f", b/1048576 }')
+            echo "$(basename "$apk"): ${bytes} 字节(${mb} MiB)"
+            echo "### Android $(basename "$apk"): ${mb} MiB" >> "$GITHUB_STEP_SUMMARY"
+            # 上限 768 MiB。取值依据(2026-09-19 首次实测,而非估算):
+            # universal APK 打包 **4 个 ABI**(arm64-v8a / armeabi-v7a / x86 /
+            # x86_64)的 `libtrainer_lib.so`,实测总体积 582.1 MiB(约 146 MiB/ABI)。
+            # 该体积本身偏大(workspace 未配置 release LTO/strip),但那是**独立
+            # 的优化议题**;本步骤只作「防灾难性劣化」的守卫,故上限取实测值
+            # 之上约 30% 余量,只在真正误打包(如整个 target/ 或未 strip 的
+            # 调试产物混入)时触发。
+            #
+            # 注意:该上限**不是**体积预算。把 582 MiB 降到合理范围需要
+            # ABI 拆分 + release profile 调优,属构建配置变更与产品决策,
+            # 不在本步骤职责内(已在 Issue #83 记录为独立待办)。
+            limit=$((768 * 1048576))
+            if (( bytes > limit )); then
+              echo "::error::APK 体积 ${mb} MiB 超过 768 MiB 上限 —— 疑似误打包调试符号或重复资源"
+              exit 1
+            fi
+          done
 
       - name: 上传 Android 产物
         uses: actions/upload-artifact@v7
@@ -680,9 +730,10 @@ jobs:
       # - gradle.properties 追加 abiList 控制 universal flavor 的
       #   abiFilters(打包进 APK 的 ABI),构建结束恢复文件。
       # 仅在显式输入时运行(#132):测量构建 = 额外一次完整 Android 工具链
-      # 编译;PR/发布常态不需要,人工演练按需开启。
+      # 编译;发布常态走 arm64_default 主产物路径,本测量通道只供人工
+      # 复核读数,与发布清单无关。
       - name: arm64-only 测量构建
-        if: inputs.measure_arm64 == true
+        if: inputs.measure_arm64 == true && inputs.arm64_default != true
         run: |
           set -euo pipefail
           props="trainer/src-tauri/gen/android/gradle.properties"
@@ -699,7 +750,7 @@ jobs:
           pnpm -C trainer tauri android build --apk -t aarch64 --config "${{ steps.meta.outputs.config }}"
 
       - name: arm64 APK 体积报告
-        if: inputs.measure_arm64 == true
+        if: inputs.measure_arm64 == true && inputs.arm64_default != true
         run: |
           set -euo pipefail
           ver="${{ steps.meta.outputs.app_version }}"
@@ -714,7 +765,7 @@ jobs:
           echo "### Android arm64-only APK 体积: ${mb} MiB" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 上传 arm64 测量产物
-        if: inputs.measure_arm64 == true
+        if: inputs.measure_arm64 == true && inputs.arm64_default != true
         uses: actions/upload-artifact@v7
         with:
           name: android-arm64-measure
@@ -732,6 +783,7 @@ jobs:
       APP_VERSION: ${{ needs.windows.outputs.app_version }}
       BUILD_STATE: ${{ inputs.build_state || 'PR-REVIEW' }}
       ANDROID_SIGNED: ${{ inputs.sign_android == true }}
+      ARM64_DEFAULT: ${{ inputs.arm64_default == true }}
 
     steps:
       - name: 检出仓库
@@ -778,6 +830,10 @@ jobs:
           if [[ "$ANDROID_SIGNED" == "true" ]]; then
             apk="xhup-flow-trainer-v$APP_VERSION-android-universal.apk"
           fi
+          apk64="xhup-flow-trainer-v$APP_VERSION-android-arm64-UNSIGNED.apk"
+          if [[ "$ANDROID_SIGNED" == "true" ]]; then
+            apk64="xhup-flow-trainer-v$APP_VERSION-android-arm64.apk"
+          fi
           expected=(
             "xhup-flow-rime-v$RIME_VERSION.zip"
             "xhup-flow-trainer-v$APP_VERSION-windows-x64-setup.exe"
@@ -787,6 +843,11 @@ jobs:
             "xhup-flow-trainer-v$APP_VERSION-linux-x86_64.rpm"
             "$apk"
           )
+          # arm64_default=true 时 arm64 APK 是主发布产物,进入必备清单;
+          # false 时 PR/演练模式只有 universal。
+          if [[ "$ARM64_DEFAULT" == "true" ]]; then
+            expected+=("$apk64")
+          fi
           for f in "${expected[@]}"; do
             [[ -s "$f" ]] || { echo "::error::缺少产物或为 0 字节: $f"; exit 1; }
           done
@@ -806,11 +867,21 @@ jobs:
             echo "  Windows NSIS/MSI: UNSIGNED(未签名)"
             echo "  macOS DMG: UNSIGNED + UNNOTARIZED(未签名且未公证)"
             echo "  Linux deb/rpm: N/A(格式本身不携带发布签名)"
-            echo "  Android universal APK: $android_state"
+            if [[ "$ARM64_DEFAULT" == "true" ]]; then
+              echo "  Android arm64 APK(主产物): $android_state"
+              echo "  Android universal APK(兼容附加): $android_state"
+            else
+              echo "  Android universal APK: $android_state"
+            fi
             echo "  Rime 源包: N/A(以 SHA256 校验为准)"
             echo ""
-            echo "平台产物: Windows(NSIS+MSI) / macOS(universal DMG) /"
-            echo "  Linux(deb+rpm;AppImage 暂不构建) / Android(universal APK)"
+            if [[ "$ARM64_DEFAULT" == "true" ]]; then
+              echo "平台产物: Windows(NSIS+MSI) / macOS(universal DMG) /"
+              echo "  Linux(deb+rpm;AppImage 暂不构建) / Android(arm64 主 + universal 兼容附加)"
+            else
+              echo "平台产物: Windows(NSIS+MSI) / macOS(universal DMG) /"
+              echo "  Linux(deb+rpm;AppImage 暂不构建) / Android(universal APK)"
+            fi
             echo "平台中立包: xhup-flow-rime-v$RIME_VERSION.zip(含 INSTALL.md 安装说明)"
             echo ""
             echo "规范数据与 Rime 源文件哈希: 见 CANONICAL-SHA256SUMS.txt"
