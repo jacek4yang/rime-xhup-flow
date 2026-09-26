@@ -17,9 +17,10 @@
 
 use crate::lua_hints::{
     LUA_ANNOTATION_FILENAME, LUA_CONTEXT_RANKER_FILENAME, LUA_INIT_FILENAME,
-    LUA_QUICK_HINT_DATA_FILENAME, LUA_QUICK_HINT_FILENAME, LUA_USER_MEMORY_FILENAME,
-    generate_lua_quick_hints_data, lua_annotation_source, lua_context_ranker_source,
-    lua_init_source, lua_quick_hint_source, lua_user_memory_source,
+    LUA_JOINT_DECODER_FILENAME, LUA_QUICK_HINT_DATA_FILENAME, LUA_QUICK_HINT_FILENAME,
+    LUA_USER_MEMORY_FILENAME, generate_lua_quick_hints_data, lua_annotation_source,
+    lua_context_ranker_source, lua_init_source, lua_joint_decoder_source, lua_quick_hint_source,
+    lua_user_memory_source,
 };
 use crate::rime::{RIME_CHAR_DICTIONARY_FILENAME, generate_rime_char_dictionary};
 use crate::rime_fixed_first_shortcuts::{
@@ -203,6 +204,10 @@ pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
         RimeArtifact {
             filename: LUA_USER_MEMORY_FILENAME,
             contents: lua_user_memory_source().to_string(),
+        },
+        RimeArtifact {
+            filename: LUA_JOINT_DECODER_FILENAME,
+            contents: lua_joint_decoder_source().to_string(),
         },
         RimeArtifact {
             filename: LUA_INIT_FILENAME,

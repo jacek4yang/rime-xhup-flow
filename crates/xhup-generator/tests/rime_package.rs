@@ -37,6 +37,7 @@ fn artifact_set_is_exact_and_ordered() {
             "lua/xhup_flow/quick_hint.lua",
             "lua/xhup_flow/context_ranker.lua",
             "lua/xhup_flow/user_memory.lua",
+            "lua/xhup_flow/joint_decoder.lua",
             "lua/xhup_flow/init.lua",
             "lua/xhup_flow/data/quick_hints.lua",
             "xhup_flow.schema.yaml",
@@ -186,6 +187,7 @@ fn schema_semantics() {
             "    - lua_filter@*xhup_flow.quick_hint",
             "    - lua_filter@*xhup_flow.context_ranker",
             "    - lua_filter@*xhup_flow.user_memory",
+            "    - lua_filter@*xhup_flow.joint_decoder",
             "    - uniquifier",
         ],
         "filters 链应为 quick_hint → context_ranker → user_memory → uniquifier"
@@ -299,6 +301,7 @@ fn schema_excludes_non_portable_or_deferred_features() {
             "    - lua_filter@*xhup_flow.quick_hint",
             "    - lua_filter@*xhup_flow.context_ranker",
             "    - lua_filter@*xhup_flow.user_memory",
+            "    - lua_filter@*xhup_flow.joint_decoder",
         ],
         "方案只允许 quick_hint、context_ranker 与 user_memory 三个 Lua 组件引用"
     );
@@ -308,6 +311,7 @@ fn schema_excludes_non_portable_or_deferred_features() {
         if code.contains("lua_filter@*xhup_flow.quick_hint")
             || code.contains("lua_filter@*xhup_flow.context_ranker")
             || code.contains("lua_filter@*xhup_flow.user_memory")
+            || code.contains("lua_filter@*xhup_flow.joint_decoder")
         {
             continue;
         }

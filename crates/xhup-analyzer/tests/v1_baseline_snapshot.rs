@@ -130,7 +130,7 @@ fn generated_package_bytes_match_v1_release_snapshot() {
     let artifacts = generate_rime_artifacts();
     assert_eq!(
         artifacts.len(),
-        18,
+        19,
         "2.0 包扩充候选注释、上下文调序、用户记忆观察与运行时诊断模块"
     );
 

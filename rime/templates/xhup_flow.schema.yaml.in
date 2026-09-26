@@ -57,6 +57,12 @@ switches:
   - name: user_memory
     reset: 0
     states: [关闭记忆, 本地记忆]
+  # joint lattice 守护诊断(§11/§14/R3):默认关闭 —— 关闭 = 严格透传;
+  # 开启后有界重叠 span 证据采集 + 提交重复词的有界提升(永不越过
+  # 静态强固定 rank-1;translator 查询失败/证据为空 → 回退静态序)。
+  - name: joint_decoder
+    reset: 0
+    states: [关闭联合解码, 开启联合解码]
 
 engine:
   processors:
@@ -97,6 +103,9 @@ engine:
     # 版本化 TSV(与 xhup-cli user-state 同一文件格式)。本组件不改
     # 候选流(排序消费是后续 PR);位于 uniquifier 之前,纯透传。
     - lua_filter@*xhup_flow.user_memory
+    # joint lattice 守护诊断(§11/§14/R3):默认关闭(严格透传);开启后
+    # 有界证据采集 + 重复词有界提升,永不越过静态强固定 rank-1。
+    - lua_filter@*xhup_flow.joint_decoder
     - uniquifier
 
 speller:

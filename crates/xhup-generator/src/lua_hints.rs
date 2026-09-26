@@ -36,6 +36,12 @@ const CONTEXT_RANKER_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/co
 /// 本地用户记忆观察组件源(#83 R4;入库源码,同法嵌入)。
 const USER_MEMORY_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/user_memory.lua");
 
+/// joint lattice 守护诊断组件源(#83 R3;入库源码,同法嵌入)。
+const JOINT_DECODER_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/joint_decoder.lua");
+
+/// joint_decoder 模块产物文件名(打包进 Rime 包 lua/xhup_flow/)。
+pub const LUA_JOINT_DECODER_FILENAME: &str = "lua/xhup_flow/joint_decoder.lua";
+
 /// user_memory 模块产物文件名(打包进 Rime 包 lua/xhup_flow/)。
 pub const LUA_USER_MEMORY_FILENAME: &str = "lua/xhup_flow/user_memory.lua";
 
@@ -65,6 +71,11 @@ pub fn lua_context_ranker_source() -> &'static str {
 /// 本地用户记忆观察组件源文本(逐字嵌入,未经任何改写)。
 pub fn lua_user_memory_source() -> &'static str {
     USER_MEMORY_SOURCE
+}
+
+/// joint lattice 守护诊断组件源文本(逐字嵌入,未经任何改写)。
+pub fn lua_joint_decoder_source() -> &'static str {
+    JOINT_DECODER_SOURCE
 }
 
 /// 生成简码提示数据模块文本(Lua table,词 → 最简码)。
