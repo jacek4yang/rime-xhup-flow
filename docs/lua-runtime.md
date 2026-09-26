@@ -1,6 +1,6 @@
 # Lua 运行时策略层架构(XHUP Flow)
 
-状态:**quick_hint、annotation、context_ranker 与 mandatory Lua 合同诊断已落地;context_ranker 已通过真实插件审计(#129,6 项 0 失败)并完成生产翻转(默认开启)**(#59, #88, #128, #129, CI 全绿);
+状态:**quick_hint、annotation、context_ranker、user_memory 四 mandatory Lua 组件已落地;context_ranker 已通过真实插件审计(#129)并完成生产翻转(默认开启,#130);user_memory 观察组件(#135)与 context_ranker 用户桶消费(#136)已合并并通过两阶段闭环审计(阶段 1 8/8、阶段 2 10/10 PASS,持久化跨重启改变排序)**(#59, #88, #128, #129, #135, #136, CI 全绿);
 其余模块按本文规划推进。依据:docs/research-runtime-and-references.md;
 本文只记录决策、权衡与不变量。
 
@@ -79,6 +79,8 @@ lua/xhup_flow/
 ├── quick_hint.lua          # 简码提示(filter,委托 annotation 格式化 comment)
 ├── context_ranker.lua      # 有界上下文调序(filter,生产默认开启,三桶稳定重排)
 ├── candidate_control.lua   # 本地置顶/降频/隐藏(processor+filter 双入口)
+├── user_memory.lua         # 本地用户记忆观察(filter,默认关闭;commit_notifier
+│                            #   记录词形计数,FLUSH_EVERY=20 原子写版本化 TSV)
 ├── context_ranker.lua      # 有界上下文调序(filter,仅前 3~5 候选)
 ├── sentence_policy.lua     # 简码与组句交互策略(随 Flow 重设计落地)
 └── util.lua                # 平台检测、配置读取、安全 IO
