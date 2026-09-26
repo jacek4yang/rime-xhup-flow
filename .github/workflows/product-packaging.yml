@@ -87,6 +87,12 @@ on:
         type: boolean
         required: false
         default: false
+    # 供调用方(RC 发布工作流)取 Rime 源包版本 —— zip 文件名携带该
+    # 版本(含 -rc.N 后缀),与 core(剥后缀)在 RC 路径下不同。
+    outputs:
+      rime_version:
+        description: "Rime 源包版本(schema version 行,含 prerelease 后缀)"
+        value: ${{ jobs.rime-package.outputs.rime_version }}
 
 permissions:
   contents: read
