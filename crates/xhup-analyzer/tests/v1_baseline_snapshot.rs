@@ -144,17 +144,56 @@ fn generated_package_bytes_match_v1_release_snapshot() {
 fn artifact_content_matches_independent_v1_release_hashes() {
     use std::collections::BTreeMap;
     use xhup_analyzer::export_v2::sha256_hex;
+    // 版本号与冻结内容语义分离:产物头部的 `version:` 行随当前
+    // package version 渲染(rc1 ≠ v1.0.0),比哈希前归一到 v1 的版本
+    // 行,保证哈希等价性只检验**冻结内容**(词表/映射/结构)本身。
+    const V1_VERSION_LINE: &str = "1.0.0";
+    let normalize_version = |filename: &str, contents: String| -> String {
+        if !filename.ends_with(".yaml") {
+            return contents;
+        }
+        let version_prefix = "version: ";
+        let mut out = String::with_capacity(contents.len());
+        for line in contents.lines() {
+            let trimmed = line.trim_start();
+            if let Some(stripped) = trimmed.strip_prefix(version_prefix)
+                && stripped.starts_with('"')
+            {
+                // 保留原行前导空白,仅替换引号内版本字面量。
+                let indent_len = line.len() - trimmed.len();
+                let indent = &line[..indent_len];
+                out.push_str(indent);
+                out.push_str(version_prefix);
+                out.push_str(&format!("\"{V1_VERSION_LINE}\""));
+                out.push('\n');
+                continue;
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
+        out
+    };
     let actual: BTreeMap<_, _> = generate_rime_artifacts()
         .into_iter()
         .map(|artifact| {
             (
                 artifact.filename().to_string(),
-                sha256_hex(artifact.contents().as_bytes()),
+                sha256_hex(
+                    normalize_version(artifact.filename(), artifact.contents().to_string())
+                        .as_bytes(),
+                ),
             )
         })
         .chain(std::iter::once((
             "xhup_flow_trainer.json".into(),
-            sha256_hex(xhup_generator::generate_trainer_dataset().as_bytes()),
+            // 训练器数据集头部嵌入当前 package version(rc1 ≠ v1.0.0),
+            // 与 YAML `version:` 行同策略:比哈希前归一到 v1 版本,
+            // 保证哈希等价性只检验冻结内容本身。
+            sha256_hex(
+                xhup_generator::generate_trainer_dataset()
+                    .replace(env!("CARGO_PKG_VERSION"), V1_VERSION_LINE)
+                    .as_bytes(),
+            ),
         )))
         .collect();
     let mut expected = BTreeMap::new();
