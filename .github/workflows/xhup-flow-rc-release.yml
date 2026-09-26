@@ -79,15 +79,18 @@ jobs:
             echo "::error::android_version_code '$INPUT_VCODE' 必须是 >= 1 的正整数,或留空自动派生"
             exit 1
           fi
-          # 版本一致性:core 必须同时等于全部产品级版本来源
+          # 版本一致性:完整发布版本必须同时等于全部产品级版本来源
           # (Rime 源包版本 = workspace 版本,由生成器内嵌;
           #  trainer/src-tauri 测试 product_versions_are_synchronized
           #  在 CI 中强制同一不变量)。
+          # 注意:必须比较完整 version(含 -rc.N 后缀),core 只用于
+          # is_rc 判定与摘要展示 —— 用 core 比较会在 RC 路径下把
+          # 2.0.0-rc.1 与 2.0.0 误判为跳版(v1 时代 1.0.0 无后缀,未暴露)。
           ws="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
           check_version() {
             local label="$1" actual="$2"
-            if [[ "$core" != "$actual" ]]; then
-              echo "::error::core '$core' != $label '$actual'(先统一升版,不得静默跳版)"
+            if [[ "$version" != "$actual" ]]; then
+              echo "::error::version '$version' != $label '$actual'(先统一升版,不得静默跳版)"
               exit 1
             fi
           }
