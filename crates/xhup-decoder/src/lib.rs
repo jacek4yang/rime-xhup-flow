@@ -33,7 +33,9 @@ pub use lattice::{
     CandidateEvidence, CandidateKind, EdgeCandidate, EdgeId, Lattice, LatticeEdge, LatticeError,
     LatticePath, PathSet, Span,
 };
-pub use multi_source::{MergeAudit, MergePolicy, NORMALIZE_SCALE, merge_models};
+pub use multi_source::{
+    MergeAudit, MergePolicy, NORMALIZE_SCALE, merge_models, merge_models_weighted,
+};
 pub use scoring::{
     BaselineScoreBreakdown, BaselineScorer, DeterministicScorer, Score, ScoredPath, rank_paths,
 };

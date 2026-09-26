@@ -71,16 +71,44 @@ pub fn merge_models(
     sources: &[(&'static str, &BigramModel)],
     policy: MergePolicy,
 ) -> (BigramModel, MergeAudit) {
-    // 先收集每源的 (left, right) → count,便于按策略逐对合并。
+    merge_models_weighted(
+        &sources
+            .iter()
+            .map(|(id, model)| (*id, *model, 1))
+            .collect::<Vec<_>>(),
+        policy,
+    )
+}
+
+/// 带每源权重的合并(`weight` 为非负整数缩放;0 = 该源被完全排除)。
+///
+/// 动机(PR #137 测量):KDConv 与重放夹具同域,PTT 是异域补强;RawSum
+/// 会把共同 pair 的证据相加、稀释同域相对差距(2000 句重放 rank1 5532
+/// → 5527)。**按域加权**让调用方在「补强独占对」与「不稀释同域证据」
+/// 之间取实测最优点;权重语义是确定性的整数缩放(先乘后除,保持单调)。
+///
+/// 权重并非独立策略,而是每源的整数缩放:合并语义仍由 [`MergePolicy`]
+/// 决定,审计里的 `sources` 记录缩放后的观察总量,权重因此可解释。
+/// 权重全为 1 时与不带权重的合并逐字节一致(确定性)。
+///
+/// [`merge_models`]:crate::merge_models
+pub fn merge_models_weighted(
+    sources: &[(&'static str, &BigramModel, u64)],
+    policy: MergePolicy,
+) -> (BigramModel, MergeAudit) {
+    // 先收集每源的 (left, right) → count(权重在收集期一次性整数缩放)。
     let mut per_source: Vec<BTreeMap<(String, String), u64>> = Vec::new();
     let mut audit_sources = Vec::new();
     let mut all_keys: Vec<(String, String)> = Vec::new();
-    for (id, model) in sources {
+    for (id, model, weight) in sources {
         let mut rows: BTreeMap<(String, String), u64> = BTreeMap::new();
         for (left, right, count) in model.transitions() {
-            rows.insert((left.to_string(), right.to_string()), count);
+            rows.insert(
+                (left.to_string(), right.to_string()),
+                count.saturating_mul(*weight),
+            );
         }
-        audit_sources.push((*id, model.observed_total()));
+        audit_sources.push((*id, model.observed_total().saturating_mul(*weight)));
         // 键并集(BTreeMap 有序;最后统一 dedup 保证确定性)。
         all_keys.extend(rows.keys().cloned());
         per_source.push(rows);
