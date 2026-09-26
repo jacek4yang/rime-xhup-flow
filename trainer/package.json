@@ -1,7 +1,7 @@
 {
   "name": "trainer",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0-rc1",
   "type": "module",
   "packageManager": "pnpm@11.24.0",
   "scripts": {
