@@ -114,26 +114,29 @@ pub fn generate_rime_flow_dictionary() -> String {
     // 相邻组合)在 Flow 空间内无任何完整覆盖路径,连续输入只能靠手工
     // 分隔。
     //
-    // 码长先验(librime poet 组句合同):句子总分 = Σ log(词权重) −
-    // 13.81×词数(Grammar::Evaluate 无 grammar 组件时的组合惩罚,
-    // log(1e-6))。若 3/4 键全码行携带与 2 键声码行相同的权重(尤其
-    // 官网核验 10M 加成),任何「2 字全码分段」都比「3+ 字声码分段」
-    // 少付一次 13.81 nats,字频差距无法弥补,poet 会系统性地把整句
-    // 拆成全码字对(如 tiogei → 题|蛤 压倒 提|嗯|诶)。因此全码原语
-    // 按码长连续降权(3 键 ÷100、4 键 ÷10000,保底 1):它们是奇数
-    // 键流的可达性兜底,组句默认仍走声码/词层路径;官方 10M 核验
-    // 加成只表达「权威首选输入码」,属于 2 键声码层,不进入全码行。
-    // 组内同码频率序(第 1 名 N .. 末名 1)经 ÷100/÷10000 后仍然单调
-    // 保持,排序行为不受影响。
+    // 码长先验(librime poet 组句合同):无 grammar 组件时句子总分 =
+    // Σ log10(词权重) − kPenalty×词数,kPenalty 随 librime 版本不同:
+    // 1.10 = 18.4207(log 1e-8)、1.16 = 13.8155(log 1e-6)。关键不变量:
+    // **每多一个词必付一次 kPenalty,而任意频率差距最多贡献
+    // log10(u32 上限)≈9.63 nats < kPenalty**。因此若 3/4 键全码行携带
+    // 与声码行可比的权重,任何「2 字全码分段」都结构性压倒「3+ 字
+    // 声码分段」(CI librime 1.10 真机复现:tiogei 的 提|嗯|诶 被
+    // 题|蛤 劫持)。修复(在 1.10 与 1.16 上同时成立):
+    // - 全码原语权重 = min(2, 组内排名):组内第一名 2、其余 1。它们
+    //   的语义是「奇数键流的可达性兜底」;跨分段的胜负由声码/词条行
+    //   的频率证据决定。min(2,·) 保住同码组内第一名辨识(否则
+    //   jbzqu 的 进|去 与 近|去 权重全平,poet 按词典文本序取 近去)。
+    // - 官方声码行加成提到 1e8(log10≈8):保证「2 字全码 + 1 字声码
+    //   相争」的 worst case(三字声码行均为官方)下声码分段有 ≥2
+    //   nats 余量,不再依赖边际差(10M 加成时 tiogei 仅差 0.008)。
     for entry in finalized_char_code_entries().iter() {
         let base = u32::try_from(entry.frequency_score())
             .unwrap_or(u32::MAX / 2)
             .max(1);
         let weight = match entry.code().len() {
-            2 if entry.is_official() => 10_000_000u32.saturating_add(base),
+            2 if entry.is_official() => 100_000_000u32.saturating_add(base),
             2 => base,
-            3 => (base / 100).max(1),
-            _ => (base / 10_000).max(1),
+            _ => entry.rime_weight().clamp(1, 2),
         };
         rows.push((
             entry.hanzi().as_char().to_string(),
