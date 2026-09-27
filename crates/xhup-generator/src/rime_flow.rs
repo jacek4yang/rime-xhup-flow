@@ -112,16 +112,28 @@ pub fn generate_rime_flow_dictionary() -> String {
     // #151 变长自动分段:连续 Flow 输入(如 `jbzqu` = jbz + qu → 进去)
     // 需要组句词典同时持有 3/4 键全码原语,否则奇数键流(2+3 / 3+2 等
     // 相邻组合)在 Flow 空间内无任何完整覆盖路径,连续输入只能靠手工
-    // 分隔。全部原语携带与 2 键行一致的频率权重语义(官网核验加成
-    // 同等对待),组句 poet 按句子总权重比较分段路径。
+    // 分隔。
+    //
+    // 码长先验(librime poet 组句合同):句子总分 = Σ log(词权重) −
+    // 13.81×词数(Grammar::Evaluate 无 grammar 组件时的组合惩罚,
+    // log(1e-6))。若 3/4 键全码行携带与 2 键声码行相同的权重(尤其
+    // 官网核验 10M 加成),任何「2 字全码分段」都比「3+ 字声码分段」
+    // 少付一次 13.81 nats,字频差距无法弥补,poet 会系统性地把整句
+    // 拆成全码字对(如 tiogei → 题|蛤 压倒 提|嗯|诶)。因此全码原语
+    // 按码长连续降权(3 键 ÷100、4 键 ÷10000,保底 1):它们是奇数
+    // 键流的可达性兜底,组句默认仍走声码/词层路径;官方 10M 核验
+    // 加成只表达「权威首选输入码」,属于 2 键声码层,不进入全码行。
+    // 组内同码频率序(第 1 名 N .. 末名 1)经 ÷100/÷10000 后仍然单调
+    // 保持,排序行为不受影响。
     for entry in finalized_char_code_entries().iter() {
         let base = u32::try_from(entry.frequency_score())
             .unwrap_or(u32::MAX / 2)
             .max(1);
-        let weight = if entry.is_official() {
-            10_000_000u32.saturating_add(base)
-        } else {
-            base
+        let weight = match entry.code().len() {
+            2 if entry.is_official() => 10_000_000u32.saturating_add(base),
+            2 => base,
+            3 => (base / 100).max(1),
+            _ => (base / 10_000).max(1),
         };
         rows.push((
             entry.hanzi().as_char().to_string(),

@@ -77,8 +77,28 @@ static void reset_composition(void) {
 static void check_only(const char *name, const char *target, int require_first) {
     int n = 0;
     int rank = candidate_rank(target, &n);
-    char detail[64];
+    char detail[640];
     snprintf(detail, sizeof(detail), "rank=%d, candidates=%d", rank, n);
+    if (rank == 0) {
+        /* 失败诊断:把实际菜单前若干候选一并输出,CI 日志可自证。 */
+        RIME_STRUCT(RimeContext, context);
+        if (rime->get_context(session, &context)) {
+            size_t used = strlen(detail);
+            int shown = context.menu.num_candidates < 12 ? context.menu.num_candidates : 12;
+            strncat(detail, ", actual=[", sizeof(detail) - used - 1);
+            for (int i = 0; i < shown; ++i) {
+                used = strlen(detail);
+                strncat(detail, i ? "|" : "", sizeof(detail) - used - 1);
+                used = strlen(detail);
+                if (context.menu.candidates[i].text)
+                    strncat(detail, context.menu.candidates[i].text,
+                            sizeof(detail) - used - 1);
+            }
+            rime->free_context(&context);
+            used = strlen(detail);
+            strncat(detail, "]", sizeof(detail) - used - 1);
+        }
+    }
     report(require_first ? rank == 1 : rank > 0, name, detail);
 }
 
@@ -115,8 +135,10 @@ static void expect_commit_first(const char *label, const char *target) {
     report(ok, name, NULL);
 }
 
-static void expect_exact_order(const char *keys, const char *const *expected,
-                               int expected_len) {
+/* exact 前缀保持序:菜单前 expected_len 个候选按序等于 expected;
+ * 其后允许 completion 追加(#150/#151 未完尾缀语义),不得少于 exact。 */
+static void expect_prefix_order(const char *keys, const char *const *expected,
+                                int expected_len) {
     char actual[512] = "";
     char detail[640];
     char name[128];
@@ -134,7 +156,7 @@ static void expect_exact_order(const char *keys, const char *const *expected,
         }
         rime->free_context(&context);
     }
-    int ok = n == expected_len;
+    int ok = n >= expected_len;
     for (int i = 0; ok && i < expected_len; ++i) {
         const char *p = actual;
         for (int j = 0; j < i; ++j) {
@@ -150,10 +172,10 @@ static void expect_exact_order(const char *keys, const char *const *expected,
         size_t len = end ? (size_t)(end - p) : strlen(p);
         ok = len == strlen(expected[i]) && strncmp(p, expected[i], len) == 0;
     }
-    snprintf(name, sizeof(name), "%s → 精确候选序", keys);
+    snprintf(name, sizeof(name), "%s → exact 前缀保持序", keys);
     snprintf(detail, sizeof(detail), "actual=[%s]", actual);
     report(ok, name, detail);
-    report(!has_commit() && active, "精确序检查无 auto commit", NULL);
+    report(!has_commit() && active, "exact 前缀序检查无 auto commit", NULL);
 }
 
 int main(int argc, char **argv) {
@@ -268,13 +290,15 @@ int main(int argc, char **argv) {
     expect_menu("uijm", "时间", 1);
     reset_composition();
     {
+        /* exact 前缀保持序:completion(未完成 3/4 键尾码)只允许追加在
+         * 全部 exact 候选之后,#150/#151 菜单不塌缩语义。 */
         const char *const expected[] = {"时间", "史记", "实践", "事迹", "铈", "鼫"};
-        expect_exact_order("uij", expected, 6);
+        expect_prefix_order("uij", expected, 6);
     }
     reset_composition();
     {
         const char *const expected[] = {"不是", "布", "步上"};
-        expect_exact_order("buu", expected, 3);
+        expect_prefix_order("buu", expected, 3);
     }
     reset_composition();
     expect_absent("uj", "时间");

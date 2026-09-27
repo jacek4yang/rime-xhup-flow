@@ -154,10 +154,11 @@ fn schema_semantics() {
         "FIXED_FIRST 必须并入同一静态 translator"
     );
     // Flow translator:完整词汇 + 单字开放组句 + 共享用户词典；严格位于静态之后。
-    // 无自动提交、无 completion。
+    // 无自动提交;completion 允许(#150/#151):未完成尾键以 completion
+    // 候选兜底,菜单不塌缩;exact/sentence 优先(sentence_over_completion)。
     assert!(
         schema.contains(
-            "flow:\n  dictionary: xhup_flow_flow\n  user_dict: xhup_flow_user\n  enable_completion: false\n  enable_sentence: true\n  sentence_over_completion: true\n  enable_user_dict: true\n  initial_quality: 100"
+            "flow:\n  dictionary: xhup_flow_flow\n  user_dict: xhup_flow_user\n  enable_completion: true\n  enable_sentence: true\n  sentence_over_completion: true\n  enable_user_dict: true\n  initial_quality: 100"
         ),
         "flow translator 配置不符合组句语义"
     );
@@ -285,10 +286,24 @@ fn schema_excludes_non_portable_or_deferred_features() {
         "simplifier",
         "auto_select",
         "auto_commit",
-        "enable_completion: true",
+        // #150/#151:flow translator 的 completion 是「未完成尾键兜底」
+        // 的许可能力;禁的是 primary/learn translator 的 completion
+        // (保持静态 exact 语义)。此处校验:flow 块之外无
+        // enable_completion: true。
     ] {
         assert!(!schema.contains(forbidden), "方案不应包含 `{forbidden}`");
     }
+    // completion 许可面:primary 与 learn 必须 false,flow 必须 true。
+    assert!(
+        !schema.contains("translator:\n  dictionary: xhup_flow\n  enable_completion: true"),
+        "primary translator 不得开启 completion"
+    );
+    assert!(
+        !schema.contains(
+            "learn:\n  dictionary: xhup_flow_learn\n  user_dict: xhup_flow_user\n  enable_completion: true"
+        ),
+        "learn translator 不得开启 completion"
+    );
     // Lua 许可例外:quick_hint 简码提示、context_ranker 有界调序与
     // (2.0 mandatory Lua 合同组件);其余任何 lua 组件引用仍然禁止。
     let lua_lines: Vec<&str> = schema
