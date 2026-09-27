@@ -127,10 +127,15 @@ translator:
 # xhup_flow_user(句子候选属于用户词典语言,提交时 Memorize 学习
 # 其词条元素);initial_quality 100 与 primary 的 1000000 质量栅栏保证
 # 开放候选位于全部静态候选之后。
+# #150/#151 变长分段 + 未完尾缀:completion 允许 Flow translator 对
+# 「已解码前缀 + 未完成尾键」保持候选(尾键作为待定前缀给出以其开头
+# 的码位延伸候选),菜单不因最后一个码未完成而塌缩。completion 候选
+# 位于 exact/sentence 之后(sentence_over_completion),静态强固定
+# rank-1 与 exact 候选的次序不受影响。
 flow:
   dictionary: xhup_flow_flow
   user_dict: xhup_flow_user
-  enable_completion: false
+  enable_completion: true
   enable_sentence: true
   sentence_over_completion: true
   enable_user_dict: true

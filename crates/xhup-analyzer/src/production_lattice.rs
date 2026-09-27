@@ -12,7 +12,9 @@
 use std::num::NonZeroUsize;
 
 use xhup_core::KeySequence;
-use xhup_decoder::{BuildStats, BuiltLattice, CandidateKind, LatticeBuilder, SourceCandidate};
+use xhup_decoder::{
+    BuildStats, BuiltLattice, CandidateKind, LatticeBuilder, LatticeError, SourceCandidate,
+};
 use xhup_generator::{
     canonical_extended_word_code_entries, canonical_input_char_code_entries,
     canonical_word_code_entries,
@@ -88,20 +90,28 @@ pub fn build_production_lattice(input: &str, path_limit: NonZeroUsize) -> BuiltL
         }
     }
 
-    builder
-        .build(input, path_limit)
-        .expect("生成器候选与输入按键串必须自洽")
+    match builder.build(input, path_limit) {
+        Ok(built) => built,
+        // #150/#151:逐键 prefix-walk 下,单键前缀(如 `j`)没有任何码
+        // 事实(最短码 2 键),build 返回 EmptyCandidateText —— 转为
+        // 零边 lattice(空菜单但可用),不得 panic。
+        Err(LatticeError::EmptyCandidateText) => production_empty(input, path_limit),
+        Err(error) => panic!("生成器候选与输入按键串必须自洽: {error:?}"),
+    }
 }
 
-/// 输入串无法解析为按键序列时的空构造(保持与解析成功路径一致的返回类型)。
+/// 输入串可解析但没有任何码事实时的空构造(#150/#151 逐键 prefix-walk)。
+///
+/// 首个按键尚无任何码事实(最短码 2 键)时返回**零边 lattice** 而非
+/// 错误 —— 空 lattice 的完整路径空间为空,排序输出为空菜单,语义 =
+/// 「该前缀尚无可用候选」,与「崩溃/拒绝构建」有本质区别;下一个按键
+/// 到达后事实流非空,恢复正常构建。
 fn production_empty(input: &str, path_limit: NonZeroUsize) -> BuiltLattice {
-    // 输入非法时仍走一遍 build 让其返回 InvalidSpan 错误,与既有契约一致;
-    // 这里用空 facts 触发 EmptyCandidateText。测试从不传非法输入,
-    // 生产调用方在解码前已校验输入。
-    let builder = LatticeBuilder::new();
-    builder
-        .build(input, path_limit)
-        .expect("空事实流的构建错误属于调用方契约违反")
+    let composition: KeySequence = input
+        .parse()
+        .expect("空事实流仅发生在输入可解析但无码事实的场景");
+    let lattice = xhup_decoder::Lattice::new(composition);
+    BuiltLattice::from_parts(lattice, path_limit)
 }
 
 /// 融合统计快捷访问(测试与基准用)。

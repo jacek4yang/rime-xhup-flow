@@ -107,17 +107,36 @@ pub fn flow_encoder_yaml() -> String {
 /// 隔离，因此开放组句只追加候选，不改变冻结 static exact 前缀。
 pub fn generate_rime_flow_dictionary() -> String {
     let mut rows: Vec<(String, String, u32)> = Vec::new();
-    for entry in finalized_char_code_entries()
-        .iter()
-        .filter(|entry| entry.code().len() == 2)
-    {
+    // 单字分割原语:**全部 canonical 输入码长**(2 键声码 + 3/4 键全码)。
+    //
+    // #151 变长自动分段:连续 Flow 输入(如 `jbzqu` = jbz + qu → 进去)
+    // 需要组句词典同时持有 3/4 键全码原语,否则奇数键流(2+3 / 3+2 等
+    // 相邻组合)在 Flow 空间内无任何完整覆盖路径,连续输入只能靠手工
+    // 分隔。
+    //
+    // 码长先验(librime poet 组句合同):无 grammar 组件时句子总分 =
+    // Σ log10(词权重) − kPenalty×词数,kPenalty 随 librime 版本不同:
+    // 1.10 = 18.4207(log 1e-8)、1.16 = 13.8155(log 1e-6)。关键不变量:
+    // **每多一个词必付一次 kPenalty,而任意频率差距最多贡献
+    // log10(u32 上限)≈9.63 nats < kPenalty**。因此若 3/4 键全码行携带
+    // 与声码行可比的权重,任何「2 字全码分段」都结构性压倒「3+ 字
+    // 声码分段」(CI librime 1.10 真机复现:tiogei 的 提|嗯|诶 被
+    // 题|蛤 劫持)。修复(在 1.10 与 1.16 上同时成立):
+    // - 全码原语权重 = min(2, 组内排名):组内第一名 2、其余 1。它们
+    //   的语义是「奇数键流的可达性兜底」;跨分段的胜负由声码/词条行
+    //   的频率证据决定。min(2,·) 保住同码组内第一名辨识(否则
+    //   jbzqu 的 进|去 与 近|去 权重全平,poet 按词典文本序取 近去)。
+    // - 官方声码行加成提到 1e8(log10≈8):保证「2 字全码 + 1 字声码
+    //   相争」的 worst case(三字声码行均为官方)下声码分段有 ≥2
+    //   nats 余量,不再依赖边际差(10M 加成时 tiogei 仅差 0.008)。
+    for entry in finalized_char_code_entries().iter() {
         let base = u32::try_from(entry.frequency_score())
             .unwrap_or(u32::MAX / 2)
             .max(1);
-        let weight = if entry.is_official() {
-            10_000_000u32.saturating_add(base)
-        } else {
-            base
+        let weight = match entry.code().len() {
+            2 if entry.is_official() => 100_000_000u32.saturating_add(base),
+            2 => base,
+            _ => entry.rime_weight().clamp(1, 2),
         };
         rows.push((
             entry.hanzi().as_char().to_string(),
@@ -248,12 +267,11 @@ mod tests {
             .skip_while(|line| *line != "...")
             .skip(1)
             .filter(|line| {
-                line.split('\t')
-                    .next()
-                    .is_some_and(|text| text.chars().count() == 1)
+                let fields: Vec<_> = line.split('\t').collect();
+                fields[0].chars().count() == 1 && fields[1].len() == 2
             })
             .collect();
-        assert_eq!(rows.len(), 9_254);
+        assert_eq!(rows.len(), 9_254, "两键声码原语数量不变");
         for line in &rows {
             let fields: Vec<_> = line.split('\t').collect();
             assert_eq!(fields.len(), 3);
@@ -263,6 +281,36 @@ mod tests {
         }
         assert!(flow.lines().any(|line| line.starts_with("嗯\tog\t")));
         assert!(flow.lines().any(|line| line.starts_with("诶\tei\t")));
+    }
+
+    /// #151 变长自动分段:全部 3/4 键全码单字原语必须在 Flow 词典中,
+    /// 否则奇数键连续流(2+3 / 3+2 等相邻组合)没有任何完整覆盖路径。
+    /// `jbz + qu → 进去` 哨兵依赖 进@jbz 与 去@qu 同时在词典。
+    #[test]
+    fn flow_dictionary_contains_full_code_character_primitives() {
+        let flow = generate_rime_flow_dictionary();
+        let rows: Vec<_> = flow
+            .lines()
+            .skip_while(|line| *line != "...")
+            .skip(1)
+            .filter(|line| {
+                let fields: Vec<_> = line.split('\t').collect();
+                fields[0].chars().count() == 1 && matches!(fields[1].len(), 3 | 4)
+            })
+            .collect();
+        // canonical_input_char_code_entries 中码长 > 2 的条目数
+        // (learn 词典的既有锚点 9_724 + 9_873 = 19_597)。
+        assert_eq!(rows.len(), 9_724 + 9_873);
+        for line in &rows {
+            let fields: Vec<_> = line.split('\t').collect();
+            assert_eq!(fields.len(), 3);
+            assert_eq!(fields[0].chars().count(), 1);
+            assert!(matches!(fields[1].len(), 3 | 4));
+            assert!(fields[2].parse::<u32>().unwrap() > 0);
+        }
+        // 哨兵事实:进@jbz(3 键)与 去@qu(2 键)同在 → jbz+qu 可分段。
+        assert!(flow.lines().any(|line| line.starts_with("进\tjbz\t")));
+        assert!(flow.lines().any(|line| line.starts_with("去\tqu\t")));
     }
 
     #[test]
@@ -276,6 +324,8 @@ mod tests {
         assert_eq!(
             rows.len(),
             9_254
+                + 9_724
+                + 9_873
                 + word_code_analysis_entries().len()
                 + canonical_extended_word_code_entries().len()
         );
@@ -395,20 +445,26 @@ mod tests {
             !dict.contains("记得\tjd\t"),
             "二码零冲突别名不得进入 Flow 词典"
         );
-        // 全部数据行码长 ∈ {2,4,6,8}(2 键仅单字；其余仅词条全码)。
+        // 全部数据行:单字 = 全部 canonical 码长 {2,3,4}(#151 变长分段
+        // 原语);词条 = 逐字两键全码(4/6/8)。
         for line in dict.lines().skip_while(|l| *l != "...").skip(1) {
             let fields: Vec<&str> = line.split('\t').collect();
             assert_eq!(fields.len(), 3, "每行 词<TAB>码<TAB>权重: {line}");
             let code_len = fields[1].chars().count();
+            let is_char = fields[0].chars().count() == 1;
+            let is_word = fields[0].chars().count() * 2 == code_len;
             assert!(
-                matches!(code_len, 2 | 4 | 6 | 8),
-                "Flow 词典码长应 ∈ {{2,4,6,8}},实际 {code_len}: {line}"
+                (is_char && matches!(code_len, 2..=4)) || is_word,
+                "Flow 词典行应为单字全码(2/3/4)或逐字两键词码,实际 {code_len}: {line}"
             );
-            assert_eq!(fields[0].chars().count() * 2, code_len, "逐字两键: {line}");
+            if !is_char {
+                assert_eq!(fields[0].chars().count() * 2, code_len, "逐字两键: {line}");
+            }
         }
     }
 
     /// 单字原语完整进入隔离的 Flow translator，解除固定词表边界。
+    /// #151:原语覆盖全部 canonical 码长(两键声码 + 3/4 键全码)。
     #[test]
     fn includes_all_sound_primitives_without_short_codes() {
         let dict = generate_rime_flow_dictionary();
@@ -422,7 +478,9 @@ mod tests {
                     .is_some_and(|text| text.chars().count() == 1)
             })
             .count();
-        assert_eq!(char_rows, 9_254);
+        // 9,254 两键 + 19,597 三/四键全码 = 28,851(与 P0 输入可达性
+        // 承诺的 2/3/4 码关系总数一致)。
+        assert_eq!(char_rows, 9_254 + 9_724 + 9_873);
         assert!(
             !dict
                 .lines()

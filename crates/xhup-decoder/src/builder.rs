@@ -90,6 +90,23 @@ impl std::fmt::Debug for BuiltLattice {
 }
 
 impl BuiltLattice {
+    /// 零事实构造(#150/#151 逐键 prefix-walk):输入首个按键尚无任何
+    /// 码事实时返回零边 lattice —— 完整路径空间为空(菜单为空)但
+    /// 构建成功,语义 = 「该前缀尚无可用候选」而非构建失败。
+    pub fn from_parts(lattice: Lattice, path_limit: NonZeroUsize) -> Self {
+        let paths = lattice.complete_paths(path_limit);
+        let stats = BuildStats {
+            facts: 0,
+            edges: 0,
+            fused_facts: 0,
+        };
+        Self {
+            lattice,
+            paths,
+            stats,
+        }
+    }
+
     pub fn lattice(&self) -> &Lattice {
         &self.lattice
     }
