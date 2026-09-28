@@ -40,7 +40,13 @@
 
 #define SEP '\x1f'
 #define TEST_MENU_PAGE_SIZE 500
-#define MAX_MENU 4096
+/* 菜单缓冲上界:必须容纳一整页(500 候选)的 SEP 分隔文本。#151 引入
+ * completion/组句追加候选后,长尾菜单可达 4100+ 字节(实测 aam = 4101);
+ * 旧的 4096 上界在页尾截断最后一条候选(如 阿梅兹林 → 阿梅),人为
+ * 制造与既有候选同 text 的"可见重复"(Full Regression run
+ * 36318911159 的 230 FAIL 全部源于此,非引擎缺陷)。上界按
+ * 500 候选 × 每候选 ≤ 255 字节(UTF-8 词形 + SEP)推得,并预留余量。 */
+#define MAX_MENU 131072
 #define MAX_LINE 65536
 
 static int failures = 0;

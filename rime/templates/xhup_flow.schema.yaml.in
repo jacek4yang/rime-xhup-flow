@@ -45,12 +45,14 @@ switches:
   - name: debug_candidate_annotations
     reset: 0
     states: [常规注释, 调试注释]
-  # 有界上下文调序(§4.3):生产默认开启(reset 1)。守护依据:
+  # 有界上下文调序(§4.3):GA 冻结合同默认关闭(reset 0 = 严格透传,
+  # 与无此 filter 逐字节一致;#148 §1「实验运行时特性守护/默认关闭」)。
+  # 生产翻转是 RC 验收通过后的独立决策(与 user_memory 同轨);守护依据:
   # 真实 librime-lua 插件审计全绿(#129:默认关闭恒等、重复词有界提升、
   # 静态强固定 rank-1 永不降位、OOV 可达、集合不删减);证据为
   # commit_notifier 内存态,零持久化,证据不可用即恒等透传(安全降级)。
   - name: context_ranker
-    reset: 1
+    reset: 0
     states: [关闭调序, 上下文调序]
   # 本地用户记忆观察(§16/R4):默认关闭 —— 不观察不写盘,行为与无此
   # 组件一致;开启后记录实际上屏词形到版本化 TSV(隐私:只存词形+计数)。
