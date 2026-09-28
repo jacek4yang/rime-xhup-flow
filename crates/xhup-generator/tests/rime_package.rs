@@ -172,9 +172,9 @@ fn schema_semantics() {
     // uniquifier:同一词在静态与动态层重合时去重,动态候选只追加在后。
     // Lua 简码提示:filters 链 quick_hint → context_ranker → user_memory
     // → uniquifier(注解/调序/观察类 filter 在前,text 级去重兜底在最后,
-    // 见 schema 模板注释);quick_hint 与 context_ranker 开关默认均开
-    // (reset 1;后者生产翻转依据 #129 真实插件审计全绿),user_memory
-    // 默认关(reset 0,观察组件不参与排序)。
+    // 见 schema 模板注释);quick_hint 默认开(reset 1),context_ranker
+    // GA 默认关(reset 0,#148 §1 冻结合同:实验运行时特性守护/默认关闭),
+    // user_memory 默认关(reset 0,观察组件不参与排序)。
     let filter_entries: Vec<&str> = schema
         .lines()
         .skip_while(|line| *line != "  filters:")
@@ -202,8 +202,8 @@ fn schema_semantics() {
         "debug_candidate_annotations 开关应默认关闭"
     );
     assert!(
-        schema.contains("- name: context_ranker\n    reset: 1"),
-        "context_ranker 开关应生产默认开启(依据 #129 真实插件审计全绿)"
+        schema.contains("- name: context_ranker\n    reset: 0"),
+        "context_ranker 开关应 GA 默认关闭(#148 §1 冻结合同:实验运行时特性守护/默认关闭)"
     );
     assert!(
         schema.contains("- name: user_memory\n    reset: 0"),

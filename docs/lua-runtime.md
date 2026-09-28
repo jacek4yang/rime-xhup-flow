@@ -77,7 +77,7 @@ lua/xhup_flow/
 ├── init.lua                # 命名空间出口(可选,*语法不依赖它)
 ├── annotation.lua          # 候选注释格式化(极简 ASCII、清洗装饰标记、类型解耦)
 ├── quick_hint.lua          # 简码提示(filter,委托 annotation 格式化 comment)
-├── context_ranker.lua      # 有界上下文调序(filter,生产默认开启,三桶稳定重排)
+├── context_ranker.lua      # 有界上下文调序(filter,GA 默认关闭=严格透传,三桶稳定重排)
 ├── candidate_control.lua   # 本地置顶/降频/隐藏(processor+filter 双入口)
 ├── user_memory.lua         # 本地用户记忆观察(filter,默认关闭;commit_notifier
 │                            #   记录词形计数,FLUSH_EVERY=20 原子写版本化 TSV)
