@@ -294,6 +294,15 @@ jobs:
       - name: librime 日常输入控制(ASCII/标点/数字选择/翻页/Escape/Enter)
         run: tests/librime/run-ime-controls.sh /tmp/xhup-flow-package
 
+      # 学习/持久化聚焦回归(#151/#152):Flow 与 learn translator 共享
+      # xhup_flow_user,两侧音节 id 空间必须一致,学习条目必须经产品同款
+      # 导出路径可观察且码唯一。分钟级,留在 PR 关键路径;
+      # 全静态等值等穷尽审计仍由 full-regression.yml 全量模式覆盖。
+      - name: librime Flow 学习/持久化聚焦回归(导出可观察性 + 重启 + 学习管理)
+        run: >
+          tests/librime/run-learning-export.sh /tmp/xhup-flow-package
+          target/debug/xhup-cli
+
   native-smoke:
     name: 原生冒烟(${{ matrix.os }})
     needs: rust

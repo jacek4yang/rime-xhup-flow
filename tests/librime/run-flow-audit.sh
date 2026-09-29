@@ -5,6 +5,11 @@
 # 用法: run-flow-audit.sh <生成包目录> <全静态菜单 manifest> [xhup-cli 路径|-]
 #   [extended manifest] [open-composition manifest]
 #
+# 学习/持久化聚焦模式: XHUP_AUDIT_ONLY_LEARNING=1 run-flow-audit.sh <生成包目录>
+#   [xhup-cli 路径] —— 跳过需要全静态 manifest 的穷尽遍历(步骤 1/5),
+#   只跑组句 + 学习会话 + userdb 导出可观察性 + 重启持久化 + 学习管理,
+#   分钟级;PR 关键路径(ci.yml)与本地定位学习/导出回归使用。
+#
 # 生成包目录必须含 xhup-cli generate rime 的全部产物(12 个 yaml,含
 # xhup_flow_static.schema.yaml 与 Flow 组句/学习词典);manifest 由
 # xhup-analyzer 的 --dump-static-menu-manifest 导出(全部 distinct 静态
@@ -19,12 +24,17 @@
 #   2. 组句审计:fixtures 由组句词典机械拼接(2/4/8/10 词,最长 20 字),
 #      断言句子候选出现且无 auto commit;
 #   3. 学习会话:提交 Flow 组句句子,训练 xhup_flow_user;
-#   4. 重启持久化:全新进程断言学习状态仍在(动态候选可观察);
+#   4. 重启持久化:全新进程经 userdb 导出与菜单断言学习条目仍在且可用;
 #   5. 学习后静态审计:全部 141,138 个静态 exact code
 #      逐码断言既有候选
 #      原次序、原 top1、无可见重复(动态候选只允许追加在静态组后);
-#   6. 学习管理端到端(提供 xhup-cli 时):export → reset → 学习行为
-#      消失 → import 到全新部署 → 学习行为恢复。
+#   6. 学习管理端到端(提供 xhup-cli 时):export → reset → 学习状态
+#      消失(导出为空)→ import 到全新部署 → 学习状态恢复。
+#
+# 学习状态可观察性(步骤 3/4/6)一律经产品同款管理路径
+# (rime_dict_manager -e / `xhup-cli learning export`)断言:静态层只存在于
+# table/prism,永不进入用户词典,故「干净 userdb 导出不含该词形」与
+# 「学习后导出含该词形且码唯一」合起来构成不可能由静态词条满足的动态证据。
 #
 # 部署说明:PRIMARY/FIXED_FIRST 是主词典 import table,已由默认
 # translator 统一编译。rime_deployer --compile 只编译默认 translator
@@ -41,12 +51,27 @@
 
 set -euo pipefail
 
-PACKAGE_DIR=${1:?"用法: run-flow-audit.sh <生成包目录> <静态菜单 manifest> [xhup-cli 路径]"}
-MANIFEST=${2:?"用法: run-flow-audit.sh <生成包目录> <静态菜单 manifest> [xhup-cli 路径]"}
-XHUP_CLI=${3:-}
-EXTENDED_MANIFEST=${4:-}
-OPEN_MANIFEST=${5:-}
+PACKAGE_DIR=${1:?"用法: run-flow-audit.sh <生成包目录> [静态菜单 manifest] [xhup-cli 路径]"}
+# 学习/持久化聚焦模式:跳过步骤 1/5(需要全静态 manifest 的穷尽遍历),
+# 位置参数变为 <生成包目录> [xhup-cli 路径]。
+ONLY_LEARNING=${XHUP_AUDIT_ONLY_LEARNING:-}
+if [ -n "$ONLY_LEARNING" ]; then
+  MANIFEST=
+  XHUP_CLI=${2:-}
+  EXTENDED_MANIFEST=
+  OPEN_MANIFEST=
+else
+  MANIFEST=${2:-}
+  XHUP_CLI=${3:-}
+  EXTENDED_MANIFEST=${4:-}
+  OPEN_MANIFEST=${5:-}
+fi
 if [[ "$XHUP_CLI" == "-" ]]; then XHUP_CLI=; fi
+if [[ -z "$ONLY_LEARNING" && -z "$MANIFEST" ]]; then
+  echo "用法: run-flow-audit.sh <生成包目录> <静态菜单 manifest> [xhup-cli 路径] [extended manifest] [open manifest]" >&2
+  echo "      学习聚焦模式: XHUP_AUDIT_ONLY_LEARNING=1 run-flow-audit.sh <生成包目录> [xhup-cli 路径]" >&2
+  exit 2
+fi
 SHARED_DATA_DIR=${RIME_SHARED_DATA_DIR:-/usr/share/rime-data}
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
@@ -106,9 +131,33 @@ EOF
     "$SHARED_DATA_DIR" >/dev/null
 }
 
+# 经产品同款管理路径导出 Flow 用户词典(rime_dict_manager -e 与
+# `xhup-cli learning export` 同一底层工具)。数据库不存在/打开失败 =
+# 无学习数据:导出文件保持为空,不视为错误。
+export_userdb() {
+  local dir=$1 out=$2
+  rm -f "$out"
+  (cd "$dir" && rime_dict_manager -e xhup_flow_user "$out" >/dev/null 2>&1) \
+    || true
+  [ -f "$out" ] || : > "$out"
+}
+
+# 导出文件中指定词形的全部码(每行一个;空输出 = 该词形不在用户词典)。
+exported_codes_for() {
+  awk -F'\t' -v text="$2" '$1 == text { print $2 }' "$1"
+}
+
+# 导出文件中的全部「词形<TAB>码」行(跳过 #@ 元数据行)。
+exported_entries() {
+  awk -F'\t' '$1 != "" && $2 != "" && $1 !~ /^#/ { print $1 "\t" $2 }' "$1"
+}
+
 # ---------- 1. 全静态等值审计(干净 userdb,两趟独立进程) ----------
+# STATIC 部署只在全量模式需要(步骤 1 的 STATIC 捕获基线)。
+if [ -z "$ONLY_LEARNING" ]; then
 static_dir=$work/static
 prepare_deploy "$static_dir" xhup_flow_static
+fi
 
 flow_dir=$work/flow
 prepare_deploy "$flow_dir" xhup_flow
@@ -132,6 +181,8 @@ if ! [[ "$AUDIT_SHARDS" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 
+# 步骤 1 只在全量模式运行(需要全静态 manifest)。
+if [ -z "$ONLY_LEARNING" ]; then
 manifest_rows=$(grep -vc '^#' "$MANIFEST")
 manifest_shards=()
 for ((i = 0; i < AUDIT_SHARDS; ++i)); do
@@ -211,6 +262,7 @@ for i in "${!audit_pids[@]}"; do
 done
 for log in "${audit_logs[@]}"; do cat "$log"; done
 [[ "$audit_status" -eq 0 ]] || exit 1
+fi
 
 # ---------- 2. 组句审计(fixtures 机械拼接自组句词典) ----------
 flow_dict=$PACKAGE_DIR/xhup_flow_flow.dict.yaml
@@ -296,8 +348,19 @@ if [[ -n "$OPEN_MANIFEST" ]]; then
 fi
 
 # ---------- 3. 学习会话(Flow 句子提交训练 xhup_flow_user) ----------
-# 单词提交经学习 translator 的编码器产生编码词条(动态候选,菜单可观察);
-# 句子提交把元素词条写入 canonical 码下(用户权重)。
+# 单词提交把元素词条写入用户词典(用户权重);句子提交把组句元素词条写入
+# 各自 canonical 码下。学习状态**必须**能经产品同款管理路径
+# (rime_dict_manager -e / `xhup-cli learning export`)观察。
+#
+# 学习状态契约(替代旧的「导出码 ≠ canonical 输入码」启发式:#152 统一
+# Flow/Learn 音节 id 空间后,同一元素不再被写成两个码,该启发式已无对象):
+#   1) 静态层只存在于 table/prism,永不进入 userdb —— 「干净 userdb 导出不含
+#      该词形」+「学习后导出含该词形」合起来即可证明动态学习状态,不可能由
+#      既有静态词条满足;
+#   2) 同一词形在 userdb 中只能对应一个码:Flow 与 Learn translator 共享
+#      xhup_flow_user,两者音节 id 空间必须一致,否则同一元素会被写成两个码
+#      (历史缺陷:learn 表把 flow 表的音节 id 译成别的词条码);
+#   3) 该码在全新进程中必须仍能定位到该词形(重启持久化)。
 learn_script=$work/learn.txt
 cat > "$learn_script" <<'EOF'
 commit womf 1
@@ -305,33 +368,62 @@ commit uijm 1
 commit womfuijm 1
 commit womfuijm 1
 EOF
-echo "== 学习会话(句子提交 ×2) =="
-"$work/audit" learning "$SHARED_DATA_DIR" "$flow_dir" "$learn_script"
 
-# 学习后动态候选码机械发现:导出 userdb,取「文本=我们 且 码≠canonical
-# womf」的码(编码器派生的学习词条码;跨会话确定,但依赖词典内容,故
-# 不硬编码)。
-learned_code=$(
-  (cd "$flow_dir" && rime_dict_manager -e xhup_flow_user "$work/userdb.dump" \
-     >/dev/null) &&
-  awk -F'\t' '$1 == "我们" && $2 != "womf" { print $2; exit }' "$work/userdb.dump"
-)
-if [ -z "$learned_code" ]; then
-  echo "学习状态不可观察:userdb 导出中未发现动态词条" >&2
+# 干净对照:学习前导出不得含将被学习的词形。
+clean_dump=$work/userdb-clean.dump
+export_userdb "$flow_dir" "$clean_dump"
+if [ -n "$(exported_codes_for "$clean_dump" 我们)" ]; then
+  echo "干净 userdb 导出已含「我们」:导出未反映学习状态" >&2
   exit 1
 fi
 
-# ---------- 4. 重启持久化(全新进程断言学习状态仍在) ----------
+echo "== 学习会话(句子提交 ×2) =="
+"$work/audit" learning "$SHARED_DATA_DIR" "$flow_dir" "$learn_script"
+
+learned_dump=$work/userdb-learned.dump
+export_userdb "$flow_dir" "$learned_dump"
+learned_codes=$(exported_codes_for "$learned_dump" 我们 | sort -u)
+learned_code_count=$(printf '%s' "$learned_codes" | grep -c . || true)
+if [ "$learned_code_count" -eq 0 ]; then
+  echo "学习状态不可观察:userdb 导出中未发现动态词条" >&2
+  exit 1
+fi
+if [ "$learned_code_count" -ne 1 ]; then
+  echo "学习词条码不唯一(Flow/Learn 音节 id 空间可能已分叉):" >&2
+  printf '  %s\n' $learned_codes >&2
+  exit 1
+fi
+learned_code=$learned_codes
+learned_commits=$(awk -F'\t' -v text=我们 '$1 == text { print $3; exit }' "$learned_dump")
+learned_tick=$(awk -F'\t' '$1 == "#@/tick" { print $2; exit }' "$learned_dump")
+[ "${learned_commits:-0}" -ge 1 ] || {
+  echo "学习词条 commits 未推进: ${learned_commits:-0}" >&2
+  exit 1
+}
+[ "${learned_tick:-0}" -ge 1 ] || {
+  echo "userdb /tick 未推进: ${learned_tick:-0}" >&2
+  exit 1
+}
+echo "学习状态可观察: 我们@$learned_code commits=$learned_commits tick=$learned_tick"
+
+# ---------- 4. 重启持久化(全新进程断言学习状态仍在且可用) ----------
 restart_check=$work/restart-check.txt
-printf '# 重启持久化:动态候选仍在;句子仍可组;canonical 码词条仍在\n' \
+printf '# 重启持久化:用户词典词条仍在且可在其码下定位;句子仍可组\n' \
   > "$restart_check"
-printf 'check %s 我们 contains\n' "$learned_code" >> "$restart_check"
+# 每条 userdb 词条(词形 T,码 C)在全新进程中都必须能在 C 下定位到 T:
+# 覆盖「学习词条落到别的词条码」的串码回归,且不硬编码任何词形/码。
+while IFS=$'\t' read -r text code; do
+  [ -n "$text" ] && [ -n "$code" ] || continue
+  printf 'check %s %s contains\n' "$code" "$text" >> "$restart_check"
+done < <(exported_entries "$learned_dump")
 printf 'check womfuijm 我们时间 contains\n' >> "$restart_check"
 printf 'check womfuijm 我们时间 count=1\n' >> "$restart_check"
-echo "== 重启持久化(全新进程;动态码 $learned_code) =="
+echo "== 重启持久化(全新进程;学习码 $(printf '%s' "$learned_codes" | tr '\n' ' ')) =="
 "$work/audit" learning "$SHARED_DATA_DIR" "$flow_dir" "$restart_check"
 
 # ---------- 5. 学习后静态审计(全部静态 exact code) ----------
+# 只在全量模式运行(需要全静态 manifest)。
+if [ -z "$ONLY_LEARNING" ]; then
 echo "== 学习后静态审计(manifest 全量) =="
 audit_pids=()
 audit_logs=()
@@ -385,6 +477,7 @@ for i in "${!audit_pids[@]}"; do
 done
 for log in "${audit_logs[@]}"; do cat "$log"; done
 [[ "$audit_status" -eq 0 ]] || exit 1
+fi
 
 # ---------- 6. 学习管理端到端(提供 xhup-cli 时) ----------
 if [ -n "$XHUP_CLI" ]; then
@@ -394,22 +487,39 @@ if [ -n "$XHUP_CLI" ]; then
   rm -rf "$import_dir/xhup_flow_user.userdb" "$import_dir/sync" \
      "$import_dir/xhup_flow_user.userdb.txt" "$import_dir/user.yaml"
 
-  echo "== 学习管理 export → reset → 行为消失 =="
+  echo "== 学习管理 export → reset → 学习状态消失 =="
   "$XHUP_CLI" learning export --user-data-dir "$flow_dir" >/dev/null
   test -f "$flow_dir/xhup_flow_user.userdb.txt"
   "$XHUP_CLI" learning reset --user-data-dir "$flow_dir" --yes >/dev/null
+  # reset 后导出必须为空:静态层不参与 userdb,故「无该词形」= 学习状态已清空
+  # (旧断言用「动态码下菜单不含它」,依赖已不存在的串码词条)。
+  reset_dump=$work/userdb-reset.dump
+  export_userdb "$flow_dir" "$reset_dump"
+  if [ -n "$(exported_codes_for "$reset_dump" 我们)" ]; then
+    echo "learning reset 后 userdb 导出仍含学习词条" >&2
+    exit 1
+  fi
   reset_check=$work/reset-check.txt
-  printf '# reset 后:动态候选消失;静态候选不变\n' > "$reset_check"
-  printf 'check %s 我们 absent\n' "$learned_code" >> "$reset_check"
+  printf '# reset 后:静态候选不变\n' > "$reset_check"
   printf 'check uijm 时间 first\n' >> "$reset_check"
   "$work/audit" learning "$SHARED_DATA_DIR" "$flow_dir" "$reset_check"
 
-  echo "== 学习管理 import → 跨目录恢复 → 行为恢复 =="
+  echo "== 学习管理 import → 跨目录恢复 → 学习状态恢复 =="
   "$XHUP_CLI" learning import --user-data-dir "$import_dir" \
     --snapshot "$flow_dir/xhup_flow_user.userdb.txt" >/dev/null
+  import_dump=$work/userdb-import.dump
+  export_userdb "$import_dir" "$import_dump"
+  imported_codes=$(exported_codes_for "$import_dump" 我们 | sort -u)
+  if [ "$imported_codes" != "$learned_codes" ]; then
+    echo "import 后 userdb 未恢复学习词条码: ${imported_codes:-<空>}" >&2
+    exit 1
+  fi
   import_check=$work/import-check.txt
-  printf '# 跨目录恢复后:动态候选恢复;句子可组\n' > "$import_check"
-  printf 'check %s 我们 contains\n' "$learned_code" >> "$import_check"
+  printf '# 跨目录恢复后:词条在其码下可定位;句子可组\n' > "$import_check"
+  while IFS=$'\t' read -r text code; do
+    [ -n "$text" ] && [ -n "$code" ] || continue
+    printf 'check %s %s contains\n' "$code" "$text" >> "$import_check"
+  done < <(exported_entries "$import_dump")
   printf 'check womfuijm 我们时间 contains\n' >> "$import_check"
   "$work/audit" learning "$SHARED_DATA_DIR" "$import_dir" "$import_check"
 else
