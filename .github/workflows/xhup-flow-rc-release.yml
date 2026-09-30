@@ -245,7 +245,7 @@ jobs:
           else
             title_suffix=""
             banner="> 正式稳定版本。各平台验收状态来自机器可读清单
-          > release/acceptance-v$CORE.json(稳定门禁要求全部 PASS/N/A)。
+          > release/acceptance-v$CORE.json(稳定门禁要求全部 PASS/N/A)。"
             acceptance="
           ## 平台验收状态(源:release/acceptance-v$CORE.json,门禁强制全 PASS/N/A)
 

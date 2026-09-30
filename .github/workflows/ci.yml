@@ -88,6 +88,13 @@ jobs:
       - name: cargo test
         run: cargo test --workspace --all-targets --locked
 
+      # 工作流 run 块 shell 语法守卫:块内多行引号/here-doc 不配对时,bash 会在
+      # 解析阶段整体失败(与运行分支无关),曾导致 rc-release 的「组装发布说明」
+      # 步骤在创建草稿 Release 时以 `unexpected EOF while looking for matching`
+      # 失败(2.0.0-rc.2)。毫秒级、无第三方依赖。
+      - name: 工作流 run 块 shell 语法守卫
+        run: python3 tests/release/check_workflow_shell.py
+
       # 语料回放回归门禁:canonical 映射变更导致回放指标回退超容差即红
       # (夹具与基线见 data/corpus/README.md;断言语义见 replay-bench)。
       - name: 语料回放回归门禁
