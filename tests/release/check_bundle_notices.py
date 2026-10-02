@@ -22,7 +22,7 @@ def validate_mapping(mapping):
 
 def verify(resources, root):
     config = root / "trainer/src-tauri/tauri.conf.json"
-    mapping = json.loads(config.read_text())["bundle"]["resources"]
+    mapping = json.loads(config.read_text(encoding="utf-8"))["bundle"]["resources"]
     validate_mapping(mapping)
     wanted = {target: (config.parent / source).resolve()
               for source, target in mapping.items() if target.startswith("licenses/")}
