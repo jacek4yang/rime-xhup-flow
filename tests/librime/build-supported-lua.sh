@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build a pinned, hash-verified test runtime, not a distributed product artifact.
 # Ubuntu deps: g++ curl pkg-config librime-dev liblua5.4-dev libopencc-dev
-#             libgoogle-glog-dev libboost-dev libmarisa-dev libyaml-cpp-dev darts
+#             libgoogle-glog-dev libboost-dev libmarisa-dev libyaml-cpp-dev libx11-dev darts
 set -euo pipefail
 output=${1:?"usage: build-supported-lua.sh <new output directory>"}
 mkdir "$output"

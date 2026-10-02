@@ -289,7 +289,7 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends \
             liblua5.4-dev libopencc-dev libgoogle-glog-dev libboost-dev \
-            libmarisa-dev libyaml-cpp-dev darts
+            libmarisa-dev libyaml-cpp-dev libx11-dev darts
           bash tests/librime/build-supported-lua.sh /tmp/xhup-supported-lua
           plugin=$(dpkg -L librime-plugin-lua | grep '/librime-lua.so$')
           test -n "$plugin"
