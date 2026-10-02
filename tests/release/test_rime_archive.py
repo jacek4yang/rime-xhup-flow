@@ -126,6 +126,32 @@ class RimeArchive(unittest.TestCase):
         with self.assertRaises(ValueError):
             check_bundle_notices.verify(extracted, ROOT)
 
+    def test_installer_config_utf8_is_independent_of_windows_locale(self):
+        from unittest.mock import patch
+        import check_bundle_notices
+        root = self.work / "unicode-config"
+        config = root / "trainer/src-tauri/tauri.conf.json"
+        config.parent.mkdir(parents=True)
+        (root / "LICENSE").write_bytes(b"original license\n")
+        config.write_text(json.dumps({
+            "productName": "小鹤输入法",
+            "bundle": {"resources": {"../../LICENSE": "licenses/project/LICENSE"}},
+        }, ensure_ascii=False), encoding="utf-8")
+        extracted = self.work / "unicode-extracted"
+        target = extracted / "licenses/project/LICENSE"
+        target.parent.mkdir(parents=True)
+        target.write_bytes((root / "LICENSE").read_bytes())
+        original_read = Path.read_text
+
+        def windows_read(path, encoding=None, errors=None):
+            return original_read(path, encoding=encoding or "cp1252", errors=errors)
+
+        # Reproduce the Windows cp1252 failure without changing the host locale.
+        with self.assertRaises(UnicodeDecodeError):
+            windows_read(config)
+        with patch.object(Path, "read_text", windows_read):
+            self.assertEqual(check_bundle_notices.verify(extracted, root), 1)
+
     def test_wix_basename_collision_is_rejected_without_ice_suppression(self):
         from check_bundle_notices import validate_mapping
         validate_mapping({"../../a/LICENSE": "licenses/a/LICENSE",
