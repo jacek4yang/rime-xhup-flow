@@ -4487,6 +4487,7 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "sha2",
  "xhup-analyzer",
  "xhup-generator",
 ]

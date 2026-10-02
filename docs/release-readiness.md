@@ -90,6 +90,49 @@ GitHub Release 附件为准。
 
 # v2.0.0 GA 就绪记录(#148 R8,2026-09)
 
+## Phase 1A 工程检查点
+
+- 审计基线: `8b2eaf1879d4649c36701182a5ab30eaccdb5752`。
+- 范围仅 F02:验收 schema 2、真实 RC 附件/源 SHA 绑定、负向回归与发布门禁。
+- 历史 schema 1 清单原样保留;不能用于 stable,不补造硬件证据。
+- 验证:acceptance 单元 12/12、provenance integration 35/35(其中一项执行
+  9/9 实际 shell 块/模拟 GitHub 回归)、历史 doc-sync 3/3 通过。
+- fmt、workspace check/clippy(all-targets/locked/offline,warnings denied)通过;
+  最终 affected-scope clippy 再跑通过;工作流 Bash 62 块通过/非 Bash 3 块跳过,
+  发布工作流 YAML 解析通过。
+- 全 workspace tests 尝试在链接期因 `Disk quota exceeded` 退出 101,不是 PASS。
+  随后的 focused 尝试也因相同配额失败;保留所有缓存,改用独立磁盘 target/TMPDIR
+  后上述 50 项 Rust + 9 项 Python 回归全部通过。没有运行真实发布/签名/平台验收。
+- LSP 未运行成功:配置的 Rust 工具链缺 rust-analyzer;可安装该组件或修正
+  pi-lsp.json 命令,本任务未改工具配置。未验证平台保持 UNVERIFIED。
+- 不涉及运行时/词典/学习/Trainer 行为;不合并 PR,不发布版本。
+
+### Phase 1A 验证命令账本
+
+Cargo 使用隔离 target;配额失败后还将 TMPDIR 指向磁盘隔离目录,不清理原缓存。
+`--offline` 使用已有依赖;新增直接 SHA256 依赖复用 lockfile 已锁定的 sha2 0.10.9。
+
+| 命令/验证 | 结果 |
+| --- | --- |
+| `cargo fmt --all -- --check` | PASS(最终) |
+| `cargo check --workspace --all-targets --locked --offline` | PASS |
+| `cargo clippy --workspace --all-targets --locked --offline -- -D warnings` | PASS |
+| `cargo clippy -p xhup-cli --all-targets --locked --offline -- -D warnings` | PASS(最终 affected scope) |
+| `cargo test -p xhup-cli --lib acceptance --locked --offline` | 12 PASS,0 FAIL,21 filtered |
+| `cargo test -p xhup-cli --test acceptance_provenance --test acceptance_doc_sync --locked --offline` | 35 + 3 PASS,0 FAIL(最终) |
+| `XHUP_CLI=<built-cli> python3 tests/release/test_acceptance_workflow.py` | 9 PASS,0 FAIL;也由 Rust integration 调用 |
+| `python3 tests/release/check_workflow_shell.py` | 62 Bash PASS,3 非 Bash skipped |
+| Python/PyYAML `safe_load` 发布工作流 | PASS,4 jobs |
+| `timeout 300s cargo test --workspace --all-targets --locked --offline -- --test-threads=1` | FAILED exit 101,链接时磁盘配额耗尽;未完成,非超时/PASS |
+| `git diff --check` | PASS(最终) |
+| LSP diagnostics | UNAVAILABLE:缺 rust-analyzer |
+
+中间失败也保留:首次 `cargo check -p xhup-cli --offline` 暴露 hasher 未 finalize 的
+编译错误,已修正并由上述检查覆盖;一次 diff-check 尾空白已修正。
+全套尝试耗尽临时空间后,组合 focused 命令无法编译(exit 101);
+第一次仅切换 target 的 focused 重跑仍有 30 个配额引起的测试失败。
+同时切换 TMPDIR 后最终全绿,没有放宽断言。真实 GitHub 发布、签名及硬件验收未执行。
+
 状态:**GA 冲刺中**。机器可读验收清单 `release/acceptance-v2.0.0.json`
 为唯一事实来源;本节与清单、`docs/platform-acceptance.md` 由
 `acceptance_doc_sync` 测试与 `xhup-cli validate-acceptance` 门禁机械
@@ -143,8 +186,9 @@ GitHub Release 附件为准。
 - Linux:deb + rpm;AppImage 暂不构建;
 - Android:**arm64-only APK(主产物,SIGNED)** + universal APK
   (兼容附加,SIGNED);versionCode 单调派生;
-- 平台中立 Rime 源包 zip(内嵌版本 = 发布版本);
-- 清单三件套:`SHA256SUMS.txt` / `CANONICAL-SHA256SUMS.txt` /
+- 平台中立 Rime 源包 zip(stable 原字节晋升时内嵌版本保持接受 RC);
+- 封存与验收:`BUILD-MANIFEST.json` / `ACCEPTANCE.json`;
+- 原有清单三件套:`SHA256SUMS.txt` / `CANONICAL-SHA256SUMS.txt` /
   `BUILD-INFO.txt`(逐产物如实标注签名状态);
 - 签名策略(#148 §9):不以 Windows/macOS 签名缺失阻塞 GA;
   元数据如实标注;绝不为发布弱化 OS 安全控制或提交签名凭据。
@@ -157,7 +201,8 @@ GitHub Release 附件为准。
 - 四平台 × 12 检查项(干净安装/升级/部署/静态冒烟/Flow 组句/学习
   持久化/OOV/两开关中性/static 回退/Trainer 生命周期/隐私);
 - RC 发布(publish=true,`*-rc.N`)允许 UNVERIFIED;**稳定发布
-  (publish=true,`2.0.0`)由工作流门禁机械要求全部 PASS/N/A**,
+  (publish=true,`2.0.0`)要求 schema 2 必查 PASS、唯一有理由 Android N/A、
+  精确源/构建清单/附件字节绑定**,
   失败逐行输出阻塞平台/检查项,无人工绕过(#148 §3);
 - 硬件不可用的平台保持 UNVERIFIED 并如实列为外部阻塞;CI 构建成功
   不冒充真机验证。
@@ -176,8 +221,10 @@ GitHub Release 附件为准。
 1. 最终 RC 验证后冻结 shipped 内容;发现缺陷 → PR + CI/Full
    Regression → 递增 `2.0.0-rc.N` 重切,受影响验收重跑;
    **文档/证据类变更不需重切**;
-2. GA:`publish=true, version=2.0.0` 由稳定门禁机械校验验收清单
-   (版本一致、accepted_rc 记录、全 PASS/N/A);
+2. GA:`publish=true, version=2.0.0` 仅原字节晋升已接受 RC,不重建;
+   schema 2 绑定确切源 SHA、BUILD-MANIFEST.json 摘要及完整附件,
+   独立解析 RC tag 并校验实际下载字节;详见 `docs/platform-acceptance.md`。
+   历史 schema 1 不满足此门禁;附件名称及内嵌版本保持 RC;
 3. 创建 `xhup-flow-v2.0.0` 草稿(非 prerelease),发布说明的
    平台状态取自清单真实数据;人工复核后发布;
 4. 全程无人工绕过;最终证据回填 #83。

@@ -138,6 +138,8 @@ enum Command {
     Doctor(DoctorArgs),
     /// 校验 GA 验收清单(release/acceptance-*.json;#148)
     ValidateAcceptance(ValidateAcceptanceArgs),
+    /// 对已构建的签名 RC 发布目录生成不可覆盖的 BUILD-MANIFEST.json
+    SealBuild(SealBuildArgs),
     /// 输出逐平台最差验收状态(platform=STATE;供发布说明引用)
     AcceptanceSummary(AcceptanceSummaryArgs),
 }
@@ -150,9 +152,25 @@ struct ValidateAcceptanceArgs {
     /// 期望版本(stable 门禁:清单 version 必须等于该值)
     #[arg(long)]
     expect_version: Option<String>,
-    /// 稳定版门禁(全部必查项必须 PASS/N/A;缺省按 RC 门禁放行 UNVERIFIED)
-    #[arg(long)]
+    /// 稳定版门禁:要求完整证据及外部来源/实际工件校验
+    #[arg(long, requires_all = ["expect_version", "expect_source", "artifacts_dir"])]
     stable: bool,
+    /// 从 accepted RC tag 独立解析的完整源 SHA,不能从验收 JSON 复制
+    #[arg(long, requires = "stable")]
+    expect_source: Option<String>,
+    /// 已下载的 RC 发布附件目录(包括 BUILD-MANIFEST.json)
+    #[arg(long, requires = "stable")]
+    artifacts_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct SealBuildArgs {
+    #[arg(long)]
+    version: String,
+    #[arg(long)]
+    source_commit: String,
+    #[arg(long)]
+    artifacts_dir: PathBuf,
 }
 
 #[derive(Debug, Args)]
@@ -441,6 +459,15 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                 Ok(())
             }
         },
+        Command::SealBuild(args) => {
+            acceptance::provenance::seal(&args.version, &args.source_commit, &args.artifacts_dir)
+                .map_err(|source| CliError::AcceptanceInvalid {
+                path: args.artifacts_dir,
+                source: source.to_string(),
+            })?;
+            println!("BUILD-MANIFEST.json 已生成(仅记录构建,不代表验收 PASS)");
+            Ok(())
+        }
         Command::ValidateAcceptance(args) => {
             let json =
                 fs::read_to_string(&args.manifest).map_err(|source| CliError::AcceptanceRead {
@@ -454,8 +481,18 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                 }
             })?;
             let violations = if args.stable {
-                let expected = args.expect_version.as_deref().unwrap_or("2.0.0");
-                acceptance::check_stable(&manifest, expected)
+                acceptance::provenance::verify(
+                    &manifest,
+                    args.expect_version
+                        .as_deref()
+                        .expect("clap requires expect-version"),
+                    args.expect_source
+                        .as_deref()
+                        .expect("clap requires expect-source"),
+                    args.artifacts_dir
+                        .as_deref()
+                        .expect("clap requires artifacts-dir"),
+                )
             } else {
                 acceptance::check_rc(&manifest)
             };

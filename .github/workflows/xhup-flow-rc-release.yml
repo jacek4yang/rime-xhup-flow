@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "发布版本,例如 1.0.0-rc.1(RC)或 1.0.0(正式;core 必须与 workspace/tauri.conf 版本一致)"
+        description: "RC 必须等于 workspace 版本;stable x.y.z 原字节晋升 schema 2 指定的同 core RC"
         required: true
         default: "1.0.0-rc.1"
       publish:
@@ -50,6 +50,11 @@ jobs:
       core: ${{ steps.meta.outputs.core }}
       is_rc: ${{ steps.meta.outputs.is_rc }}
       publish: ${{ steps.meta.outputs.publish }}
+      android_version_code: ${{ steps.meta.outputs.android_version_code }}
+      acceptance_windows: ${{ steps.meta.outputs.acceptance_windows }}
+      acceptance_linux: ${{ steps.meta.outputs.acceptance_linux }}
+      acceptance_macos: ${{ steps.meta.outputs.acceptance_macos }}
+      acceptance_android: ${{ steps.meta.outputs.acceptance_android }}
 
     steps:
       - name: 检出仓库
@@ -94,12 +99,15 @@ jobs:
               exit 1
             fi
           }
-          check_version "workspace 版本" "$ws"
-          for pkg in trainer/src-tauri/tauri.conf.json trainer/package.json \
-                     miniapp/package.json packages/trainer-core/package.json; do
-            actual="$(node -p "JSON.parse(require('fs').readFileSync('$pkg','utf8')).version")"
-            check_version "$pkg" "$actual"
-          done
+          if [[ "$is_rc" == "true" ]]; then
+            check_version "workspace 版本" "$ws"
+            for pkg in trainer/src-tauri/tauri.conf.json trainer/package.json \
+                       miniapp/package.json packages/trainer-core/package.json; do
+              actual="$(node -p "JSON.parse(require('fs').readFileSync('$pkg','utf8')).version")"
+              check_version "$pkg" "$actual"
+            done
+          fi
+          # Stable promotes unchanged RC bytes: workspace/app versions remain RC.
           publish="$INPUT_PUBLISH"
           if [[ "$publish" == "true" ]]; then
             if [[ "$REF" != "refs/heads/main" ]]; then
@@ -118,14 +126,13 @@ jobs:
           fi
           # 机器可读 GA 门禁(#148 §3):清单 release/acceptance-v<core>.json。
           # RC:结构合法且无 FAIL 即可(UNVERIFIED 放行 —— 硬件验收可后补);
-          # stable:全部必查项 PASS/N/A + accepted_rc 记录 + 版本一致,
-          # 违例逐行输出为 ::error::(指明平台/检查项),无人工绕过。
+          # 此处仅做结构/FAIL 预检。stable 的完整源/附件/证据门禁在 prepare,
+          # 下载已接受 RC 后执行;没有 prepare 成功就不能发布。
           manifest="release/acceptance-v$core.json"
           gate_args=(validate-acceptance --manifest "$manifest")
           gate_mode="rc"
           if [[ "$is_rc" == "false" ]]; then
-            gate_args+=(--stable --expect-version "$version")
-            gate_mode="stable"
+            gate_mode="stable-preflight"
           fi
           cargo run -q -p xhup-cli --locked -- "${gate_args[@]}" \
             || { echo "::error::GA 验收门禁($gate_mode)未通过: $manifest"; exit 1; }
@@ -138,6 +145,11 @@ jobs:
             # 稳定版发布说明用真实验收状态(#148 §3):逐平台压缩为
             # "platform=worst_state",由 acceptance 模块确定性推导。
             acc_summary="$(cargo run -q -p xhup-cli --locked -- acceptance-summary --manifest "$manifest")"
+            # Never present historical rc1 evidence as acceptance of a later RC.
+            if [[ "$is_rc" == "true" ]] && ! jq -e --arg v "$version" --arg s "$GITHUB_SHA" \
+              '.version == $v and .source_commit == $s' "$manifest" >/dev/null; then
+              acc_summary=$'windows=UNVERIFIED\nlinux=UNVERIFIED\nmacos=UNVERIFIED\nandroid=UNVERIFIED'
+            fi
             {
               while IFS= read -r line; do echo "acceptance_$line"; done <<< "$acc_summary"
             } >> "$GITHUB_OUTPUT"
@@ -145,7 +157,7 @@ jobs:
           {
             if [[ "$is_rc" == "true" ]]; then kind="RC(Pre-release)"; else kind="正式版(stable)"; fi
             echo "### 发布元数据"
-            echo "- 版本: \`$version\`(core \`$core\`,$kind,workspace/app/前端包一致)"
+            echo "- 版本: \`$version\`(core \`$core\`,$kind;RC 同步产品版本,stable 保留受验 RC 字节)"
             if [[ -n "$INPUT_VCODE" ]]; then
               echo "- Android versionCode: \`$INPUT_VCODE\`(显式覆盖)"
             else
@@ -158,6 +170,7 @@ jobs:
   build:
     name: 构建全部产物
     needs: validate
+    if: needs.validate.outputs.is_rc == 'true'
     uses: ./.github/workflows/product-packaging.yml
     # secrets: inherit 仅用于 publish=true 时的 Android 发布签名;
     # PR/演练路径不读取任何 secret(打包工作流内按 sign_android 门控)。
@@ -171,10 +184,80 @@ jobs:
       # universal 4-ABI(551.0 MiB)保留为兼容附加资产。
       arm64_default: true
 
+  prepare:
+    name: RC 构建封存或 stable 原字节晋升
+    needs: [validate, build]
+    if: >-
+      ${{ always() && needs.validate.result == 'success' &&
+          (needs.validate.outputs.is_rc == 'false' || needs.build.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      artifact_version: ${{ steps.bundle.outputs.artifact_version }}
+      source_commit: ${{ steps.bundle.outputs.source_commit }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.validate.outputs.version }}
+      CORE: ${{ needs.validate.outputs.core }}
+      IS_RC: ${{ needs.validate.outputs.is_rc }}
+      PUBLISH: ${{ needs.validate.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: 下载本次 RC 构建
+        if: needs.validate.outputs.is_rc == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: product-packaging-*
+          path: artifacts
+          merge-multiple: true
+      - name: 封存或验证实际发布字节
+        id: bundle
+        run: |
+          set -euo pipefail
+          manifest="release/acceptance-v$CORE.json"
+          if [[ "$IS_RC" == "true" ]]; then
+            artifact_version="$VERSION"
+            source_commit="$GITHUB_SHA"
+            # Unsigned rehearsal artifacts are not promotable; preserve that distinction.
+            if [[ "$PUBLISH" == "true" ]]; then
+              cargo run -q -p xhup-cli --locked -- seal-build \
+                --version "$VERSION" --source-commit "$source_commit" --artifacts-dir artifacts
+            fi
+          else
+            artifact_version="$(jq -er '.accepted_rc' "$manifest")"
+            [[ "$artifact_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.[1-9][0-9]*$ ]]
+            [[ "${artifact_version%-rc.*}" == "$VERSION" ]]
+            tag="xhup-flow-v$artifact_version"
+            gh release view "$tag" --json isDraft,isPrerelease \
+              --jq 'select(.isDraft == false and .isPrerelease == true)' | jq -e . >/dev/null
+            # Resolve annotated/lightweight tag to a real commit, not manifest assertions.
+            source_commit="$(gh api "repos/$GH_REPO/commits/$tag" --jq .sha)"
+            mkdir artifacts
+            gh release download "$tag" --dir artifacts
+            # Acceptance is attached separately; it is not part of the sealed payload.
+            rm -f artifacts/ACCEPTANCE.json
+            cargo run -q -p xhup-cli --locked -- validate-acceptance \
+              --manifest "$manifest" --stable --expect-version "$VERSION" \
+              --expect-source "$source_commit" --artifacts-dir artifacts
+          fi
+          cp "$manifest" artifacts/ACCEPTANCE.json
+          {
+            echo "artifact_version=$artifact_version"
+            echo "source_commit=$source_commit"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-verified-payload
+          path: artifacts/
+          retention-days: 7
+
   publish:
     name: 创建草稿 Release
-    needs: [validate, build]
-    if: needs.validate.outputs.publish == 'true'
+    needs: [validate, prepare]
+    if: >-
+      ${{ always() && needs.validate.result == 'success' &&
+          needs.prepare.result == 'success' && needs.validate.outputs.publish == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -188,15 +271,16 @@ jobs:
       # Rime 源包文件名携带其内嵌版本(schema version 行 = workspace 版本,
       # 含 -rc.N 后缀);不能用 CORE(剥后缀)拼名,RC 路径下会校验失败。
       # v1 时代 CORE == VERSION == 1.0.0,两者巧合一致,缺陷未暴露。
-      RIME_VERSION: ${{ needs.build.outputs.rime_version }}
+      RIME_VERSION: ${{ needs.prepare.outputs.artifact_version }}
+      ARTIFACT_VERSION: ${{ needs.prepare.outputs.artifact_version }}
+      SOURCE_COMMIT: ${{ needs.prepare.outputs.source_commit }}
 
     steps:
       - name: 下载全部产物
         uses: actions/download-artifact@v8
         with:
-          pattern: product-packaging-*
+          name: release-verified-payload
           path: artifacts
-          merge-multiple: true
 
       - name: 发布前校验
         run: |
@@ -204,14 +288,14 @@ jobs:
           cd artifacts
           for f in \
             "xhup-flow-rime-v$RIME_VERSION.zip" \
-            "xhup-flow-trainer-v$VERSION-windows-x64-setup.exe" \
-            "xhup-flow-trainer-v$VERSION-windows-x64.msi" \
-            "xhup-flow-trainer-v$VERSION-macos-universal.dmg" \
-            "xhup-flow-trainer-v$VERSION-linux-amd64.deb" \
-            "xhup-flow-trainer-v$VERSION-linux-x86_64.rpm" \
-            "xhup-flow-trainer-v$VERSION-android-arm64.apk" \
-            "xhup-flow-trainer-v$VERSION-android-universal.apk" \
-            SHA256SUMS.txt CANONICAL-SHA256SUMS.txt BUILD-INFO.txt; do
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-windows-x64-setup.exe" \
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-windows-x64.msi" \
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-macos-universal.dmg" \
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-linux-amd64.deb" \
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-linux-x86_64.rpm" \
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-android-arm64.apk" \
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-android-universal.apk" \
+            SHA256SUMS.txt CANONICAL-SHA256SUMS.txt BUILD-INFO.txt BUILD-MANIFEST.json ACCEPTANCE.json; do
             [[ -s "$f" ]] || { echo "::error::缺少发布资产或为 0 字节: $f"; exit 1; }
           done
           # 完整性自检:SHA256SUMS 与现盘产物一致。
@@ -245,9 +329,10 @@ jobs:
           else
             title_suffix=""
             banner="> 正式稳定版本。各平台验收状态来自机器可读清单
-          > release/acceptance-v$CORE.json(稳定门禁要求全部 PASS/N/A)。"
+          > release/acceptance-v$CORE.json(schema 2,完整证据及源/工件哈希验证)。
+          > 原字节晋升 RC $ARTIFACT_VERSION,附件名称及内嵌版本仍为 RC;不重新构建。"
             acceptance="
-          ## 平台验收状态(源:release/acceptance-v$CORE.json,门禁强制全 PASS/N/A)
+          ## 平台验收状态(schema 2:必查 PASS;仅 Android 桌面生命周期可有理由 N/A)
 
           - Windows: **${ACC_WINDOWS:-UNVERIFIED}**
           - Linux: **${ACC_LINUX:-UNVERIFIED}**
@@ -322,13 +407,13 @@ jobs:
           | 文件 | 平台 | 签名状态 |
           | ---- | ---- | ---- |
           | \`xhup-flow-rime-v$RIME_VERSION.zip\` | 平台中立 Rime 源包 | N/A(SHA256 校验) |
-          | \`xhup-flow-trainer-v$VERSION-windows-x64-setup.exe\` | Windows(NSIS) | UNSIGNED |
-          | \`xhup-flow-trainer-v$VERSION-windows-x64.msi\` | Windows(MSI) | UNSIGNED |
-          | \`xhup-flow-trainer-v$VERSION-macos-universal.dmg\` | macOS(aarch64+x86_64) | UNSIGNED + UNNOTARIZED |
-          | \`xhup-flow-trainer-v$VERSION-linux-amd64.deb\` | Linux(deb) | N/A |
-          | \`xhup-flow-trainer-v$VERSION-linux-x86_64.rpm\` | Linux(rpm) | N/A |
-          | \`xhup-flow-trainer-v$VERSION-android-arm64.apk\` | Android(主产物,arm64-v8a) | SIGNED |
-          | \`xhup-flow-trainer-v$VERSION-android-universal.apk\` | Android(兼容附加,4-ABI) | SIGNED |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-windows-x64-setup.exe\` | Windows(NSIS) | UNSIGNED |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-windows-x64.msi\` | Windows(MSI) | UNSIGNED |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-macos-universal.dmg\` | macOS(aarch64+x86_64) | UNSIGNED + UNNOTARIZED |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-linux-amd64.deb\` | Linux(deb) | N/A |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-linux-x86_64.rpm\` | Linux(rpm) | N/A |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-android-arm64.apk\` | Android(主产物,arm64-v8a) | SIGNED |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-android-universal.apk\` | Android(兼容附加,4-ABI) | SIGNED |
 
           - 完整性:安装前比对 \`SHA256SUMS.txt\`。
           - 构建元数据:\`BUILD-INFO.txt\`;规范数据确定性哈希:
@@ -375,16 +460,16 @@ jobs:
             --title "XHUP Flow v$VERSION" \
             --notes-file "$RUNNER_TEMP/RELEASE-NOTES.md" \
             "${prerelease_flag[@]}" --draft \
-            --target "$GITHUB_SHA" \
+            --target "$SOURCE_COMMIT" \
             "xhup-flow-rime-v$RIME_VERSION.zip" \
-            "xhup-flow-trainer-v$VERSION-windows-x64-setup.exe" \
-            "xhup-flow-trainer-v$VERSION-windows-x64.msi" \
-            "xhup-flow-trainer-v$VERSION-macos-universal.dmg" \
-            "xhup-flow-trainer-v$VERSION-linux-amd64.deb" \
-            "xhup-flow-trainer-v$VERSION-linux-x86_64.rpm" \
-            "xhup-flow-trainer-v$VERSION-android-arm64.apk" \
-            "xhup-flow-trainer-v$VERSION-android-universal.apk" \
-            SHA256SUMS.txt CANONICAL-SHA256SUMS.txt BUILD-INFO.txt
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-windows-x64-setup.exe" \
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-windows-x64.msi" \
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-macos-universal.dmg" \
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-linux-amd64.deb" \
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-linux-x86_64.rpm" \
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-android-arm64.apk" \
+            "xhup-flow-trainer-v$ARTIFACT_VERSION-android-universal.apk" \
+            SHA256SUMS.txt CANONICAL-SHA256SUMS.txt BUILD-INFO.txt BUILD-MANIFEST.json ACCEPTANCE.json
           url="$(gh release view "xhup-flow-v$VERSION" --json url -q .url)"
           echo "### 草稿 Release 已创建" >> "$GITHUB_STEP_SUMMARY"
           echo "- $url(人工复核发布说明与验收状态后发布)" >> "$GITHUB_STEP_SUMMARY"

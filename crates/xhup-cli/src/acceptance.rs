@@ -2,8 +2,8 @@
 //!
 //! 设计约束(#148 §2):
 //! - 状态严格有限:`PASS` / `FAIL` / `UNVERIFIED` / `N/A`,解析拒绝任何其他值;
-//! - 校验是纯函数:同样输入永远得到同样结论,不读环境、不联网;
-//! - stable 门禁语义:`check_stable` 要求全部必查项 PASS 且来源 RC 已记录;
+//! - 策略校验是纯函数;provenance 校验另外读取实际附件,均不联网;
+//! - stable 必须使用 provenance::verify:check_stable 仅校验 schema 2 策略;
 //!   RC 门禁语义:`check_rc` 允许 UNVERIFIED,但 FAIL 仍然阻止。
 //!
 //! 文档同步(`docs/platform-acceptance.md`)由工作流调用本模块的
@@ -12,6 +12,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+
+pub mod provenance;
 
 /// 单项验收状态。严格有限,反序列化拒绝未知值(malformed 用例依赖此点)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,6 +86,12 @@ pub struct PlatformEntry {
     pub evidence: Option<String>,
     /// 验证时间戳(ISO 8601);PASS 时必填。
     pub verified_at: Option<String>,
+    /// 明确的 librime / Lua / 客户端版本;schema 2 stable 必填。
+    #[serde(default)]
+    pub runtime: Option<String>,
+    /// 仅允许 Android/trainer_lifecycle;schema 2 必须给出非空原因。
+    #[serde(default)]
+    pub exemptions: BTreeMap<String, String>,
 }
 
 /// 机器可读验收清单。
@@ -94,6 +102,9 @@ pub struct AcceptanceManifest {
     /// GA 发布所依据的已验收 RC 版本;stable 时必填。
     pub accepted_rc: Option<String>,
     pub source_commit: String,
+    /// 已验收 BUILD-MANIFEST.json 原始字节的 SHA256;stable 必填。
+    #[serde(default)]
+    pub build_manifest_sha256: Option<String>,
     pub artifacts: Vec<ArtifactRecord>,
     pub platforms: Vec<PlatformEntry>,
 }
@@ -121,11 +132,14 @@ impl fmt::Display for Violation {
 pub fn validate_structure(manifest: &AcceptanceManifest) -> Vec<Violation> {
     let mut violations = Vec::new();
 
-    if manifest.schema_version != 1 {
+    if ![1, 2].contains(&manifest.schema_version) {
         violations.push(Violation {
             platform: None,
             check: None,
-            message: format!("schema_version 必须为 1,实际 {}", manifest.schema_version),
+            message: format!(
+                "schema_version 必须为 1 或 2,实际 {}",
+                manifest.schema_version
+            ),
         });
     }
     if manifest.version.is_empty() {
@@ -135,11 +149,11 @@ pub fn validate_structure(manifest: &AcceptanceManifest) -> Vec<Violation> {
             message: "version 不能为空".to_string(),
         });
     }
-    if manifest.source_commit.is_empty() {
+    if !provenance::is_hex(&manifest.source_commit, 40) {
         violations.push(Violation {
             platform: None,
             check: None,
-            message: "source_commit 不能为空".to_string(),
+            message: "source_commit 必须是 40 位小写 hex SHA".to_string(),
         });
     }
 
@@ -191,6 +205,41 @@ pub fn validate_structure(manifest: &AcceptanceManifest) -> Vec<Violation> {
 
     // 每个平台:检查键齐全、引用工件存在、frontend/os/architecture 非空。
     for entry in &manifest.platforms {
+        if !required.contains(&entry.platform.as_str()) {
+            violations.push(Violation {
+                platform: Some(entry.platform.clone()),
+                check: None,
+                message: "未知平台".to_string(),
+            });
+        }
+        for (key, state) in &entry.checks {
+            if *state == CheckState::NotApplicable
+                && (entry.platform != "android"
+                    || key != "trainer_lifecycle"
+                    || (manifest.schema_version == 2
+                        && !entry
+                            .exemptions
+                            .get(key)
+                            .is_some_and(|s| !s.trim().is_empty())))
+            {
+                violations.push(Violation {
+                    platform: Some(entry.platform.clone()),
+                    check: Some(key.clone()),
+                    message:
+                        "N/A 仅允许 android/trainer_lifecycle;schema 2 必须提供 exemption 原因"
+                            .to_string(),
+                });
+            }
+        }
+        for key in entry.exemptions.keys() {
+            if entry.checks.get(key) != Some(&CheckState::NotApplicable) {
+                violations.push(Violation {
+                    platform: Some(entry.platform.clone()),
+                    check: Some(key.clone()),
+                    message: "exemption 必须对应 N/A 项".to_string(),
+                });
+            }
+        }
         for key in CHECK_KEYS {
             if !entry.checks.contains_key(key) {
                 violations.push(Violation {
@@ -216,7 +265,10 @@ pub fn validate_structure(manifest: &AcceptanceManifest) -> Vec<Violation> {
                 message: format!("引用工件不存在: {}", entry.artifact),
             });
         }
-        if entry.frontend.is_empty() || entry.os.is_empty() || entry.architecture.is_empty() {
+        if entry.frontend.trim().is_empty()
+            || entry.os.trim().is_empty()
+            || entry.architecture.trim().is_empty()
+        {
             violations.push(Violation {
                 platform: Some(entry.platform.clone()),
                 check: None,
@@ -245,11 +297,35 @@ pub fn check_rc(manifest: &AcceptanceManifest) -> Vec<Violation> {
     violations
 }
 
-/// stable 门禁(publish=2.0.0):结构合法 + 全必查 PASS 或 N/A +
-/// accepted_rc 已记录 + 版本一致 + PASS 项有证据。
+/// stable 策略校验: schema 2、同 core RC、必查 PASS、显式豁免及证据。
+/// 这只是纯数据校验;发布必须调用 provenance::verify 校验独立来源和真实附件。
 pub fn check_stable(manifest: &AcceptanceManifest, expected_version: &str) -> Vec<Violation> {
     let mut violations = validate_structure(manifest);
-    let structure_clean = violations.is_empty();
+    if manifest.schema_version != 2 {
+        violations.push(Violation {
+            platform: None,
+            check: None,
+            message: "stable 必须使用 schema_version 2;历史记录不能冒充当前验收".to_string(),
+        });
+    }
+    if !provenance::stable_version(expected_version) {
+        violations.push(Violation {
+            platform: None,
+            check: None,
+            message: "期望版本必须为规范 x.y.z stable 版本".to_string(),
+        });
+    }
+    if !manifest
+        .build_manifest_sha256
+        .as_deref()
+        .is_some_and(|s| provenance::is_hex(s, 64))
+    {
+        violations.push(Violation {
+            platform: None,
+            check: None,
+            message: "stable 必须绑定 build_manifest_sha256".to_string(),
+        });
+    }
 
     if manifest.version != expected_version {
         violations.push(Violation {
@@ -263,11 +339,11 @@ pub fn check_stable(manifest: &AcceptanceManifest, expected_version: &str) -> Ve
     }
     match &manifest.accepted_rc {
         Some(rc) if !rc.is_empty() => {
-            if !rc.contains("-rc.") {
+            if provenance::rc_core(rc) != Some(expected_version) {
                 violations.push(Violation {
                     platform: None,
                     check: None,
-                    message: format!("accepted_rc `{rc}` 不是 RC 版本(须形如 x.y.z-rc.N)"),
+                    message: format!("accepted_rc `{rc}` 不是 RC 版本或与 stable core 不一致(须形如 {expected_version}-rc.N)"),
                 });
             }
         }
@@ -278,7 +354,7 @@ pub fn check_stable(manifest: &AcceptanceManifest, expected_version: &str) -> Ve
         }),
     }
 
-    if structure_clean {
+    {
         for entry in &manifest.platforms {
             for (key, state) in &entry.checks {
                 match state {
@@ -295,12 +371,32 @@ pub fn check_stable(manifest: &AcceptanceManifest, expected_version: &str) -> Ve
                     }),
                 }
             }
-            let has_pass = entry.checks.values().any(|s| *s == CheckState::Pass);
-            if has_pass && (entry.evidence.is_none() || entry.verified_at.is_none()) {
+            if !entry
+                .runtime
+                .as_deref()
+                .is_some_and(|s| !s.trim().is_empty())
+            {
                 violations.push(Violation {
                     platform: Some(entry.platform.clone()),
                     check: None,
-                    message: "存在 PASS 项时 evidence 与 verified_at 必填".to_string(),
+                    message: "stable 必须记录 runtime(librime/Lua/客户端版本)".to_string(),
+                });
+            }
+            let has_pass = entry.checks.values().any(|s| *s == CheckState::Pass);
+            if has_pass
+                && (!entry
+                    .evidence
+                    .as_deref()
+                    .is_some_and(|s| !s.trim().is_empty())
+                    || !entry
+                        .verified_at
+                        .as_deref()
+                        .is_some_and(provenance::utc_timestamp))
+            {
+                violations.push(Violation {
+                    platform: Some(entry.platform.clone()),
+                    check: None,
+                    message: "存在 PASS 项时 evidence 非空且 verified_at 必须是有效 UTC 时间 YYYY-MM-DDTHH:MM:SSZ".to_string(),
                 });
             }
         }
@@ -391,6 +487,8 @@ mod tests {
             checks,
             evidence: None,
             verified_at: None,
+            runtime: Some("librime 1.16.1 / Lua 5.4 / test-client 1".to_string()),
+            exemptions: BTreeMap::new(),
         }
     }
 
@@ -400,6 +498,7 @@ mod tests {
             version: "2.0.0-rc.1".to_string(),
             accepted_rc: None,
             source_commit: "a".repeat(40),
+            build_manifest_sha256: Some("b".repeat(64)),
             artifacts: vec![ArtifactRecord {
                 name: "artifact-a".to_string(),
                 sha256: "a".repeat(64),
@@ -507,12 +606,17 @@ mod tests {
             entry.evidence = Some("#83 评论".to_string());
             entry.verified_at = Some("2026-09-27T00:00:00Z".to_string());
         }
-        // Android 的 trainer_lifecycle 按 N/A 语义允许。
+        manifest.schema_version = 2;
+        // Android 的 trainer_lifecycle 按显式有理由的 N/A 语义允许。
         let android = manifest
             .platforms
             .iter_mut()
             .find(|p| p.platform == "android")
             .unwrap();
+        android.exemptions.insert(
+            "trainer_lifecycle".to_string(),
+            "无桌面控制中心".to_string(),
+        );
         android
             .checks
             .insert("trainer_lifecycle".to_string(), CheckState::NotApplicable);
