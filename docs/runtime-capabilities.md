@@ -1,7 +1,7 @@
 # Runtime capability evidence (B4 / F17)
 
 `xhup-cli::runtime_capabilities` provides one typed vocabulary for doctor,
-Trainer (which displays doctor output), and future runtime/acceptance adapters.
+Trainer (typed IPC status and diagnostics), and future runtime/acceptance adapters.
 Every field distinguishes Available, Unavailable and Unknown, and separately
 records Filesystem, Configuration or Runtime evidence. Unknown is never PASS.
 
@@ -21,7 +21,12 @@ Unknown, and does not write to user storage to manufacture a green capability.
 The existing `lua_contract_ok` bool remains a legacy **file/configuration**
 contract, now labelled accordingly; its value and CLI exit status are not runtime
 qualification. Windows/macOS built-in-plugin assumptions are not recorded as
-observed file presence. Trainer receives the same qualified doctor report.
+observed file presence. Trainer serializes this same model in `ProductStatus` and
+shows runtime evidence separately from installation integrity. A healthy install,
+a plugin file, or configured filter never makes that row a runtime PASS. Its
+resource-preflight result is `unverified`, not the former misleading `satisfied`.
+Only explicit runtime observations can mark registration/filter execution as
+observed; this still does not certify decoding, learning, or storage.
 
 Runtime adapters can apply explicit observations. Contradictory active-filter /
 unregistered-Lua observations are rejected without partially updating state.

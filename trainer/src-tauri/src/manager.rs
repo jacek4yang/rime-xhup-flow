@@ -1133,12 +1133,33 @@ pub fn learning_summary(user_data_dir: &Path) -> LearningSummary {
     }
 }
 
-/// Lua 运行时合同评估结果
+/// 与 CLI 共用同一证据模型。文件预检不能证明当前输入法的运行状态。
+pub fn runtime_capabilities_with<F>(
+    status: &InstallStatus,
+    exists: &F,
+) -> xhup_cli::runtime_capabilities::RuntimeCapabilities
+where
+    F: Fn(&Path) -> bool,
+{
+    use xhup_cli::runtime_capabilities::{Capability, Evidence, RuntimeCapabilities};
+    let mut caps = RuntimeCapabilities::default();
+    if status.installed_files == 0 || status.missing_files.iter().any(|f| f.starts_with("lua/")) {
+        caps.lua_payload = Capability::observed(false, Evidence::Filesystem);
+    } else if matches!(status.client, RimeClient::Fcitx5 | RimeClient::Ibus) {
+        caps.lua_payload = Capability::observed(
+            status.client.probe_lua_support_with(exists).is_ok(),
+            Evidence::Filesystem,
+        );
+    }
+    caps
+}
+
+/// Lua 资源预检结果;Unverified 不等于运行时 PASS。
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum LuaContractStatus {
-    /// 合同满足:主方案 xhup_flow 所需的 Lua 模块完整且平台环境满足 librime-lua 需求
-    Satisfied {
+    /// 资源预检通过,实际模块注册、激活、解码和学习健康仍未验证。
+    Unverified {
         lua_files_count: usize,
         platform_support: String,
     },
@@ -1188,7 +1209,7 @@ where
     }
 
     match status.client.probe_lua_support_with(file_exists) {
-        Ok(info) => LuaContractStatus::Satisfied {
+        Ok(info) => LuaContractStatus::Unverified {
             lua_files_count: lua_owned.len(),
             platform_support: info.to_string(),
         },
@@ -1244,17 +1265,17 @@ pub fn diagnostics_report(
 
     let lua_contract = evaluate_lua_contract(status);
     match lua_contract {
-        LuaContractStatus::Satisfied {
+        LuaContractStatus::Unverified {
             lua_files_count,
             platform_support,
         } => {
             report.push_str(&format!(
-                "Lua 运行时合同: 满足 (xhup_flow 拥有全部 {lua_files_count} 个 Lua 模块; {platform_support})\n"
+                "Lua 资源预检: 完整 ({lua_files_count} 个模块; {platform_support}); 运行时未验证 (Unknown)\n"
             ));
         }
         LuaContractStatus::StaticFallback => {
             report.push_str(
-                "Lua 运行时合同: 静态方案回退 (xhup_flow_static 为纯静态零-Lua 模式,与 v1.0.0 冻结基线一致)\n",
+                "静态方案资源: 已安装 xhup_flow_static; 实际可用性仍需运行验证 (Unknown)\n",
             );
         }
         LuaContractStatus::MissingLuaFiles { missing } => {
@@ -1273,6 +1294,7 @@ pub fn diagnostics_report(
         }
     }
 
+    report.push_str(&runtime_capabilities_with(status, &|p| p.is_file()).format_report());
     report.push_str(&format!(
         "学习数据: {}\n",
         if learning.db_exists {
@@ -1814,13 +1836,51 @@ mod tests {
         assert!(report.contains("已安装版本: 1.0.0"));
         assert!(report.contains(&format!("完整性: 一致 {} / 不同 0", OWNED_FILES.len())));
         assert!(report.contains("平台: "));
-        assert!(report.contains("Lua 运行时合同: "));
+        assert!(report.contains("能力证据（Unknown 不等于 PASS，文件不等于执行）:"));
+        assert!(report.contains("lua_registered: Unknown (None)"));
+        assert!(!report.contains("Lua 运行时合同: 满足"));
         assert!(report.contains("重新部署: 手动执行("));
         assert!(
             !report.contains("default.custom.yaml"),
             "不包含用户文件内容"
         );
         let _ = fs::remove_dir_all(&user);
+    }
+
+    #[test]
+    fn installed_files_never_certify_live_runtime() {
+        use xhup_cli::runtime_capabilities::{Evidence, State};
+        let user = fake_user_dir("runtime-evidence");
+        let package = fake_package("1.0.0");
+        execute(
+            &plan_install(&user, &package).unwrap(),
+            &user,
+            Some(&package),
+        )
+        .unwrap();
+        for client in [RimeClient::Weasel, RimeClient::Squirrel, RimeClient::Fcitx5] {
+            let status = install_status(&user, client, Some(&package));
+            let caps = runtime_capabilities_with(&status, &|_| true);
+            assert_eq!(caps.lua_registered.state, State::Unknown);
+            assert_eq!(caps.lua_filter_active.state, State::Unknown);
+            assert_eq!(caps.contextual_decoder.state, State::Unknown);
+            assert_eq!(caps.storage_writable.state, State::Unknown);
+            assert_eq!(caps.static_fallback_usable.state, State::Unknown);
+            assert!(!caps.live_flow_infrastructure_ready());
+            if client == RimeClient::Fcitx5 {
+                assert_eq!(caps.lua_payload.evidence, Evidence::Filesystem);
+            } else {
+                assert_eq!(caps.lua_payload.state, State::Unknown);
+            }
+            let report = diagnostics_report(&status, "1.0.0", &learning_summary(&user));
+            assert!(!report.contains("Lua 运行时合同: 满足"));
+            assert!(report.contains("Unknown"));
+            assert_eq!(
+                serde_json::to_value(caps).unwrap()["lua_registered"]["state"],
+                "unknown"
+            );
+        }
+        fs::remove_dir_all(user).unwrap();
     }
 
     #[test]
@@ -1834,7 +1894,7 @@ mod tests {
         )
         .unwrap();
 
-        // 1. Weasel 平台: 内置支持，全部 Lua 模块在场 -> Satisfied
+        // 1. Weasel 平台: 内置支持假设、模块齐全仍只能判定 Unverified
         let status_weasel = install_status(&user, RimeClient::Weasel, Some(&package));
         // Lua 模块计数来源与实现一致:OWNED_FILES 的 lua/xhup_flow/ 前缀
         // 条目数(新增模块文件时此处自动跟随,不重复维护常量)。
@@ -1843,14 +1903,14 @@ mod tests {
             .filter(|f| f.starts_with("lua/xhup_flow/"))
             .count();
         match evaluate_lua_contract(&status_weasel) {
-            LuaContractStatus::Satisfied {
+            LuaContractStatus::Unverified {
                 lua_files_count,
                 platform_support,
             } => {
                 assert_eq!(lua_files_count, expected_lua_files);
                 assert!(platform_support.contains("小狼毫内置"));
             }
-            other => panic!("期望 Satisfied, 实际 {other:?}"),
+            other => panic!("期望 Unverified, 实际 {other:?}"),
         }
 
         // 2. Fcitx5 平台在未检测到系统插件时 -> PluginMissing
@@ -1864,15 +1924,15 @@ mod tests {
             other => panic!("期望 PluginMissing, 实际 {other:?}"),
         }
 
-        // 3. Fcitx5 平台检测到插件时 -> Satisfied
+        // 3. Fcitx5 检测到插件文件仍不能证明运行时已加载 -> Unverified
         let contract_fcitx5_with_plugin = evaluate_lua_contract_with(&status_fcitx5, &|_| true);
         match contract_fcitx5_with_plugin {
-            LuaContractStatus::Satisfied {
+            LuaContractStatus::Unverified {
                 lua_files_count, ..
             } => {
                 assert_eq!(lua_files_count, expected_lua_files);
             }
-            other => panic!("期望 Satisfied, 实际 {other:?}"),
+            other => panic!("期望 Unverified, 实际 {other:?}"),
         }
 
         // 4. 缺少 Lua 文件 -> MissingLuaFiles

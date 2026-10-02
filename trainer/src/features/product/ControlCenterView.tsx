@@ -352,6 +352,17 @@ export function ControlCenterView() {
                     </Row>
                   )}
                   <Row label={t("product.bundledVersion")}>{status.bundled_version}</Row>
+                  <Row label={t("product.runtimeEvidence")}>
+                    <span data-testid="runtime-evidence">
+                      {status.runtime_capabilities.lua_registered.state === "available" &&
+                      status.runtime_capabilities.lua_registered.evidence === "runtime" &&
+                      status.runtime_capabilities.lua_filter_active.state === "available" &&
+                      status.runtime_capabilities.lua_filter_active.evidence === "runtime"
+                        ? t("product.runtimeObserved")
+                        : t("product.runtimeUnverified")}
+                    </span>
+                  </Row>
+                  <p className="text-xs text-muted-foreground">{t("product.runtimeEvidenceHint")}</p>
                   {install && install.schemas.length > 0 && (
                     <Row label={t("product.schemaMode")}>
                       <code className="text-xs">{install.schemas.join(" · ")}</code>
