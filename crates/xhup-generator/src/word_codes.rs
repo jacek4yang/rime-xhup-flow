@@ -440,7 +440,11 @@ mod tests {
     fn weights_are_positive_and_unique_within_code() {
         let entries = finalized_word_code_entries();
         let mut by_code: BTreeMap<&KeySequence, Vec<u32>> = BTreeMap::new();
+        let mut collided_codes = BTreeSet::new();
         for entry in entries {
+            if crate::merged_ranking::merged_weight(entry.code(), entry.word()).is_some() {
+                collided_codes.insert(entry.code());
+            }
             assert!(entry.rime_weight() > 0, "权重必须为正");
             by_code
                 .entry(entry.code())
@@ -452,11 +456,7 @@ mod tests {
             assert_eq!(unique.len(), weights.len(), "{code} 同码权重应唯一");
             // 与单字全码碰撞的 4 键码使用 merged_ranking 的跨表权重:本表内
             // 只是合并 1..=n 排列的子集,密度不变量由 merged_ranking 测试保证。
-            let collided = entries.iter().any(|entry| {
-                entry.code() == *code
-                    && crate::merged_ranking::merged_weight(entry.code(), entry.word()).is_some()
-            });
-            if collided {
+            if collided_codes.contains(code) {
                 continue;
             }
             assert_eq!(*unique.iter().next().unwrap(), 1, "{code} 最小权重为 1");
