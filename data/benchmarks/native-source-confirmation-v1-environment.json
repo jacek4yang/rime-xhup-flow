@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "declared_package_generation_source_commit": "1ec015c8ff1800c1d9857a973a2fe2d48a95d189",
+  "source_claim_limit": "caller-declared generation revision; byte gate binds current runtime sources, not an independent full rebuild proof",
+  "runtime_source_binding": "8 Lua modules and 2 schemas match the evaluating checkout",
+  "artifacts": {
+    "lua/xhup_flow/annotation.lua": {
+      "bytes": 3374,
+      "sha256": "b6aab8fe49b976eda60b992f5b98a5cc615ae392591311b6dc230a731d4e2e87"
+    },
+    "lua/xhup_flow/context_ranker.lua": {
+      "bytes": 6581,
+      "sha256": "4de8e174e4096881c5b463a1e587dfd459e6b878c9822459770382323cd5c8e8"
+    },
+    "lua/xhup_flow/data/quick_hints.lua": {
+      "bytes": 1770882,
+      "sha256": "4abd0d6133ff119877441effe04fb10ba5743fc42b25dd387ef584a2aee2ea45"
+    },
+    "lua/xhup_flow/full_span.lua": {
+      "bytes": 1183,
+      "sha256": "4c2a920cc1fac505e1df7d7490859c39716a8034d40364e226d1267984c6baab"
+    },
+    "lua/xhup_flow/init.lua": {
+      "bytes": 6233,
+      "sha256": "bc12b2cdfe991bcb79b5abffc7607a977344e675415449000927805e65aa52c8"
+    },
+    "lua/xhup_flow/joint_decoder.lua": {
+      "bytes": 536,
+      "sha256": "1bb8ca2dc7e05ab7f827189a05445a238f056964b52772b0f6c1e4cc5e0501a4"
+    },
+    "lua/xhup_flow/native_tail.lua": {
+      "bytes": 10381,
+      "sha256": "4dd7e514006152d2ddc497413136388ab3a3765aec6a8be8ce504cd760a17f6d"
+    },
+    "lua/xhup_flow/quick_hint.lua": {
+      "bytes": 2841,
+      "sha256": "e49309f31113a9c49ad6ca0f941cd10ffc94406a6468ae75de0702e60defcd3a"
+    },
+    "lua/xhup_flow/user_memory.lua": {
+      "bytes": 3221,
+      "sha256": "565dcd180b41df2230cd64621489c9eb42b5571f17aac5a873bebbdb16f4570c"
+    },
+    "xhup_flow.dict.yaml": {
+      "bytes": 271,
+      "sha256": "e3dbff596099d73ef2ed6ac7852b9d16a03c76aa43b3a5f6b9d7fd0ebfc0efab"
+    },
+    "xhup_flow.schema.yaml": {
+      "bytes": 8247,
+      "sha256": "b4da6598313b5b4fd6efc1c1f4b91241c7c02566a931e9d91823de0ba7f4e853"
+    },
+    "xhup_flow.sources.tsv": {
+      "bytes": 6137,
+      "sha256": "04a203b6b1aacf55c1e85533542053cb881626c4340dc59fac4bb64db714a4d7"
+    },
+    "xhup_flow_chars.dict.yaml": {
+      "bytes": 296198,
+      "sha256": "e8beb963f7eef019be96aad83aeb6062b2eabb324133fab49194a78d21dd9aaa"
+    },
+    "xhup_flow_fixed_first_shortcuts.dict.yaml": {
+      "bytes": 45543,
+      "sha256": "704415d4ec1b16fea11b187188ee879e54aa6753de6d48a7a01c23f696dfc460"
+    },
+    "xhup_flow_flow.dict.yaml": {
+      "bytes": 31864936,
+      "sha256": "0c316e1b5eea29eabb7ae3f8a6eec3a779337995d76913431b88380058aca88e"
+    },
+    "xhup_flow_flow.schema.yaml": {
+      "bytes": 434,
+      "sha256": "0d3bb9d0c07ce05d0cf93958f75ec96047d28e8b1065d2d6a9b57749848a2bc5"
+    },
+    "xhup_flow_learn.dict.yaml": {
+      "bytes": 207612,
+      "sha256": "c813ba0ab4bfb911ab50518a76f192e1ebc44ae6a8824eab3e7ab00d43f00fd8"
+    },
+    "xhup_flow_learn.schema.yaml": {
+      "bytes": 438,
+      "sha256": "d74abed5799e8030bbf145b38a9313ddeef3017e423be8c728baa59c09fa16ac"
+    },
+    "xhup_flow_shortcuts.dict.yaml": {
+      "bytes": 345,
+      "sha256": "28586b2ba18b9b70a9ba5d84fa038892ef6cb9a416bc468765d7f2bc62c14785"
+    },
+    "xhup_flow_static.schema.yaml": {
+      "bytes": 1720,
+      "sha256": "42b12fe722d810f4b2635a821cea73d90d5041434b4dd4adc3d58d69731685ea"
+    },
+    "xhup_flow_word_shortcuts.dict.yaml": {
+      "bytes": 1105943,
+      "sha256": "9aa3d58e6f53cb9f69b750b72b53dfc5724ade006eb3048b669d054faf36b98f"
+    },
+    "xhup_flow_words.dict.yaml": {
+      "bytes": 1750469,
+      "sha256": "9a00b4a0f86fe4009559ee664999354d2ac4a88aa83d4777c73d329e9af9e7fb"
+    }
+  },
+  "harness_sources": {
+    "tests/librime/runtime_corpus.c": "8c65649213ff4b9dad22906b36bdd5ccade8d32a6a28ce823aa2df15dba6c6d5",
+    "tests/librime/runtime_replay.c": "d2e479c817f55268b1c300f45c75011797c3eacbe826a36a5ed158a8d5767180",
+    "tests/librime/run-flow-audit.sh": "e20cbd40955131ccabf222a871ca890434d4874be889c03a5607067ba5e84cea",
+    "tests/quality/corpus_native_only.lua": "e9d7549ee69c13c18a397921f500650992e586a2e05890d09fe6428afbad4eeb"
+  },
+  "librime_pkg_config_version": "1.16.1",
+  "lua_plugin_source_commit": "68f9c364a2d25a04c7d4794981d7c796b05ab627",
+  "lua_plugin_binary_sha256": "fde8f69ca8c629c47bf874b7327992a47f36125213051408bbd24f2858e99d61",
+  "lua_plugin_installation": "bwrap private replacement of system plugin; NOT concurrent LD_PRELOAD",
+  "compiler": "cc (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
+  "harness_flags": "-O2 -Wall -Wextra -Werror -std=c11",
+  "system": "Linux",
+  "kernel": "7.0.0-30-generic",
+  "architecture": "x86_64",
+  "load_warning": "concurrent exhaustive native audit and workspace tests; timing is NOT an idle paired performance comparison",
+  "learning": "compiled flow/learn/flow_readonly user dictionaries verified disabled by native harness"
+}

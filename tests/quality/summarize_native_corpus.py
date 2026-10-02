@@ -101,6 +101,24 @@ def intervals(cases, planner, baseline):
                        for key, samples in zip(METRICS, values)} for label, values in draws.items()}}
 
 
+def prefix_contract(planner, baseline):
+    """Per-case native top-five stability; aggregate gains cannot cancel harms."""
+    if set(planner) != set(baseline):
+        raise ValueError("unpaired rank observations")
+    protected = [key for key in baseline if 0 <= baseline[key]["rank"] < 5]
+    changed = sum(planner[key]["rank"] != baseline[key]["rank"] for key in protected)
+    return {"baseline_top5_cases": len(protected),
+            "unchanged_rank_cases": len(protected) - changed,
+            "changed_rank_cases": changed}
+
+
+def require_contracts(report, require_prefix=False):
+    if any(report[mode]["all"]["contract_failures"] for mode in ("planner", "native-only")):
+        raise ValueError("real input/commit contract failures (report retained)")
+    if require_prefix and report["native_top5_contract"]["changed_rank_cases"]:
+        raise ValueError("native top-five rank changed (report retained)")
+
+
 def summarize(metadata, planner, baseline, overlap=None):
     subsets = {"all": metadata["cases"]}
     for low, high in ((2,4),(5,8),(9,16),(17,64)):
@@ -121,6 +139,7 @@ def summarize(metadata, planner, baseline, overlap=None):
         subsets["no_known_overlap_length_ge8"] = [c for c in subsets["no_known_overlap"] if c["characters"] >= 8]
     result = {label: {name: rates([rows[c["id"]] for c in cases]) for name, cases in subsets.items() if cases}
               for label, rows in (("planner",planner),("native-only",baseline))}
+    result["native_top5_contract"] = prefix_contract(planner, baseline)
     result["clustered_95_intervals"] = intervals(metadata["cases"], planner, baseline)
     return result
 
@@ -132,6 +151,8 @@ def main():
     parser.add_argument("baseline", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--overlap", type=Path)
+    parser.add_argument("--require-native-prefix", action="store_true",
+                        help="fail on any per-case native top-five rank change; retain report")
     args = parser.parse_args()
     metadata = json.loads(args.metadata.read_text())
     planner, planner_timing = read_trace(args.planner, metadata, "planner")
@@ -153,6 +174,8 @@ def main():
                               "quality misses are retained; no post-outcome selection or retuning"]})
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2)+"\n")
     print(json.dumps({label: report[label]["all"] for label in ("planner","native-only")}, indent=2))
+    print(json.dumps(report["native_top5_contract"], indent=2))
+    require_contracts(report, args.require_native_prefix)
 
 
 if __name__ == "__main__":
