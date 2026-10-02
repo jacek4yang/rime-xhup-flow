@@ -1,7 +1,9 @@
 -- One native translation/learning provider plus bounded boundary planning.
 -- The planner minimizes lexical-unit count (not a frequency estimate). Native
 -- lookup supplies every edge; native Rime constructs and learns every candidate.
-local M = { MAX_INPUT = 128, MAX_EDGE = 32, HEAD = 32, CANDIDATES_PER_QUERY = 2,
+-- Preserve the native first five candidates (the default visible page). Plans
+-- provide bounded alternatives, never an invented lexical-score override.
+local M = { MAX_INPUT = 128, MAX_EDGE = 32, HEAD = 5, CANDIDATES_PER_QUERY = 2,
   MAX_LEARNING_UPDATES = 65536, MAX_LEARNING_ELEMENTS = 64, MAX_LEARNING_TEXT_BYTES = 256 }
 
 local function learning_status(env, status)
@@ -196,8 +198,8 @@ local function alternatives(input, segment, env)
             -- native table/sentence types, not presentation-specific labels.
             if tail > 0 then candidate.comment = "待续:" .. input:sub(finish + 1) end
             candidate.preedit = query
-            -- Explicit structural utility. Does not change lexical weights.
-            candidate.quality = candidate.quality + (tail == 0 and 0.5 or -1)
+            -- Native quality is left unchanged. Structural boundary evidence
+            -- supplies alternatives, not a calibrated lexical preference.
             result[#result + 1] = candidate
           end
           if visited == M.CANDIDATES_PER_QUERY then break end
@@ -234,36 +236,19 @@ function M.func(input, segment, env)
     if base then for candidate in base:iter() do emit(candidate) end end
     return
   end
-  local head, order, collected = {}, 0, 0
-  local function add(candidate)
-    order = order + 1
-    head[#head + 1] = { candidate = candidate, order = order }
-  end
-  for _, candidate in ipairs(extra) do add(candidate) end
-  local function emit_head()
-    table.sort(head, function(a, b)
-      -- A genuine complete interpretation must not be hidden behind a shorter
-      -- phrase. Static primary remains outside this provider and unchanged.
-      local full_a = a.candidate._end == segment._end and a.candidate.type ~= "completion"
-      local full_b = b.candidate._end == segment._end and b.candidate.type ~= "completion"
-      if #input > 4 and full_a ~= full_b then return full_a end
-      if a.candidate.quality ~= b.candidate.quality then
-        return a.candidate.quality > b.candidate.quality
-      end
-      return a.order < b.order
-    end)
-    for _, item in ipairs(head) do emit(item.candidate) end
-    head = nil
+  local collected, appended = 0, false
+  local function append_alternatives()
+    if appended then return end
+    for _, candidate in ipairs(extra) do emit(candidate) end
+    appended = true
   end
   if base then
     for candidate in base:iter() do
-      if head then
-        add(candidate)
-        collected = collected + 1
-        if collected == M.HEAD then emit_head() end
-      else emit(candidate) end
+      emit(candidate)
+      collected = collected + 1
+      if collected == M.HEAD then append_alternatives() end
     end
   end
-  if head then emit_head() end
+  append_alternatives()
 end
 return M
