@@ -256,7 +256,9 @@ jobs:
         run: lua5.4 tests/lua/test_quick_hint.lua
 
       - name: Lua context_ranker 纯逻辑单测(lua5.4,不依赖 librime)
-        run: lua5.4 tests/lua/test_context_ranker.lua
+        run: |
+          lua5.4 tests/lua/test_context_ranker.lua
+          lua5.4 tests/lua/test_ranker_stream.lua
 
       - name: Lua user_memory 纯逻辑单测(lua5.4,不依赖 librime)
         run: lua5.4 tests/lua/test_user_memory.lua

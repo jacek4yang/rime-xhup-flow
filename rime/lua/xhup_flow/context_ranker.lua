@@ -53,9 +53,9 @@ end
 -- 用户记忆桶(3)优先级低于重复词桶(2):最近选择 > 历史频率。
 -- 无任何证据时退化为恒等,行为可解释。
 local function bounded_reorder(cands, context_text, bound, hints, input_code, user_counts)
-  local n = #cands
+  local n = math.min(#cands, bound)
   local order = {}
-  for i = 1, n do
+  for i = 1, #cands do
     order[i] = i
   end
   local has_context = context_text ~= nil and context_text ~= ""
@@ -91,6 +91,9 @@ local function bounded_reorder(cands, context_text, bound, hints, input_code, us
   end
   for _, idx in ipairs(rest) do
     table.insert(result, idx)
+  end
+  for i = n + 1, #cands do
+    table.insert(result, i)
   end
   return result
 end
@@ -135,27 +138,33 @@ function M.func(translation, env)
 
   local input_code = env.engine.context.input
   local head, head_meta = {}, {}
-  local n = 0
+  local n, emitted = 0, false
+  local function emit_head()
+    local ok, order = pcall(M.bounded_reorder, head_meta, context_text,
+      env.bound, env.hints, input_code, user_counts)
+    if ok then
+      for _, idx in ipairs(order) do
+        yield(head[idx])
+      end
+    else
+      -- 决策异常只回退原 head,不丢候选,不记录文本。
+      env.rank_error = "context head decision failed"
+      for i = 1, n do yield(head[i]) end
+    end
+    head, head_meta = nil, nil
+    emitted = true
+  end
   for cand in translation:iter() do
-    if n < env.bound then
+    if emitted then
+      yield(cand) -- 全局 head 之外永久透传,不分重复窗口。
+    else
       n = n + 1
       head[n] = cand
       head_meta[n] = { type = cand.type, text = cand.text }
-    else
-      -- 决策一次,吐出窗口,再重新缓冲(流式;窗口外的候选不受影响)。
-      for _, idx in ipairs(M.bounded_reorder(head_meta, context_text, env.bound, env.hints, input_code, user_counts)) do
-        yield(head[idx])
-      end
-      head, head_meta = {}, {}
-      n = 0
-      yield(cand)
+      if n == env.bound then emit_head() end
     end
   end
-  if n > 0 then
-    for _, idx in ipairs(M.bounded_reorder(head_meta, context_text, env.bound, env.hints, input_code, user_counts)) do
-      yield(head[idx])
-    end
-  end
+  if not emitted then emit_head() end
 end
 
 return M
