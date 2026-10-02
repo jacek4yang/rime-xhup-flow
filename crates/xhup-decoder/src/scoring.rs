@@ -15,7 +15,8 @@ pub(crate) fn log2_q10(count: u64) -> Score {
 }
 
 /// scorer 的最小接口。实现必须在相同 context、lattice 与 path 下返回相同结果，
-/// 且不得修改外部状态。
+/// 且不得修改外部状态。`path` 可以是从输入起点连续覆盖的前缀或完整路径。
+/// beam 剪枝与最终排序使用同一目标；前缀得分不被当作未来得分的上界。
 pub trait DeterministicScorer {
     type Breakdown;
 

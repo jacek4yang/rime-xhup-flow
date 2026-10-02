@@ -180,7 +180,7 @@ fn empty_or_incomplete_lattice_returns_empty_ranked() {
 }
 
 #[test]
-fn incomplete_overflow_still_reports_empty_not_truncated() {
+fn incomplete_overflow_preserves_truncation_evidence() {
     let mut lattice = Lattice::new("abcd".parse().unwrap());
     for i in 0..10 {
         let text = format!("甲{i}");
@@ -196,8 +196,8 @@ fn incomplete_overflow_still_reports_empty_not_truncated() {
         DecodeConfig::new(nz(2), nz(5), 0),
     );
     assert!(decoded.ranked().is_empty());
-    assert!(!decoded.truncated());
-    assert_eq!(decoded.fallback(), None);
+    assert!(decoded.truncated());
+    assert_eq!(decoded.fallback(), Some(FallbackReason::BeamTruncated));
 }
 
 #[test]
