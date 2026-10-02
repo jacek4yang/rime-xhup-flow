@@ -15,7 +15,7 @@ schema:
     - xhup_flow_learn
   description: |
     XHUP Flow 2.0 智能化双拼音形方案。本方案需要 librime-lua 运行时支持
-    (候选注释、上下文解码与运行时策略编排);在不支持或未启用 Lua 的
+    (候选注释、有界原生边界规划与可选会话调序);在不支持或未启用 Lua 的
     环境，请安装 librime-plugin-lua 或切换使用静态兼容方案 xhup_flow_static
     (保留 100% 肌肉记忆与零 Lua 运行);
     当前版本提供 26 个一级简码字、core + attested 输入字符(二至四码)、
@@ -48,23 +48,17 @@ switches:
   # 有界上下文调序(§4.3):GA 冻结合同默认关闭(reset 0 = 严格透传,
   # 与无此 filter 逐字节一致;#148 §1「实验运行时特性守护/默认关闭」)。
   # 生产翻转是 RC 验收通过后的独立决策(与 user_memory 同轨);守护依据:
-  # 真实 librime-lua 插件审计全绿(#129:默认关闭恒等、重复词有界提升、
+  # 真实 librime-lua 插件审计覆盖默认关闭恒等、重复词有界提升、
   # 静态强固定 rank-1 永不降位、OOV 可达、集合不删减);证据为
   # commit_notifier 内存态,零持久化,证据不可用即恒等透传(安全降级)。
   - name: context_ranker
     reset: 0
     states: [关闭调序, 上下文调序]
-  # 本地用户记忆观察(§16/R4):默认关闭 —— 不观察不写盘,行为与无此
-  # 组件一致;开启后记录实际上屏词形到版本化 TSV(隐私:只存词形+计数)。
+  # 可选会话计数:最多 512 项、每项 256 字节;关闭即清除,不读写 TSV。
+  # 持久化学习只由原生 xhup_flow_user 提供;此开关不控制原生学习。
   - name: user_memory
     reset: 0
-    states: [关闭记忆, 本地记忆]
-  # joint lattice 守护诊断(§11/§14/R3):默认关闭 —— 关闭 = 严格透传;
-  # 开启后有界重叠 span 证据采集 + 提交重复词的有界提升(永不越过
-  # 静态强固定 rank-1;translator 查询失败/证据为空 → 回退静态序)。
-  - name: joint_decoder
-    reset: 0
-    states: [关闭联合解码, 开启联合解码]
+    states: [关闭会话记忆, 会话记忆]
 
 engine:
   processors:
@@ -100,14 +94,8 @@ engine:
     # 位于 uniquifier 之前(与 quick_hint 同序约束,由 uniquifier 兜底
     # 消化 lua_filter 协程 translation 的末位重复)。
     - lua_filter@*xhup_flow.context_ranker
-    # 本地用户记忆观察(§16/R4):默认关闭(reset 0)—— 关闭 = 不观察
-    # 不写盘;开启后按 commit_notifier 记录实际上屏词形,周期性原子写
-    # 版本化 TSV(与 xhup-cli user-state 同一文件格式)。本组件不改
-    # 候选流(排序消费是后续 PR);位于 uniquifier 之前,纯透传。
+    # 会话内有界证据观察,不参与候选排序;无文件读写。
     - lua_filter@*xhup_flow.user_memory
-    # joint lattice 守护诊断(§11/§14/R3):默认关闭(严格透传);开启后
-    # 有界证据采集 + 重复词有界提升,永不越过静态强固定 rank-1。
-    - lua_filter@*xhup_flow.joint_decoder
     - lua_filter@*xhup_flow.full_span
     - uniquifier
 

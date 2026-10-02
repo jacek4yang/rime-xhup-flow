@@ -60,6 +60,8 @@ patch:
     - schema: xhup_flow
   menu/page_size: 500
 EOF
+# Isolate session ranking from native user-dictionary adaptation.
+printf 'patch:\n  flow/enable_user_dict: false\n  learn/enable_user_dict: false\n' > "$deploy_dir/xhup_flow.custom.yaml"
 rime_deployer --compile "$deploy_dir/xhup_flow.schema.yaml" "$deploy_dir" \
   "$SHARED_DATA_DIR" >/dev/null
 for dict in xhup_flow_fixed_first_shortcuts xhup_flow_flow xhup_flow_learn; do
@@ -80,15 +82,12 @@ print("PASS  Lua check_contract() 含 context_ranker: " .. report.version)
 '
 
 echo "== Lua context_ranker runtime 审计(真实 librime-lua) =="
-# 审计在 deploy 目录内执行:user_memory 组件的快照默认写到进程工作目录
-# (相对路径),cd 进 deploy 即把 TSV 落在与 librime 用户数据一致的位置,
-# 重启场景可真实读到。
-# 两阶段闭环:5A(观察+写盘)在同一进程;5B(重启后验证)经第二次
-# 进程调用(librime 不能进程内二次 initialize)——TSV 快照在 deploy
-# 目录跨进程持久,等效真实重启。
-# 两阶段都必须执行(即使 5A 有失败也要跑 5B —— 闭环诊断需要完整
-# 读数);退出码最后统一非零。
+# The legacy file is a preservation sentinel, not runtime state. Both fresh
+# processes must start with zero session entries and leave it byte-identical.
+printf '# xhup-user-model/v1 version=1\nword\tselections\tlast_seq\n合成历史词\t100\t1\n' > "$work/legacy.tsv"
+cp "$work/legacy.tsv" "$deploy_dir/xhup_flow_user_model.tsv"
 rc=0
 (cd "$deploy_dir" && "$work/audit" "$SHARED_DATA_DIR" .) || rc=1
 (cd "$deploy_dir" && XHUP_AUDIT_PHASE=2 "$work/audit" "$SHARED_DATA_DIR" .) || rc=1
+cmp "$work/legacy.tsv" "$deploy_dir/xhup_flow_user_model.tsv" || rc=1
 exit $rc

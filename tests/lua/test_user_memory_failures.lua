@@ -1,6 +1,6 @@
 -- Pure Lua failure injection, NOT native-platform or crash-durability evidence.
 package.path = "rime/lua/?.lua;" .. package.path
-local um = require("xhup_flow.user_memory")
+local um = dofile("tests/research/legacy_user_memory.lua")
 local original = { open = io.open, tmpname = os.tmpname, rename = os.rename,
                    remove = os.remove, config = package.config }
 local passed = 0

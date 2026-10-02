@@ -328,14 +328,15 @@ jobs:
           lua5.4 tests/lua/test_native_tail.lua
           lua5.4 tests/lua/test_full_span.lua
 
-      - name: Lua user_memory 纯逻辑单测(lua5.4,不依赖 librime)
+      - name: Lua 会话隐私与历史研究快照单测(lua5.4,非原生验收)
         run: |
+          lua5.4 tests/lua/test_session_memory.lua
           lua5.4 tests/lua/test_user_memory.lua
           lua5.4 tests/lua/test_user_memory_failures.lua
 
       - name: Lua native_lookup 纯逻辑单测(lua5.4,不依赖 librime)
         run: lua5.4 tests/lua/test_native_lookup.lua
-      - name: Lua joint_decoder 决策逻辑单测(lua5.4,不依赖 librime)
+      - name: 历史研究 joint_decoder 决策单测(不是已部署解码器)
         run: lua5.4 tests/lua/test_joint_decoder.lua
 
       - name: Lua joint lattice 夹具一致性(Rust/Lua 共享夹具)

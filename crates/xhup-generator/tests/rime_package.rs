@@ -197,11 +197,10 @@ fn schema_semantics() {
             "    - lua_filter@*xhup_flow.quick_hint",
             "    - lua_filter@*xhup_flow.context_ranker",
             "    - lua_filter@*xhup_flow.user_memory",
-            "    - lua_filter@*xhup_flow.joint_decoder",
             "    - lua_filter@*xhup_flow.full_span",
             "    - uniquifier",
         ],
-        "filters 链应为 quick_hint → context_ranker → user_memory → uniquifier"
+        "filters 链应为 quick_hint → context_ranker → user_memory → full_span → uniquifier"
     );
     assert!(
         schema.contains("- name: quick_hint\n    reset: 1"),
@@ -231,10 +230,16 @@ fn schema_semantics() {
         ranker_module.contains("is_fixed_first"),
         "context_ranker 必须包含静态强固定识别"
     );
+    assert!(!schema.contains("- name: joint_decoder"));
+    let retired = contents_of(&artifacts, "lua/xhup_flow/joint_decoder.lua");
+    assert!(retired.contains("available = false"));
     let user_memory_module = contents_of(&artifacts, "lua/xhup_flow/user_memory.lua");
     assert!(
-        user_memory_module.contains("parse_tsv") && user_memory_module.contains("atomic_write"),
-        "user_memory 模块应包含持久化纯逻辑"
+        user_memory_module.contains("MAX_ENTRIES = 512")
+            && user_memory_module.contains("get_state")
+            && !user_memory_module.contains("io.open")
+            && !user_memory_module.contains("atomic_write"),
+        "生产会话记忆有界且不能读写第二份学习快照"
     );
     let init_module = contents_of(&artifacts, "lua/xhup_flow/init.lua");
     assert!(
@@ -327,7 +332,6 @@ fn schema_excludes_non_portable_or_deferred_features() {
             "    - lua_filter@*xhup_flow.quick_hint",
             "    - lua_filter@*xhup_flow.context_ranker",
             "    - lua_filter@*xhup_flow.user_memory",
-            "    - lua_filter@*xhup_flow.joint_decoder",
             "    - lua_filter@*xhup_flow.full_span",
         ],
         "仅许可已列出的运行时组件"
@@ -338,7 +342,6 @@ fn schema_excludes_non_portable_or_deferred_features() {
         if code.contains("lua_filter@*xhup_flow.quick_hint")
             || code.contains("lua_filter@*xhup_flow.context_ranker")
             || code.contains("lua_filter@*xhup_flow.user_memory")
-            || code.contains("lua_filter@*xhup_flow.joint_decoder")
             || code.contains("lua_filter@*xhup_flow.full_span")
             || code.contains("lua_translator@*xhup_flow.native_tail")
         {

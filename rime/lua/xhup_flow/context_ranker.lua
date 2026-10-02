@@ -126,14 +126,15 @@ function M.func(translation, env)
     return
   end
 
-  -- 证据源:user_memory 模块共享状态(经 require 读同一份 M.state;
-  -- engine userdata 不接受字段赋值,实测静默失败)。
+  -- 证据限于当前会话、显式同意的有界内存;不读写研究 TSV 快照。
   local um_ok, um = pcall(require, "xhup_flow.user_memory")
   local context_text = nil
   local user_counts = nil
-  if um_ok and type(um) == "table" and type(um.state) == "table" then
-    context_text = um.state.last_commit
-    user_counts = um.state.counts
+  if um_ok and type(um) == "table" and type(um.get_state) == "function" then
+    local ok, state = pcall(um.get_state, env.engine.context)
+    if ok and state then
+      context_text, user_counts = state.last_commit, state.counts
+    end
   end
 
   local input_code = env.engine.context.input

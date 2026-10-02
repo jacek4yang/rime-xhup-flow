@@ -1,9 +1,10 @@
 # Native learning management safety (F09 native tier)
 
 Scope: `learning export/import/reset` manages **only** `xhup_flow_user.userdb`.
-The Rust contextual-memory file and optional Lua observer snapshot are separate
-stores. These operations do not reset them or imply their concurrency is solved.
-Unified contextual storage/learning remains a GA gate.
+Historical research TSV files are separate and are not read by the supported
+runtime. These operations preserve them. The optional Lua observer is now bounded
+session-only evidence with no second persistent store; see
+[context-memory-persistence.md](context-memory-persistence.md).
 
 Management clients serialize using a stable `.xhup-flow-learning.lock` file.
 The file is never unlinked on unlock (avoids competing lock inodes). Read-only

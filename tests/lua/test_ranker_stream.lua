@@ -24,8 +24,8 @@ local function replay(length, bound, enabled, inject)
   local env = { bound = bound, hints = {}, engine = { context = {
     input = "abc", get_option = function() return enabled end
   } } }
-  memory.state.last_commit = "repeat"
-  memory.state.counts = {}
+  local old_state = memory.get_state
+  memory.get_state = function() return { last_commit = "repeat", counts = {} } end
   local old_yield, old_reorder = _G.yield, ranker.bounded_reorder
   local decisions = 0
   ranker.bounded_reorder = function(...)
@@ -40,7 +40,7 @@ local function replay(length, bound, enabled, inject)
     output[#output + 1] = candidate
   end
   ranker.func(translation, env)
-  _G.yield, ranker.bounded_reorder = old_yield, old_reorder
+  _G.yield, ranker.bounded_reorder, memory.get_state = old_yield, old_reorder, old_state
   check(#output == #input, "multiplicity preserved")
   check(decisions == (enabled and 1 or 0), "one global decision, never repeated windows")
   local multiset = {}
