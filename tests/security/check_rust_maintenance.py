@@ -59,6 +59,23 @@ def check(root=ROOT):
         for relative, expected_hash in pins["notices"].items():
             assert digest((directory / relative).read_bytes()) == expected_hash, f"{name}: notice"
         assert cargo["patch"]["crates-io"][name]["path"] == f"vendor/{name}", f"{name}: Cargo binding"
+    resources = json.loads((root / "trainer/src-tauri/tauri.conf.json").read_text())["bundle"]["resources"]
+    notices = {
+        "glib-macros": ("LICENSE", "COPYRIGHT"),
+        "gtk3-macros": ("LICENSE", "COPYRIGHT"),
+        "urlpattern": ("LICENSE",),
+        "proc-macro-error2": ("LICENSE-MIT", "LICENSE-APACHE"),
+    }
+    destinations = []
+    for name, files in notices.items():
+        for filename in files:
+            source = f"../../vendor/{name}/{filename}"
+            destination = resources.get(source)
+            assert destination and destination.startswith("licenses/"), f"{name}: missing bundled notice"
+            assert ".." not in Path(destination).parts, f"{name}: unsafe notice destination"
+            destinations.append(destination)
+    for destination in destinations:
+        assert list(resources.values()).count(destination) == 1, "colliding bundled notice destinations"
     lock = tomllib.loads((root / "Cargo.lock").read_text())
     for name in PATCHES:
         packages = [p for p in lock["package"] if p["name"] == name]
