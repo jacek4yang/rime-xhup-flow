@@ -3633,7 +3633,7 @@ dependencies = [
 
 [[package]]
 name = "trainer"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.3"
 dependencies = [
  "glib",
  "regex",
@@ -4447,7 +4447,7 @@ dependencies = [
 
 [[package]]
 name = "xhup-analyzer"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -4458,7 +4458,7 @@ dependencies = [
 
 [[package]]
 name = "xhup-cli"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.3"
 dependencies = [
  "clap",
  "rustix",
@@ -4471,18 +4471,18 @@ dependencies = [
 
 [[package]]
 name = "xhup-core"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.3"
 
 [[package]]
 name = "xhup-decoder"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.3"
 dependencies = [
  "xhup-core",
 ]
 
 [[package]]
 name = "xhup-generator"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.3"
 dependencies = [
  "serde",
  "serde_json",
