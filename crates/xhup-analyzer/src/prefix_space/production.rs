@@ -11,12 +11,11 @@
 //!
 //! # 质量映射
 //!
-//! [`LexicalEvidence::daily_prior`] 是多源融合后的 **log 域相对值**
-//! (0 ≈ 各源中位水平,可略为负)。求解器需要严格为正的 `mass`:
+//! [`LexicalEvidence::daily_prior`] 是 0..=1 的分位/分类研究效用,
+//! 不是 log 概率。求解器需要严格为正的 `mass`:
 //!
-//! - 优先 `daily_prior`: `mass = exp(prior).clamp(MIN, MAX)`。中位(~0)
-//!   映射为 1;中位以下落在 `(0, 1)`;中位以上 `> 1`。指数映射保持排序
-//!   且永不产生非正质量。
+//! - 保留显式单调效用变换 `mass = exp(prior).clamp(MIN, MAX)`;
+//!   对正常输入结果在 [1, e]。该变换是求解器的政策选择,不是概率还原。
 //! - 先验缺失时回退 `ln_1p(normalized_frequency)`,并地板到 `MIN`。
 //!
 //! # 目标选取
@@ -53,7 +52,7 @@ const MIN_SOLVER_MASS: f64 = 1e-9;
 /// 求解器质量上限(防止极端先验撑爆效用)。
 const MAX_SOLVER_MASS: f64 = 1e6;
 
-/// 一级简码冻结锚点的占位质量(与 log 域中位 `exp(0) = 1` 对齐)。
+/// 一级简码冻结锚点的占位质量(与效用零点 `exp(0) = 1` 对齐)。
 /// 冻结槽位排序优先于质量,此值只参与子树拥塞统计。
 const LEVEL1_ANCHOR_MASS: f64 = 1.0;
 

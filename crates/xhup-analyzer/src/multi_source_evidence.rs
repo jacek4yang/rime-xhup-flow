@@ -3,7 +3,7 @@
 //!
 //! 核心问题:单一语料频率不可作为日常先验 —— 「某语料未出现」不等于
 //! 「低频」,「单语料高分」可能是领域词(游戏/动漫词库权重)而非日常
-//! 高频。本模块把互相独立的证据源逐源标准化,再确定性融合为
+//! 高频。本模块把证据逐源转成有界分位效用,再按相关域去重融合为
 //! `final_daily_prior`,供 optimizer / shortcut audit / replay 消费。
 //!
 //! 证据源(全部确定性入库产物,来源注册见 data/xhup/sources.tsv):
@@ -15,18 +15,19 @@
 //! - **kdconv_ge2**:KDConv 语料频次 ≥2 的会话域强信号(白名单来源标记)。
 //!
 //! 标准化(逐源,可解释、可复现):
-//! - 计数类信号 → log1p 域内归一化:ln(1 + count / token_total) 的
-//!   domain 中位数锚定相对值 `ln1p(x) - ln1p(median)`,高频词 > 0,
-//!   中位以下 < 0(缺失为 `None`,绝不静默为 0);
-//! - 二值类信号(来源标记)→ 0/1 测量值(在白名单 = 1)。
+//! - 保留原始概率/log 相对值用于解释,不直接混加不同量纲;
+//! - 计数/概率信号 → 源内经验中秩分位 `(below + ties/2) / observed`,
+//!   输出 0..=1;缺失/非有限/负输入为 `None`,不是测得的零;
+//! - 二值标记 → 在场 1,未测 None。该值是显式分类效用,不是词频。
 //!
 //! 融合(确定性,权重显式可配置):
 //! - 每源权重 × 标准化值,缺失源的份额重归一化到已测量源
 //!   (与 optimizer_v2 `EvidenceWeights::effective` 同一规则);
-//! - 全部缺失时退化为 wanxiang 归一化频率(wanxiang 是 canonical 前提,
-//!   恒存在),保证任何词都有先验可用;
+//! - 没有正有限权重时退化为 wanxiang 分位;其也未测时返回零效用;
+//! - 这是离线研究效用,不是日常频率概率或经独立人群校准的最优先验;
 //! - 同域多源(如 conversation 与 kdconv_ge2)不重复计数:融合前按
-//!   声明顺序去重 —— 每个语言域只保留声明中第一个已测量的源。
+//!   声明顺序去重 —— 每个域只保留首个有正有限权重的已测量源。
+//!   Wanxiang/SogouSysFreq 保守视为同一词汇域;Conversation/KdconvGe2 同域。
 //!
 //! 隐私与许可:生产只消费万象/KdConv;Sogou 及其衍生白名单不嵌入。
 //! 二值研究通道仅供调用方显式传入的研究数据,不是生产证据信号。
@@ -65,6 +66,13 @@ impl EvidenceSourceId {
         }
     }
 
+    fn domain(self) -> usize {
+        match self {
+            Self::Wanxiang | Self::SogouSysFreq => 0,
+            Self::Conversation | Self::KdconvGe2 => 1,
+        }
+    }
+
     /// 全部源(声明顺序,供遍历与融合)。
     pub const ALL: [Self; 4] = [
         Self::Wanxiang,
@@ -74,7 +82,7 @@ impl EvidenceSourceId {
     ];
 }
 
-/// 单词的多源证据视图(标准化后的测量值;缺失为 `None`)。
+/// 单词的多源证据视图(原始信号 + 分位效用;缺失为 `None`)。
 #[derive(Clone, Debug, PartialEq)]
 pub struct MultiSourceFrequencyEvidence {
     word: String,
@@ -86,6 +94,8 @@ pub struct MultiSourceFrequencyEvidence {
     kdconv_ge2: Option<f64>,
     /// 系统词库高频二值证据。
     sogou_sys_freq: Option<f64>,
+    /// 共同 0..=1 效用尺度;原始证据仍由上方字段保留。
+    normalized: [Option<f64>; 4],
 }
 
 impl MultiSourceFrequencyEvidence {
@@ -109,7 +119,8 @@ impl MultiSourceFrequencyEvidence {
         self.sogou_sys_freq
     }
 
-    /// 按源取标准化值(缺失为 None)。
+    /// 按源取原始解释信号;不同源的值不可直接相加。
+    /// 融合应使用 normalized_signal 的共同效用尺度。
     pub fn signal(&self, source: EvidenceSourceId) -> Option<f64> {
         match source {
             EvidenceSourceId::Wanxiang => Some(self.wanxiang),
@@ -118,9 +129,19 @@ impl MultiSourceFrequencyEvidence {
             EvidenceSourceId::SogouSysFreq => self.sogou_sys_freq,
         }
     }
+
+    /// 源内分位/分类效用,不是频率概率;缺失仍为 None。
+    pub fn normalized_signal(&self, source: EvidenceSourceId) -> Option<f64> {
+        self.normalized[match source {
+            EvidenceSourceId::Wanxiang => 0,
+            EvidenceSourceId::Conversation => 1,
+            EvidenceSourceId::KdconvGe2 => 2,
+            EvidenceSourceId::SogouSysFreq => 3,
+        }]
+    }
 }
 
-/// 每源融合权重(缺省值即产品契约;调整必须走 sweep 与基线更新)。
+/// 离线研究融合权重,是未独立校准的效用选择,不是已验证产品最优值。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DailyPriorWeights {
     pub wanxiang: f64,
@@ -131,7 +152,7 @@ pub struct DailyPriorWeights {
 
 impl Default for DailyPriorWeights {
     fn default() -> Self {
-        // 全局书面域主导;会话域做口语修正;二值来源做小步加分。
+        // 全局书面域主导;会话域做口语修正;二值源仅作同域缺测替代。
         // 权重和恒为 1(重归一化前的名义配置)。
         Self {
             wanxiang: 0.6,
@@ -155,8 +176,7 @@ pub struct MultiSourceCoverage {
 /// 全库 MultiSourceFrequencyEvidence 集 + 融合先验。
 pub struct MultiSourceEvidenceSet {
     entries: Vec<MultiSourceFrequencyEvidence>,
-    /// 会话域 log1p 中位数锚点(融合时 conversation 相对值已含锚定,
-    /// 保留供审计与调试)。
+    /// 会话域 log1p 中位数锚点(仅原始解释信号使用,融合使用分位)。
     conversation_anchor: f64,
 }
 
@@ -188,6 +208,8 @@ impl MultiSourceEvidenceSet {
         conv_values.sort_by(|a, b| a.partial_cmp(b).expect("log1p 值不可能是 NaN"));
         let conversation_anchor = median(&conv_values).unwrap_or(0.0);
 
+        let wanxiang_ranks = midranks(words.iter().map(|(w, &v)| (w.as_str(), v)));
+        let conversation_ranks = midranks(conv_by_word.iter().map(|(&w, &v)| (w, v)));
         let entries = words
             .iter()
             .map(|(word, &wanxiang)| {
@@ -202,6 +224,12 @@ impl MultiSourceEvidenceSet {
                     conversation,
                     kdconv_ge2: flag("kdconv_ge2"),
                     sogou_sys_freq: flag("sogou_sys_freq"),
+                    normalized: [
+                        wanxiang_ranks.get(word.as_str()).copied(),
+                        conversation_ranks.get(word.as_str()).copied(),
+                        flag("kdconv_ge2"),
+                        flag("sogou_sys_freq"),
+                    ],
                 }
             })
             .collect();
@@ -230,7 +258,12 @@ impl MultiSourceEvidenceSet {
         let rate = |n: usize| n as f64 / total.max(1) as f64;
         MultiSourceCoverage {
             total,
-            wanxiang: rate(self.entries.len()),
+            wanxiang: rate(
+                self.entries
+                    .iter()
+                    .filter(|e| e.normalized_signal(EvidenceSourceId::Wanxiang).is_some())
+                    .count(),
+            ),
             conversation: rate(
                 self.entries
                     .iter()
@@ -254,8 +287,8 @@ impl MultiSourceEvidenceSet {
 
     /// 融合为 daily-prior(确定性;缺失源份额重归一化)。
     ///
-    /// 输出量纲:无界 log 域相对值,0 表示"各源都在中位水平"。
-    /// 语义:值越大,该词越值得占据稀缺浅层码位。
+    /// 输出量纲:0..=1 的分位/分类效用,不是概率或 log 频率。
+    /// 同相关域只用一个已测量信号,防止重复奖励同一份证据。
     pub fn daily_prior(
         &self,
         evidence: &MultiSourceFrequencyEvidence,
@@ -267,15 +300,29 @@ impl MultiSourceEvidenceSet {
             (EvidenceSourceId::KdconvGe2, weights.kdconv_ge2),
             (EvidenceSourceId::SogouSysFreq, weights.sogou_sys_freq),
         ];
-        let present: f64 = named
+        let mut domains = [false; 2];
+        let mut measured = Vec::with_capacity(2);
+        for (id, weight) in named {
+            if weight.is_finite()
+                && weight > 0.0
+                && !domains[id.domain()]
+                && let Some(value) = evidence.normalized_signal(id)
+            {
+                domains[id.domain()] = true;
+                measured.push((weight, value));
+            }
+        }
+        let max_weight = measured.iter().map(|(w, _)| *w).fold(0.0_f64, f64::max);
+        if max_weight == 0.0 {
+            return evidence
+                .normalized_signal(EvidenceSourceId::Wanxiang)
+                .unwrap_or(0.0);
+        }
+        // Scale before summing so even finite near-MAX weights cannot overflow.
+        let total: f64 = measured.iter().map(|(w, _)| w / max_weight).sum();
+        measured
             .iter()
-            .filter(|(id, _)| evidence.signal(*id).is_some())
-            .map(|(_, w)| *w)
-            .sum();
-        let scale = if present > 0.0 { 1.0 / present } else { 0.0 };
-        named
-            .iter()
-            .filter_map(|(id, w)| evidence.signal(*id).map(|v| w * scale * v))
+            .map(|(w, v)| (w / max_weight) * v / total)
             .sum()
     }
 
@@ -308,6 +355,25 @@ pub fn build_from_canonical(words: &BTreeMap<String, f64>) -> MultiSourceEvidenc
     let corpus = CorpusStats::from_tsv(CONVERSATION_TSV).expect("嵌入语料统计必须可解析");
     let protect = BTreeMap::new();
     MultiSourceEvidenceSet::build(words, &corpus, &protect)
+}
+
+fn midranks<'a>(values: impl Iterator<Item = (&'a str, f64)>) -> BTreeMap<&'a str, f64> {
+    let mut sorted: Vec<_> = values.filter(|(_, v)| v.is_finite() && *v >= 0.0).collect();
+    sorted.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(b.0)));
+    let mut out = BTreeMap::new();
+    let mut start = 0;
+    while start < sorted.len() {
+        let mut end = start + 1;
+        while end < sorted.len() && sorted[end].1 == sorted[start].1 {
+            end += 1;
+        }
+        let rank = (start as f64 + (end - start) as f64 / 2.0) / sorted.len() as f64;
+        for &(word, _) in &sorted[start..end] {
+            out.insert(word, rank);
+        }
+        start = end;
+    }
+    out
 }
 
 fn median(sorted: &[f64]) -> Option<f64> {
@@ -400,9 +466,11 @@ mod tests {
         let weights = DailyPriorWeights::default();
         let rare = set.get("生僻专名").unwrap();
         // 只有 wanxiang 存在:全部名义权重重归一化后落在 wanxiang 上,
-        // 先验恰等于其归一化频率本身。
+        // 先验恰等于其源内分位,不把概率与 log/二值信号混加。
         let prior = set.daily_prior(rare, &weights);
-        assert!((prior - rare.wanxiang()).abs() < 1e-12);
+        assert!(
+            (prior - rare.normalized_signal(EvidenceSourceId::Wanxiang).unwrap()).abs() < 1e-12
+        );
         // 高频词(多源在测)先验应高于仅 wanxiang 的极低频词。
         let women_prior = set.prior_of("我们", &weights).unwrap();
         assert!(women_prior > prior, "多源高频词先验必须高于单源低频词");
@@ -452,6 +520,108 @@ mod tests {
             LexicalClass::Common,
             "白名单 sogou_sys_freq 即跨源日常信号"
         );
+    }
+
+    #[test]
+    fn midrank_units_ties_and_invalid_inputs_are_explicit() {
+        let ranks = midranks(
+            [
+                ("a", 1.0),
+                ("b", 1.0),
+                ("c", 10.0),
+                ("d", 100.0),
+                ("nan", f64::NAN),
+                ("negative", -1.0),
+                ("infinite", f64::INFINITY),
+            ]
+            .into_iter(),
+        );
+        assert_eq!(ranks.len(), 4);
+        assert_eq!(ranks["a"], 0.25);
+        assert_eq!(ranks["b"], 0.25);
+        assert_eq!(ranks["c"], 0.625);
+        assert_eq!(ranks["d"], 0.875);
+    }
+
+    #[test]
+    fn correlated_binary_flags_do_not_double_reward_numeric_evidence() {
+        let plain =
+            MultiSourceEvidenceSet::build(&words_fixture(), &corpus_fixture(), &BTreeMap::new());
+        let flagged =
+            MultiSourceEvidenceSet::build(&words_fixture(), &corpus_fixture(), &protect_fixture());
+        let weights = DailyPriorWeights::default();
+        for word in words_fixture().keys() {
+            assert_eq!(
+                plain.prior_of(word, &weights),
+                flagged.prior_of(word, &weights)
+            );
+        }
+        let shijian = flagged.get("时间").unwrap();
+        let expected = (0.6
+            * shijian
+                .normalized_signal(EvidenceSourceId::Wanxiang)
+                .unwrap()
+            + 0.2
+                * shijian
+                    .normalized_signal(EvidenceSourceId::Conversation)
+                    .unwrap())
+            / 0.8;
+        assert!((flagged.daily_prior(shijian, &weights) - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn numeric_scale_changes_do_not_change_rank_utility() {
+        let original =
+            MultiSourceEvidenceSet::build(&words_fixture(), &corpus_fixture(), &protect_fixture());
+        let scaled: BTreeMap<_, _> = words_fixture()
+            .into_iter()
+            .map(|(w, v)| (w, v * 1e90))
+            .collect();
+        let changed = MultiSourceEvidenceSet::build(&scaled, &corpus_fixture(), &protect_fixture());
+        for word in words_fixture().keys() {
+            assert_eq!(
+                original.prior_of(word, &DailyPriorWeights::default()),
+                changed.prior_of(word, &DailyPriorWeights::default())
+            );
+        }
+    }
+
+    #[test]
+    fn disabled_or_invalid_weights_have_bounded_finite_fallback() {
+        let set =
+            MultiSourceEvidenceSet::build(&words_fixture(), &corpus_fixture(), &protect_fixture());
+        for w in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::MAX] {
+            let weights = DailyPriorWeights {
+                wanxiang: w,
+                conversation: w,
+                kdconv_ge2: w,
+                sogou_sys_freq: w,
+            };
+            for entry in set.entries() {
+                let prior = set.daily_prior(entry, &weights);
+                assert!(prior.is_finite() && (0.0..=1.0).contains(&prior));
+                if !w.is_finite() || w <= 0.0 {
+                    assert_eq!(
+                        prior,
+                        entry.normalized_signal(EvidenceSourceId::Wanxiang).unwrap()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ablation_can_select_binary_backup_without_counting_it_twice() {
+        let set =
+            MultiSourceEvidenceSet::build(&words_fixture(), &corpus_fixture(), &protect_fixture());
+        let weights = DailyPriorWeights {
+            wanxiang: 0.0,
+            conversation: 0.0,
+            kdconv_ge2: 1.0,
+            sogou_sys_freq: 1.0,
+        };
+        assert_eq!(set.prior_of("时间", &weights), Some(1.0));
+        assert_eq!(set.prior_of("我们", &weights), Some(1.0));
     }
 
     #[test]

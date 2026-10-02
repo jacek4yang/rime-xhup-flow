@@ -32,7 +32,7 @@ use crate::multi_source_evidence::MultiSourceFrequencyEvidence;
 const CONVERSATION_TSV: &str = include_str!("../../../data/corpus/conversation_kdconv.tsv");
 
 /// 万象归一化概率长尾阈值(2026-09:中位 ≈2.6e-6,P25 ≈2.0e-6,1e-6 ≈ 最底五分位)。
-/// 只标定 wanxiang 概率,不可与 daily_prior 比较(先验是 log 域相对值)。
+/// 只标定 wanxiang 概率,不可与 daily_prior 比较(后者是源内分位/分类效用)。
 pub(crate) const WANXIANG_RARE_TAIL: f64 = 1e-6;
 
 /// 词法类别(Issue #83 §6):由 MultiSourceFrequencyEvidence 在证据构建时派生。
@@ -194,7 +194,7 @@ impl LexicalEvidence {
         }
     }
 
-    /// 测试夹具:覆盖融合先验(daily_prior 不是概率,0 = 多源中位)。
+    /// 测试夹具:覆盖融合效用(daily_prior 不是概率,当前分位尺度为 0..=1)。
     #[doc(hidden)]
     #[must_use]
     pub fn with_daily_prior(mut self, daily_prior: Option<f64>) -> Self {

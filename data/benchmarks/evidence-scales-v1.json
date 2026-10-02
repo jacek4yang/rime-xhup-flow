@@ -1,0 +1,141 @@
+{
+  "ablations": {
+    "binary_channels_removed": {
+      "absolute_delta": {
+        "max": 0.0,
+        "min": 0.0,
+        "observed": 100000,
+        "p50": 0.0,
+        "p95": 0.0
+      },
+      "distribution": {
+        "max": 0.9999370053647166,
+        "min": 0.00001,
+        "observed": 100000,
+        "p50": 0.49525,
+        "p95": 0.91836
+      },
+      "top1000_overlap_default": 1000
+    },
+    "conversation_only_with_missing_lexical_fallback": {
+      "absolute_delta": {
+        "max": 0.7127208232373073,
+        "min": 0.0,
+        "observed": 100000,
+        "p50": 0.0,
+        "p95": 0.3769553674463529
+      },
+      "distribution": {
+        "max": 0.9999790030655524,
+        "min": 0.00001,
+        "observed": 100000,
+        "p50": 0.441265,
+        "p95": 0.9150883970940242
+      },
+      "top1000_overlap_default": 656
+    },
+    "equal_domains": {
+      "absolute_delta": {
+        "max": 0.23757360774576908,
+        "min": 0.0,
+        "observed": 100000,
+        "p50": 0.0,
+        "p95": 0.12565178914878433
+      },
+      "distribution": {
+        "max": 0.9999090107294335,
+        "min": 0.00001,
+        "observed": 100000,
+        "p50": 0.483195,
+        "p95": 0.910301682589342
+      },
+      "top1000_overlap_default": 860
+    },
+    "lexical_only": {
+      "absolute_delta": {
+        "max": 0.23757360774576913,
+        "min": 0.0,
+        "observed": 100000,
+        "p50": 0.0,
+        "p95": 0.12565178914878428
+      },
+      "distribution": {
+        "max": 0.999995,
+        "min": 0.00001,
+        "observed": 100000,
+        "p50": 0.499585,
+        "p95": 0.94998
+      },
+      "top1000_overlap_default": 466
+    }
+  },
+  "default_nominal_weights": {
+    "conversation": 0.2,
+    "kdconv_ge2": 0.1,
+    "sogou_sys_freq": 0.1,
+    "wanxiang": 0.6
+  },
+  "default_utility": {
+    "max": 0.9999370053647166,
+    "min": 0.00001,
+    "observed": 100000,
+    "p50": 0.49525,
+    "p95": 0.91836
+  },
+  "model": "source-midrank-domain-dedup-v1",
+  "scope": "in-sample deterministic scale audit; not held-out quality or calibrated usage probability",
+  "sources": {
+    "kdconv": {
+      "normalized": {
+        "max": 0.9999790030655524,
+        "min": 0.16367110401881324,
+        "observed": 23813,
+        "p50": 0.5245454163692101,
+        "p95": 0.9496703481291732
+      },
+      "raw": {
+        "max": 0.0067531335377777075,
+        "min": -2.682500573386107e-6,
+        "observed": 23813,
+        "p50": 0.0,
+        "p95": 0.00007376594605152996
+      },
+      "total": 100000
+    },
+    "kdconv_ge2": {
+      "normalized": {
+        "observed": 0
+      },
+      "raw": {
+        "observed": 0
+      },
+      "total": 100000
+    },
+    "sogou_sys_freq": {
+      "normalized": {
+        "observed": 0
+      },
+      "raw": {
+        "observed": 0
+      },
+      "total": 100000
+    },
+    "wanxiang": {
+      "normalized": {
+        "max": 0.999995,
+        "min": 0.00001,
+        "observed": 100000,
+        "p50": 0.499585,
+        "p95": 0.94998
+      },
+      "raw": {
+        "max": 0.0037752721781881366,
+        "min": 3.627777623355377e-9,
+        "observed": 100000,
+        "p50": 2.619255444062582e-6,
+        "p95": 0.000029372301527496808
+      },
+      "total": 100000
+    }
+  }
+}

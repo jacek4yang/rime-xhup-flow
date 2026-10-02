@@ -187,7 +187,8 @@ pub struct UtilityBreakdownV2 {
 }
 
 impl UtilityBreakdownV2 {
-    /// 总效用(频率收益 + 省键 − 各项成本)。
+    /// 研究效用(频率偏好 + 省键 − 各项成本),不是独立收益的统计估计。
+    /// 省键奖励与击键成本在固定全码长下叠加相同边际偏好;这是显式策略。
     pub fn total(&self) -> f64 {
         self.frequency_utility + self.keystrokes_saved + self.xhup_prior
             - self.selection_cost
@@ -214,7 +215,8 @@ pub fn evaluate_assignment(
     pattern_consistent: bool,
 ) -> UtilityBreakdownV2 {
     let (wg, wc, wsc, wcd) = weights.effective(evidence);
-    // 各信号统一到可比尺度:频率类信号取 log1p 压缩动态范围。
+    // 历史研究偏好组合:log1p 仅压缩动态范围,不证明独立性/概率校准。
+    // daily-prior 与会话/覆盖/多样性相关;见 docs/evidence-scale-policy.md。
     // daily_prior(MultiSourceFrequencyEvidence)存在时作为全局频率项的
     // **替代**(它本身已含 wanxiang 份额,不能再叠加一次):
     let global_signal = evidence
@@ -240,7 +242,7 @@ pub fn evaluate_assignment(
         cost.cognitive_complexity_coeff
     };
     // 长尾污染:万象归一化频率低于最底五分位的词占用稀缺短位(≤3 键)时惩罚。
-    // 阈值只标定 wanxiang 概率;daily_prior 是 log 域相对值,不可与 1e-6 比较。
+    // 阈值只标定 wanxiang 概率;daily_prior 是分位/分类效用,不可与概率阈值 1e-6 比较。
     let rare_pollution =
         if slot.key_len <= 3 && evidence.normalized_frequency() < WANXIANG_RARE_TAIL {
             cost.rare_pollution_coeff
