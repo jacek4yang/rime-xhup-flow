@@ -23,4 +23,5 @@ assert any(row["id"] == "sogou-cell-research" for row in restricted)
 deps = args.depfile.read_text()
 assert "xhup-cli" in deps and "word_codes.rs" in deps, "not a normal CLI build dependency manifest"
 assert "data/words/sogou/" not in deps, "restricted payload compiled into distributed CLI"
-print("PASS clean-v1: restricted registry identity/hash verified; no Sogou payload in CLI dependencies")
+assert "flypy_official_char_codes.tsv" not in deps, "unlicensed full official dataset compiled into CLI"
+print("PASS clean-v1: restricted registry identity/hash verified; no Sogou/full official payload in CLI dependencies")
