@@ -31,6 +31,8 @@
  *   q → 去;wo → 我。任何模式下违反即 FAIL。
  */
 
+#define _POSIX_C_SOURCE 200809L
+#include "audit_input.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -81,6 +83,10 @@ static int capture_menu(RimeSessionId session, char *buf, size_t size) {
         n = context.menu.num_candidates;
         for (int i = 0; i < n; ++i) {
             const char *text = context.menu.candidates[i].text;
+            if (!text || strlen(buf) + strlen(text) + (i > 0 ? 1 : 0) >= size) {
+                fputs("FAIL menu capture exceeds bounded buffer\n", stderr);
+                exit(2);
+            }
             if (i > 0) {
                 size_t len = strlen(buf);
                 if (len + 1 < size) {
@@ -326,8 +332,10 @@ static int run_baseline_capture(const char *shared, const char *static_dir,
             report(0, "STATIC == manifest", detail);
         }
     }
-    fclose(f);
-    fclose(cap);
+    int io_error = ferror(f) || ferror(cap);
+    if (fclose(f)) io_error = 1;
+    if (fclose(cap)) io_error = 1;
+    if (io_error) report(0, "capture file I/O", NULL);
     rime->destroy_session(session);
     rime->finalize();
     printf("----\nbaseline-capture(STATIC):%ld codes,manifest 不一致 %ld\n",
@@ -368,18 +376,22 @@ static int run_baseline_compare(const char *shared, const char *flow_dir,
         menu_field_to_sep(tab + 1, expected, sizeof(expected));
         /* capture 行:码\tSEP 分隔菜单(仅数据行,逐行与 manifest 配对)。 */
         if (!fgets(capline, sizeof(capline), cap)) {
-            fprintf(stderr, "capture 文件行数不足:code=%s\n", line);
+            report(0, "capture 文件行数不足", line);
+            ++mismatches;
             break;
         }
         {
             char *ctab = strchr(capline, '\t');
             if (!ctab) {
-                continue;
+                report(0, "capture 行格式损坏", line);
+                ++mismatches;
+                break;
             }
             *ctab = '\0';
             if (strcmp(capline, line) != 0) {
                 fprintf(stderr, "capture 错位:manifest=%s capture=%s\n", line,
                         capline);
+                ++mismatches;
                 break;
             }
             snprintf(static_menu, sizeof(static_menu), "%s", ctab + 1);
@@ -787,6 +799,16 @@ int main(int argc, char **argv) {
                 argv[0]);
         return 2;
     }
+    const char *requested = argv[1];
+    int comparison = !strcmp(requested, "baseline-compare");
+    int manifest_mode = comparison || !strcmp(requested, "baseline-capture") ||
+        !strcmp(requested, "static-baseline-learned") || !strcmp(requested, "sentence") ||
+        !strcmp(requested, "contains-manifest");
+    if (manifest_mode && argc >= (comparison ? 6 : 5) &&
+        !audit_inputs(argv[4], comparison ? argv[5] : NULL)) {
+        fputs("FAIL incomplete/malformed/misaligned audit inputs\n", stderr);
+        return 2;
+    }
     rime = rime_get_api();
     if (!rime) {
         fprintf(stderr, "无法获取 Rime API\n");
@@ -795,22 +817,28 @@ int main(int argc, char **argv) {
     const char *mode = argv[1];
     const char *shared = argv[2];
     if (strcmp(mode, "baseline-capture") == 0 && argc == 6) {
-        return run_baseline_capture(shared, argv[3], argv[4], argv[5]);
+        int result = run_baseline_capture(shared, argv[3], argv[4], argv[5]);
+        return audit_status(result, failures);
     }
     if (strcmp(mode, "baseline-compare") == 0 && argc == 6) {
-        return run_baseline_compare(shared, argv[3], argv[4], argv[5]);
+        int result = run_baseline_compare(shared, argv[3], argv[4], argv[5]);
+        return audit_status(result, failures);
     }
     if (strcmp(mode, "static-baseline-learned") == 0 && argc == 5) {
-        return run_static_baseline_learned(shared, argv[3], argv[4]);
+        int result = run_static_baseline_learned(shared, argv[3], argv[4]);
+        return audit_status(result, failures);
     }
     if (strcmp(mode, "learning") == 0 && argc == 5) {
-        return run_learning(shared, argv[3], argv[4]);
+        int result = run_learning(shared, argv[3], argv[4]);
+        return audit_status(result, failures);
     }
     if (strcmp(mode, "sentence") == 0 && argc == 5) {
-        return run_sentence(shared, argv[3], argv[4]);
+        int result = run_sentence(shared, argv[3], argv[4]);
+        return audit_status(result, failures);
     }
     if (strcmp(mode, "contains-manifest") == 0 && argc == 5) {
-        return run_contains_manifest(shared, argv[3], argv[4]);
+        int result = run_contains_manifest(shared, argv[3], argv[4]);
+        return audit_status(result, failures);
     }
     fprintf(stderr, "未知模式或参数不足: %s\n", mode);
     return 2;

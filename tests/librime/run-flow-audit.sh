@@ -608,4 +608,11 @@ else
 fi
 
 echo "----"
-echo "Flow 引擎 runtime 审计全部通过(全静态等值 / 组句 / 学习 / 持久化 / 学习后静态保护$( [ -n "$XHUP_CLI" ] && echo ' / 学习管理'))"
+if [ -n "$ONLY_LEARNING" ]; then
+  echo "PASS focused native composition/learning/restart; exhaustive static and extended reachability NOT RUN"
+else
+  echo "PASS native audit: complete supplied static manifest before/after learning, composition/learning/restart"
+  [[ -z "$EXTENDED_MANIFEST" ]] || echo "PASS complete supplied extended reachability manifest"
+  [[ -z "$OPEN_MANIFEST" ]] || echo "PASS complete supplied open-composition sample manifest"
+fi
+if [ -n "$XHUP_CLI" ]; then echo "PASS CLI learning management"; else echo "CLI learning management NOT RUN"; fi
