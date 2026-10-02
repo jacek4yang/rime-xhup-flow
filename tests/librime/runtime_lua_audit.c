@@ -141,15 +141,25 @@ int main(int argc, char **argv) {
            "uij(简码本身)→ 时间 无提示", comment);
     rime->clear_composition(session);
 
-    /* 4. 简码不短于输入:不提示(ui 2 键对 3 键简码)。 */
+    /* 4. 简码不短于输入:Lua 不加提示。原生 translator 可合法产生
+     * completion 注释 ~jm,不能误认为 quick_hint 的 ~uij。
+     * 比较开/关的完整注释和完整菜单,而不是放宽为任意非空注释。 */
     type_keys("ui");
     found = candidate_comment("时间", comment, sizeof(comment));
-    if (found) {
-        report(strstr(comment, "~") == NULL && strstr(comment, "⚡") == NULL, "ui(2 键)→ 时间 无提示", comment);
-    } else {
-        report(1, "ui(2 键)→ 时间 不在菜单(前缀不可达,符合预期)", NULL);
-    }
+    capture_texts(texts_on, sizeof(texts_on));
     rime->clear_composition(session);
+    rime->set_option(session, "quick_hint", 0);
+    type_keys("ui");
+    char native_comment[256];
+    int native_found = candidate_comment("时间", native_comment, sizeof(native_comment));
+    capture_texts(texts_off, sizeof(texts_off));
+    report(found == native_found && (!found ||
+               (strcmp(comment, native_comment) == 0 && strstr(comment, "~uij") == NULL)),
+           "ui(2 键)→ Lua 无新增提示,完整保留原生注释", found ? comment : "(not in menu)");
+    report(strcmp(texts_on, texts_off) == 0,
+           "ui(2 键)→ quick_hint 开/关完整菜单相同", NULL);
+    rime->clear_composition(session);
+    rime->set_option(session, "quick_hint", 1);
 
     /* 5. 调试模式开关:可正常设置并在会话中生效。 */
     rime->set_option(session, "debug_candidate_annotations", 1);

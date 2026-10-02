@@ -4,6 +4,10 @@ edition.workspace = true
 version.workspace = true
 license.workspace = true
 
+[features]
+# Explicit local research tests only; never enables data in non-test binaries.
+research-sogou = []
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }

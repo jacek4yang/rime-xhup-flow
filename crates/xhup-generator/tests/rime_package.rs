@@ -23,6 +23,7 @@ fn artifact_set_is_exact_and_ordered() {
     assert_eq!(
         filenames,
         [
+            "xhup_flow.sources.tsv",
             "xhup_flow_shortcuts.dict.yaml",
             "xhup_flow_chars.dict.yaml",
             "xhup_flow_word_shortcuts.dict.yaml",
@@ -43,7 +44,7 @@ fn artifact_set_is_exact_and_ordered() {
             "xhup_flow.schema.yaml",
             "xhup_flow_static.schema.yaml",
         ],
-        "产物集合与顺序固定:一级简码 → 单字 → PRIMARY → 固定词 → 顶层词典 → FIXED_FIRST → Flow/Learn → 两个编译 wrapper → Lua → 两套方案"
+        "产物集合与顺序固定:来源策略 → 一级简码 → 单字 → PRIMARY → 固定词 → 顶层词典 → FIXED_FIRST → Flow/Learn → 两个编译 wrapper → Lua → 两套方案"
     );
 }
 

@@ -150,6 +150,13 @@ fn render_dict_compile_wrapper(schema_id: &str) -> String {
 pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
     vec![
         RimeArtifact {
+            filename: "xhup_flow.sources.tsv",
+            contents: format!(
+                "# distribution-policy=clean-v1\n# research-only sources are metadata only; their payloads are excluded\n{}",
+                include_str!("../../../data/xhup/sources.tsv")
+            ),
+        },
+        RimeArtifact {
             filename: RIME_SHORTCUT_DICTIONARY_FILENAME,
             contents: generate_rime_shortcut_dictionary(),
         },

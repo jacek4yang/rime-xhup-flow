@@ -124,20 +124,17 @@ fn generated_package_bytes_match_v1_release_snapshot() {
         "v1 历史发布快照记录 36845122 源码字节"
     );
 
-    // 当前 2.0 便携包扩充 annotation.lua、context_ranker.lua、
-    // user_memory.lua 与 init.lua(共 18 个产物;user_memory 见 #83 R4,
-    // 本地用户记忆观察组件):
+    // 当前 2.0 包:12 YAML + 7 Lua + 1 clean-v1 来源策略 TSV。
     let artifacts = generate_rime_artifacts();
     assert_eq!(
         artifacts.len(),
-        19,
-        "2.0 包扩充候选注释、上下文调序、用户记忆观察与运行时诊断模块"
+        20,
+        "2.0 包含运行时模块和精确来源策略元数据"
     );
 
     // 冻结产物字节恒定性由 artifact_content_matches_independent_v1_release_hashes
-    // 的哈希断言承载;xhup_flow_flow.dict.yaml 自 2026-09-14 起并入搜狗细胞
-    // 词库聚合层,PR-4 起按标注/精判分流,其字节随生产子集演进,
-    // 不再参与字节恒定断言。
+    // 的哈希断言承载;Flow 组句词典独立演进(当前 clean-v1 排除搜狗),
+    // 不属于静态字节冻结契约。
 }
 
 #[test]
@@ -228,9 +225,8 @@ fn artifact_content_matches_independent_v1_release_hashes() {
         .collect();
 
     assert_eq!(actual_frozen.len(), 13);
-    // xhup_flow_flow.dict.yaml 自 2026-09-14 起并入搜狗细胞词库聚合层
-    // (所有者决策,见 data/words/sogou/README.md),PR-4 起按生产子集
-    // 演进,其余冻结产物必须与 v1 独立发布逐字节一致:
+    // Flow 组句/变长投影独立演进且必须遵守 clean-v1;其它冻结产物
+    // 仍须与 v1 独立发布逐字节一致。历史搜狗政策不再适用。
     let actual_frozen_except_flow: BTreeMap<_, _> = actual_frozen
         .iter()
         .filter(|(k, _)| *k != "xhup_flow_flow.dict.yaml")
@@ -246,7 +242,7 @@ fn artifact_content_matches_independent_v1_release_hashes() {
     assert_ne!(
         actual_frozen.get("xhup_flow_flow.dict.yaml"),
         expected_frozen.get("xhup_flow_flow.dict.yaml"),
-        "flow 词典应已随搜狗聚合层增量演进(哈希偏离 v1)"
+        "flow 组句投影独立演进(非静态字节冻结契约)"
     );
 }
 

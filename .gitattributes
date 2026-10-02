@@ -7,3 +7,8 @@
 *.in text eol=lf
 *.md text eol=lf
 *.lua text eol=lf
+
+# Unresolved rights: keep local research history, exclude payloads from source archives.
+data/words/sogou/* export-ignore
+data/words/sogou/MANIFEST.tsv -export-ignore
+data/words/sogou/README.md -export-ignore

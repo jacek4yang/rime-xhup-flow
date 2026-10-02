@@ -27,12 +27,14 @@ impl SourceKind {
 pub enum SourceUse {
     Redistributable,
     Oracle,
+    ResearchOnly,
 }
 impl SourceUse {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Redistributable => "redistributable",
             Self::Oracle => "oracle",
+            Self::ResearchOnly => "research-only",
         }
     }
 }
@@ -97,6 +99,7 @@ pub fn parse_sources(text: &str) -> Result<Vec<EvidenceSource<'_>>, EvidenceErro
         let usage = match f[9] {
             "redistributable" => SourceUse::Redistributable,
             "oracle" => SourceUse::Oracle,
+            "research-only" => SourceUse::ResearchOnly,
             _ => return Err(invalid("unknown source use")),
         };
         if !f[2].starts_with("https://")
@@ -131,8 +134,11 @@ pub fn parse_sources(text: &str) -> Result<Vec<EvidenceSource<'_>>, EvidenceErro
                 | "Unicode-3.0"
                 | "GPL-3.0-only"
                 | "oracle-facts-only"
+                | "redistribution-not-authorized"
         ) || (usage == SourceUse::Redistributable && f[7] == "oracle-facts-only")
             || (usage == SourceUse::Oracle && f[7] != "oracle-facts-only")
+            || (usage == SourceUse::ResearchOnly && f[7] != "redistribution-not-authorized")
+            || (usage != SourceUse::ResearchOnly && f[7] == "redistribution-not-authorized")
         {
             return Err(invalid("source license/use is not reviewed"));
         }

@@ -23,6 +23,7 @@ use serde::Serialize;
 /// 产物一致;安装即写这些文件)。所有权唯一来源:改生成器产物集合时
 /// 必须同步本清单,`bundled_package_matches_manifest` 测试兜底。
 pub const OWNED_FILES: &[&str] = &[
+    "xhup_flow.sources.tsv",
     "xhup_flow.dict.yaml",
     "xhup_flow.schema.yaml",
     "xhup_flow_chars.dict.yaml",
@@ -1710,7 +1711,7 @@ mod tests {
             "1.0.0"
         );
         assert_eq!(
-            fs::read_to_string(user.join(OWNED_FILES[2])).unwrap(),
+            fs::read_to_string(user.join("xhup_flow_chars.dict.yaml")).unwrap(),
             "1.0.0"
         );
         // 不残留 staging 临时文件。
@@ -1767,13 +1768,13 @@ mod tests {
         assert_eq!(status.health(&v1.version), InstallHealth::Healthy);
 
         // 修改一个文件内容(不换版本号)→ Different → Modified。
-        fs::write(user.join(OWNED_FILES[2]), "被外部改动").unwrap();
+        fs::write(user.join("xhup_flow_chars.dict.yaml"), "被外部改动").unwrap();
         let status = install_status(&user, RimeClient::Fcitx5, Some(&v1));
         assert!(status.integrity.contains(&FileIntegrity::Different));
         assert_eq!(status.health(&v1.version), InstallHealth::Modified);
         fs::write(
-            user.join(OWNED_FILES[2]),
-            v1.contents_of(OWNED_FILES[2]).unwrap(),
+            user.join("xhup_flow_chars.dict.yaml"),
+            v1.contents_of("xhup_flow_chars.dict.yaml").unwrap(),
         )
         .unwrap();
 
@@ -1941,7 +1942,7 @@ mod tests {
         assert_eq!(status.health(&v1.version), InstallHealth::Healthy);
 
         // 外部改动 → Modified。
-        fs::write(user.join(OWNED_FILES[2]), "改动").unwrap();
+        fs::write(user.join("xhup_flow_chars.dict.yaml"), "改动").unwrap();
         let status = install_status(&user, RimeClient::Fcitx5, Some(&v1));
         assert_eq!(status.health(&v1.version), InstallHealth::Modified);
 

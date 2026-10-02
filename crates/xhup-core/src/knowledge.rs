@@ -332,6 +332,11 @@ pub fn validate_provenance(
             "generated status requires a versioned project derivation",
         ));
     }
+    if source.usage == SourceUse::ResearchOnly {
+        return Err(invalid(
+            "research-only source cannot enter production knowledge",
+        ));
+    }
     if source.usage == SourceUse::Oracle
         && !matches!(
             p.status,
