@@ -44,6 +44,8 @@ fn learning_error(error: xhup_cli::learning::LearningError) -> CommandError {
         E::UserDataDirMissing { .. } => "user_data_dir_missing",
         E::SnapshotMissing { .. } => "snapshot_missing",
         E::SnapshotNameMismatch { .. } => "snapshot_name_mismatch",
+        E::InvalidSnapshot { .. } => "invalid_snapshot",
+        E::SnapshotIo { .. } => "snapshot_io",
         E::SnapshotNotProduced { .. } => "snapshot_not_produced",
         E::UserDictAbsent => "user_dict_absent",
         E::ToolFailed { .. } => "tool_failed",

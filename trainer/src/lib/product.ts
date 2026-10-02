@@ -100,6 +100,8 @@ export const ERROR_CODES = [
   "dict_manager_missing",
   "snapshot_missing",
   "snapshot_name_mismatch",
+  "invalid_snapshot",
+  "snapshot_io",
   "snapshot_not_produced",
   "user_dict_absent",
   "tool_failed",

@@ -322,6 +322,8 @@ const zh = {
   "errorCodes.dict_manager_missing": "未找到 rime_dict_manager,请安装 librime-bin。",
   "errorCodes.snapshot_missing": "快照文件不存在。",
   "errorCodes.snapshot_name_mismatch": "快照文件与学习词典不匹配。",
+  "errorCodes.invalid_snapshot": "快照内部身份或格式不受支持，已拒绝导入。",
+  "errorCodes.snapshot_io": "无法读取或安全暂存学习快照，请检查文件和权限。",
   "errorCodes.snapshot_not_produced":
     "导出未产出快照(词典可能正被输入法占用)。",
   "errorCodes.user_dict_absent": "尚无学习数据。",
@@ -835,6 +837,8 @@ const en: Record<I18nKey, string> = {
   "errorCodes.snapshot_missing": "Snapshot file does not exist.",
   "errorCodes.snapshot_name_mismatch":
     "Snapshot does not match the learning dictionary.",
+  "errorCodes.invalid_snapshot": "Unsupported snapshot identity or format; import refused.",
+  "errorCodes.snapshot_io": "Cannot read or safely stage the snapshot. Check files and permissions.",
   "errorCodes.snapshot_not_produced":
     "Export produced no snapshot (the dictionary may be in use by the IME).",
   "errorCodes.user_dict_absent": "No learning data yet.",
