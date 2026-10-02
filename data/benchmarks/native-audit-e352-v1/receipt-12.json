@@ -1,0 +1,24 @@
+{
+  "count": 16,
+  "coverage": {
+    "extended": {
+      "rows": 81339,
+      "sha256": "21b9b93aaa9bfa46636fddebc54fc15eba2b2739e3734c4c69d107de92425cd7"
+    },
+    "open": {
+      "rows": 62,
+      "sha256": "d550b52a3bf34b8a7a5e59f1adbd4ed45d9aa75bdea55c7575109e4d5b1dd5d1"
+    },
+    "static": {
+      "rows": 8821,
+      "sha256": "b3c839f1250228527ac9d1fff10efe4e66dd70a3f4849544f6dcb10849ca9354"
+    }
+  },
+  "exit_code": 0,
+  "index": 12,
+  "log_sha256": "3ae280542444f4c1e41433085c12f385102eb66f5750a11c4752f453b074b8bf",
+  "plan_sha256": "c83b5fbfb5467d762fb52825d7fb5c6c9e340a4027019cd5d073948f7dd327c5",
+  "revision": "e352c55ffe4d9cb86028c1d331ac57afdc8c0707",
+  "run": "37035281631.1",
+  "version": 1
+}

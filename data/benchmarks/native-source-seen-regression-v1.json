@@ -1,0 +1,333 @@
+{
+  "planner": {
+    "all": {
+      "cases": 1821,
+      "top1": 0.4113124656781988,
+      "top3": 0.4404173531026908,
+      "top256": 0.46073585941790224,
+      "commit_exact": 0.46073585941790224,
+      "pending_reachable": 0.3745194947830862,
+      "contract_failures": 0
+    },
+    "length_2_4": {
+      "cases": 637,
+      "top1": 0.5871271585557299,
+      "top3": 0.6703296703296703,
+      "top256": 0.7032967032967034,
+      "commit_exact": 0.7032967032967034,
+      "pending_reachable": 0.640502354788069,
+      "contract_failures": 0
+    },
+    "length_5_8": {
+      "cases": 500,
+      "top1": 0.428,
+      "top3": 0.428,
+      "top256": 0.448,
+      "commit_exact": 0.448,
+      "pending_reachable": 0.358,
+      "contract_failures": 0
+    },
+    "length_9_16": {
+      "cases": 529,
+      "top1": 0.2608695652173913,
+      "top3": 0.2608695652173913,
+      "top256": 0.2722117202268431,
+      "commit_exact": 0.2722117202268431,
+      "pending_reachable": 0.166351606805293,
+      "contract_failures": 0
+    },
+    "length_17_64": {
+      "cases": 155,
+      "top1": 0.14838709677419354,
+      "top3": 0.14838709677419354,
+      "top256": 0.14838709677419354,
+      "commit_exact": 0.14838709677419354,
+      "pending_reachable": 0.04516129032258064,
+      "contract_failures": 0
+    },
+    "proper_name_true": {
+      "cases": 539,
+      "top1": 0.2634508348794063,
+      "top3": 0.2764378478664193,
+      "top256": 0.2912801484230056,
+      "commit_exact": 0.2912801484230056,
+      "pending_reachable": 0.22448979591836735,
+      "contract_failures": 0
+    },
+    "proper_name_false": {
+      "cases": 1282,
+      "top1": 0.4734789391575663,
+      "top3": 0.5093603744149766,
+      "top256": 0.53198127925117,
+      "commit_exact": 0.53198127925117,
+      "pending_reachable": 0.437597503900156,
+      "contract_failures": 0
+    },
+    "no_known_overlap": {
+      "cases": 1784,
+      "top1": 0.4019058295964126,
+      "top3": 0.42993273542600896,
+      "top256": 0.45067264573991034,
+      "commit_exact": 0.45067264573991034,
+      "pending_reachable": 0.3626681614349776,
+      "contract_failures": 0
+    },
+    "no_known_overlap_length_ge8": {
+      "cases": 794,
+      "top1": 0.25566750629722923,
+      "top3": 0.25566750629722923,
+      "top256": 0.26448362720403024,
+      "commit_exact": 0.26448362720403024,
+      "pending_reachable": 0.1574307304785894,
+      "contract_failures": 0
+    }
+  },
+  "native-only": {
+    "all": {
+      "cases": 1821,
+      "top1": 0.4113124656781988,
+      "top3": 0.4404173531026908,
+      "top256": 0.44920373421197146,
+      "commit_exact": 0.44920373421197146,
+      "pending_reachable": 0.08841295991213619,
+      "contract_failures": 0
+    },
+    "length_2_4": {
+      "cases": 637,
+      "top1": 0.5871271585557299,
+      "top3": 0.6703296703296703,
+      "top256": 0.695447409733124,
+      "commit_exact": 0.695447409733124,
+      "pending_reachable": 0.2260596546310832,
+      "contract_failures": 0
+    },
+    "length_5_8": {
+      "cases": 500,
+      "top1": 0.428,
+      "top3": 0.428,
+      "top256": 0.428,
+      "commit_exact": 0.428,
+      "pending_reachable": 0.024,
+      "contract_failures": 0
+    },
+    "length_9_16": {
+      "cases": 529,
+      "top1": 0.2608695652173913,
+      "top3": 0.2608695652173913,
+      "top256": 0.2608695652173913,
+      "commit_exact": 0.2608695652173913,
+      "pending_reachable": 0.007561436672967864,
+      "contract_failures": 0
+    },
+    "length_17_64": {
+      "cases": 155,
+      "top1": 0.14838709677419354,
+      "top3": 0.14838709677419354,
+      "top256": 0.14838709677419354,
+      "commit_exact": 0.14838709677419354,
+      "pending_reachable": 0.0064516129032258064,
+      "contract_failures": 0
+    },
+    "proper_name_true": {
+      "cases": 539,
+      "top1": 0.2634508348794063,
+      "top3": 0.2764378478664193,
+      "top256": 0.2820037105751391,
+      "commit_exact": 0.2820037105751391,
+      "pending_reachable": 0.03896103896103896,
+      "contract_failures": 0
+    },
+    "proper_name_false": {
+      "cases": 1282,
+      "top1": 0.4734789391575663,
+      "top3": 0.5093603744149766,
+      "top256": 0.5195007800312013,
+      "commit_exact": 0.5195007800312013,
+      "pending_reachable": 0.10920436817472699,
+      "contract_failures": 0
+    },
+    "no_known_overlap": {
+      "cases": 1784,
+      "top1": 0.4019058295964126,
+      "top3": 0.42993273542600896,
+      "top256": 0.43890134529147984,
+      "commit_exact": 0.43890134529147984,
+      "pending_reachable": 0.08856502242152467,
+      "contract_failures": 0
+    },
+    "no_known_overlap_length_ge8": {
+      "cases": 794,
+      "top1": 0.25566750629722923,
+      "top3": 0.25566750629722923,
+      "top256": 0.25566750629722923,
+      "commit_exact": 0.25566750629722923,
+      "pending_reachable": 0.007556675062972292,
+      "contract_failures": 0
+    }
+  },
+  "native_top5_contract": {
+    "baseline_top5_cases": 814,
+    "unchanged_rank_cases": 814,
+    "changed_rank_cases": 0
+  },
+  "clustered_95_intervals": {
+    "clusters_with_eligible_cases": 500,
+    "seed": 20261002,
+    "replicates": 2000,
+    "method": "sentence cluster percentile bootstrap; case-weighted rates",
+    "planner": {
+      "top1": [
+        0.38637664567830565,
+        0.4368770764119601
+      ],
+      "top3": [
+        0.4155154091392136,
+        0.4663299663299663
+      ],
+      "top256": [
+        0.43561030235162373,
+        0.4869762174405436
+      ],
+      "commit_exact": [
+        0.43561030235162373,
+        0.4869762174405436
+      ],
+      "pending_reachable": [
+        0.34954233409610985,
+        0.4007739082365948
+      ]
+    },
+    "native-only": {
+      "top1": [
+        0.38637664567830565,
+        0.4368770764119601
+      ],
+      "top3": [
+        0.4155154091392136,
+        0.4663299663299663
+      ],
+      "top256": [
+        0.42325056433408575,
+        0.47474747474747475
+      ],
+      "commit_exact": [
+        0.42325056433408575,
+        0.47474747474747475
+      ],
+      "pending_reachable": [
+        0.07419354838709677,
+        0.10197183098591549
+      ]
+    },
+    "paired_delta": {
+      "top1": [
+        0.0,
+        0.0
+      ],
+      "top3": [
+        0.0,
+        0.0
+      ],
+      "top256": [
+        0.006996770721205597,
+        0.016524216524216526
+      ],
+      "commit_exact": [
+        0.006996770721205597,
+        0.016524216524216526
+      ],
+      "pending_reachable": [
+        0.2640092432120162,
+        0.3099571734475375
+      ]
+    }
+  },
+  "known_overlap_sha256": "fc0a7ef476259b4082bd81cbcbab160be323eaf11a067f9b8debc2e93aa3f388",
+  "schema": 1,
+  "source": {
+    "schema": 1,
+    "repository": "https://github.com/UniversalDependencies/UD_Chinese-GSDSimp",
+    "revision": "9b1fc1d388b8f4ac7cf12a704995618571454b80",
+    "release": "UD r2.16",
+    "path": "zh_gsdsimp-ud-test.conllu",
+    "sha256": "573f59b799b499a920d2d5bdc0e3c1dbd7bcacf86bdece4334ecbd03e21b6150",
+    "license": "CC BY-SA 4.0 (UD annotations); underlying wiki text retains its own attribution/license",
+    "contributors": [
+      "Qi, Peng",
+      "Yasuoka, Koichi"
+    ],
+    "scope": "source-external wiki evaluation; not a representative conversation population",
+    "selection": "all contiguous Hanzi token runs with uniquely parseable supplied transliteration; 2..64 characters; count every exclusion; no outcome-based selection",
+    "planning": "frozen before evaluating candidate ranks; no runtime/ranking calibration using this set"
+  },
+  "counts": {
+    "ambiguous_transliteration_tokens": 23,
+    "eligible_chunks": 1821,
+    "excluded_run_length": 289,
+    "mixed_or_non_hanzi_tokens": 2193,
+    "sentences": 500,
+    "tokens": 12012,
+    "unsupported_transliteration_tokens": 432
+  },
+  "fixture_sha256": "210634b7e883592308da0ac7a44882ffa6622ec9a9fd19c0eda4f83d17423518",
+  "encoder_export_sha256": "cd6aa93d5fcc72459e757aea8736aa0b403e7ac1b7e9532d5f5711bf09504906",
+  "trace_sha256": {
+    "planner": "bcad7ab589367e40380d9c4a8a5158c67425a4ae4753183f67c6b288a6358176",
+    "native-only": "3739ad726fddf4f0086839a2996fb9c1b90ac856f5e3a60292e44f3a9b401a03"
+  },
+  "latency": {
+    "planner": {
+      "keypress_ns": {
+        "samples": 36280,
+        "p50_ms": 11.35547,
+        "p95_ms": 19.656,
+        "p99_ms": 26.260579,
+        "max_ms": 42.653203
+      },
+      "key_to_menu_ns": {
+        "samples": 36280,
+        "p50_ms": 11.390055,
+        "p95_ms": 19.706737,
+        "p99_ms": 26.315332,
+        "max_ms": 42.715489
+      },
+      "bounded_probe_ns": {
+        "samples": 36280,
+        "p50_ms": 16.59791,
+        "p95_ms": 24.484038,
+        "p99_ms": 30.697533,
+        "max_ms": 42.780782
+      }
+    },
+    "native-only": {
+      "keypress_ns": {
+        "samples": 36280,
+        "p50_ms": 16.536769,
+        "p95_ms": 34.526999,
+        "p99_ms": 40.40081,
+        "max_ms": 110.983854
+      },
+      "key_to_menu_ns": {
+        "samples": 36280,
+        "p50_ms": 16.582078,
+        "p95_ms": 34.602207,
+        "p99_ms": 40.483258,
+        "max_ms": 111.041497
+      },
+      "bounded_probe_ns": {
+        "samples": 36280,
+        "p50_ms": 20.770774,
+        "p95_ms": 37.480657,
+        "p99_ms": 46.72507,
+        "max_ms": 117.184047
+      }
+    }
+  },
+  "limits": [
+    "source-external wiki, not representative conversation",
+    "not yet established disjoint from all upstream training corpora",
+    "latency includes edit probes under concurrent exhaustive-audit load",
+    "top256 bound, not exhaustive candidate reachability",
+    "quality misses are retained; no post-outcome selection or retuning"
+  ]
+}
