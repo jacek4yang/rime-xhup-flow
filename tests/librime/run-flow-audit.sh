@@ -129,6 +129,9 @@ patch:
     - schema: $schema_id
   menu/page_size: 500
 EOF
+  if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
+    printf 'patch:\n  flow/enable_user_dict: false\n  learn/enable_user_dict: false\n' > "$dir/xhup_flow.custom.yaml"
+  fi
   rime_deployer --compile "$dir/$schema_id.schema.yaml" "$dir" \
     "$SHARED_DATA_DIR" >/dev/null
 }

@@ -48,7 +48,6 @@ static RimeSessionId start(void) {
   r->set_option(s, "joint_decoder", 0);
   r->set_option(s, "quick_hint", 0);
   r->set_option(s, "user_memory", 0);
-  r->set_option(s, "disable_user_dict", 1);
   return s;
 }
 static State snapshot(RimeSessionId s, const char *target, const char *prefix) {
@@ -128,6 +127,15 @@ int main(int argc, char **argv) {
   traits.app_name = "xhup.native-replay"; traits.min_log_level = 2; traits.log_dir = "";
   r->setup(&traits); r->initialize(&traits);
   check(r->find_module("lua") != NULL, "librime Lua module registered");
+  RimeConfig config = {0};
+  if (!r->schema_open("xhup_flow", &config)) return 2;
+  Bool enabled = True;
+  check(r->config_get_bool(&config, "flow/enable_user_dict", &enabled) && !enabled,
+        "Flow native learning genuinely disabled in compiled fixture");
+  enabled = True;
+  check(r->config_get_bool(&config, "learn/enable_user_dict", &enabled) && !enabled,
+        "learn translator native learning genuinely disabled in compiled fixture");
+  r->config_close(&config);
   if (!RIME_API_AVAILABLE(r, candidate_list_begin) || !RIME_API_AVAILABLE(r, get_input)) return 2;
 
   /* #151: legal jbz + pending q, then complete qu. No demand that ambiguous

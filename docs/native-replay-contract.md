@@ -6,7 +6,11 @@ raw input, composition/preedit, selected range, candidate texts, target/prefix
 rank and keypress time. Search is explicitly bounded at 256 candidates; the first
 16 menu entries are captured. Absence within that bound is not proof of absence
 from every possible native path. Fixed public regression strings are not user
-corpus data. No runtime telemetry is added.
+corpus data. No runtime telemetry is added. The isolated replay fixture disables
+native learning in compiled `flow/enable_user_dict` and `learn/enable_user_dict`
+configuration and asserts those values through the actual Rime API; a similarly
+named context switch does NOT turn native learning off. Learning-on persistence
+is a separate native suite.
 
 Run the hard gate:
 
@@ -45,7 +49,8 @@ in the existing native baseline.
 
 ## Initial findings (not acceptance)
 
-The first clean-v1 native TableTranslator run failed 9 of 61 checks: missing
+The first clean-v1 native TableTranslator run (native learning still enabled in
+the initial fixture, since corrected) failed 9 of 61 checks: missing
 `jbzq` prefix, disrupted long pending tail, absent complete 3-key alternatives,
 and a text-matching partial candidate that committed additional unmatched text.
 The harness now additionally captures commit/remaining input and checks full
