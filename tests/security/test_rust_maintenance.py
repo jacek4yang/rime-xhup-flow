@@ -1,3 +1,4 @@
+import json
 import shutil
 import tempfile
 import unittest
@@ -12,7 +13,8 @@ class SourceIntegrityTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         for name in ("glib-macros", "gtk3-macros", "urlpattern", "proc-macro-error2"):
             shutil.copytree(ROOT / "vendor" / name, self.root / "vendor" / name)
-        for name in ("Cargo.toml", "Cargo.lock"):
+        for name in ("Cargo.toml", "Cargo.lock", "trainer/src-tauri/tauri.conf.json"):
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / name, self.root / name)
 
     def test_exact_patch_set(self):
@@ -39,6 +41,22 @@ class SourceIntegrityTests(unittest.TestCase):
         lock = self.root / "Cargo.lock"
         lock.write_text(lock.read_text() + '\n[[package]]\nname = "unic-common"\nversion = "0.9.0"\n')
         with self.assertRaisesRegex(AssertionError, "retired chain"):
+            check(self.root)
+
+    def test_binary_notice_removal_is_rejected(self):
+        path = self.root / "trainer/src-tauri/tauri.conf.json"
+        config = json.loads(path.read_text())
+        del config["bundle"]["resources"]["../../vendor/urlpattern/LICENSE"]
+        path.write_text(json.dumps(config))
+        with self.assertRaisesRegex(AssertionError, "missing bundled notice"):
+            check(self.root)
+
+    def test_binary_notice_collision_is_rejected(self):
+        path = self.root / "trainer/src-tauri/tauri.conf.json"
+        config = json.loads(path.read_text())
+        config["bundle"]["resources"]["../../vendor/urlpattern/LICENSE"] = "licenses/glib-MIT.txt"
+        path.write_text(json.dumps(config))
+        with self.assertRaisesRegex(AssertionError, "colliding bundled notice"):
             check(self.root)
 
     def test_notice_removal_is_rejected(self):
