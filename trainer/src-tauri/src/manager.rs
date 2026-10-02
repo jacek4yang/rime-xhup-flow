@@ -720,10 +720,26 @@ fn stage_file(user_data_dir: &Path, file: &str, contents: &str) -> Result<PathBu
         })?;
     }
     let temporary = staging_path(user_data_dir, file);
-    fs::write(&temporary, contents).map_err(|source| ManagerError::Io {
-        path: temporary.clone(),
-        source,
-    })?;
+    use std::io::Write as _;
+    let mut handle = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .map_err(|source| ManagerError::Io {
+            path: temporary.clone(),
+            source,
+        })?;
+    if let Err(source) = handle
+        .write_all(contents.as_bytes())
+        .and_then(|()| handle.sync_all())
+    {
+        drop(handle);
+        let _ = fs::remove_file(&temporary); // only our exclusively-created staging file
+        return Err(ManagerError::Io {
+            path: temporary,
+            source,
+        });
+    }
     Ok(temporary)
 }
 
@@ -760,7 +776,13 @@ struct Committed {
 ///   (不信任计划携带的任意目录);
 /// - 违规返回 [`ManagerError::PackageInvalid`]。
 fn validate_plan_actions(plan: &Plan, user_data_dir: &Path) -> Result<(), ManagerError> {
+    let mut seen = std::collections::BTreeSet::new();
     for action in &plan.actions {
+        if !seen.insert(action.file()) {
+            return Err(ManagerError::PackageInvalid {
+                missing: "duplicate plan target".into(),
+            });
+        }
         let file = action.file();
         let valid = match action {
             PlanAction::Write { .. } | PlanAction::Overwrite { .. } => OWNED_FILES.contains(&file),
@@ -779,6 +801,28 @@ fn validate_plan_actions(plan: &Plan, user_data_dir: &Path) -> Result<(), Manage
             return Err(ManagerError::PackageInvalid {
                 missing: format!("非法备份路径:{}", backup.display()),
             });
+        }
+    }
+    Ok(())
+}
+
+/// Reject linked/non-directory ancestors below the resolved root. Missing parents
+/// are created only later; no path resolution through user-controlled links.
+fn require_safe_parents(root: &Path, file: &str) -> Result<(), ManagerError> {
+    let mut path = root.to_owned();
+    if let Some(parent) = Path::new(file).parent() {
+        for component in parent.components() {
+            path.push(component);
+            match fs::symlink_metadata(&path) {
+                Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {}
+                Ok(_) => {
+                    return Err(ManagerError::PackageInvalid {
+                        missing: format!("unsafe package parent: {}", path.display()),
+                    });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(source) => return Err(ManagerError::Io { path, source }),
+            }
         }
     }
     Ok(())
@@ -805,7 +849,8 @@ fn require_regular_file(path: &Path) -> Result<(), ManagerError> {
 
 /// 回滚已提交动作(仅限拥有文件;尽力而为,返回第一个失败)。
 fn rollback(committed: &[Committed], user_data_dir: &Path) -> Result<(), ManagerError> {
-    for entry in committed {
+    let mut first_error = None;
+    for entry in committed.iter().rev() {
         let target = user_data_dir.join(&entry.file);
         let result = if entry.had_backup {
             fs::copy(backup_path(user_data_dir, &entry.file), &target)
@@ -820,9 +865,11 @@ fn rollback(committed: &[Committed], user_data_dir: &Path) -> Result<(), Manager
                 source,
             })
         };
-        result?;
+        if let Err(error) = result {
+            first_error.get_or_insert(error);
+        }
     }
-    Ok(())
+    first_error.map_or(Ok(()), Err)
 }
 
 /// 执行计划(把 dry-run 变成真实改动)。
@@ -849,6 +896,53 @@ pub fn execute(
 ) -> Result<usize, ManagerError> {
     // 信任边界:计划只能涉及拥有文件、备份只能在 xhup_backup/ 内。
     validate_plan_actions(plan, user_data_dir)?;
+    let root = fs::canonicalize(user_data_dir).map_err(|source| ManagerError::Io {
+        path: user_data_dir.to_owned(),
+        source,
+    })?;
+    let user_data_dir = root.as_path();
+    let lock_path = user_data_dir.join(".xhup-flow-install.lock");
+    if lock_path.symlink_metadata().is_ok() {
+        require_regular_file(&lock_path)?;
+    }
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|source| ManagerError::Io {
+            path: lock_path.clone(),
+            source,
+        })?;
+    lock.try_lock().map_err(|error| ManagerError::Io {
+        path: lock_path,
+        source: std::io::Error::other(format!("another installer is active: {error}")),
+    })?;
+    // Check ALL paths before staging/deletion, including backup parents.
+    for action in &plan.actions {
+        require_safe_parents(user_data_dir, action.file())?;
+        require_safe_parents(user_data_dir, &format!("xhup_backup/{}", action.file()))?;
+        let target = user_data_dir.join(action.file());
+        match action {
+            PlanAction::Write { .. } if target.symlink_metadata().is_ok() => {
+                return Err(ManagerError::PackageInvalid {
+                    missing: format!("stale Write target: {}", action.file()),
+                });
+            }
+            PlanAction::Overwrite { .. } => {
+                require_regular_file(&target)?;
+                let backup = backup_path(user_data_dir, action.file());
+                if backup.symlink_metadata().is_ok() {
+                    require_regular_file(&backup)?;
+                }
+            }
+            PlanAction::Delete { .. } if target.symlink_metadata().is_ok() => {
+                require_regular_file(&target)?
+            }
+            _ => {}
+        }
+    }
     let mut done = 0;
     // 卸载:逐文件删除(幂等)。
     let deletes: Vec<&PlanAction> = plan
@@ -907,8 +1001,9 @@ pub fn execute(
     //    复制前要求普通文件(拒绝符号链接)。
     let backup_result = (|| -> Result<(), ManagerError> {
         for action in &plan.actions {
-            if let PlanAction::Overwrite { file, backup } = action {
+            if let PlanAction::Overwrite { file, .. } = action {
                 let target = user_data_dir.join(file);
+                let backup = backup_path(user_data_dir, file);
                 require_regular_file(&target)?;
                 if let Some(parent) = backup.parent() {
                     fs::create_dir_all(parent).map_err(|source| ManagerError::Io {
@@ -916,7 +1011,7 @@ pub fn execute(
                         source,
                     })?;
                 }
-                fs::copy(&target, backup).map_err(|source| ManagerError::Io {
+                fs::copy(&target, &backup).map_err(|source| ManagerError::Io {
                     path: backup.clone(),
                     source,
                 })?;
@@ -946,7 +1041,18 @@ pub fn execute(
                     }
                 });
                 if let Err(error) = committed_result {
-                    let _ = rollback(&committed, user_data_dir);
+                    let restored = rollback(&committed, user_data_dir);
+                    for (_, temporary) in &staged {
+                        let _ = fs::remove_file(temporary);
+                    }
+                    if let Err(rollback_error) = restored {
+                        return Err(ManagerError::Io {
+                            path: user_data_dir.to_owned(),
+                            source: std::io::Error::other(format!(
+                                "commit failed: {error}; rollback failed: {rollback_error}"
+                            )),
+                        });
+                    }
                     return Err(error);
                 }
                 committed.push(Committed {
@@ -1284,6 +1390,106 @@ mod tests {
             assert!(manifest.contains(&format!("{name}\t{expected_hash}\t{}\n", contents.len())));
             assert_eq!(first.contents_of(name), Some(*contents));
         }
+    }
+
+    #[test]
+    fn exclusive_staging_preserves_preexisting_file() {
+        let user = fake_user_dir("exclusive-stage");
+        let file = OWNED_FILES[0];
+        let temporary = staging_path(&user, file);
+        fs::write(&temporary, "unowned staging").unwrap();
+        assert!(stage_file(&user, file, "replacement").is_err());
+        assert_eq!(fs::read_to_string(temporary).unwrap(), "unowned staging");
+        fs::remove_dir_all(user).unwrap();
+    }
+
+    #[test]
+    fn installer_lock_duplicates_and_stale_plan_fail_before_writes() {
+        let user = fake_user_dir("install-lock");
+        let package = fake_package("1.0");
+        let plan = plan_install(&user, &package).unwrap();
+        let lock = fs::File::create(user.join(".xhup-flow-install.lock")).unwrap();
+        lock.try_lock().unwrap();
+        assert!(execute(&plan, &user, Some(&package)).is_err());
+        drop(lock);
+        let mut duplicate = plan.clone();
+        duplicate.actions.push(duplicate.actions[0].clone());
+        assert!(execute(&duplicate, &user, Some(&package)).is_err());
+        fs::write(user.join(OWNED_FILES[0]), "created after planning").unwrap();
+        assert!(execute(&plan, &user, Some(&package)).is_err());
+        assert_eq!(
+            fs::read_to_string(user.join(OWNED_FILES[0])).unwrap(),
+            "created after planning"
+        );
+        fs::remove_dir_all(user).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linked_package_parent_and_backup_are_never_followed() {
+        let user = fake_user_dir("linked-parent");
+        let outside = temp_dir("outside-package");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("sentinel"), "unowned").unwrap();
+        std::os::unix::fs::symlink(&outside, user.join("lua")).unwrap();
+        let package = fake_package("1.0");
+        assert!(
+            execute(
+                &plan_install(&user, &package).unwrap(),
+                &user,
+                Some(&package)
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 1);
+        fs::remove_file(user.join("lua")).unwrap();
+        execute(
+            &plan_install(&user, &package).unwrap(),
+            &user,
+            Some(&package),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&outside, user.join("xhup_backup")).unwrap();
+        let updated = fake_package("2.0");
+        assert!(
+            execute(
+                &plan_install(&user, &updated).unwrap(),
+                &user,
+                Some(&updated)
+            )
+            .is_err()
+        );
+        assert_eq!(
+            fs::read_to_string(user.join(OWNED_FILES[0])).unwrap(),
+            "1.0"
+        );
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 1);
+        fs::remove_dir_all(user).unwrap();
+        fs::remove_dir_all(outside).unwrap();
+    }
+
+    #[test]
+    fn rollback_continues_after_one_restore_failure() {
+        let user = fake_user_dir("rollback-continue");
+        fs::create_dir_all(user.join("xhup_backup")).unwrap();
+        fs::write(backup_path(&user, OWNED_FILES[0]), "old").unwrap();
+        fs::write(user.join(OWNED_FILES[0]), "new").unwrap();
+        let committed = [
+            Committed {
+                file: OWNED_FILES[0].into(),
+                had_backup: true,
+            },
+            Committed {
+                file: OWNED_FILES[1].into(),
+                had_backup: true,
+            },
+        ];
+        assert!(rollback(&committed, &user).is_err());
+        assert_eq!(
+            fs::read_to_string(user.join(OWNED_FILES[0])).unwrap(),
+            "old"
+        );
+        fs::remove_dir_all(user).unwrap();
     }
 
     #[test]
