@@ -12,3 +12,6 @@
 data/words/sogou/* export-ignore
 data/words/sogou/MANIFEST.tsv -export-ignore
 data/words/sogou/README.md -export-ignore
+
+# Keep audited upstream bytes stable on Windows too.
+vendor/glib/** -text
