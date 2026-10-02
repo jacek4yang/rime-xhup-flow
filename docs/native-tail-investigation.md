@@ -34,8 +34,20 @@ p50/p95/p99/max of 7.537/8.876/9.711/10.967 ms. This is one Linux host, not a
 performance acceptance bound; it predates the independent fixtures. The separate
 bounded probe includes scanning up to 256 candidates and is not menu latency.
 
-Next: compare an isolated internal-boundary query ablation without changing
-corpus weights, fixtures, or release behavior. Enumerating more boundaries is
+An isolated internal-boundary ablation (query each single cut, without changing
+corpus weights) passed those six probes: 119 checks, zero failures. Adding two
+repeated ambiguous-boundary probes then failed 2 of 121 checks:
+
+- `nihcnznihcnzqu` → `你好你好去` absent from the top 256.
+- `nihcnznihcnznihcnzqu` → `你好你好你好去` absent from the top 256.
+
+Thus even enumeration of all **single** boundaries is not sufficient. This
+ablation remains outside the repository's generated release package. Its 242
+keys measured local menu p50/p95/p99/max 7.356/9.756/10.422/11.004 ms; that small
+fixture does not establish worst-case work or acceptable query amplification.
+
+Next: establish how the native decoder can retain competing internal paths,
+rather than adding more special-case tail queries. Enumerating more boundaries is
 not itself an acceptable architecture: arbitrary combinations, query cost,
 preedit coordinate mapping, genuine learning identity, long-input behavior and
 static compatibility all still need qualification. No stable release authorized.

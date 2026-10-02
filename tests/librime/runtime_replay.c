@@ -229,7 +229,9 @@ int main(int argc, char **argv) {
   const char *triples[][2] = {
     {"nihcnzqu", "你好去"}, {"nirxhcnzqu", "你好去"},
     {"nihcnzjbzqu", "你好进去"}, {"nirxhcnznirx", "你好你"},
-    {"llzikafw", "量子咖啡"}, {"kafwllzi", "咖啡量子"}
+    {"llzikafw", "量子咖啡"}, {"kafwllzi", "咖啡量子"},
+    {"nihcnznihcnzqu", "你好你好去"},
+    {"nihcnznihcnznihcnzqu", "你好你好你好去"}
   };
   for (size_t i = 0; i < sizeof(triples)/sizeof(triples[0]); ++i) {
     char name[48]; snprintf(name, sizeof(name), "independent-multi-boundary-%zu", i);
