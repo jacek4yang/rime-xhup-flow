@@ -55,6 +55,8 @@ PACKAGE_DIR=${1:?"用法: run-flow-audit.sh <生成包目录> [静态菜单 mani
 # 学习/持久化聚焦模式:跳过步骤 1/5(需要全静态 manifest 的穷尽遍历),
 # 位置参数变为 <生成包目录> [xhup-cli 路径]。
 ONLY_LEARNING=${XHUP_AUDIT_ONLY_LEARNING:-}
+# Replay reuses only the isolated Flow deployment, not static traversal.
+if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then ONLY_LEARNING=1; fi
 if [ -n "$ONLY_LEARNING" ]; then
   MANIFEST=
   XHUP_CLI=${2:-}
@@ -127,6 +129,9 @@ patch:
     - schema: $schema_id
   menu/page_size: 500
 EOF
+  if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
+    printf 'patch:\n  flow/enable_user_dict: false\n  learn/enable_user_dict: false\n' > "$dir/xhup_flow.custom.yaml"
+  fi
   rime_deployer --compile "$dir/$schema_id.schema.yaml" "$dir" \
     "$SHARED_DATA_DIR" >/dev/null
 }
@@ -164,6 +169,12 @@ prepare_deploy "$flow_dir" xhup_flow
 for dict in xhup_flow_flow xhup_flow_learn; do
   compile_dict_isolated "$dict" "$flow_dir"
 done
+
+if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
+  cc $CFLAGS -std=c11 "$SCRIPT_DIR/runtime_replay.c" $(pkg-config --cflags --libs rime) -o "$work/replay"
+  "$work/replay" "$flow_dir" "$SHARED_DATA_DIR" "${XHUP_REPLAY_MODE:---qualify}"
+  exit $?
+fi
 
 cc $CFLAGS -o "$work/audit" "$SCRIPT_DIR/runtime_flow_audit.c" \
   $(pkg-config --cflags --libs rime)
