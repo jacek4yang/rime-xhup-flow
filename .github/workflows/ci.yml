@@ -84,6 +84,7 @@ jobs:
           python3 tests/security/check_glib_backport.py
           python3 tests/security/check_rust_maintenance.py
           python3 -m unittest discover -s tests/security -p 'test_*.py'
+          cargo fetch --locked
           python3 tests/security/check_macro_diagnostic.py
 
       - name: RustSec 完整审计（含维护警告，无忽略）
