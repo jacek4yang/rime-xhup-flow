@@ -110,8 +110,9 @@ def main():
     parser.add_argument("syllable_codes", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("metadata", type=Path)
+    parser.add_argument("--manifest", type=Path, default=HERE / "ud-source.json")
     args = parser.parse_args()
-    manifest = json.loads((HERE / "ud-source.json").read_text())
+    manifest = json.loads(args.manifest.read_text())
     raw = args.source.read_bytes()
     if hashlib.sha256(raw).hexdigest() != manifest["sha256"]:
         raise ValueError("upstream source SHA256 mismatch")
