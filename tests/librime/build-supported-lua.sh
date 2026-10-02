@@ -18,6 +18,12 @@ for source in "$output"/source/src/*.cc "$output"/source/src/lib/*.cc; do
   g++ -std=c++17 -O1 -fPIC $(pkg-config --cflags rime lua5.4 opencc) \
     -c "$source" -o "$output/objects/$(basename "$source").o"
 done
+for source in "$output"/source/src/lib/*.c; do
+  gcc -O1 -fPIC $(pkg-config --cflags lua5.4) \
+    -c "$source" -o "$output/objects/$(basename "$source").o"
+done
 g++ -shared "$output"/objects/*.o $(pkg-config --libs rime lua5.4 opencc) \
   -o "$output/librime-lua.so"
+# Resolve all dynamic symbols before installing or running any qualification.
+LD_BIND_NOW=1 LD_PRELOAD="$output/librime-lua.so" /bin/true
 printf 'Pinned librime-lua %s (source SHA256 %s)\n' "$revision" "$sha256"
