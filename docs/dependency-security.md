@@ -1,50 +1,63 @@
-# Dependency security review — 2026-10-02 (F16, ongoing)
+# Dependency security review — 2026-10-02 (F16)
 
-An audit exit code is not a claim of no risk. Initial `cargo audit 0.22.2`
-(RustSec revision `6de4455`, database updated 2026-10-01) reported zero known
-vulnerability entries but seven warnings: glib 0.18.5 unsoundness plus six
-unmaintained-package warnings. These require disposition, not suppression.
+An audit exit code is not a claim of no risk. Initial workspace pnpm audit
+reported 51 advisories, intermediate compatible patches left 36, and the current
+locked frontend dependency graph reports **zero advisories at every severity**
+(including development tools). No advisory IDs are ignored. CI runs both the
+complete audit and local integration tests for the two dependency adapters.
+This is a point-in-time database result, not proof of absence of vulnerabilities.
 
-Initial workspace pnpm audit: 51 advisories (2 low, 26 moderate, 20 high,
-3 critical). Targeted compatible upgrades reduced this to 36 (19 moderate,
-14 high, 3 critical). No remaining reported path begins at Trainer; remaining
-paths originate at the miniapp/Taro toolchain or its optional H5 components.
-This is a point-in-time finding, not a claim that all paths are unreachable.
+## Frontend remediation
 
-## Applied upgrades
+The exact versions and integrity bindings are in `pnpm-lock.yaml` and
+`pnpm-workspace.yaml`. Besides same-major patches, the remediation upgrades
+Webpack/dev-server/middleware, esbuild, glob, Swiper, serialization, adm-zip,
+URI decoding, UUID, PostCSS and the package-update checker. Taro remains 4.2.1.
+The obsolete webpackbar presentation plugin stays disabled; compiler errors,
+optimization and validation are not disabled.
 
-Webpack 5.91.0 → 5.111.1; same-major patches for brace-expansion (1/2/5), PostCSS8,
-qs6, fast-uri3 and http-cache-semantics4. Taro itself remains 4.2.1: testing 4.3.0
-did not remove the remaining vulnerable chains, so unrelated churn was reverted.
-The old webpackbar progress UI supplied obsolete Webpack options; only that
-presentation plugin was removed. Compiler validation, optimization and error
-checks remain enabled. Both production builds, miniapp55 tests, Trainer111 tests
-and both typechecks passed. The existing unused Taro Vite4 peer expectation
-still conflicts with installed Vite7; miniapp uses Webpack, Trainer uses Vite7.
+Two adapters under `patches/` are applied by pnpm with lockfile-bound patch hashes:
 
-## Remaining review, NOT blanket accepted exceptions
+- `download-git-repo`: replace `git-clone` with option-delimited `execFile` Git
+  calls, refuse option-like/control-character checkout refs and custom executables,
+  preserve legitimate checkout and `.git` removal; dynamically load maintained
+  `@xhmikosr/downloader`, mapping archive options into `decompress` and HTTP options
+  into `got`. The vulnerable legacy archive/downloader chain is no longer installed.
+  Numeric legacy timeouts are mapped to request timeouts. Callers needing other
+  HTTP controls use `got`; extraction controls use `decompress`.
+- Taro Webpack runner: use `html-minifier-terser` instead of abandoned
+  `html-minifier`, and await async compression in both normal and independent
+  package build hooks. Compilation tasks are held in a WeakMap, isolated between
+  compilations. Errors reject the build; incomplete assets are not accepted.
 
-- Taro CLI template/download/archive tools: got8/9, git-clone0.1, decompress4,
-  adm-zip0.5, http-cache-semantics3, decode-uri-component0.2 and glob10.
-  Current release scripts compile committed source, not remote templates, but
-  explicit per-advisory bounded exceptions or compatible fixes are still needed.
-- Optional H5 tooling: webpack-dev-server4, dev-middleware5, uuid8, node-forge1,
-  esbuild0.21. Normal Trainer packaging does not use these chains. Do not expose
-  these development servers to untrusted networks or interpret that restriction
-  as a fix to the dependencies.
-- Webpack CSS/HTML/minification: PostCSS7, html-minifier4, serialize-javascript6.
-  Build-time trusted inputs reduce exposure, but advisories still need a durable
-  per-ID/version/expiry disposition.
-- Swiper11 has a critical reported advisory. Current miniapp is WeChat-only and
-  contains no Swiper import; optional H5 reachability must be checked explicitly.
-- Rust glib `VariantStrIter` output-pointer unsoundness (RUSTSEC-2024-0429)
-  is mitigated by merged PR #172's exact two-line upstream backport to vendored
-  glib0.18.5. `tests/security/check_glib_backport.py` checks 121 upstream file
-  identities, the exact patched source hash, Cargo binding and bundled notices.
-  Debug and optimized string-array iterator regressions passed. See
-  [backport provenance](../vendor/glib/XHUP-BACKPORT.md). This is source-specific
-  mitigation, not an advisory-wide ignore: Cargo audit may still flag the unchanged
-  version. Unmaintained Rust dependencies and all remaining frontend advisories
-  above still require disposition; F16 is not closed.
+No minimum-release-age exclusions were added. An initially investigated newer
+minifier was rejected rather than relaxing that protection. Production miniapp
+builds enable XML minification so the patched path is exercised, not dormant.
 
-No stable-release security clearance is implied by these partial remediations.
+Validation: both production builds, workspace typechecks and frontend tests
+(Trainer 111, miniapp 55, plus shared core) passed. Four local security integration
+tests cover legitimate Git checkout and injection rejection, actual local HTTP
+archive extraction and traversal rejection, concurrent independent-package
+compression, and minifier error propagation. Test archives contain only public
+synthetic data and are deterministic. See `tests/security/frontend-dependencies.test.cjs`.
+
+## Rust — separate, not audit-cleared by the frontend result
+
+Initial `cargo audit 0.22.2` (RustSec database revision `6de4455`) reported zero
+known vulnerability entries but seven warnings: GLib unsoundness plus six
+unmaintained-package warnings. The GLib output-pointer bug (RUSTSEC-2024-0429)
+is mitigated by merged PR #172's exact upstream backport to vendored 0.18.5.
+`tests/security/check_glib_backport.py` checks 121 upstream file identities,
+exact patched source, Cargo binding and bundled notices. Debug and optimized
+iterator regressions passed; [provenance](../vendor/glib/XHUP-BACKPORT.md) records
+the scope. Version-based audit may still flag that unchanged version; no global
+ignore is warranted.
+
+A refreshed Rust audit on 2026-10-02 reports zero vulnerabilities and six
+unmaintained-package warnings: `proc-macro-error` 1.0.4 in GTK macros, plus
+`unic-char-property`, `unic-char-range`, `unic-common`, `unic-ucd-ident` and
+`unic-ucd-version` 0.9.0 under Tauri's URLPattern parser. The local source-patched
+GLib is not listed as a registry warning; its source gate remains mandatory.
+These six maintenance warnings still require separate bounded disposition. This frontend remediation does not itself close F16, native
+decoder qualification, or stable-release acceptance. Windows/macOS manual testing
+is delegated to users as described in README; untested results remain unknown.

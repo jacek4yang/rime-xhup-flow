@@ -1,0 +1,78 @@
+diff --git a/index.js b/index.js
+index 68a9e3a10a863923c2581799d964f8233081f87b..7813042e2c3875719fc8d056ad7e4ee06667f827 100644
+--- a/index.js
++++ b/index.js
+@@ -1,5 +1,24 @@
+-var downloadUrl = require('download')
+-var gitclone = require('git-clone')
++// XHUP: maintained ESM downloader, loaded only for archive downloads.
++var execFile = require('node:child_process').execFile
++
++function gitclone (repo, dest, opts, callback) {
++  var ref = opts.checkout
++  if (typeof repo !== 'string' || !repo || /[\x00-\x1f]/.test(repo) ||
++      (ref && (typeof ref !== 'string' || ref.startsWith('-') || /[\x00-\x20]/.test(ref))) ||
++      (opts.git && opts.git !== 'git')) {
++    return process.nextTick(callback, new Error('Unsafe repository or checkout arguments'))
++  }
++  var args = ['clone']
++  if (opts.shallow) args.push('--depth', '1')
++  args.push('--', repo, dest)
++  execFile('git', args, function (error) {
++    if (error || !ref) return callback(error || undefined)
++    // End options and refuse option-like refs; never execute through a shell.
++    execFile('git', ['checkout', '--detach', ref, '--'], { cwd: dest }, function (error) {
++      callback(error || undefined)
++    })
++  })
++}
+ var rm = require('rimraf').sync
+ 
+ /**
+@@ -26,7 +45,11 @@ function download (repo, dest, opts, fn) {
+   var clone = opts.clone || false
+   delete opts.clone
+ 
+-  repo = normalize(repo)
++  try {
++    repo = normalize(repo)
++  } catch (error) {
++    return process.nextTick(fn, error)
++  }
+   var url = repo.url || getUrl(repo, clone)
+ 
+   if (clone) {
+@@ -45,16 +68,25 @@ function download (repo, dest, opts, fn) {
+     })
+   } else {
+     var downloadOptions = {
+-      extract: true,
+-      strip: 1,
+-      mode: '666',
+-      ...opts,
+-      headers: {
+-        accept: 'application/zip',
+-        ...(opts.headers || {})
++      extract: opts.extract !== false,
++      filename: opts.filename,
++      hash: opts.hash,
++      decompress: {
++        strip: opts.strip === undefined ? 1 : opts.strip,
++        mode: opts.mode || '666',
++        ...opts.decompress
++      },
++      got: {
++        ...opts.got,
++        headers: { accept: 'application/zip', ...(opts.headers || {}), ...(opts.got || {}).headers }
+       }
+     }
+-    downloadUrl(url, dest, downloadOptions)
++    if (opts.timeout !== undefined) {
++      downloadOptions.got.timeout = typeof opts.timeout === 'number' ? { request: opts.timeout } : opts.timeout
++    }
++    import('download').then(function (module) {
++      return module.default(url, dest, downloadOptions)
++    })
+       .then(function (data) {
+         fn()
+       })

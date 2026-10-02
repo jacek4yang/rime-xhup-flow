@@ -21,6 +21,8 @@ export default defineConfig(async (merge) => {
     copy: { patterns: [], options: {} },
     framework: "react",
     compiler: "webpack5",
+    // Exercise the awaited, maintained XML minifier in production builds.
+    minifyXML: { collapseWhitespace: true },
     mini: {
       // Taro 4.2 webpackbar passes obsolete presentation options to Webpack.
       // Remove only the progress UI, not validation, optimization or build checks.
