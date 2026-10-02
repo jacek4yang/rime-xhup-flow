@@ -118,6 +118,7 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
             "lua/xhup_flow/user_memory.lua",
             "xhup_flow.dict.yaml",
             "xhup_flow.schema.yaml",
+            "xhup_flow.sources.tsv",
             "xhup_flow_chars.dict.yaml",
             "xhup_flow_fixed_first_shortcuts.dict.yaml",
             "xhup_flow_flow.dict.yaml",
@@ -129,7 +130,7 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
             "xhup_flow_word_shortcuts.dict.yaml",
             "xhup_flow_words.dict.yaml",
         ],
-        "输出应为且仅为 12 个 Rime 源文件(含 2 个词典编译 wrapper schema)+ 7 个 Lua 运行时文件"
+        "输出应为且仅为 12 个 Rime 源文件(含 2 个词典编译 wrapper schema)+ 7 个 Lua 运行时文件 + clean-v1 来源策略"
     );
     for filename in &filenames {
         assert!(
