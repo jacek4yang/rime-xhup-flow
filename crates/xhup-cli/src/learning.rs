@@ -22,8 +22,11 @@
 //!   (快照携带 `/db_name`,目标词典由快照自身决定);
 //! - `-e/-i` 为 TSV 全量导出/导入,本模块不使用,统一走标准快照。
 //!
-//! 因此 import 侧以快照内 `/db_name` 为准;本模块在导入前仍校验快照
-//! 文件名与目标词典一致,防止把无关 Rime 词典的快照误当学习数据合并。
+//! import 校验文件名、内部身份、类型和版本,仅将验证后的私有副本交给
+//! 工具。拒绝缺失/重复/未知元数据,避免工具按恶意 `/db_name` 写入其它词典。
+
+#[path = "learning_snapshot.rs"]
+mod snapshot;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -51,6 +54,10 @@ pub enum LearningError {
     SnapshotMissing { path: PathBuf },
     /// 快照文件名与目标词典不匹配(防误导入)。
     SnapshotNameMismatch { path: PathBuf, expected: String },
+    /// 快照元数据未满足支持的身份/格式契约。
+    InvalidSnapshot { reason: String },
+    /// 读取或安全暂存失败。
+    SnapshotIo { source: std::io::Error },
     /// 备份后未找到快照(工具未产出预期文件)。
     SnapshotNotProduced {
         user_data_dir: PathBuf,
@@ -72,6 +79,8 @@ pub enum LearningError {
 impl fmt::Display for LearningError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidSnapshot { reason } => write!(f, "拒绝学习快照: {reason}"),
+            Self::SnapshotIo { source } => write!(f, "读取/暂存学习快照失败: {source}"),
             Self::DictManagerNotFound { detail } => write!(
                 f,
                 "找不到 rime_dict_manager({detail});请安装 librime-bin 或用 \
@@ -317,9 +326,8 @@ pub fn export(
 
 /// 从快照恢复用户词典(跨安装迁移)。
 ///
-/// 快照文件名必须与目标词典一致(防误导入);恢复经 dict manager
-/// `-r` 执行,librime 校验快照元数据(含 `/db_name`)后把条目合并进
-/// `xhup_flow_user`。
+/// 文件名与内部身份必须属于 Flow,类型/版本必须受支持。验证有大小上限的
+/// 私有副本后经 dict manager `-r` 合并,不让工具重新读取可变原始路径。
 pub fn import(
     user_data_dir: &Path,
     snapshot: &Path,
@@ -346,18 +354,24 @@ pub fn import(
             expected: expected_name,
         });
     }
+    let staged = snapshot::Snapshot::read(snapshot)?;
     let manager = find_dict_manager(dict_manager)?;
-    // 传绝对路径:子进程 cwd 已切到用户数据目录,相对参数会相对它解析,
-    // 与快照实际位置脱节;canonicalize 同时校验文件存在。
-    let snapshot_abs =
-        std::fs::canonicalize(snapshot).map_err(|error| LearningError::ToolFailed {
-            program: manager.display().to_string(),
-            stderr: format!("解析快照路径失败: {error}"),
-        })?;
+    // librime Restore removes its fixed .temp userdb; never destroy preexisting
+    // state there. Concurrent manager activity is a separate operation-lock gate.
+    if user_data_dir
+        .join(".temp.userdb")
+        .symlink_metadata()
+        .is_ok()
+    {
+        return Err(LearningError::InvalidSnapshot {
+            reason: "native restore staging database already exists; stop active operations first"
+                .into(),
+        });
+    }
     run_in_user_dir(
         &manager,
         user_data_dir,
-        &["-r", &snapshot_abs.to_string_lossy()],
+        &["-r", &staged.path.to_string_lossy()],
     )?;
     Ok(())
 }
