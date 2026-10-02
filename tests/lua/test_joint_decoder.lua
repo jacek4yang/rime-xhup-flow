@@ -5,7 +5,7 @@
 
 package.path = "rime/lua/?.lua;rime/lua/?/init.lua;" .. package.path
 
-local jd = require("xhup_flow.joint_decoder")
+local jd = dofile("tests/research/legacy_joint_decoder.lua")
 
 local pass = 0
 local fail = 0

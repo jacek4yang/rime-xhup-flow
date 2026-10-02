@@ -3,7 +3,7 @@
 
 package.path = "rime/lua/?.lua;rime/lua/?/init.lua;" .. package.path
 
-local um = dofile("rime/lua/xhup_flow/user_memory.lua")
+local um = dofile("tests/research/legacy_user_memory.lua")
 
 local passed, failed = 0, 0
 local function check(name, actual, expected)

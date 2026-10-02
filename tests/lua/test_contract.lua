@@ -47,12 +47,14 @@ check("context_ranker 导出 bounded_reorder", report.components.context_ranker.
 check("joint_decoder 组件状态", report.components.joint_decoder.ok, true)
 check("joint_decoder 拥有 init", report.components.joint_decoder.has_init, true)
 check("joint_decoder 拥有 func", report.components.joint_decoder.has_func, true)
-check("joint_decoder 拥有 bounded_promote", report.components.joint_decoder.has_bounded_promote, true)
+check("joint_decoder 明确不可用", report.components.joint_decoder.available, false)
+check("用户记忆仅会话", report.components.user_memory.session_only, true)
 check("无报错", #report.errors, 0)
 
 -- 3. 诊断格式化输出
 local diag = xhup_flow.diagnose_string()
-check("诊断包含满足信息", string.find(diag, "满足 %(PASS%)") ~= nil, true)
+check("文件检查不能冒充运行证据", string.find(diag, "未验证 %(Unknown%)") ~= nil, true)
+check("没有虚假运行 PASS", string.find(diag, "PASS") == nil, true)
 check("诊断包含 annotation", string.find(diag, "annotation: 正常") ~= nil, true)
 
 -- 4. 模拟故障注入: 缺少组件时应返回明确失败与诊断

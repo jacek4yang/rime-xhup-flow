@@ -1,0 +1,247 @@
+-- XHUP Flow 本地用户记忆观察组件(§16 / #83 R4)。
+--
+-- librime-lua `*module` 组件(schema 以 `lua_filter@*xhup_flow.user_memory`
+-- 注册)。职责闭环「真实选择 → 隐私安全观察 → 版本化状态」:
+--
+-- 1. **观察**:commit_notifier 记录实际上屏文本与次数(可包含句子);
+--    不记录按键序列或时间戳。长度/容量限制尚待统一学习模型处理。
+-- 2. **持久化**:按 #127 的版本化 TSV 格式
+--    (`xhup_flow_user_model.tsv`,schema 行 `xhup-user-model/v1`),
+--    每 FLUSH_EVERY 次提交尝试写盘,正常 fini 再尝试一次。
+--    失败保留旧快照和 dirty 状态;不承诺断电/fsync 持久性。
+--    标准 Lua 在 Windows 无安全替换 API,暂时 fail closed(仅内存观察)。
+-- 3. **加载**:init 时若快照存在则读入内存(损坏/未来版本 → 静默回退
+--    空状态,与 #127 的降级语义一致;绝不 panic)。
+-- 4. **可关**:方案开关 `user_memory` 默认关闭(reset 0);关闭 = 完全
+--    不观察不写盘,行为与无此组件一致。
+--
+-- 隐私与边界:
+-- - 只存词形+计数;错误信息只含路径;绝不打印词形内容(§5);
+-- - 零遥测、零网络;文件只在用户数据目录;
+-- - 不改任何候选次序(排序消费是后续 PR;本组件只负责「记录」)。
+--
+-- 纯逻辑(load/save/merge 的可测核心)与本组件粘合层分离,单测
+-- 不依赖 librime。
+
+local M = {}
+
+-- 模块级共享状态:同引擎的 context_ranker 经 require 读到同一份表
+-- (Lua require 缓存;engine userdata 不接受任意字段赋值,实测静默
+-- 失败 —— 此前经 engine 传状态的设计因此失效)。
+-- counts: {word: count};last_commit: 最近上屏文本(重复词桶证据);
+-- 两者都是内存态,进程退出即消失,隐私边界同文件状态。
+M.state = { counts = {}, last_commit = nil }
+
+-- TSV 快照文件名(与 xhup-cli user_state / #127 一致)。
+M.SNAPSHOT_FILENAME = "xhup_flow_user_model.tsv"
+-- 模式行(版本由 schema 行承载)。
+M.SCHEMA_LINE = "# xhup-user-model/v1 version=1"
+-- 列头行。
+M.HEADER_LINE = "word\tselections\tlast_seq"
+-- 每多少次提交做一次写盘。
+M.FLUSH_EVERY = 20
+
+-- 解析 TSV 文本 → {word: count} 表。
+-- 任何结构异常返回 nil(调用方回退空状态);宽松跳过坏行但拒绝坏头。
+function M.parse_tsv(text)
+    if type(text) ~= "string" then
+        return nil
+    end
+    local lines = {}
+    for line in text:gmatch("[^\r\n]+") do
+        lines[#lines + 1] = line
+    end
+    if #lines < 2 then
+        return nil
+    end
+    if lines[1] ~= M.SCHEMA_LINE or lines[2] ~= M.HEADER_LINE then
+        return nil
+    end
+    -- 空快照(schema+header,零数据行)合法:返回空表。
+    if #lines == 2 then
+        return {}
+    end
+    local counts = {}
+    for i = 3, #lines do
+        local word, count = lines[i]:match("^([^\t]+)\t(%d+)\t%d+$")
+        if word and count then
+            counts[word] = (counts[word] or 0) + tonumber(count)
+        elseif lines[i] ~= "" then
+            return nil
+        end
+    end
+    return counts
+end
+
+-- {word: count} 表 → TSV 文本(word 排序,确定性)。
+function M.render_tsv(counts)
+    local words = {}
+    for word in pairs(counts) do
+        words[#words + 1] = word
+    end
+    table.sort(words)
+    local parts = { M.SCHEMA_LINE, M.HEADER_LINE }
+    for _, word in ipairs(words) do
+        parts[#parts + 1] = string.format("%s\t%d\t0", word, counts[word])
+    end
+    return table.concat(parts, "\n") .. "\n"
+end
+
+-- POSIX Lua 的 os.tmpname 使用 mkstemp 创建并保留文件,不使用可预测的
+-- path.tmp。临时目录与目标不同文件系统时 rename 失败,保留旧快照;
+-- 不以复制或删除旧文件兜底。Windows 的 tmpname 不创建文件且 rename
+-- 无替换语义,故显式拒绝持久化,等待受支持的 native storage bridge。
+-- 错误不包含观察文本;flush/close 并非 fsync,不声称物理崩溃持久性。
+function M.atomic_write(path, text)
+    if type(path) ~= "string" or path == "" then
+        return nil, "empty path"
+    end
+    if package.config:sub(1, 1) == "\\" then
+        return nil, "safe snapshot replacement unavailable on Windows"
+    end
+    local named, tmp = pcall(os.tmpname)
+    if not named or type(tmp) ~= "string" or tmp == "" then
+        return nil, "cannot create temporary file"
+    end
+    local f = io.open(tmp, "wb")
+    if not f then
+        os.remove(tmp)
+        return nil, "cannot open temporary file"
+    end
+    local written = f:write(text)
+    local flushed = f:flush()
+    -- 即使 write/flush 失败也必须关闭句柄。
+    local closed = f:close()
+    if not written or not flushed or not closed then
+        os.remove(tmp)
+        return nil, "cannot write/flush/close temporary file"
+    end
+    if not os.rename(tmp, path) then
+        os.remove(tmp)
+        return nil, "cannot replace snapshot"
+    end
+    return true
+end
+
+-- 读快照(不存在 = 空);损坏 = nil(调用方回退空)。
+function M.read_snapshot(path)
+    local f = io.open(path, "rb")
+    if not f then
+        return {}
+    end
+    local text = f:read("*a")
+    f:close()
+    local counts = M.parse_tsv(text)
+    if not counts then
+        return nil
+    end
+    return counts
+end
+
+-- librime-lua 组件入口。
+function M.init(env)
+    env.enabled = false
+    local ok = pcall(function()
+        env.enabled = env.engine.context:get_option("user_memory")
+    end)
+    if not ok then
+        env.enabled = false
+    end
+    env.counts = {}
+    env.pending = 0
+    env.seq = 0
+    env.dirty = false
+    env.snapshot_path = nil
+    -- 用户数据目录 = librime user_data_dir;librime-lua 提供
+    -- rime_api 的 get_user_data_dir? 组件侧无直接 API;使用与引擎
+    -- 相同目录约定:快照路径由 schema 配置项给出(缺省文件名,
+    -- 相对路径落在进程工作目录 —— 部署目录通常即用户目录)。
+    local ok_path, path = pcall(function()
+        return env.engine.schema.config:get_string("user_memory/snapshot_path")
+    end)
+    if ok_path and type(path) == "string" and path ~= "" then
+        env.snapshot_path = path
+    else
+        env.snapshot_path = M.SNAPSHOT_FILENAME
+    end
+    -- 预加载(开关无关:读入内存只为后续开启时无缝;写盘仅在开启时)。
+    local counts = M.read_snapshot(env.snapshot_path)
+    if counts then
+        env.counts = counts
+    end
+    -- 把内存计数表挂到模块共享状态(context_ranker 经 require 读同一份;
+    -- engine userdata 不接受字段赋值,见 M.state 注释)。
+    M.state.counts = env.counts
+    -- 连接提交观察(始终连接):
+    -- - last_commit 无条件记录(进程内存态,退出即消失,隐私无害;
+    --   context_ranker 的重复词桶证据不依赖 user_memory 开关);
+    -- - 计数/写盘仅在实际开启时(开关状态实时读取 —— 不能在 init
+    --   缓存:schema 开关 reset 0 在会话创建后才可能被置 true)。
+    pcall(function()
+        env.commit_connection = env.engine.context.commit_notifier:connect(function()
+            local text = nil
+            pcall(function()
+                text = env.engine.context:get_commit_text()
+            end)
+            if type(text) ~= "string" or text == "" then
+                return
+            end
+            M.state.last_commit = text
+            local live_enabled = false
+            pcall(function() live_enabled = env.engine.context:get_option("user_memory") end)
+            if not live_enabled then
+                return
+            end
+            env.seq = env.seq + 1
+            env.counts[text] = (env.counts[text] or 0) + 1
+            env.pending = env.pending + 1
+            env.dirty = true
+            if env.pending >= M.FLUSH_EVERY then
+                M.flush(env)
+            end
+        end)
+    end)
+end
+
+-- 立即写盘(把内存计数落盘;不改内存状态)。
+function M.flush(env)
+    if not env.dirty then
+        return true
+    end
+    if not env.snapshot_path then
+        env.persistence_error = "snapshot path unavailable"
+        return nil, env.persistence_error
+    end
+    local text = M.render_tsv(env.counts)
+    local ok, err = M.atomic_write(env.snapshot_path, text)
+    env.persistence_error = err
+    if not ok then
+        return nil, err
+    end
+    env.pending = 0
+    env.dirty = false
+    return true
+end
+
+-- 正常卸载尽力保存;异常终止不会调用 fini。失败可由调用方重试 flush,
+-- 不能清 dirty 或声称已落盘。日志只含固定错误类别,不含用户文本。
+function M.fini(env)
+    if env.commit_connection then
+        env.commit_connection:disconnect()
+        env.commit_connection = nil
+    end
+    local ok, err = M.flush(env)
+    if not ok and log and log.error then
+        log.error("XHUP Flow user memory not persisted: " .. err)
+    end
+    return ok, err
+end
+
+function M.func(translation, env)
+    -- 本组件不改候选流:纯透传(观察职责与排序职责分离)。
+    for cand in translation:iter() do
+        yield(cand)
+    end
+end
+
+return M

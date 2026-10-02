@@ -115,8 +115,8 @@ function M.check_contract()
       ok = true,
       has_init = type(um_or_err.init) == "function",
       has_func = type(um_or_err.func) == "function",
-      has_parse_tsv = type(um_or_err.parse_tsv) == "function",
-      has_atomic_write = type(um_or_err.atomic_write) == "function",
+      session_only = true,
+      has_get_state = type(um_or_err.get_state) == "function",
     }
   else
     report.ok = false
@@ -131,7 +131,8 @@ function M.check_contract()
       ok = true,
       has_init = type(jd_or_err.init) == "function",
       has_func = type(jd_or_err.func) == "function",
-      has_bounded_promote = type(jd_or_err.bounded_promote) == "function",
+      available = jd_or_err.available == true,
+      reason = jd_or_err.reason,
     }
   else
     report.ok = false
@@ -147,10 +148,12 @@ function M.diagnose_string()
   local report = M.check_contract()
   local lines = {}
   table.insert(lines, string.format("XHUP Flow Lua 运行时诊断 (v%s, %s)", report.version, report.lua_version or "unknown"))
-  table.insert(lines, string.format("合同状态: %s", report.ok and "满足 (PASS)" or "未满足 (FAIL)"))
+  table.insert(lines, string.format("模块文件预检: %s; 实际注册/执行未验证 (Unknown)", report.ok and "完整" or "缺失"))
   for comp_name, comp in pairs(report.components) do
     if comp.ok then
-      if comp.count ~= nil then
+      if comp.available == false then
+        table.insert(lines, string.format("  - %s: 不可用 (%s)", comp_name, comp.reason))
+      elseif comp.count ~= nil then
         table.insert(lines, string.format("  - %s: 正常 (条目数: %d)", comp_name, comp.count))
       else
         table.insert(lines, string.format("  - %s: 正常", comp_name))
