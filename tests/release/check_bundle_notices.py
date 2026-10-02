@@ -5,9 +5,25 @@ import json
 from pathlib import Path
 
 
+def validate_mapping(mapping):
+    destinations = set()
+    for source, target in mapping.items():
+        target_path = Path(target)
+        if (not target.startswith("licenses/") or ".." in target_path.parts
+                or target_path.name != Path(source).name):
+            raise ValueError("notice resources must preserve source basenames in namespaced directories")
+        # WiX omits File/@Name and installs Source's basename. Do not rely on
+        # filename remapping that succeeds for deb/NSIS but collides in MSI.
+        folded = target.casefold()
+        if folded in destinations:
+            raise ValueError("case-insensitive notice destination collision")
+        destinations.add(folded)
+
+
 def verify(resources, root):
     config = root / "trainer/src-tauri/tauri.conf.json"
     mapping = json.loads(config.read_text())["bundle"]["resources"]
+    validate_mapping(mapping)
     wanted = {target: (config.parent / source).resolve()
               for source, target in mapping.items() if target.startswith("licenses/")}
     if not wanted or len(wanted) != len(mapping):

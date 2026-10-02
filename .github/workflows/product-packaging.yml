@@ -336,6 +336,12 @@ jobs:
           for f in artifacts/windows/*; do [[ -s "$f" ]] || { echo "::error::产物为空: $f"; exit 1; }; done
           ls -l artifacts/windows/
 
+      - name: 从实际 MSI 管理提取校验许可（不启动应用）
+        run: |
+          $msi = Get-ChildItem artifacts/windows/*.msi
+          if ($msi.Count -ne 1) { throw "expected one MSI" }
+          python tests/release/check_msi_notices.py $msi.FullName "$env:RUNNER_TEMP/msi-notice-check"
+
       - name: 上传 Windows 产物
         uses: actions/upload-artifact@v7
         with:

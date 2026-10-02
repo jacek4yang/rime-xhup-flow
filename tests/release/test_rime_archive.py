@@ -100,9 +100,10 @@ class RimeArchive(unittest.TestCase):
         for name, source in archive.NOTICES.items():
             if name in ("INSTALL.md", "NOTICE.md"):
                 continue
-            self.assertEqual(resources["../../" + source], name)
+            self.assertTrue(resources["../../" + source].startswith("licenses/"))
+            self.assertEqual(Path(resources["../../" + source]).name, Path(source).name)
         self.assertEqual(resources["../../rime/package/NOTICE.md"],
-                         "licenses/RIME-DATA-NOTICE.md")
+                         "licenses/rime-data/NOTICE.md")
         notice = ROOT / "data/hanzi/LICENSE.pinyin-data"
         self.assertEqual(hashlib.sha256(notice.read_bytes()).hexdigest(),
                          "9c048697be2502a16e8bcb282d5d465a07295b2def0ffb05a269c5d39dbe1586")
@@ -117,13 +118,24 @@ class RimeArchive(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile((config.parent / source).resolve(), path)
         self.assertEqual(check_bundle_notices.verify(extracted, ROOT), len(mapping))
-        path = extracted / "licenses/RIME-DATA-NOTICE.md"
+        path = extracted / "licenses/rime-data/NOTICE.md"
         path.write_text("changed")
         with self.assertRaises(ValueError):
             check_bundle_notices.verify(extracted, ROOT)
         path.unlink()
         with self.assertRaises(ValueError):
             check_bundle_notices.verify(extracted, ROOT)
+
+    def test_wix_basename_collision_is_rejected_without_ice_suppression(self):
+        from check_bundle_notices import validate_mapping
+        validate_mapping({"../../a/LICENSE": "licenses/a/LICENSE",
+                          "../../b/LICENSE": "licenses/b/LICENSE"})
+        with self.assertRaises(ValueError):
+            validate_mapping({"../../a/LICENSE": "licenses/a-MIT.txt",
+                              "../../b/LICENSE": "licenses/b-MIT.txt"})
+        with self.assertRaises(ValueError):
+            validate_mapping({"../../a/LICENSE": "licenses/a/LICENSE",
+                              "../../b/license": "licenses/A/license"})
 
     def test_workflow_checks_final_archive_bytes(self):
         text = (ROOT / ".github/workflows/product-packaging.yml").read_text()
