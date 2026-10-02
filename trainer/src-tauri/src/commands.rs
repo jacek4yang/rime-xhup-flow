@@ -137,7 +137,7 @@ pub fn product_status() -> Result<ProductStatus, CommandError> {
         user_data_dir: dir,
         rime_detected,
         install,
-        bundled_version: package.version,
+        bundled_version: package.version.clone(),
         update_available,
         health,
         learning,

@@ -363,7 +363,7 @@ impl std::error::Error for ManagerError {
 
 /// 内存中的 Rime 源包:版本 + 全部生成产物。
 ///
-/// 调用方通过 [`RimePackage::bundled`] 获得当前生成器产物;测试可直接
+/// 调用方通过 [`RimePackage::bundled`] 获得构建期封存产物;测试可直接
 /// 构造假包。不落盘、不涉及真实文件系统。
 #[derive(Clone, Debug)]
 pub struct RimePackage {
@@ -373,30 +373,36 @@ pub struct RimePackage {
     pub files: Vec<(String, String)>,
 }
 
+mod bundled_package {
+    include!(concat!(env!("OUT_DIR"), "/bundled_package.rs"));
+}
+
 impl RimePackage {
-    /// 从当前生成器产物构建源包(`xhup-generator` 是唯一语义来源)。
+    /// 加载构建期产物,整个进程共享只读缓存;正常管理绝不调用语料生成器。
     ///
     /// 生成器产物缺少主方案或其内嵌版本属源码级缺陷:返回
     /// [`ManagerError::PackageInvalid`] 而不是 panic(命令路径不得崩溃)。
-    pub fn bundled() -> Result<Self, ManagerError> {
-        let files: Vec<(String, String)> = xhup_generator::generate_rime_artifacts()
-            .into_iter()
-            .map(|artifact| {
-                (
-                    artifact.filename().to_string(),
-                    artifact.contents().to_string(),
-                )
-            })
-            .collect();
-        let schema_file = format!("{FLOW_SCHEMA_ID}.schema.yaml");
-        let version = files
-            .iter()
-            .find(|(name, _)| name == &schema_file)
-            .and_then(|(_, contents)| parse_schema_version(contents))
-            .ok_or_else(|| ManagerError::PackageInvalid {
-                missing: format!("{schema_file}#version"),
-            })?;
-        Ok(Self { version, files })
+    pub fn bundled() -> Result<std::sync::Arc<Self>, ManagerError> {
+        static PACKAGE: std::sync::OnceLock<Result<std::sync::Arc<RimePackage>, String>> =
+            std::sync::OnceLock::new();
+        match PACKAGE.get_or_init(|| {
+            let files: Vec<(String, String)> = bundled_package::FILES
+                .iter()
+                .map(|(name, _sha256, contents)| ((*name).to_owned(), (*contents).to_owned()))
+                .collect();
+            let schema_file = format!("{FLOW_SCHEMA_ID}.schema.yaml");
+            let version = files
+                .iter()
+                .find(|(name, _)| name == &schema_file)
+                .and_then(|(_, contents)| parse_schema_version(contents))
+                .ok_or_else(|| format!("{schema_file}#version"))?;
+            Ok(std::sync::Arc::new(Self { version, files }))
+        }) {
+            Ok(package) => Ok(std::sync::Arc::clone(package)),
+            Err(missing) => Err(ManagerError::PackageInvalid {
+                missing: missing.clone(),
+            }),
+        }
     }
 
     /// 按文件名取产物内容。
@@ -1237,6 +1243,47 @@ mod tests {
         // 条目;子目录安装/备份/卸载语义见本模块测试)。
         assert_eq!(package.files.len(), OWNED_FILES.len());
         assert!(!package.version.is_empty());
+    }
+
+    #[test]
+    fn bundled_package_is_cached_and_matches_build_manifest() {
+        use sha2::{Digest, Sha256};
+        let started = std::time::Instant::now();
+        let first = RimePackage::bundled().unwrap();
+        let cold = started.elapsed();
+        let started = std::time::Instant::now();
+        for _ in 0..1000 {
+            assert!(std::sync::Arc::ptr_eq(
+                &first,
+                &RimePackage::bundled().unwrap()
+            ));
+        }
+        eprintln!(
+            "bundled load {:?}, 1000 cached accesses {:?}, bytes {}",
+            cold,
+            started.elapsed(),
+            first
+                .files
+                .iter()
+                .map(|(_, content)| content.len())
+                .sum::<usize>()
+        );
+        let manifest = include_str!(concat!(env!("OUT_DIR"), "/bundled_package_manifest.tsv"));
+        assert_eq!(
+            manifest
+                .lines()
+                .filter(|line| !line.starts_with('#'))
+                .count(),
+            first.files.len()
+        );
+        for (name, expected_hash, contents) in bundled_package::FILES {
+            assert_eq!(
+                format!("{:x}", Sha256::digest(contents.as_bytes())),
+                *expected_hash
+            );
+            assert!(manifest.contains(&format!("{name}\t{expected_hash}\t{}\n", contents.len())));
+            assert_eq!(first.contents_of(name), Some(*contents));
+        }
     }
 
     #[test]
