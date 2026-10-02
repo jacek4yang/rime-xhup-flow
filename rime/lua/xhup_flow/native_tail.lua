@@ -14,9 +14,20 @@ end
 
 local function bound_learning(env)
   local config = env.engine.schema.config
+  -- Refuse by default before inspecting storage or configuration.
+  env.native.memorize_callback = function() return false end
   if not env.native.user_dict then
-    learning_status(env, config:get_bool("flow/enable_user_dict") == false and "off" or "storage_unavailable")
-    return
+    learning_status(env, "storage_unavailable")
+    return false
+  end
+  local tick = env.native.user_dict.tick
+  if type(tick) ~= "number" then
+    learning_status(env, "bounded_api_unavailable")
+    return false
+  end
+  if tick < 0 or tick ~= tick or tick == math.huge then
+    learning_status(env, "storage_unverified")
+    return false
   end
   local limit = config:get_int("flow/learning_max_updates") or M.MAX_LEARNING_UPDATES
   limit = math.max(0, math.min(limit, M.MAX_LEARNING_UPDATES))
@@ -28,7 +39,7 @@ local function bound_learning(env)
   env.native.memorize_callback = function(native, entry)
     local ok, updated = pcall(function()
       local elements, tick = entry:get(), native.user_dict.tick
-      if type(tick) ~= "number" or tick < 0 or tick ~= tick then
+      if type(tick) ~= "number" or tick < 0 or tick ~= tick or tick == math.huge then
         learning_status(env, "storage_unverified"); return false
       end
       if #elements < 1 then return false end
@@ -54,6 +65,7 @@ local function bound_learning(env)
     return updated
   end
   learning_status(env, "ready")
+  return true
 end
 
 function M.init(env)
@@ -62,31 +74,50 @@ function M.init(env)
     env.native_error = "native translator API unavailable"
     return
   end
-  -- Old bindings construct a plain native writer without exposing any callback
-  -- or disconnect API. Detect that BEFORE construction, never from user_dict=nil.
-  local bounded_api = type(Component.TableTranslator) == "function"
-  local namespace = bounded_api and "flow" or "flow_readonly"
-  if not bounded_api and env.engine.schema.config:get_bool(namespace .. "/enable_user_dict") ~= false then
+  local config = env.engine.schema.config
+  -- Probe callback/disconnect on a READ-ONLY object first. Distro backports can
+  -- expose TableTranslator yet omit UserDictionary.tick, so version/date or
+  -- constructor presence alone is not sufficient evidence.
+  if config:get_bool("flow_readonly/enable_user_dict") ~= false then
     learning_status(env, "readonly_config_unverified")
     env.native_error = "read-only fallback configuration unavailable"
     return
   end
+  local bounded_api = type(Component.TableTranslator) == "function"
   local constructor = bounded_api and Component.TableTranslator or Component.Translator
-  local ok, native = pcall(constructor, env.engine, "", "table_translator@" .. namespace)
-  if not ok or not native then
+  local ok, readonly = pcall(constructor, env.engine, "", "table_translator@flow_readonly")
+  if not ok or not readonly then
     env.native_error = "native translator construction failed"
     return
   end
-  env.native = native
-  local bounded = true
-  if bounded_api then bounded = pcall(bound_learning, env)
-  else learning_status(env, "bounded_api_unavailable") end
-  if not bounded then
-    learning_status(env, "bounded_api_unavailable")
-    -- Never silently keep an unbounded writer after a failed capability check.
-    local disconnected = native.disconnect and pcall(native.disconnect, native)
-    if not disconnected then env.native = nil end
-    env.native_error = "bounded learning API unavailable"
+  env.native = readonly
+  learning_status(env, "bounded_api_unavailable")
+  if config:get_bool("flow/enable_user_dict") == false then
+    learning_status(env, "off")
+  elseif bounded_api then
+    local safe = pcall(function()
+      assert(type(readonly.memorize) == "function" and type(readonly.disconnect) == "function")
+      readonly.memorize_callback = function() return false end
+      assert(type(readonly.memorize_callback) == "function")
+    end)
+    if safe then
+      local made, writer = pcall(constructor, env.engine, "", "table_translator@flow")
+      if made and writer then
+        env.native = writer
+        local verified, bounded = pcall(bound_learning, env)
+        if verified and bounded then
+          readonly:disconnect()
+        else
+          -- Initialization is synchronous: the deny callback is installed before
+          -- any commit can be processed. No fallback path may retain this writer.
+          writer:disconnect()
+          env.native = readonly
+          if not verified then learning_status(env, "bounded_api_unavailable") end
+        end
+      else
+        learning_status(env, "storage_unavailable")
+      end
+    end
   end
   if not Memory then env.native_error = "dictionary lookup API unavailable"; return end
   local ready, memory = pcall(Memory, env.engine, env.engine.schema, "flow_lookup")

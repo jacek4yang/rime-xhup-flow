@@ -41,7 +41,7 @@ local function fixture(input, start)
     return stream(items)
   end }
   Component = { TableTranslator = function(engine, _, name)
-    check(engine==env.engine and name=="table_translator@flow", "one native writer")
+    check(engine==env.engine and name=="table_translator@flow_readonly", "learning-off constructs no writer")
     return native
   end }
   Component.Translator = Component.TableTranslator
@@ -108,12 +108,19 @@ local function learning_fixture(tick, limit)
     disconnect=function(self) self.user_dict=nil end }
   local status
   local engine={ context={set_property=function(_,name,value) check(name=="xhup_flow_learning_status","status property"); status=value end},
-    schema={config={get_bool=function() return true end, get_int=function(_,name)
+    schema={config={get_bool=function(_,name) return name~="flow_readonly/enable_user_dict" end, get_int=function(_,name)
       if name=="flow/learning_max_updates" then return limit end
       if name=="flow/max_phrase_length" then return 20 end
       if name=="flow/max_homographs" then return 1 end
     end}}}
-  Component={Translator=function() return native end, TableTranslator=function() return native end}
+  local constructor=function(_,_,name)
+    if name=="table_translator@flow_readonly" then
+      return {memorize=function() error("readonly cannot learn") end, disconnect=function() end}
+    end
+    check(name=="table_translator@flow","one writer after readonly capability probe")
+    return native
+  end
+  Component={Translator=constructor, TableTranslator=constructor}
   Memory=function() return {} end
   local e={engine=engine};policy.init(e)
   return e,native,function() return status end
@@ -139,8 +146,8 @@ Component = {Translator=function(_, _, name)
   return {query=function() return stream({}) end}
 end}
 local legacy={engine={schema={config={get_bool=function(_, key)
-  check(key=="flow_readonly/enable_user_dict","verify explicit readonly configuration")
-  return false
+  if key=="flow_readonly/enable_user_dict" then return false end
+  return true
 end}}}}
 policy.init(legacy)
 check(#legacy_calls==1 and legacy.native and legacy.learning_status=="bounded_api_unavailable",
@@ -153,6 +160,12 @@ check(#legacy_calls==1 and not legacy.native and legacy.learning_status=="readon
 legacy.engine.schema.config.get_bool=function() return true end
 policy.init(legacy)
 check(#legacy_calls==1 and not legacy.native,"customized writable fallback rejected")
+local legacy_tick,old_writer,old_status=learning_fixture(nil,65536)
+check(legacy_tick.native~=old_writer and old_status()=="bounded_api_unavailable",
+  "backported TableTranslator without tick disconnects writer and keeps readonly typing")
+check(old_writer.user_dict==nil and old_writer.writes==0,"unsupported tick cannot write")
+local corrupt_tick,bad_writer,bad_status=learning_fixture(math.huge,65536)
+check(corrupt_tick.native~=bad_writer and bad_status()=="storage_unverified","infinite tick fails closed")
 local unavailable,writer,storage_status=learning_fixture(0,65536)
 writer.user_dict=nil
 policy.init(unavailable)

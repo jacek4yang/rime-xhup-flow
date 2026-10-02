@@ -61,17 +61,22 @@ commit-history encoding. An excessive imported tick also pauses new learning.
 Quota/API/storage refusal keeps typing available and reports
 `xhup_flow_learning_status`; the first Flow candidate carries a learning-paused
 hint. Missing bounded-learning APIs fail closed, not into an unbounded writer.
-The capability check happens **before** constructing a learning-enabled provider.
-Bindings without `Component.TableTranslator` (including Ubuntu 24.04's
-September 2023 Lua plugin) use the explicitly learning-disabled `flow_readonly`
-namespace, retain native typing, and report `bounded_api_unavailable`. A missing
-or overridden read-only flag fails before construction. Missing storage on a
-capable binding is `storage_unavailable`, not evidence that learning is off.
-Full learning qualification requires the callback/user-dictionary APIs; CI
-separately exercises the distro's old read-only fallback and a source-hash-pinned
-librime-lua commit `68f9c364a2d25a04c7d4794981d7c796b05ab627`.
-The old fallback must never open a user database, even when learning is requested
-and the process restarts. This degradation is not full learning support.
+A read-only provider is constructed first; callback assignment and disconnect
+are probed on that object before creating a writer. Bindings without those APIs
+retain read-only typing and report `bounded_api_unavailable`. Distro patches can
+backport `Component.TableTranslator` without `UserDictionary.tick` (observed in
+Ubuntu 24.04's September-2023-labeled package), so the constructor/date alone
+is **not** a capability guarantee. The candidate writer receives a deny callback
+synchronously, then its tick/configuration are validated before commits can run.
+A missing tick disconnects it and retains the read-only provider. This may create
+empty native metadata, but cannot learn entries; exports must remain empty and
+byte-identical across restart. Missing storage is `storage_unavailable`, not
+evidence that learning was disabled. A missing or overridden read-only flag
+fails before constructing any provider.
+CI separately exercises the actual distro fallback and full learning on
+source-hash-pinned librime-lua commit
+`68f9c364a2d25a04c7d4794981d7c796b05ab627`.
+Read-only degradation is not full learning support.
 
 This is a **logical update bound**, not a byte-exact LevelDB size cap or power-loss
 durability guarantee. Export/reset/import are explicit ownership-checked CLI or
