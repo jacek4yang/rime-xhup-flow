@@ -1,0 +1,49 @@
+diff --git a/dist/plugins/MiniPlugin.js b/dist/plugins/MiniPlugin.js
+index 47936b2141ff94371dd37439b4290f77869b7cd8..4da59019a4d3c277146cb8b0bbd9da346ddebbc9 100644
+--- a/dist/plugins/MiniPlugin.js
++++ b/dist/plugins/MiniPlugin.js
+@@ -30,6 +30,8 @@ const CHILD_COMPILER_TAG = 'child';
+ function isLoaderExist(loaders, loaderName) {
+     return loaders.some(item => item.loader === loaderName);
+ }
++// XHUP: compilation-local async minifier work; no cross-compilation state.
++const templateTasks = new WeakMap();
+ class TaroMiniPlugin {
+     constructor(options) {
+         /** app、页面、组件的配置集合 */
+@@ -1033,6 +1035,8 @@ class TaroMiniPlugin {
+                     this.generateConfigFile(compilation, compiler, page.path, config.content);
+                 }
+             });
++            yield Promise.all(templateTasks.get(compilation) || []);
++            templateTasks.delete(compilation);
+         });
+     }
+     /** 生成小程序相关文件 */
+@@ -1167,6 +1171,8 @@ class TaroMiniPlugin {
+                     delete compilation.assets[assetPath];
+                 }
+             });
++            yield Promise.all(templateTasks.get(compilation) || []);
++            templateTasks.delete(compilation);
+         });
+     }
+     generateConfigFile(compilation, compiler, filePath, config) {
+@@ -1187,10 +1193,15 @@ class TaroMiniPlugin {
+         const fileTemplName = this.getTemplatePath(this.getComponentName(filePath));
+         if ((_a = this.options.combination.config.minifyXML) === null || _a === void 0 ? void 0 : _a.collapseWhitespace) {
+             const minify = require('html-minifier').minify;
+-            templStr = minify(templStr, {
++            const tasks = templateTasks.get(compilation) || [];
++            templateTasks.set(compilation, tasks);
++            tasks.push(minify(templStr, {
+                 collapseWhitespace: true,
+                 keepClosingSlash: true
+-            });
++            }).then(result => {
++                compilation.assets[fileTemplName] = new RawSource(result);
++            }));
++            return;
+         }
+         compilation.assets[fileTemplName] = new RawSource(templStr);
+     }

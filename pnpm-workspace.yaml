@@ -14,6 +14,21 @@ allowBuilds:
 
 overrides:
   webpack: 5.111.1
+  # Security upgrades validated against both production builds and tests.
+  'latest-version@5.1.0': 6.0.0
+  'download-git-repo>git-clone': '-'
+  '@tarojs/webpack5-runner>html-minifier': npm:html-minifier-terser@7.2.0
+  'download-git-repo>download': npm:@xhmikosr/downloader@16.3.1
+  'uuid@>=8.0.0 <11.1.1': 11.1.1
+  'miniprogram-simulate>postcss': 8.5.23
+  'esbuild@<0.25.0': 0.25.12
+  'glob@>=10.0.0 <10.5.0': 10.5.0
+  'swiper@>=11.0.0 <12.1.2': 12.1.2
+  'serialize-javascript@<7.0.5': 7.0.5
+  'adm-zip@<0.6.1': 0.6.1
+  'decode-uri-component@<0.5.0': 0.5.0
+  'webpack-dev-server@<5.2.6': 5.2.6
+  'webpack-dev-middleware@<7.4.5': 7.4.5
   # Same-major security patches; test both Trainer and miniapp production builds.
   brace-expansion@^1.1.0: 1.1.21
   brace-expansion@^2.0.1: 2.1.7
@@ -22,3 +37,7 @@ overrides:
   'qs@>=6.0.0 <6.16.0': 6.16.0
   'fast-uri@>=3.0.0 <3.1.8': 3.1.8
   'http-cache-semantics@>=4.0.0 <4.1.1': 4.1.1
+
+patchedDependencies:
+  '@tarojs/webpack5-runner@4.2.1': patches/@tarojs__webpack5-runner@4.2.1.patch
+  download-git-repo@3.0.2: patches/download-git-repo@3.0.2.patch

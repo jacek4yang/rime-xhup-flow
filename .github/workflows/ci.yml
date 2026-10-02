@@ -170,6 +170,12 @@ jobs:
       - name: 安装依赖(pnpm 工作区)
         run: pnpm install --frozen-lockfile
 
+      - name: 下载与模板压缩依赖适配回归（本地服务器与合成归档）
+        run: TARO_ENV=weapp node --test tests/security/frontend-dependencies.test.cjs
+
+      - name: 前端完整依赖公告门禁（含开发工具，无忽略）
+        run: pnpm audit --audit-level low
+
       - name: 共享核心测试(含平台纯度守卫)
         run: pnpm core:test
 
