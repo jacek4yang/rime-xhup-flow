@@ -15,8 +15,18 @@ fn io_error(source: io::Error) -> LearningError {
     LearningError::SnapshotIo { source }
 }
 
+/// Unlock the shared open-file description before closing our descriptor.
+/// A concurrent subprocess spawn can briefly inherit it before CLOEXEC runs;
+/// relying on close alone would leave a completed operation spuriously busy.
+pub(super) struct OperationLock(File);
+impl Drop for OperationLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
 /// Stable inode; never unlink a lock that another process may already have open.
-pub(super) fn operation_lock(root: &Path) -> Result<File, LearningError> {
+pub(super) fn operation_lock(root: &Path) -> Result<OperationLock, LearningError> {
     let path = root.join(".xhup-flow-learning.lock");
     if let Ok(meta) = fs::symlink_metadata(&path)
         && (!meta.is_file() || meta.file_type().is_symlink())
@@ -35,7 +45,7 @@ pub(super) fn operation_lock(root: &Path) -> Result<File, LearningError> {
     let lock = options.open(path).map_err(io_error)?;
     lock.try_lock()
         .map_err(|_| blocked("another learning management operation is active"))?;
-    Ok(lock)
+    Ok(OperationLock(lock))
 }
 
 fn native_lock(db: &Path) -> Result<File, LearningError> {
@@ -225,6 +235,22 @@ mod tests {
         drop(first);
         assert!(operation_lock(&workspace.root).is_ok());
         assert!(workspace.root.join(".xhup-flow-learning.lock").is_file());
+    }
+    #[cfg(unix)]
+    #[test]
+    fn duplicated_descriptor_does_not_extend_operation_lifetime() {
+        let workspace = Workspace::new(&std::env::temp_dir()).unwrap();
+        let first = operation_lock(&workspace.root).unwrap();
+        // dup shares the same open-file description as a fork-inherited fd.
+        // Keeping it open deterministically models the pre-exec child window.
+        let inherited = first.0.try_clone().unwrap();
+        assert!(operation_lock(&workspace.root).is_err());
+        drop(first);
+        let next = operation_lock(&workspace.root).unwrap();
+        drop(inherited);
+        assert!(operation_lock(&workspace.root).is_err());
+        drop(next);
+        assert!(operation_lock(&workspace.root).is_ok());
     }
     #[test]
     fn only_recognized_native_files_are_owned() {
