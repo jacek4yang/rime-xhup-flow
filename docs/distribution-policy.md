@@ -50,3 +50,29 @@ qualification. Do not replace this gap with vocabulary growth or invented scores
 
 All public final artifacts must be rebuilt through normal packaging with this
 policy; old RC.2 artifacts are NOT made clean merely by editing repository policy.
+
+## Archive and data notices
+
+Packaging previously copied only YAML and Lua and silently omitted the generated
+source-policy TSV. `tests/release/rime_archive.py` now requires the complete
+22-file generated inventory, exact runtime/source-registry bytes, and eight
+installation/attribution/license files. It creates a deterministic ZIP, reopens
+it and compares every member byte-for-byte; missing, extra, private, duplicate,
+changed or symlinked inputs fail. The same data notice/license texts are bound
+into Trainer resources (separate from the vendored dependency notices).
+
+The pinyin-data MIT notice is copied from the same pinned source revision
+`923b108dc5d45dee061324c011b478fb649f8b73`, upstream `LICENSE` SHA-256
+`9c048697be2502a16e8bcb282d5d465a07295b2def0ffb05a269c5d39dbe1586`.
+The GPL v3 text incorporated by LGPL v3 is also supplied, copied verbatim from
+the distribution's `/usr/share/common-licenses/GPL-3` (GNU license text),
+SHA-256 `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`.
+CC BY and corpus Apache texts retain their existing repository source notices.
+
+The historical full `data/xhup/flypy_official_char_codes.tsv` also has no
+documented redistribution grant. It is not a normal compiler input, is now
+export-ignored from new source archives, and is explicitly forbidden in normal
+CLI dependency evidence. The small fact-only oracle remains distinct.
+Neither exclusion erases Git history or legalizes previous distributions.
+This is a concrete package/source-notice correction, not full transitive
+dependency-license/legal clearance or an updated runtime-quality result.

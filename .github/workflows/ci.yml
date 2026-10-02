@@ -88,8 +88,10 @@ jobs:
           python3 data/hanzi/reconstruct_readings.py \
             --source-dir /tmp/xhup-reading-inputs --check data/hanzi/readings.tsv
 
-      - name: 可分发来源门禁回归（合成 depfile，不是实际编译证据）
-        run: python3 -m unittest discover -s tests/release -p 'test_distribution_sources.py'
+      - name: 可分发来源与归档完整性回归（合成输入，不是实际编译证据）
+        run: |
+          python3 -m unittest discover -s tests/release -p 'test_distribution_sources.py'
+          python3 -m unittest discover -s tests/release -p 'test_rime_archive.py'
 
       - name: GLib 定界回移源码与许可门禁（不是忽略其它 advisories）
         run: |

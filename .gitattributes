@@ -12,6 +12,8 @@
 data/words/sogou/* export-ignore
 data/words/sogou/MANIFEST.tsv -export-ignore
 data/words/sogou/README.md -export-ignore
+# Historical full official dataset has no redistribution grant either.
+data/xhup/flypy_official_char_codes.tsv export-ignore
 
 # Keep audited upstream bytes stable on Windows too.
 vendor/glib/** -text
@@ -19,3 +21,5 @@ vendor/glib-macros/** -text
 vendor/gtk3-macros/** -text
 vendor/urlpattern/** -text
 vendor/proc-macro-error2/** -text
+data/hanzi/LICENSE.pinyin-data -text
+LICENSE.GPL-3.0 -text

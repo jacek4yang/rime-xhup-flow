@@ -28,6 +28,13 @@
     "active": true,
     "targets": "all",
     "resources": {
+      "../../rime/package/NOTICE.md": "licenses/RIME-DATA-NOTICE.md",
+      "../../LICENSE": "licenses/project-LGPL-3.0.txt",
+      "../../LICENSE.GPL-3.0": "licenses/GPL-3.0.txt",
+      "../../data/words/LICENSE.wanxiang": "licenses/wanxiang-CC-BY-4.0.txt",
+      "../../data/hanzi/LICENSE.pinyin-data": "licenses/pinyin-data-MIT.txt",
+      "../../data/corpus/LICENSE.kdconv": "licenses/kdconv-Apache-2.0.txt",
+      "../../data/corpus/LICENSE.ptt": "licenses/ptt-Apache-2.0.txt",
       "../../vendor/glib/LICENSE": "licenses/glib-MIT.txt",
       "../../vendor/glib/COPYRIGHT": "licenses/glib-COPYRIGHT.txt",
       "../../vendor/glib-macros/LICENSE": "licenses/glib-macros-MIT.txt",
