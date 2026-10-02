@@ -155,9 +155,10 @@ fn bounded_decode_matches_exhaustive_ranking_at_wide_beam() {
 }
 
 #[test]
-fn narrow_beam_truncates_and_loses_agreement_monotonically() {
-    // 窄 beam 会截断并丢失与参考排序的一致性;该读数记录真实代价,
-    // 防止把 beam 调窄当成「免费优化」。
+fn narrow_single_token_beam_keeps_the_same_objective_top1_but_reports_truncation() {
+    // 这里每个歧义 token 是单段完整路径;统一目标后,截断前即能正确排序。
+    // top1 一致不意味着完整菜单或多段路径无损;后者由 decoder 的延迟奖励
+    // 反例测试明确证明有限 beam 仍可能丢失最优路径。
     let scorer = KdconvBigramScorer::new(model());
     let narrow = bounded_decode_consistency(
         SENTENCES,
@@ -169,13 +170,11 @@ fn narrow_beam_truncates_and_loses_agreement_monotonically() {
         narrow.metrics.truncated > 0,
         "beam=2 必须出现截断(真实菜单扇出超过 2)"
     );
-    assert!(
-        narrow.metrics.top1_agreement < narrow.metrics.compared,
-        "beam=2 必须丢失部分 top1 一致性"
-    );
-    assert!(
-        narrow.metrics.top1_agreement_rate() > 0.9,
-        "仍应保持高一致率"
+    assert_eq!(narrow.metrics.compared, 2701);
+    assert_eq!(narrow.metrics.empty, 0);
+    assert_eq!(
+        narrow.metrics.top1_agreement, narrow.metrics.compared,
+        "单段完整路径应先按调用方目标排序,不能再丢失其 top1"
     );
 }
 
