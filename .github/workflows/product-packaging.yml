@@ -108,7 +108,7 @@ jobs:
   # ---------- 平台中立 Rime 源包:生成 + 结构校验 + librime 编译校验 ----------
   rime-package:
     name: Rime 源包
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
       rime_version: ${{ steps.meta.outputs.rime_version }}
@@ -136,6 +136,7 @@ jobs:
           set -euo pipefail
           cargo run -p xhup-cli --locked -- generate rime --output build/rime-package
           python3 tests/release/check_distribution_sources.py --depfile target/debug/xhup-cli.d
+          python3 tests/release/check_generated_runtime_sources.py build/rime-package
           # 顶层:12 个 YAML + 来源策略 TSV + lua/ 子目录。
           # 所有拥有文件非空;精确文件/字节由包清单与后续校验绑定。
           files="$(ls build/rime-package)"
@@ -159,7 +160,14 @@ jobs:
       - name: 安装 librime 编译校验环境
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends librime-bin rime-prelude pkg-config
+          sudo apt-get install -y --no-install-recommends \
+            librime-bin librime-dev librime-plugin-lua rime-prelude pkg-config \
+            liblua5.4-dev libopencc-dev libgoogle-glog-dev libboost-dev \
+            libmarisa-dev libyaml-cpp-dev libx11-dev darts
+          bash tests/librime/build-supported-lua.sh /tmp/xhup-package-lua
+          plugin=$(dpkg -L librime-plugin-lua | grep '/librime-lua.so$')
+          test -n "$plugin"
+          sudo install -m 755 /tmp/xhup-package-lua/librime-lua.so "$plugin"
 
       - name: librime 编译校验(临时目录部署两套方案)
         run: |
@@ -203,33 +211,11 @@ jobs:
           done
           echo "librime 编译校验通过:两套方案与 PRIMARY/FIXED_FIRST/Flow 词典编译成功"
 
-      - name: 真实部署路径回归守卫(schema/dependencies 编译辅助词典)
-        run: |
-          set -euo pipefail
-          work="$(mktemp -d)"
-          trap 'rm -rf "$work"' EXIT
-          shared="/usr/share/rime-data"
-          # 模拟真实 Weasel 部署:WorkspaceUpdate 按 schema_list 走完整
-          # 工作区更新,并经主方案 schema/dependencies 编译辅助词典。
-          # 不使用任何 wrapper 技巧 —— #43 真机缺陷(辅助词典静默失效)
-          # 只能由这条路径证明已修复且不可回归。
-          cp build/rime-package/*.yaml "$work/"
-          cp -r build/rime-package/lua "$work/"
-          cat > "$work/default.custom.yaml" <<'EOF'
-          patch:
-            schema_list:
-              - schema: xhup_flow
-          EOF
-          # schema_list 整体替换(而非 /+ 追加):rime-prelude 共享数据的
-          # 默认列表引用了大量本目录不存在的方案,追加会让 WorkspaceUpdate
-          # 以 missing schema 失败。真实用户目录由 Weasel 维护各自的列表。
-          rime_deployer --build "$work" "$shared"
-          for bin in build/xhup_flow.table.bin \
-                     build/xhup_flow_flow.table.bin \
-                     build/xhup_flow_learn.table.bin; do
-            [[ -s "$work/$bin" ]] || { echo "::error::真实部署路径未编译辅助词典: $bin(schema/dependencies 回归)"; exit 1; }
-          done
-          echo "真实部署路径回归守卫通过:主词典与 Flow/Learn 表完整"
+      - name: 真实部署路径回归守卫（单一原生表、实际 Flow/Static 输入）
+        run: tests/librime/run-deploy-audit.sh build/rime-package
+
+      - name: 发布包逐键与原生学习持久化门禁
+        run: XHUP_AUDIT_ONLY_REPLAY=1 XHUP_REPLAY_VERIFY_LEARNING=1 tests/librime/run-flow-audit.sh build/rime-package
 
       - name: 组装发布 zip(附安装说明)
         run: |
