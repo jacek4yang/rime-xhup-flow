@@ -29,6 +29,11 @@ Rust 离线 `xhup-decoder`、`native_lookup` 原型、历史 joint hook 和研�
 零学习，是兼容与隐私回退锚点。Weasel/Squirrel 常见发行包内置 Lua，不等于
 每个用户进程已经注册并启用了模块；Windows/macOS 按 README 由用户验收。
 
+有界学习还要求可用的原生 memorization callback、disconnect 和用户词典 tick
+接口；仅有 `Component.TableTranslator` 不够。旧版/部分回移的插件可能只能
+只读组句，显示 `bounded_api_unavailable`；存储与配额拒绝也会显示原因。
+CI 分别检查实际旧插件降级和固定源码新版的完整持久学习，不能互相替代。
+
 CLI doctor、Trainer 和 Lua 文件预检均不得把安装完整视为运行 PASS。
 实际注册、filter 执行、存储写入需要分别观察，未观察则为 Unknown。
 见 [runtime-capabilities.md](runtime-capabilities.md)。
