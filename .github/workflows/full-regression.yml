@@ -1,27 +1,11 @@
 name: Full Regression
 
-# 全量回归工作流:承载从 PR CI 移出的重型验证(#132)。
-#
-# 与 ci.yml 的分工:
-# - ci.yml(每个 PR / main push):快速确定性检查 —— fmt/clippy/测试、
-#   trainer 前端、轻量 librime 冒烟(分钟级);
-# - 本工作流(仅 main push / nightly / 手动):穷尽式 librime 审计、
-#   语料/可达性/兼容性全量门禁 —— 小时级,不在 PR 关键路径上。
-#
-# 触发:
-# - push main:每次合并落地即全量复核(发布前状态始终有完整回归背书);
-# - schedule:夜间兜底(捕获依赖漂移、环境变化导致的慢腐化);
-# - workflow_dispatch:手动触发(发布前复核、实验分支全量验证)。
-#
-# 不在 pull_request 上触发是刻意设计:任何 PR 都不能意外触发数小时的
-# 穷尽回归(消费 runner 配额、拖慢合并);PR 的快速门禁在 ci.yml。
-
+# Complete manifests, not samples. One immutable input artifact feeds 16
+# isolated runners; the final collector requires all partition receipts.
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   schedule:
-    # 每天 02:30 UTC(夜间;GitHub Actions 定时任务使用 UTC)。
     - cron: "30 2 * * *"
   workflow_dispatch:
 
@@ -29,35 +13,19 @@ permissions:
   contents: read
 
 concurrency:
-  # main push 与 nightly/手动可并行;同类触发取消旧的(cancel-in-progress)。
   group: full-regression-${{ github.event.schedule || github.ref }}
   cancel-in-progress: true
 
-env:
-  # 与 ci.yml 的 librime job 相同的部署基座。
-  NDK_VERSION: "27.2.12479018"
-
 jobs:
-  # ---------- 穷尽式 librime 审计(从 ci.yml 原样迁移) ----------
-  #
-  # 1,301,434 条 extended 词汇逐条经真实 librime 查询,并在学习后复核
-  # 完整 static 菜单;本地四分片基线约 3 小时。分片数由
-  # tests/librime/run-flow-audit.sh 的 XHUP_AUDIT_SHARDS 控制(默认 2)。
-  librime-full:
-    name: librime 全量审计(全静态等值 + 组句 + 学习 + 部署)
+  prepare:
+    name: 全量审计输入与部署门禁
     runs-on: ubuntu-24.04
-    # 实测 3h16m–5h00m,曾撞满 300 分钟超时(#113);360 留余量。
-    timeout-minutes: 360
-
+    timeout-minutes: 120
     steps:
-      - name: 检出仓库
-        uses: actions/checkout@v7
-
-      - name: 准备 Rust 工具链
+      - uses: actions/checkout@v7
+      - name: Rust 工具链
         run: rustup show
-
-      - name: 缓存 Cargo 下载
-        uses: actions/cache@v5
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -65,81 +33,124 @@ jobs:
           key: rust-librime-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '**/Cargo.toml') }}
           restore-keys: |
             rust-librime-${{ runner.os }}-
-
-      - name: 安装 librime 运行时与开发文件(不含 Lua 插件)
+      - name: librime 与固定 Lua 插件
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            librime-dev \
-            librime-bin \
-            rime-prelude \
-            pkg-config
-
-      - name: 安装 librime-lua 插件与 Lua 解释器
-        run: |
-          sudo apt-get install -y --no-install-recommends \
-            librime-plugin-lua \
-            lua5.4
-
-      - name: 固定源码 Lua 插件（与 PR 完整学习资格门禁一致）
-        run: |
-          sudo apt-get install -y --no-install-recommends \
-            liblua5.4-dev libopencc-dev libgoogle-glog-dev libboost-dev \
+            librime-dev librime-bin rime-prelude pkg-config librime-plugin-lua \
+            lua5.4 liblua5.4-dev libopencc-dev libgoogle-glog-dev libboost-dev \
             libmarisa-dev libyaml-cpp-dev libx11-dev darts
           bash tests/librime/build-supported-lua.sh /tmp/xhup-supported-lua
           plugin=$(dpkg -L librime-plugin-lua | grep '/librime-lua.so$')
           test -n "$plugin"
           sudo install -m 755 /tmp/xhup-supported-lua/librime-lua.so "$plugin"
-
-      - name: 打印 librime 环境
+      - name: 一次生成包与完整 manifests
         run: |
-          rime_deployer --help 2>&1 | head -3 || true
-          pkg-config --modversion rime || true
-          dpkg-query -W librime-dev librime-bin rime-prelude || true
-
-      - name: 生成 Rime 包
-        run: |
-          cargo run -p xhup-cli --locked -- generate rime --output /tmp/xhup-flow-package
+          mkdir /tmp/native-audit-input
+          cargo run -p xhup-cli --locked -- generate rime --output /tmp/native-audit-input/package
           python3 tests/release/check_distribution_sources.py --depfile target/debug/xhup-cli.d
-          python3 tests/release/check_generated_runtime_sources.py /tmp/xhup-flow-package
-
-      - name: 导出全静态菜单 manifest 并构建 xhup-cli
+          python3 tests/release/check_generated_runtime_sources.py /tmp/native-audit-input/package
+          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
+            --dump-static-menu-manifest /tmp/native-audit-input/static.manifest
+          for kind in extended open; do
+            if [[ "$kind" == extended ]]; then option=extended-reachability; else option=open-composition; fi
+            cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
+              "--dump-$option-manifest" "/tmp/native-audit-input/$kind.manifest"
+            cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
+              "--dump-$option-manifest" "/tmp/$kind.second.manifest"
+            cmp "/tmp/native-audit-input/$kind.manifest" "/tmp/$kind.second.manifest"
+          done
+          cp target/debug/xhup-cli /tmp/native-audit-input/xhup-cli
+          cp /tmp/xhup-supported-lua/librime-lua.so /tmp/native-audit-input/librime-lua.so
+          python3 tests/librime/audit_shards.py prepare --root /tmp/native-audit-input \
+            --revision "$GITHUB_SHA" --run "$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT" --count 16
+      - name: 部署、控制、Lua 与诊断门禁（没有移除原门禁）
         run: |
-          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
-            --dump-static-menu-manifest /tmp/static-menu.manifest
-          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
-            --dump-extended-reachability-manifest /tmp/extended-reachability.manifest
-          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
-            --dump-extended-reachability-manifest /tmp/extended-reachability.second.manifest
-          cmp /tmp/extended-reachability.manifest /tmp/extended-reachability.second.manifest
-          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
-            --dump-open-composition-manifest /tmp/open-composition.manifest
-          cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
-            --dump-open-composition-manifest /tmp/open-composition.second.manifest
-          cmp /tmp/open-composition.manifest /tmp/open-composition.second.manifest
-          cargo build -p xhup-cli --locked
+          package=/tmp/native-audit-input/package
+          tests/librime/run-runtime-smoke.sh "$package"
+          target/debug/xhup-cli doctor --user-data-dir "$package"
+          tests/librime/run-deploy-audit.sh "$package"
+          tests/librime/run-ime-controls.sh "$package"
+          tests/librime/run-lua-audit.sh "$package"
+          tests/librime/run-context-ranker-audit.sh "$package"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-audit-input
+          path: /tmp/native-audit-input/
+          if-no-files-found: error
+          retention-days: 14
 
-      # 纯静态回退与无插件降级门禁(与 ci.yml 的冒烟同一脚本,全量上下文)。
-      - name: librime session 冒烟(纯静态回退 + canonical v2 哨兵)
-        run: tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
+  librime-full:
+    name: librime 完整分片 ${{ matrix.shard }}
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: native-audit-input
+          path: /tmp/native-audit-input
+      - name: 安装同基座运行时与同字节 Lua 插件
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            librime-dev librime-bin rime-prelude pkg-config librime-plugin-lua lua5.4
+          plugin=$(dpkg -L librime-plugin-lua | grep '/librime-lua.so$')
+          test -n "$plugin"
+          sudo install -m 755 /tmp/native-audit-input/librime-lua.so "$plugin"
+          chmod +x /tmp/native-audit-input/xhup-cli
+          pkg-config --modversion rime
+          dpkg-query -W librime-dev librime-bin librime-plugin-lua lua5.4
+      - name: 全分片静态前后对照、extended/open、学习重启与 CLI 管理
+        run: |
+          python3 tests/librime/audit_shards.py run --root /tmp/native-audit-input \
+            --out /tmp/native-audit-results --revision "$GITHUB_SHA" \
+            --run "$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT" --index "${{ matrix.shard }}"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-audit-result-${{ matrix.shard }}
+          path: /tmp/native-audit-results/
+          if-no-files-found: error
+          retention-days: 14
 
-      - name: xhup-cli doctor 运行环境与 Lua 合同诊断
-        run: target/debug/xhup-cli doctor --user-data-dir /tmp/xhup-flow-package
-
-      - name: librime Flow 引擎审计(全静态等值 + 组句 + 学习持久化 + 学习管理)
-        run: >
-          tests/librime/run-flow-audit.sh /tmp/xhup-flow-package
-          /tmp/static-menu.manifest target/debug/xhup-cli
-          /tmp/extended-reachability.manifest /tmp/open-composition.manifest
-
-      - name: librime 真实部署路径审计(rime_deployer --build 全量构建 + 冒烟)
-        run: tests/librime/run-deploy-audit.sh /tmp/xhup-flow-package
-
-      - name: librime 日常输入控制(ASCII/标点/数字选择/翻页/Escape/Enter)
-        run: tests/librime/run-ime-controls.sh /tmp/xhup-flow-package
-
-      - name: librime Lua quick_hint 审计(真实插件:提示注释 + 次序不变)
-        run: tests/librime/run-lua-audit.sh /tmp/xhup-flow-package
-
-      - name: librime Lua context_ranker 审计(真实插件:恒等 + 有界提升 + 固定 rank-1 + OOV)
-        run: tests/librime/run-context-ranker-audit.sh /tmp/xhup-flow-package
+  coverage:
+    name: 全量覆盖与字节身份汇总
+    if: always()
+    needs: [prepare, librime-full]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: 所有分片必须成功（失败/取消/超时不能部分通过）
+        env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          AUDIT_RESULT: ${{ needs.librime-full.result }}
+        run: |
+          test "$PREPARE_RESULT" = success
+          test "$AUDIT_RESULT" = success
+      - uses: actions/download-artifact@v8
+        with:
+          name: native-audit-input
+          path: /tmp/native-audit-input
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: native-audit-result-*
+          path: /tmp/native-audit-results
+          merge-multiple: true
+      - name: 独立重算原始清单分区并校验全部日志与 receipts
+        run: |
+          python3 tests/librime/audit_shards.py collect --root /tmp/native-audit-input \
+            --out /tmp/native-audit-results --revision "$GITHUB_SHA" \
+            --run "$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-audit-complete-coverage
+          path: /tmp/native-audit-results/coverage.json
+          if-no-files-found: error
+          retention-days: 14
