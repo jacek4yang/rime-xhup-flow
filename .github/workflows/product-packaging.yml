@@ -222,12 +222,10 @@ jobs:
           set -euo pipefail
           ver="${{ steps.meta.outputs.rime_version }}"
           mkdir -p artifacts
-          stage="$(mktemp -d)"
-          trap 'rm -rf "$stage"' EXIT
-          cp build/rime-package/*.yaml "$stage/"
-          cp -r build/rime-package/lua "$stage/"
-          cp rime/package/INSTALL.md "$stage/"
-          (cd "$stage" && zip -q -r "$GITHUB_WORKSPACE/artifacts/xhup-flow-rime-v$ver.zip" *)
+          python3 tests/release/rime_archive.py create build/rime-package \
+            "artifacts/xhup-flow-rime-v$ver.zip"
+          python3 tests/release/rime_archive.py check build/rime-package \
+            "artifacts/xhup-flow-rime-v$ver.zip"
           (cd artifacts && sha256sum "xhup-flow-rime-v$ver.zip" > "xhup-flow-rime-v$ver.zip.sha256")
           ls -l artifacts/
 
@@ -481,6 +479,13 @@ jobs:
           cp target/release/bundle/rpm/*.rpm "artifacts/linux/xhup-flow-trainer-v$ver-linux-x86_64.rpm"
           for f in artifacts/linux/*; do [[ -s "$f" ]] || { echo "::error::产物为空: $f"; exit 1; }; done
           ls -l artifacts/linux/
+
+      - name: 从实际 deb 提取并校验全部许可资源字节
+        run: |
+          extracted="$(mktemp -d)"
+          trap 'rm -rf "$extracted"' EXIT
+          dpkg-deb -x artifacts/linux/*.deb "$extracted"
+          python3 tests/release/check_bundle_notices.py "$extracted/usr/lib/XHUP Flow"
 
       - name: 上传 Linux 产物
         uses: actions/upload-artifact@v7

@@ -30,24 +30,33 @@ clients: Weasel (Windows), Squirrel (macOS), Fcitx5-Rime / IBus-Rime
 | `lua/xhup_flow/quick_hint.lua` | 简码提示模块(追加纯 ASCII 简码注释) |
 | `lua/xhup_flow/init.lua` | Lua 命名空间入口与运行时合同自检模块 |
 | `lua/xhup_flow/data/quick_hints.lua` | 简码提示数据(生成器产出) |
+| `lua/xhup_flow/native_tail.lua` / `full_span.lua` | 有界原生边界候选与同文候选跨度处理 |
+| `lua/xhup_flow/context_ranker.lua` / `user_memory.lua` | 可选会话内上下文；不写按键日志或 TSV |
+| `lua/xhup_flow/joint_decoder.lua` | 不可用功能的兼容 shim，不是已交付联合解码器 |
+| `xhup_flow.sources.tsv` | clean-v1 来源策略与完整登记 |
+| `NOTICE.md` / `licenses/` | 数据署名、项目改动及许可文本（再分发须保留） |
 | `INSTALL.md` | 本说明(部署时无需复制) |
 
 **Lua 运行时合同与方案选择**:
-- 主方案 `xhup_flow`: 2.0 智能化主方案, 要求 `librime-lua` 运行时支持(在小狼毫 ≥0.15、鼠须管 ≥1.0、fcitx5-android 或安装了 `librime-plugin-lua` 的 Linux 桌面天然支持)。可通过 `xhup-cli doctor` 检查合同满足状态。
-- 纯静态方案 `xhup_flow_static`: 永久保留的纯静态方案, 零 Lua、零学习、零网络，100% 保留 v1.0.0 冻结肌肉记忆。若环境未安装 librime-lua 插件或需要最高度离线/基准对照，推荐选用该方案。
+- 主方案 `xhup_flow` 需要具有相应 API 的 `librime-lua`。客户端版本名本身不能证明
+  `TableTranslator`、字典查询及有界学习所需 API 可用；较旧插件可能只读降级。
+  `xhup-cli doctor` 区分文件/配置证据与未知的实时能力，不能替代逐键与重启测试。
+- `xhup_flow_static` 是零 Lua、零学习、零网络的兼容基准。其冻结 exact 菜单合同
+  不表示主方案每个中间 preedit 完全相同；无合适 Lua 插件时请使用此方案。
 - 本包完全遵循零 `rime.lua` 架构, 绝不触碰用户 `lua/` 目录下 `lua/xhup_flow/` 以外的任何文件。
 
-**为什么有 wrapper schema**:PRIMARY 与 FIXED_FIRST 是主词典的导入表；
-Flow / Learn 独立词典则经主方案 `schema/dependencies` 指向同名 wrapper
-schema，部署器(Weasel / rime_deployer)才会为它们生成 table.bin。缺失时
-组句与本地学习会静默失效。wrapper 不在任何 `schema_list` 中,不可被用户选择。
+**为什么有 wrapper schema**:PRIMARY 与 FIXED_FIRST 是静态主词典的导入表；
+默认主方案只依赖 Learn wrapper，它完整导入 Flow YAML 词汇并供单一原生
+组句/学习 provider 使用，不重复编译另一份 Flow table。
+Flow wrapper 保留作兼容/研究资源。wrapper 不在 `schema_list` 中，不供用户选择。
 
 两套方案同时安装;在输入法的方案菜单中选择 Flow 或 Static。
 
 ## 安装 / Install
 
-把上表中除 `INSTALL.md` 外的全部文件复制到 Rime 用户数据目录
-(`lua/` 子目录保持目录结构整体复制):
+把全部 YAML、`xhup_flow.sources.tsv` 与 `lua/` 复制到 Rime 用户数据目录
+（保持目录结构，不覆盖其它方案或用户状态）。在下载/备份处保留
+`INSTALL.md`、`NOTICE.md` 与 `licenses/`；再分发时必须一并携带：
 
 - Windows 小狼毫:`%APPDATA%\Rime`
 - macOS 鼠须管:`~/Library/Rime`
@@ -58,8 +67,9 @@ schema，部署器(Weasel / rime_deployer)才会为它们生成 table.bin。缺�
 然后在输入法菜单执行「重新部署」。Trainer 桌面应用的
 「输入法」控制中心可以自动完成上述安装、升级、修复与卸载。
 
-Copy all files except `INSTALL.md` into the Rime user data directory
-listed above, then trigger "Redeploy" from the input method menu. The
+Copy all YAML files, `xhup_flow.sources.tsv` and `lua/` into the Rime user
+data directory; retain INSTALL, NOTICE and licenses with your package.
+Then trigger "Redeploy" from the input method menu. The
 Trainer desktop app's Input Method control center automates install,
 update, repair and uninstall.
 
