@@ -438,3 +438,6 @@ jobs:
         run: |
           cargo test -p trainer --lib --locked
           cargo test -p xhup-cli --lib --locked
+
+      - name: 平台原生 Clippy（含 cfg 分支，不忽略警告）
+        run: cargo clippy -p trainer -p xhup-cli --lib --locked -- -D warnings
