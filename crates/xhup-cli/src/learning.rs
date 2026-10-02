@@ -12,8 +12,8 @@
 //!
 //! `rime_dict_manager` 的实测语义(librime 1.10/1.16):
 //! - 工具以**当前工作目录**为用户数据目录(librime deployer 默认
-//!   `.`;不支持环境变量重定向),因此全部调用以 `cwd = 用户数据目录`
-//!   执行;
+//!   `.`;不支持环境变量重定向);导入在用户目录执行,检查/导出只在
+//!   已锁定数据库的私有副本执行,避免改动所有权尚未确认的原件;
 //! - `-l` 列出该目录下的 `*.userdb`;
 //! - `-b <dict_name>` 备份快照到 `<用户数据目录>/sync/<user_id>/<词典名>.
 //!   userdb.txt`(user_id 取自 DB 元数据,默认 `unknown`);快照是 Rime
@@ -25,6 +25,8 @@
 //! import 校验文件名、内部身份、类型和版本,仅将验证后的私有副本交给
 //! 工具。拒绝缺失/重复/未知元数据,避免工具按恶意 `/db_name` 写入其它词典。
 
+#[path = "learning_safety.rs"]
+mod safety;
 #[path = "learning_snapshot.rs"]
 mod snapshot;
 
@@ -54,6 +56,8 @@ pub enum LearningError {
     SnapshotMissing { path: PathBuf },
     /// 快照文件名与目标词典不匹配(防误导入)。
     SnapshotNameMismatch { path: PathBuf, expected: String },
+    /// 管理操作缺少排他性或所有权证据。
+    UnsafeOperation { reason: String },
     /// 快照元数据未满足支持的身份/格式契约。
     InvalidSnapshot { reason: String },
     /// 读取或安全暂存失败。
@@ -79,6 +83,7 @@ pub enum LearningError {
 impl fmt::Display for LearningError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UnsafeOperation { reason } => write!(f, "学习管理已安全拒绝: {reason}"),
             Self::InvalidSnapshot { reason } => write!(f, "拒绝学习快照: {reason}"),
             Self::SnapshotIo { source } => write!(f, "读取/暂存学习快照失败: {source}"),
             Self::DictManagerNotFound { detail } => write!(
@@ -300,28 +305,13 @@ pub fn export(
     if !user_db_path(user_data_dir).is_dir() {
         return Err(LearningError::UserDictAbsent);
     }
+    let root = std::fs::canonicalize(user_data_dir)
+        .map_err(|source| LearningError::SnapshotIo { source })?;
+    let _operation = safety::operation_lock(&root)?;
     let manager = find_dict_manager(dict_manager)?;
-    run_in_user_dir(&manager, user_data_dir, &["-b", FLOW_USER_DICT_NAME])?;
-    let produced = find_existing_snapshot(user_data_dir).ok_or_else(|| {
-        LearningError::SnapshotNotProduced {
-            user_data_dir: user_data_dir.to_path_buf(),
-            stderr: format!(
-                "-b {} 后在 sync/ 下未找到 {}",
-                FLOW_USER_DICT_NAME,
-                snapshot_filename()
-            ),
-        }
-    })?;
-    let target = output_dir
-        .unwrap_or(user_data_dir)
-        .join(snapshot_filename());
-    if produced != target {
-        std::fs::copy(&produced, &target).map_err(|error| LearningError::ToolFailed {
-            program: manager.display().to_string(),
-            stderr: format!("复制快照失败: {error}"),
-        })?;
-    }
-    Ok(target)
+    let state =
+        safety::NativeState::inspect(&root, &manager)?.ok_or(LearningError::UserDictAbsent)?;
+    state.export_to(output_dir.unwrap_or(&root))
 }
 
 /// 从快照恢复用户词典(跨安装迁移)。
@@ -355,30 +345,27 @@ pub fn import(
         });
     }
     let staged = snapshot::Snapshot::read(snapshot)?;
+    let root = std::fs::canonicalize(user_data_dir)
+        .map_err(|source| LearningError::SnapshotIo { source })?;
+    let _operation = safety::operation_lock(&root)?;
     let manager = find_dict_manager(dict_manager)?;
+    // The native child acquires its own DB lock after ownership inspection.
+    drop(safety::NativeState::inspect(&root, &manager)?);
     // librime Restore removes its fixed .temp userdb; never destroy preexisting
-    // state there. Concurrent manager activity is a separate operation-lock gate.
-    if user_data_dir
-        .join(".temp.userdb")
-        .symlink_metadata()
-        .is_ok()
-    {
+    // state there. Our operation lock serializes Flow management clients.
+    if root.join(".temp.userdb").symlink_metadata().is_ok() {
         return Err(LearningError::InvalidSnapshot {
             reason: "native restore staging database already exists; stop active operations first"
                 .into(),
         });
     }
-    run_in_user_dir(
-        &manager,
-        user_data_dir,
-        &["-r", &staged.path.to_string_lossy()],
-    )?;
+    run_in_user_dir(&manager, &root, &["-r", &staged.path.to_string_lossy()])?;
     Ok(())
 }
 
 /// 重置用户词典(破坏性;必须显式 confirmed)。
 ///
-/// 只删除 `xhup_flow_user.userdb` 目录,绝不触碰其它 Rime 词典。
+/// 原生锁+私有副本验证内部身份,先隔离再删除;不删除重新创建的原路径。
 pub fn reset(user_data_dir: &Path, confirmed: bool) -> Result<(), LearningError> {
     if !user_data_dir.is_dir() {
         return Err(LearningError::UserDataDirMissing {
@@ -388,15 +375,19 @@ pub fn reset(user_data_dir: &Path, confirmed: bool) -> Result<(), LearningError>
     if !confirmed {
         return Err(LearningError::ResetNotConfirmed);
     }
-    let db_path = user_db_path(user_data_dir);
-    if !db_path.is_dir() {
-        // 无学习数据 = 已是空状态,幂等成功。
+    let root = std::fs::canonicalize(user_data_dir)
+        .map_err(|source| LearningError::SnapshotIo { source })?;
+    let _operation = safety::operation_lock(&root)?;
+    if user_db_path(&root)
+        .symlink_metadata()
+        .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+    {
         return Ok(());
     }
-    std::fs::remove_dir_all(&db_path).map_err(|source| LearningError::ResetFailed {
-        path: db_path,
-        source,
-    })?;
+    let manager = find_dict_manager(None)?;
+    if let Some(state) = safety::NativeState::inspect(&root, &manager)? {
+        state.reset()?;
+    }
     Ok(())
 }
 
@@ -444,8 +435,8 @@ mod tests {
         let other_db = dir.join("other_scheme.userdb");
         std::fs::create_dir_all(&flow_db).unwrap();
         std::fs::create_dir_all(&other_db).unwrap();
-        reset(&dir, true).unwrap();
-        assert!(!flow_db.exists(), "目标用户词典应被删除");
+        assert!(reset(&dir, true).is_err());
+        assert!(flow_db.exists(), "空目录不构成数据库所有权证据");
         assert!(other_db.exists(), "无关词典不得被删除");
         let _ = std::fs::remove_dir_all(&dir);
     }

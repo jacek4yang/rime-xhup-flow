@@ -323,6 +323,7 @@ const zh = {
   "errorCodes.snapshot_missing": "快照文件不存在。",
   "errorCodes.snapshot_name_mismatch": "快照文件与学习词典不匹配。",
   "errorCodes.invalid_snapshot": "快照内部身份或格式不受支持，已拒绝导入。",
+  "errorCodes.unsafe_learning_operation": "学习数据正在使用或所有权不明确；请停止输入法后重试。",
   "errorCodes.snapshot_io": "无法读取或安全暂存学习快照，请检查文件和权限。",
   "errorCodes.snapshot_not_produced":
     "导出未产出快照(词典可能正被输入法占用)。",
@@ -838,6 +839,7 @@ const en: Record<I18nKey, string> = {
   "errorCodes.snapshot_name_mismatch":
     "Snapshot does not match the learning dictionary.",
   "errorCodes.invalid_snapshot": "Unsupported snapshot identity or format; import refused.",
+  "errorCodes.unsafe_learning_operation": "Learning data is active or ownership is ambiguous. Stop the input method and retry.",
   "errorCodes.snapshot_io": "Cannot read or safely stage the snapshot. Check files and permissions.",
   "errorCodes.snapshot_not_produced":
     "Export produced no snapshot (the dictionary may be in use by the IME).",

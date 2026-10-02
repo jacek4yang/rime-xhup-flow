@@ -109,3 +109,111 @@ fn import_ownership_native_roundtrip_and_historical_migration() {
     assert_eq!(fs::read(temp.join("sentinel")).unwrap(), b"unowned");
     assert_eq!(tree(&foreign), before);
 }
+
+#[test]
+#[ignore = "requires real rime_dict_manager; run explicitly in librime CI"]
+fn renamed_foreign_database_is_never_modified_or_deleted() {
+    let manager = learning::which_dict_manager().unwrap();
+    let fixture = Fixture::new();
+    let user = fixture.0.join("user");
+    fs::create_dir(&user).unwrap();
+    let source = fixture.0.join("xhup_flow_user.userdb.txt");
+    fs::write(&source, snapshot("foreign_audit_dictionary", "1.16.1")).unwrap();
+    assert!(
+        Command::new(&manager)
+            .current_dir(&user)
+            .arg("-r")
+            .arg(&source)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let disguised = user.join("xhup_flow_user.userdb");
+    fs::rename(user.join("foreign_audit_dictionary.userdb"), &disguised).unwrap();
+    let before = tree(&disguised);
+    fs::write(&source, snapshot("xhup_flow_user", "1.16.1")).unwrap();
+    assert!(learning::export(&user, None, Some(&manager)).is_err());
+    assert!(learning::import(&user, &source, Some(&manager)).is_err());
+    assert!(learning::reset(&user, true).is_err());
+    assert_eq!(
+        tree(&disguised),
+        before,
+        "ownership inspection must not open original in librime"
+    );
+    assert!(!user.join("xhup_flow_user.userdb.txt").exists());
+    assert!(!user.join("foreign_audit_dictionary.userdb").exists());
+    #[cfg(unix)]
+    {
+        let linked_user = fixture.0.join("linked");
+        fs::create_dir(&linked_user).unwrap();
+        std::os::unix::fs::symlink(&disguised, linked_user.join("xhup_flow_user.userdb")).unwrap();
+        assert!(learning::export(&linked_user, None, Some(&manager)).is_err());
+        assert!(learning::import(&linked_user, &source, Some(&manager)).is_err());
+        assert!(learning::reset(&linked_user, true).is_err());
+        assert_eq!(tree(&disguised), before);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "requires real rime_dict_manager and Python POSIX lock holder"]
+fn active_native_lock_blocks_all_management_then_safe_reset_preserves_context() {
+    use std::time::{Duration, Instant};
+    struct ChildGuard(std::process::Child);
+    impl Drop for ChildGuard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let manager = learning::which_dict_manager().unwrap();
+    let fixture = Fixture::new();
+    let user = fixture.0.join("user");
+    fs::create_dir(&user).unwrap();
+    let source = fixture.0.join("xhup_flow_user.userdb.txt");
+    fs::write(&source, snapshot("xhup_flow_user", "1.16.1")).unwrap();
+    learning::import(&user, &source, Some(&manager)).unwrap();
+    let db = user.join("xhup_flow_user.userdb");
+    let before = tree(&db);
+    let ready = fixture.0.join("ready");
+    let child = ChildGuard(Command::new("python3").arg("-c")
+        .arg("import fcntl,sys,time; f=open(sys.argv[1],'r+b'); fcntl.lockf(f,fcntl.LOCK_EX|fcntl.LOCK_NB); open(sys.argv[2],'w').close(); time.sleep(30)")
+        .arg(db.join("LOCK")).arg(&ready).spawn().unwrap());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ready.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "external lock holder failed to start"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(learning::export(&user, None, Some(&manager)).is_err());
+    assert!(learning::import(&user, &source, Some(&manager)).is_err());
+    assert!(learning::reset(&user, true).is_err());
+    assert_eq!(tree(&db), before);
+    drop(child);
+
+    // Export never opens the original in a manager or rewrites its metadata.
+    let exported = learning::export(&user, None, Some(&manager)).unwrap();
+    assert!(fs::read_to_string(&exported).unwrap().contains("进去"));
+    assert_eq!(tree(&db), before);
+    // Never overwrite an unrelated/invalid selected export file.
+    fs::write(&exported, b"unowned").unwrap();
+    assert!(learning::export(&user, None, Some(&manager)).is_err());
+    assert_eq!(fs::read(&exported).unwrap(), b"unowned");
+
+    let contextual = user.join("xhup_flow_context.tsv");
+    fs::write(&contextual, b"separate context state").unwrap();
+    learning::reset(&user, true).unwrap();
+    assert!(!db.exists());
+    assert_eq!(fs::read(&contextual).unwrap(), b"separate context state");
+    assert_eq!(fs::read(&exported).unwrap(), b"unowned");
+    learning::reset(&user, true).unwrap();
+    assert!(!fs::read_dir(&user).unwrap().any(|e| {
+        e.unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".xhup-learning-")
+    }));
+}

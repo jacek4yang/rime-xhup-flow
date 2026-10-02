@@ -101,6 +101,7 @@ export const ERROR_CODES = [
   "snapshot_missing",
   "snapshot_name_mismatch",
   "invalid_snapshot",
+  "unsafe_learning_operation",
   "snapshot_io",
   "snapshot_not_produced",
   "user_dict_absent",
