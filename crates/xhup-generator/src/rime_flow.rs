@@ -122,13 +122,22 @@ pub fn generate_rime_flow_dictionary() -> String {
     // 与声码行可比的权重,任何「2 字全码分段」都结构性压倒「3+ 字
     // 声码分段」(CI librime 1.10 真机复现:tiogei 的 提|嗯|诶 被
     // 题|蛤 劫持)。修复(在 1.10 与 1.16 上同时成立):
-    // - 全码原语权重 = min(2, 组内排名):组内第一名 2、其余 1。它们
+    // - 全码原语权重:每个同码组第一名 2、其余 1。不能 clamp(rank,1,2),
+    //   因为原始 rank 是 N..1,clamp 会把前 N-1 名错误折叠为相同的 2。它们
     //   的语义是「奇数键流的可达性兜底」;跨分段的胜负由声码/词条行
     //   的频率证据决定。min(2,·) 保住同码组内第一名辨识(否则
     //   jbzqu 的 进|去 与 近|去 权重全平,poet 按词典文本序取 近去)。
     // - 官方声码行加成提到 1e8(log10≈8):保证「2 字全码 + 1 字声码
     //   相争」的 worst case(三字声码行均为官方)下声码分段有 ≥2
     //   nats 余量,不再依赖边际差(10M 加成时 tiogei 仅差 0.008)。
+    let mut best_by_code = std::collections::BTreeMap::new();
+    for entry in finalized_char_code_entries()
+        .iter()
+        .filter(|e| e.code().len() >= 3)
+    {
+        let best = best_by_code.entry(entry.code()).or_insert(0);
+        *best = (*best).max(entry.rime_weight());
+    }
     for entry in finalized_char_code_entries().iter() {
         let base = u32::try_from(entry.frequency_score())
             .unwrap_or(u32::MAX / 2)
@@ -136,7 +145,13 @@ pub fn generate_rime_flow_dictionary() -> String {
         let weight = match entry.code().len() {
             2 if entry.is_official() => 100_000_000u32.saturating_add(base),
             2 => base,
-            _ => entry.rime_weight().clamp(1, 2),
+            _ => {
+                if best_by_code.get(entry.code()) == Some(&entry.rime_weight()) {
+                    2
+                } else {
+                    1
+                }
+            }
         };
         rows.push((
             entry.hanzi().as_char().to_string(),
@@ -239,6 +254,46 @@ fn render_dictionary(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn full_code_prior_preserves_exactly_one_static_winner_per_code() {
+        use std::collections::BTreeMap;
+        let mut maxima = BTreeMap::new();
+        for entry in crate::char_codes::finalized_char_code_entries()
+            .iter()
+            .filter(|e| e.code().len() >= 3)
+        {
+            let best = maxima
+                .entry(entry.code().to_string())
+                .or_insert((0, entry.hanzi().as_char()));
+            if entry.rime_weight() > best.0 {
+                *best = (entry.rime_weight(), entry.hanzi().as_char());
+            }
+        }
+        let dictionary = super::generate_rime_flow_dictionary();
+        let mut winners = BTreeMap::new();
+        for line in dictionary.lines() {
+            let fields: Vec<_> = line.split('\t').collect();
+            if fields.len() != 3 || fields[0].chars().count() != 1 {
+                continue;
+            }
+            let Some((_, winner)) = maxima.get(fields[1]) else {
+                continue;
+            };
+            let character = fields[0].chars().next().unwrap();
+            assert_eq!(
+                fields[2],
+                if character == *winner { "2" } else { "1" },
+                "full-code prior must not collapse competing ranked characters: {}",
+                fields[1]
+            );
+            if fields[2] == "2" {
+                *winners.entry(fields[1].to_owned()).or_insert(0) += 1;
+            }
+        }
+        assert_eq!(winners.len(), maxima.len());
+        assert!(winners.values().all(|count| *count == 1));
+    }
+
     use super::*;
 
     #[test]
