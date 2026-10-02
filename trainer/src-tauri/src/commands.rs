@@ -77,6 +77,8 @@ pub struct ProductStatus {
     pub health: Option<InstallHealth>,
     /// 学习数据摘要。
     pub learning: Option<LearningSummary>,
+    /// 与 CLI 共用的证据模型;未经实际探测的 live 字段保持 Unknown。
+    pub runtime_capabilities: xhup_cli::runtime_capabilities::RuntimeCapabilities,
 }
 
 /// 计划执行结果。
@@ -131,6 +133,10 @@ pub fn product_status() -> Result<ProductStatus, CommandError> {
         .as_deref()
         .filter(|dir| dir.is_dir())
         .map(manager::learning_summary);
+    let runtime_capabilities = install
+        .as_ref()
+        .map(|status| manager::runtime_capabilities_with(status, &|path| path.is_file()))
+        .unwrap_or_default();
     Ok(ProductStatus {
         client,
         redeploy_guidance: client.redeploy_guidance().to_string(),
@@ -141,6 +147,7 @@ pub fn product_status() -> Result<ProductStatus, CommandError> {
         update_available,
         health,
         learning,
+        runtime_capabilities,
     })
 }
 

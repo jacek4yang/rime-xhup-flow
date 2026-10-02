@@ -41,6 +41,16 @@ function freshStatus(): ProductStatusDto {
     },
     health: "not_installed",
     bundled_version: "1.0.0",
+    runtime_capabilities: {
+      lua_payload: { state: "unknown", evidence: "none" },
+      lua_registered: { state: "unknown", evidence: "none" },
+      lua_filter_active: { state: "unknown", evidence: "none" },
+      live_evidence_provider: { state: "unknown", evidence: "none" },
+      contextual_decoder: { state: "unknown", evidence: "none" },
+      learning_configured: { state: "unknown", evidence: "none" },
+      storage_writable: { state: "unknown", evidence: "none" },
+      static_fallback_usable: { state: "unknown", evidence: "none" },
+    },
     update_available: false,
     learning: {
       user_dict: "xhup_flow_user",
@@ -94,6 +104,18 @@ describe("ControlCenterView", () => {
     resolveExplain!("词: 我们\t全码: womf\t全码rank: 1\n");
     expect(await screen.findByText(/全码: womf/)).toBeInTheDocument();
     expect(screen.queryByText("正在生成解释…")).not.toBeInTheDocument();
+  });
+
+  it("文件存在或安装完好不显示为已验证运行", async () => {
+    const status = freshStatus();
+    status.health = "healthy";
+    status.runtime_capabilities.lua_registered = { state: "available", evidence: "filesystem" };
+    status.runtime_capabilities.lua_filter_active = { state: "available", evidence: "configuration" };
+    invokeMock.mockImplementation((command: string) =>
+      command === "product_status" ? Promise.resolve(status) : Promise.reject(new Error(command)));
+    render(<ControlCenterView />);
+    expect(await screen.findByTestId("runtime-evidence")).toHaveTextContent("未验证（Unknown）");
+    expect(screen.getByText(/安装完好只代表文件状态/)).toBeInTheDocument();
   });
 
   it("展示安装状态卡(客户端、目录、未安装徽章)", async () => {

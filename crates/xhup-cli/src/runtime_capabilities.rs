@@ -1,12 +1,15 @@
 //! Shared capability vocabulary. File presence is never promoted to live evidence.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+use serde::Serialize;
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum State {
     Available,
     Unavailable,
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Evidence {
     Filesystem,
     Configuration,
@@ -14,7 +17,7 @@ pub enum Evidence {
     None,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct Capability {
     pub state: State,
     pub evidence: Evidence,
@@ -40,7 +43,7 @@ impl Capability {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RuntimeCapabilities {
     pub lua_payload: Capability,
     pub lua_registered: Capability,

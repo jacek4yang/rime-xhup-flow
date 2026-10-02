@@ -58,6 +58,16 @@ export interface LearningSummaryDto {
   tool_available: boolean;
 }
 
+/** CLI / Trainer 共用证据模型的序列化形态。文件存在不等于运行成功。 */
+export interface CapabilityDto {
+  state: "available" | "unavailable" | "unknown";
+  evidence: "filesystem" | "configuration" | "runtime" | "none";
+}
+export type RuntimeCapabilitiesDto = Record<
+  "lua_payload" | "lua_registered" | "lua_filter_active" | "live_evidence_provider" |
+  "contextual_decoder" | "learning_configured" | "storage_writable" | "static_fallback_usable",
+  CapabilityDto
+>;
 /** 控制中心完整产品状态。 */
 export interface ProductStatusDto {
   client: RimeClient;
@@ -69,6 +79,7 @@ export interface ProductStatusDto {
   update_available: boolean;
   health: InstallHealth | null;
   learning: LearningSummaryDto | null;
+  runtime_capabilities: RuntimeCapabilitiesDto;
 }
 
 /** 计划执行结果。 */
