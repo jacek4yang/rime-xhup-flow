@@ -54,7 +54,7 @@ class SourceIntegrityTests(unittest.TestCase):
     def test_binary_notice_collision_is_rejected(self):
         path = self.root / "trainer/src-tauri/tauri.conf.json"
         config = json.loads(path.read_text())
-        config["bundle"]["resources"]["../../vendor/urlpattern/LICENSE"] = "licenses/glib-MIT.txt"
+        config["bundle"]["resources"]["../../vendor/urlpattern/LICENSE"] = config["bundle"]["resources"]["../../vendor/glib/LICENSE"]
         path.write_text(json.dumps(config))
         with self.assertRaisesRegex(AssertionError, "colliding bundled notice"):
             check(self.root)

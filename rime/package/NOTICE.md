@@ -4,6 +4,9 @@
 `xhup_flow.sources.tsv` 分发；项目源码与构建记录位于
 https://github.com/jacek4yang/rime-xhup-flow 。
 
+下方文件路径指便携 Rime ZIP；Trainer 安装包将相同字节的许可按来源放在
+`licenses/<来源>/` 子目录，保留上游文件名，避免 Windows MSI 同名文件冲突。
+
 - 项目代码、方案配置和兼容字符编码来源：XHUP Flow 与
   https://github.com/boomker/rime-fast-xhup ，LGPL-3.0。
   项目进行了规范化、编码/权重编译、简码选择、组句和 Lua 行为调整，
