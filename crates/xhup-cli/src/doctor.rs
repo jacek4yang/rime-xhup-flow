@@ -69,7 +69,9 @@ pub struct DoctorReport {
     pub installed_schemas: Vec<String>,
     pub missing_core_files: Vec<String>,
     pub missing_lua_files: Vec<String>,
+    /// Legacy file/plugin-presence check, NOT live capability qualification.
     pub lua_contract_ok: bool,
+    pub capabilities: crate::runtime_capabilities::RuntimeCapabilities,
     pub messages: Vec<String>,
 }
 
@@ -119,7 +121,7 @@ impl DoctorReport {
         }
 
         out.push_str(&format!(
-            "2.0 Mandatory Lua 合同: {}\n",
+            "2.0 Mandatory Lua 文件合同（非实时注册/执行证据）: {}\n",
             if self.lua_contract_ok {
                 "满足 (PASS)"
             } else {
@@ -127,6 +129,7 @@ impl DoctorReport {
             }
         ));
 
+        out.push_str(&self.capabilities.format_report());
         if !self.messages.is_empty() {
             out.push_str("\n诊断与处理建议:\n");
             for msg in &self.messages {
@@ -276,7 +279,9 @@ where
         }
 
         if lua_contract_ok {
-            messages.push("xhup_flow 2.0 mandatory Lua 合同已满足。".to_string());
+            messages.push(
+                "Lua 文件/插件探测通过；实时注册、filter 激活和解码能力尚未验证。".to_string(),
+            );
         } else {
             messages.push(
                 "若无法在当前环境安装 librime-lua，请切换使用纯静态方案 xhup_flow_static。"
@@ -294,12 +299,24 @@ where
         messages.push(format!("未知目标方案: {target_schema}"));
     }
 
+    use crate::runtime_capabilities::{Capability, Evidence, RuntimeCapabilities};
+    let mut capabilities = RuntimeCapabilities::default();
+    // Built-in Windows/macOS plugin assumptions are NOT observed file presence.
+    if plugins_dir.is_some() || cfg!(target_os = "linux") {
+        capabilities.lua_payload = Capability::observed(
+            probe_system_lua_plugin_with(plugins_dir, file_exists).is_ok(),
+            Evidence::Filesystem,
+        );
+    }
+    messages.push("文件诊断不执行前端、探测写权限或证明静态回退可用；这些能力保留 Unknown，需真实运行时验收。".into());
+
     Ok(DoctorReport {
         user_data_dir: user_data_dir.to_path_buf(),
         installed_schemas,
         missing_core_files,
         missing_lua_files,
         lua_contract_ok,
+        capabilities,
         messages,
     })
 }

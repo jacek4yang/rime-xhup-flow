@@ -8,6 +8,7 @@
 pub mod acceptance;
 pub mod doctor;
 pub mod learning;
+pub mod runtime_capabilities;
 pub mod user_state;
 
 use std::error::Error;
