@@ -217,6 +217,14 @@ pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
             contents: lua_joint_decoder_source().to_string(),
         },
         RimeArtifact {
+            filename: "lua/xhup_flow/native_tail.lua",
+            contents: include_str!("../../../rime/lua/xhup_flow/native_tail.lua").to_owned(),
+        },
+        RimeArtifact {
+            filename: "lua/xhup_flow/full_span.lua",
+            contents: include_str!("../../../rime/lua/xhup_flow/full_span.lua").to_owned(),
+        },
+        RimeArtifact {
             filename: LUA_INIT_FILENAME,
             contents: lua_init_source().to_string(),
         },

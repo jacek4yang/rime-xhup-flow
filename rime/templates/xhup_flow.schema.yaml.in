@@ -83,8 +83,8 @@ engine:
   translators:
     - punct_translator
     - table_translator
-    - table_translator@flow
-    - table_translator@learn
+    # 单一原生翻译/学习提供者;有界结构边界规划保留原生候选与原生学习身份。
+    - lua_translator@*xhup_flow.native_tail
   filters:
     # 候选注释与简码提示(xhup_flow mandatory Lua 运行时合同组件):
     # 候选注释格式化并追加 ~<简码>,只追加不重排;缺失 librime-lua 时无法
@@ -108,6 +108,7 @@ engine:
     # joint lattice 守护诊断(§11/§14/R3):默认关闭(严格透传);开启后
     # 有界证据采集 + 重复词有界提升,永不越过静态强固定 rank-1。
     - lua_filter@*xhup_flow.joint_decoder
+    - lua_filter@*xhup_flow.full_span
     - uniquifier
 
 speller:
@@ -129,21 +130,46 @@ translator:
 # xhup_flow_user(句子候选属于用户词典语言,提交时 Memorize 学习
 # 其词条元素);initial_quality 100 与 primary 的 1000000 质量栅栏保证
 # 开放候选位于全部静态候选之后。
-# #150/#151 变长分段 + 未完尾缀:completion 允许 Flow translator 对
-# 「已解码前缀 + 未完成尾键」保持候选(尾键作为待定前缀给出以其开头
-# 的码位延伸候选),菜单不因最后一个码未完成而塌缩。completion 候选
-# 位于 exact/sentence 之后(sentence_over_completion),静态强固定
-# rank-1 与 exact 候选的次序不受影响。
+# completion 只负责原生字典预测,不保证「已解码前缀 + 未完成尾码」。
+# #150/#151 由 native_tail 有界原生查询保留前缀及末段替代边界,
+# full_span 在去重前保留完整跨度。结构规划按最少词边选择边界,
+# 不伪造词频;词边、候选与学习均来自原生提供者,原生候选尾流保留。
+# 逐键、选择、上屏与学习重启合同由真实 librime 回放检查。
+# 只读词边探测器不绑定用户数据库,不注册第二个学习事务写入者。
+flow_lookup:
+  dictionary: xhup_flow_learn
+  enable_user_dict: false
+
+# Old librime-lua cannot intercept native memorization. Keep typing available
+# without constructing a writer; native_tail verifies this explicit false flag.
+flow_readonly:
+  dictionary: xhup_flow_learn
+  enable_completion: true
+  enable_sentence: true
+  sentence_over_completion: true
+  enable_user_dict: false
+  enable_encoder: false
+  encode_commit_history: false
+  initial_quality: 100
+
 flow:
-  dictionary: xhup_flow_flow
+  # Native tick-based update quota. Exhaustion pauses learning, never typing;
+  # reset/import is explicit, and no second Lua persistence ledger is used.
+  learning_max_updates: 65536
+  dictionary: xhup_flow_learn
   user_dict: xhup_flow_user
   enable_completion: true
   enable_sentence: true
   sentence_over_completion: true
   enable_user_dict: true
+  enable_encoder: true
+  encode_commit_history: true
+  max_phrase_length: 20
+  max_homographs: 1
   initial_quality: 100
 
-# learn translator:学习短语编码(encoder)。学习词典 xhup_flow_learn
+# 历史 learn 配置保留用于外部定制迁移,不再注册第二个 translator。
+# 编码由上方单一 flow 提供者负责。学习词典 xhup_flow_learn
 # 通过 import_tables 继承完整 Flow 关系并追加 3/4 键单字全码原语，
 # 保证两个 translator 共享 xhup_flow_user 时 syllable-id 空间一致。
 # enable_sentence false 避免单字组句产生退化句子；本层 Memorize 触发

@@ -76,9 +76,14 @@ if [[ -z "$ONLY_LEARNING" && -z "$MANIFEST" ]]; then
 fi
 SHARED_DATA_DIR=${RIME_SHARED_DATA_DIR:-/usr/share/rime-data}
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+python3 "$SCRIPT_DIR/../release/check_generated_runtime_sources.py" "$PACKAGE_DIR"
 
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+if [[ "${XHUP_AUDIT_KEEP_WORK:-0}" == 1 ]]; then
+  trap 'echo "Retained synthetic audit directory: $work" >&2' EXIT
+else
+  trap 'rm -rf "$work"' EXIT
+fi
 
 CFLAGS="-O2 -Wall -Wextra -Werror"
 
@@ -131,6 +136,7 @@ patch:
 EOF
   if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
     printf 'patch:\n  flow/enable_user_dict: false\n  learn/enable_user_dict: false\n' > "$dir/xhup_flow.custom.yaml"
+    printf 'patch:\n  schema_list/+ :\n    - schema: xhup_flow\n  menu/page_size: 5\n' > "$dir/default.custom.yaml"
   fi
   rime_deployer --compile "$dir/$schema_id.schema.yaml" "$dir" \
     "$SHARED_DATA_DIR" >/dev/null
@@ -173,7 +179,71 @@ done
 if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
   cc $CFLAGS -std=c11 "$SCRIPT_DIR/runtime_replay.c" $(pkg-config --cflags --libs rime) -o "$work/replay"
   "$work/replay" "$flow_dir" "$SHARED_DATA_DIR" "${XHUP_REPLAY_MODE:---qualify}"
-  exit $?
+  cc $CFLAGS -std=c11 "$SCRIPT_DIR/runtime_extended.c" $(pkg-config --cflags --libs rime) -o "$work/extended"
+  "$work/extended" "$flow_dir" "$SHARED_DATA_DIR" --stress
+  if [[ "${XHUP_REPLAY_VERIFY_READONLY:-0}" == 1 ]]; then
+    # Intentionally request learning on the OLD binding. Partial API backports
+    # may initialize empty metadata, but must disconnect before any user update.
+    printf 'patch:\n  flow/enable_user_dict: true\n  learn/enable_user_dict: true\n' > "$flow_dir/xhup_flow.custom.yaml"
+    rime_deployer --compile "$flow_dir/xhup_flow.schema.yaml" "$flow_dir" "$SHARED_DATA_DIR" >/dev/null
+    for restart in 1 2; do
+      "$work/extended" "$flow_dir" "$SHARED_DATA_DIR" --learn-unavailable
+      if [[ -e "$flow_dir/xhup_flow_user.userdb" ]]; then
+        (cd "$flow_dir" && rime_dict_manager -e xhup_flow_user "$work/readonly-$restart.tsv")
+      else
+        : > "$work/readonly-$restart.tsv"
+      fi
+      [[ -z "$(exported_entries "$work/readonly-$restart.tsv")" ]] || {
+        echo "FAIL old binding learned records" >&2; exit 1;
+      }
+    done
+    cmp "$work/readonly-1.tsv" "$work/readonly-2.tsv"
+    echo "PASS old binding: no learned entries, unchanged native export across restart"
+  fi
+  if [[ "${XHUP_REPLAY_VERIFY_LEARNING:-0}" == 1 ]]; then
+    if [[ -d "$flow_dir/xhup_flow_user.userdb" ]]; then
+      (cd "$flow_dir" && rime_dict_manager -e xhup_flow_user "$work/off.tsv")
+      [[ -z "$(exported_entries "$work/off.tsv")" ]] || { echo "FAIL learning-off wrote records" >&2; exit 1; }
+    fi
+    printf 'patch:\n  flow/enable_user_dict: true\n  learn/enable_user_dict: true\n' > "$flow_dir/xhup_flow.custom.yaml"
+    rime_deployer --compile "$flow_dir/xhup_flow.schema.yaml" "$flow_dir" "$SHARED_DATA_DIR" >/dev/null
+    for count in 1 2; do
+      "$work/extended" "$flow_dir" "$SHARED_DATA_DIR" --learn-once
+      (cd "$flow_dir" && rime_dict_manager -e xhup_flow_user "$work/once.tsv")
+      python3 - "$work/once.tsv" "$count" <<'PY'
+import re
+import sys
+rows = {}
+for line in open(sys.argv[1], encoding="utf-8"):
+    if line.startswith("#"):
+        continue
+    fields = line.rstrip("\n").split("\t")
+    if len(fields) >= 3:
+        match = re.search(r"(?:^|\s)c=(\d+)", fields[2])
+        count = int(match.group(1)) if match else int(fields[2].strip())
+        rows[(fields[0], fields[1].strip())] = count
+for key in [("你", "ni"), ("好", "hcnz"), ("去", "qu")]:
+    assert rows.get(key) == int(sys.argv[2]), (key, rows.get(key), sys.argv[2])
+print("PASS one native update per component per commit across process restart")
+PY
+    done
+    "$work/replay" "$flow_dir" "$SHARED_DATA_DIR" --learn
+    (cd "$flow_dir" && rime_dict_manager -e xhup_flow_user "$work/learn.tsv")
+    # Exact boundary-provider learning identity; no delimiter or foreign code.
+    grep -E '^你[[:space:]]+ni[[:space:]]' "$work/learn.tsv"
+    grep -E '^好[[:space:]]+hcnz[[:space:]]' "$work/learn.tsv"
+    "$work/replay" "$flow_dir" "$SHARED_DATA_DIR" --learn
+    echo 'PASS native genuine identity, variant code persistence and process restart' >&2
+    # Refuse updates using the native persisted tick, without a second Lua ledger.
+    printf 'patch:\n  flow/enable_user_dict: true\n  flow/learning_max_updates: 0\n  learn/enable_user_dict: true\n' > "$flow_dir/xhup_flow.custom.yaml"
+    rime_deployer --compile "$flow_dir/xhup_flow.schema.yaml" "$flow_dir" "$SHARED_DATA_DIR" >/dev/null
+    (cd "$flow_dir" && rime_dict_manager -e xhup_flow_user "$work/quota-before.tsv")
+    "$work/extended" "$flow_dir" "$SHARED_DATA_DIR" --learn-blocked
+    (cd "$flow_dir" && rime_dict_manager -e xhup_flow_user "$work/quota-after.tsv")
+    cmp "$work/quota-before.tsv" "$work/quota-after.tsv"
+    echo 'PASS native quota refuses mutation across restart while typing still works' >&2
+  fi
+  exit 0
 fi
 
 cc $CFLAGS -o "$work/audit" "$SCRIPT_DIR/runtime_flow_audit.c" \
@@ -374,10 +444,10 @@ fi
 #   3) 该码在全新进程中必须仍能定位到该词形(重启持久化)。
 learn_script=$work/learn.txt
 cat > "$learn_script" <<'EOF'
-commit womf 1
-commit uijm 1
-commit womfuijm 1
-commit womfuijm 1
+commit-text womf 我们
+commit-text uijm 时间
+commit-text womfuijm 我们时间
+commit-text womfuijm 我们时间
 EOF
 
 # 干净对照:学习前导出不得含将被学习的词形。

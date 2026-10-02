@@ -232,7 +232,8 @@ jobs:
 
   librime:
     name: librime runtime smoke
-    runs-on: ubuntu-latest
+    # Keep the old-binding fallback reproducible alongside the pinned new binding.
+    runs-on: ubuntu-24.04
     # 轻量冒烟(#132):真实 librime 会话 + Lua 合同/单测/仿真 + 真实插件
     # Lua 审计 + 日常输入控制,全部分钟级。穷尽式审计(全静态等值 1.3M 项
     # 流程、rime_deployer --build 全量部署)已移至 full-regression.yml
@@ -281,20 +282,38 @@ jobs:
         run: |
           cargo run -p xhup-cli --locked -- generate rime --output /tmp/xhup-flow-package
           python3 tests/release/check_distribution_sources.py --depfile target/debug/xhup-cli.d
+          python3 tests/release/test_generated_runtime_sources.py
+          python3 tests/release/check_generated_runtime_sources.py /tmp/xhup-flow-package
 
       - name: 构建 xhup-cli(doctor 与学习管理使用)
         run: cargo build -p xhup-cli --locked
 
       # 纯静态回退与无插件降级门禁: xhup_flow_static 保持零 Lua 运行,
-      # 主方案 xhup_flow 在无插件环境亦能安全回退(docs/lua-runtime.md §2)。
-      - name: librime session 冒烟(纯静态回退 + canonical v2 哨兵)
-        run: tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
+      # 无插件时只承诺独立 Static;主方案的原生边界提供者需要 Lua。
+      - name: librime session 冒烟(无插件纯静态回退)
+        run: XHUP_SMOKE_STATIC_ONLY=1 tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
 
       - name: 安装 librime-lua 插件与 Lua 解释器
         run: |
           sudo apt-get install -y --no-install-recommends \
             librime-plugin-lua \
             lua5.4
+
+      - name: 旧版 Lua 只读降级（真实输入、明确拒绝学习、重启无写入）
+        run: XHUP_AUDIT_ONLY_REPLAY=1 XHUP_REPLAY_VERIFY_READONLY=1 tests/librime/run-flow-audit.sh /tmp/xhup-flow-package
+
+      - name: 构建并安装具备有界学习 API 的固定源码 Lua 插件
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            liblua5.4-dev libopencc-dev libgoogle-glog-dev libboost-dev \
+            libmarisa-dev libyaml-cpp-dev libx11-dev darts
+          bash tests/librime/build-supported-lua.sh /tmp/xhup-supported-lua
+          plugin=$(dpkg -L librime-plugin-lua | grep '/librime-lua.so$')
+          test -n "$plugin"
+          sudo install -m 755 /tmp/xhup-supported-lua/librime-lua.so "$plugin"
+
+      - name: librime session 冒烟(固定新版 Lua 环境的完整 Flow + Static)
+        run: tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
 
       - name: Lua runtime 合同与自检单测(lua5.4,不依赖 librime)
         run: lua5.4 tests/lua/test_contract.lua
@@ -306,6 +325,8 @@ jobs:
         run: |
           lua5.4 tests/lua/test_context_ranker.lua
           lua5.4 tests/lua/test_ranker_stream.lua
+          lua5.4 tests/lua/test_native_tail.lua
+          lua5.4 tests/lua/test_full_span.lua
 
       - name: Lua user_memory 纯逻辑单测(lua5.4,不依赖 librime)
         run: |
@@ -333,6 +354,9 @@ jobs:
 
       - name: xhup-cli doctor 运行环境与 Lua 合同诊断
         run: target/debug/xhup-cli doctor --user-data-dir /tmp/xhup-flow-package
+
+      - name: librime 逐键资格门禁（尾码、分段、编辑与完整提交）
+        run: XHUP_AUDIT_ONLY_REPLAY=1 XHUP_REPLAY_VERIFY_LEARNING=1 tests/librime/run-flow-audit.sh /tmp/xhup-flow-package
 
       - name: librime Lua quick_hint 审计(真实插件:提示注释 + 次序不变)
         run: tests/librime/run-lua-audit.sh /tmp/xhup-flow-package

@@ -112,8 +112,10 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
             "lua/xhup_flow/annotation.lua",
             "lua/xhup_flow/context_ranker.lua",
             "lua/xhup_flow/data/quick_hints.lua",
+            "lua/xhup_flow/full_span.lua",
             "lua/xhup_flow/init.lua",
             "lua/xhup_flow/joint_decoder.lua",
+            "lua/xhup_flow/native_tail.lua",
             "lua/xhup_flow/quick_hint.lua",
             "lua/xhup_flow/user_memory.lua",
             "xhup_flow.dict.yaml",
@@ -170,13 +172,20 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
     let schema = fs::read_to_string(output.join("xhup_flow.schema.yaml")).unwrap();
     assert!(schema.contains("xhup_flow"), "方案应引用 xhup_flow");
     assert!(
-        schema.contains("table_translator@flow"),
-        "主方案应含 Flow 组句 translator"
+        schema.contains("    - lua_translator@*xhup_flow.native_tail"),
+        "主方案应由有界原生 provider 统一提供 Flow 候选"
     );
+    for duplicate in [
+        "    - table_translator@flow",
+        "    - table_translator@learn",
+    ] {
+        assert!(!schema.contains(duplicate), "不得注册重复原生学习写入器");
+    }
     let static_schema = fs::read_to_string(output.join("xhup_flow_static.schema.yaml")).unwrap();
     assert!(
-        !static_schema.contains("table_translator@flow"),
-        "静态兼容方案不得含 Flow translator"
+        !static_schema.contains("table_translator@flow")
+            && !static_schema.contains("xhup_flow.native_tail"),
+        "静态兼容方案不得含 Flow translator 或有界 provider"
     );
 
     fs::remove_dir_all(&output).unwrap();

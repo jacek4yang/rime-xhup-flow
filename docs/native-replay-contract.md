@@ -3,19 +3,24 @@
 `tests/librime/runtime_replay.c` uses real librime and asserts Lua registration.
 It runs only in an isolated generated-package deployment. It records each key,
 raw input, composition/preedit, selected range, candidate texts, target/prefix
-rank and keypress time. Search is explicitly bounded at 256 candidates; the first
+rank, keypress time, key-to-first-menu time (including `get_context`), and
+bounded top-256 probe time. The replay fixture uses a five-candidate page. Search is explicitly bounded at 256 candidates; the first
 16 menu entries are captured. Absence within that bound is not proof of absence
 from every possible native path. Fixed public regression strings are not user
 corpus data. No runtime telemetry is added. The isolated replay fixture disables
 native learning in compiled `flow/enable_user_dict` and `learn/enable_user_dict`
 configuration and asserts those values through the actual Rime API; a similarly
-named context switch does NOT turn native learning off. Learning-on persistence
-is a separate native suite.
+named context switch does NOT turn native learning off. `XHUP_REPLAY_VERIFY_LEARNING=1` additionally checks learning-off export,
+recompiles with native learning enabled, checks native code identities in exported
+records, verifies exact once-per-component update counts across two fresh
+processes, and repeats the whole replay after restart. `runtime_extended.c`
+also checks 128 keys, internal caret editing, and multi-delimiter pending selection.
 
 Run the hard gate:
 
 ```sh
-XHUP_AUDIT_ONLY_REPLAY=1 tests/librime/run-flow-audit.sh PACKAGE_DIRECTORY
+XHUP_AUDIT_ONLY_REPLAY=1 XHUP_REPLAY_VERIFY_LEARNING=1 \
+  tests/librime/run-flow-audit.sh PACKAGE_DIRECTORY
 ```
 
 It returns failure if any contract fails. `XHUP_REPLAY_MODE=--observe` is an
@@ -62,6 +67,11 @@ requiring a path reaching the full input length. Prefix phrases subsequently
 returned are not n-best complete paths. Full-input completion is not equivalent
 to a decoded sentence followed by a pending suffix. Native ScriptTranslator and
 minimal-policy alternatives must be measured before choosing a replacement.
+
+The current bounded structural/native proposal and discarded hypotheses are
+documented in [native-tail-investigation.md](native-tail-investigation.md).
+`XHUP_AUDIT_KEEP_WORK=1` retains the synthetic deployment for debugging; never use
+real user dictionaries in this fixture. Normal runs remove the temporary tree.
 
 This document is an executable test contract and investigation status, not a
 claim that shipped production already satisfies it. Static compatibility remains

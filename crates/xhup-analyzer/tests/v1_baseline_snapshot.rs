@@ -124,11 +124,11 @@ fn generated_package_bytes_match_v1_release_snapshot() {
         "v1 历史发布快照记录 36845122 源码字节"
     );
 
-    // 当前 2.0 包:12 YAML + 7 Lua + 1 clean-v1 来源策略 TSV。
+    // 当前 2.0 包:12 YAML + 9 Lua + 1 clean-v1 来源策略 TSV。
     let artifacts = generate_rime_artifacts();
     assert_eq!(
         artifacts.len(),
-        20,
+        22,
         "2.0 包含运行时模块和精确来源策略元数据"
     );
 

@@ -16,6 +16,7 @@ static int failures, checks, observe;
 typedef struct {
   char input[256], preedit[TEXT], menu[HEAD][TEXT];
   int count, target_rank, prefix_rank, sel_start, sel_end;
+  long long menu_ready_ns;
 } State;
 
 static void copy(char *dst, size_t size, const char *src) {
@@ -59,6 +60,7 @@ static State snapshot(RimeSessionId s, const char *target, const char *prefix) {
     out.sel_start = ctx.composition.sel_start; out.sel_end = ctx.composition.sel_end;
     r->free_context(&ctx);
   }
+  out.menu_ready_ns = now(); /* Includes actual first-page materialization. */
   RimeCandidateListIterator it = {0};
   if (r->candidate_list_begin(s, &it)) {
     for (int i = 0; i < LOOKUP && r->candidate_list_next(&it); ++i) {
@@ -76,7 +78,8 @@ static State step(RimeSessionId s, const char *name, int key, const char *target
   long long elapsed = now() - before;
   State state = snapshot(s, target, prefix);
   printf("{\"case\":"); json(name);
-  printf(",\"key\":%d,\"handled\":%d,\"keypress_ns\":%lld,\"raw\":", key, handled, elapsed); json(state.input);
+  printf(",\"key\":%d,\"handled\":%d,\"keypress_ns\":%lld,\"key_to_menu_ns\":%lld,\"bounded_probe_ns\":%lld,\"raw\":",
+      key, handled, elapsed, state.menu_ready_ns - before, now() - before); json(state.input);
   printf(",\"preedit\":"); json(state.preedit);
   printf(",\"selection\":[%d,%d],\"target_rank\":%d,\"prefix_rank\":%d,\"head\":[",
       state.sel_start, state.sel_end, state.target_rank, state.prefix_rank);
@@ -118,9 +121,10 @@ static void selected_commit(RimeSessionId s, const State *state, const char *tar
   if (duplicate) r->free_commit(&commit);
 }
 int main(int argc, char **argv) {
-  if (argc != 4) { fprintf(stderr, "usage: %s USER SHARED --qualify|--observe\n", argv[0]); return 2; }
+  if (argc != 4) { fprintf(stderr, "usage: %s USER SHARED --qualify|--observe|--learn\n", argv[0]); return 2; }
   observe = !strcmp(argv[3], "--observe");
-  if (!observe && strcmp(argv[3], "--qualify")) return 2;
+  int learning = !strcmp(argv[3], "--learn");
+  if (!observe && !learning && strcmp(argv[3], "--qualify")) return 2;
   r = rime_get_api();
   RIME_STRUCT(RimeTraits, traits);
   traits.user_data_dir = argv[1]; traits.shared_data_dir = argv[2];
@@ -130,11 +134,11 @@ int main(int argc, char **argv) {
   RimeConfig config = {0};
   if (!r->schema_open("xhup_flow", &config)) return 2;
   Bool enabled = True;
-  check(r->config_get_bool(&config, "flow/enable_user_dict", &enabled) && !enabled,
-        "Flow native learning genuinely disabled in compiled fixture");
+  check(r->config_get_bool(&config, "flow/enable_user_dict", &enabled) && !!enabled == learning,
+        "Flow compiled native learning matches requested test mode");
   enabled = True;
-  check(r->config_get_bool(&config, "learn/enable_user_dict", &enabled) && !enabled,
-        "learn translator native learning genuinely disabled in compiled fixture");
+  check(r->config_get_bool(&config, "learn/enable_user_dict", &enabled) && !!enabled == learning,
+        "learn translator compiled native learning matches requested test mode");
   r->config_close(&config);
   if (!RIME_API_AVAILABLE(r, candidate_list_begin) || !RIME_API_AVAILABLE(r, get_input)) return 2;
 
@@ -173,6 +177,41 @@ int main(int argc, char **argv) {
   check(!cleared.input[0], "clear/reset empties raw composition");
   r->destroy_session(s);
 
+  /* Selecting the pending prefix must not commit/drop/duplicate its raw tail. */
+  s = start();
+  State partial = type(s, "pending-selection", expected, sentence, sentence);
+  check(partial.target_rank >= 0, "pending exact prefix selectable");
+  if (partial.target_rank >= 0) {
+    check(r->select_candidate(s, (size_t)partial.target_rank), "pending selection accepted");
+    RIME_STRUCT(RimeCommit, early);
+    char prior[TEXT] = "";
+    if (r->get_commit(s, &early)) {
+      copy(prior, sizeof(prior), early.text); r->free_commit(&early);
+      check(!strcmp(prior, sentence), "early partial commit contains only selected prefix");
+    }
+    const char *raw = r->get_input(s);
+    check(raw && *raw && raw[strlen(raw)-1] == 'd', "partial selection preserves pending d");
+    State last = step(s, "pending-selection", 'e', "的", NULL);
+    check(last.target_rank >= 0, "pending tail can finish after selection");
+    if (last.target_rank >= 0) {
+      check(r->select_candidate(s, (size_t)last.target_rank), "finished tail selectable");
+      RIME_STRUCT(RimeCommit, final);
+      int committed = r->get_commit(s, &final);
+      if (!committed) {
+        r->commit_composition(s); RIME_STRUCT_INIT(RimeCommit, final);
+        committed = r->get_commit(s, &final);
+      }
+      check(committed, "pending selection final commit");
+      if (committed) {
+        char joined[TEXT*2];
+        snprintf(joined, sizeof(joined), "%s%s", prior, final.text ? final.text : "");
+        check(!strcmp(joined, "你好这个输入法我觉得速度还是可以的"), "partial plus tail committed exactly once");
+        r->free_commit(&final);
+      }
+    }
+  }
+  r->destroy_session(s);
+
   /* Real character mappings, not fixed chunking or dictionary additions. */
   const char *left[] = {"ni", "nir", "nirx"}, *right[] = {"hc", "hcn", "hcnz"};
   for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) {
@@ -186,8 +225,21 @@ int main(int argc, char **argv) {
     selected_commit(s, &b, "你好", name);
     r->destroy_session(s);
   }
+  /* Independently authored multi-boundary probes; not added to any dictionary. */
+  const char *triples[][2] = {
+    {"nihcnzqu", "你好去"}, {"nirxhcnzqu", "你好去"},
+    {"nihcnzjbzqu", "你好进去"}, {"nirxhcnznirx", "你好你"},
+    {"llzikafw", "量子咖啡"}, {"kafwllzi", "咖啡量子"},
+    {"nihcnznihcnzqu", "你好你好去"},
+    {"nihcnznihcnznihcnzqu", "你好你好你好去"}
+  };
+  for (size_t i = 0; i < sizeof(triples)/sizeof(triples[0]); ++i) {
+    char name[48]; snprintf(name, sizeof(name), "independent-multi-boundary-%zu", i);
+    s = start(); State state = type(s, name, triples[i][0], triples[i][1], NULL);
+    selected_commit(s, &state, triples[i][1], name); r->destroy_session(s);
+  }
   r->finalize();
   fprintf(stderr, "RESULT %s checks=%d failures=%d lookup_bound=%d captured_head=%d\n",
-      observe ? "OBSERVATION_NOT_ACCEPTANCE" : "QUALIFICATION", checks, failures, LOOKUP, HEAD);
+      observe ? "OBSERVATION_NOT_ACCEPTANCE" : learning ? "LEARNING_QUALIFICATION" : "QUALIFICATION", checks, failures, LOOKUP, HEAD);
   return failures && !observe ? 1 : 0;
 }

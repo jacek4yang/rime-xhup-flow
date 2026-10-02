@@ -111,7 +111,9 @@ done
 
 cc $CFLAGS -o "$work/runtime_smoke" "$SCRIPT_DIR/runtime_smoke.c" \
   $(pkg-config --cflags --libs rime)
-echo "== canonical v2 production 冒烟 (xhup_flow) =="
-"$work/runtime_smoke" "$SHARED_DATA_DIR" "$smoke_dir" xhup_flow
+if [[ "${XHUP_SMOKE_STATIC_ONLY:-0}" != 1 ]]; then
+  echo "== canonical v2 production 冒烟 (xhup_flow, requires actual Lua) =="
+  "$work/runtime_smoke" "$SHARED_DATA_DIR" "$smoke_dir" xhup_flow
+fi
 echo "== 纯静态零-Lua 回退方案冒烟 (xhup_flow_static) =="
 "$work/runtime_smoke" "$SHARED_DATA_DIR" "$smoke_dir" xhup_flow_static
