@@ -308,7 +308,18 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Tauri 构建(NSIS + MSI,MSI 内部版本 ${{ steps.meta.outputs.win_version }})
-        run: pnpm -C trainer tauri build --bundles nsis,msi --config "${{ steps.meta.outputs.config }}"
+        run: pnpm -C trainer tauri build --verbose --bundles nsis,msi --config "${{ steps.meta.outputs.config }}"
+
+      - name: 保留 WiX 诊断（失败不是成功产物）
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-wix-diagnostics
+          path: |
+            target/release/wix/
+            target/release/bundle/nsis/
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: 校验并重命名产物
         shell: bash

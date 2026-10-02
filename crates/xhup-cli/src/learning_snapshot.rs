@@ -115,12 +115,14 @@ impl Snapshot {
         }
         validate(&bytes)?;
         let base = fs::canonicalize(std::env::temp_dir()).map_err(io_error)?;
-        let mut builder = fs::DirBuilder::new();
+        let builder = fs::DirBuilder::new();
         #[cfg(unix)]
-        {
+        let builder = {
             use std::os::unix::fs::DirBuilderExt;
+            let mut builder = builder;
             builder.mode(0o700);
-        }
+            builder
+        };
         for _ in 0..128 {
             let directory = base.join(format!(
                 "xhup-import-{}-{}",
