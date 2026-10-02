@@ -138,15 +138,17 @@ Cargo 使用隔离 target;配额失败后还将 TMPDIR 指向磁盘隔离目录,
 `acceptance_doc_sync` 测试与 `xhup-cli validate-acceptance` 门禁机械
 约束,不得漂移。
 
-## 稳定范围(冻结,#148 §1)
+## 当前候选版支持范围
 
-- v1.0.0 全部能力 + 2.0 新增:Flow 连续组句、句子级本地学习持久化、
-  上下文重排序(`context_ranker`)、joint lattice 守护诊断
-  (`joint_decoder`)、运行时诊断模块;
+支持边界以 [运行时矩阵](runtime-support-matrix.md) 为准。以下不代表已有
+最终 RC 验收；旧 RC.2 早于后续工程修复，不能直接晋升。
+
+- Static 兼容层、原生 Flow 连续组句与有界本地学习、默认关闭的会话上下文
+  调序以及运行时诊断；joint decoder 未作为支持能力交付；
 - **不新增产品特性**;canonical/static 兼容、确定性输出、离线/隐私、
   `xhup_flow_static` 回退、既有 accepted mappings 与 OOV 可达性全部保持;
-- 实验运行时特性保持守护/默认关闭(`context_ranker`、`joint_decoder`
-  的开关默认重置 0 = 严格透传/无行为变化);
+- `context_ranker` 与会话 `user_memory` 默认关闭；joint decoder 的开关和
+  引擎注册移除，保留同名不可用 shim 仅为覆盖历史安装；
 - 任何已发布代码/schema/运行时/打包变更在最终 RC 验证后 → 必须重切
   `2.0.0-rc.N+1`(#148 §7),已验证 RC 的 tag/产物不可变。
 
@@ -166,15 +168,16 @@ Cargo 使用隔离 target;配额失败后还将 TMPDIR 指向磁盘隔离目录,
 | 特性 | 默认状态 | 承诺 |
 | ---- | ---- | ---- |
 | `context_ranker` | 关闭(重置 0) | 关闭态 = 严格透传,逐字节等价 |
-| `joint_decoder` | 关闭(重置 0) | 关闭态 = 无行为变化 |
-| `user_memory`(学习) | 启用 | 快照/重启持久化;RC 验收通过后另行决策生产翻转 |
+| `joint_decoder` | 未注册/不可用 | 不宣称联合解码或候选提升 |
+| `user_memory`(会话上下文) | 关闭 | 同意后有界内存状态；关闭清空，不落盘 |
+| 原生 `xhup_flow_user` 学习 | 能力/存储/配额满足时启用 | 只有实际持久化回归才能证明学习；否则显示只读原因 |
 | `xhup_flow_static` | 独立方案 | 无 Lua、纯静态回退,始终可用 |
 
 ## 基准与运行时审计(2.0 周期)
 
-- replay 基线与 runtime 哨兵同 v1(见上),Full Regression 工作流在
-  main 持续强制;librime 全量/抽样审计通过;
-- Android 端到端延迟与内存:R6 阶段完成构建形态实测
+- replay 基线是同源回归，不是独立质量；Full Regression 必须针对所验 RC 的
+  实际生成包跑完全部清单，不能继承历史通过或将 focused 运行称作全量；
+- 历史 Android 构建形态读数（不是端到端延迟或运行时内存）：R6 阶段记录
   (universal 582.1/551.0 MiB → arm64-only 139.6 MiB,−74.7%,
   见 `docs/performance-baseline.md`);运行时帧内指标未建立,列为
   已知限制而非阻塞。
@@ -207,14 +210,13 @@ Cargo 使用隔离 target;配额失败后还将 TMPDIR 指向磁盘隔离目录,
 - 硬件不可用的平台保持 UNVERIFIED 并如实列为外部阻塞;CI 构建成功
   不冒充真机验证。
 
-## 已知非阻塞限制(v2 新增)
+## 已知限制与待验收项（不自动豁免发布门禁）
 
 - 学习导出/导入依赖 `rime_dict_manager`(同 v1);
 - AppImage、微信小程序 Release 附件不在矩阵(同 v1);
 - Android 运行时帧内指标(内存/延迟)未建立基线;
-- `joint_decoder` 仅守护诊断(证据收集 + 有界提升),完整有界波束
-  接入真实菜单为 2.0 后演进;
-- `context_ranker`/`user_memory` 生产翻转决策在 GA 后单独评估。
+- `joint_decoder` 不属于支持的实时能力；完整联合解码保留为研究方向；
+- `context_ranker`/会话 `user_memory` 保持可选且默认关闭，不另写持久快照。
 
 ## RC → GA 晋升规则(#148 §7/§8)
 

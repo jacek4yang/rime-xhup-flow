@@ -1,9 +1,11 @@
 # XHUP Flow 2.0 架构
 
-状态：**里程碑 1 基础与里程碑 2 知识库已合并；规则模型独立交付，生产行为未改变**。umbrella 追踪见
-[GitHub #83](https://github.com/jacek4yang/rime-xhup-flow/issues/83)。v1 当前实现与
-发布契约仍以 [architecture.md](architecture.md) 为准；本文件定义后续 PR 的目标
-边界和可执行顺序。
+状态：**研究目标与历史里程碑设计，不是当前运行时能力或 GA 证明**。
+完整 Contextual Joint Decoder 数据流尚未交付；当前 Flow 是原生候选与有界
+结构分段，Rust beam/scorer 属于离线研究。当前实现以
+[运行时支持矩阵](runtime-support-matrix.md) 为准。umbrella 追踪见
+[GitHub #83](https://github.com/jacek4yang/rime-xhup-flow/issues/83)。下文保留目标边界，
+不得从设计图推断当前包已实现对应能力。
 
 ## 目标数据流
 

@@ -1,10 +1,9 @@
 # XHUP Flow 架构
 
-本文档描述 XHUP Flow 的数据流水线、优先级契约、简码语法与兼容性承诺。
-运行约束见 [AGENTS.md](../AGENTS.md);端用户说明见 [README.md](../README.md)。
-2.0 workstream 的目标架构与已实现基础见
-[architecture-v2.md](architecture-v2.md)；在对应运行时 PR 合并前，本文件仍是
-生产行为的唯一契约。
+本文档保留早期架构背景，含历史文件数与双 translator 描述，**不是当前
+实现或发布就绪证明**。当前支持边界以 [运行时矩阵](runtime-support-matrix.md)、
+[Lua 运行时](lua-runtime.md) 与生成包源码为准；端用户说明见 [README.md](../README.md)。
+[architecture-v2.md](architecture-v2.md) 是研究目标，不代表完整联合解码器已交付。
 
 ## 数据流水线
 
