@@ -137,6 +137,11 @@ EOF
   if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
     printf 'patch:\n  flow/enable_user_dict: false\n  learn/enable_user_dict: false\n' > "$dir/xhup_flow.custom.yaml"
     printf 'patch:\n  schema_list/+ :\n    - schema: xhup_flow\n  menu/page_size: 5\n' > "$dir/default.custom.yaml"
+    if [[ "${XHUP_CORPUS_MODE:-planner}" == native-only ]]; then
+      [[ -n "${XHUP_REPLAY_CORPUS:-}" ]] || { echo "ablation requires corpus mode" >&2; exit 2; }
+      cp "$SCRIPT_DIR/../quality/corpus_native_only.lua" "$dir/lua/"
+      printf '  engine/translators/@2: lua_translator@*corpus_native_only\n' >> "$dir/xhup_flow.custom.yaml"
+    fi
   fi
   rime_deployer --compile "$dir/$schema_id.schema.yaml" "$dir" \
     "$SHARED_DATA_DIR" >/dev/null
@@ -177,6 +182,11 @@ for dict in xhup_flow_learn; do
 done
 
 if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
+  if [[ -n "${XHUP_REPLAY_CORPUS:-}" ]]; then
+    cc $CFLAGS -std=c11 "$SCRIPT_DIR/runtime_corpus.c" $(pkg-config --cflags --libs rime) -o "$work/corpus"
+    "$work/corpus" "$flow_dir" "$SHARED_DATA_DIR" "$XHUP_REPLAY_CORPUS" "${XHUP_CORPUS_MODE:-planner}"
+    exit $?
+  fi
   cc $CFLAGS -std=c11 "$SCRIPT_DIR/runtime_replay.c" $(pkg-config --cflags --libs rime) -o "$work/replay"
   "$work/replay" "$flow_dir" "$SHARED_DATA_DIR" "${XHUP_REPLAY_MODE:---qualify}"
   cc $CFLAGS -std=c11 "$SCRIPT_DIR/runtime_extended.c" $(pkg-config --cflags --libs rime) -o "$work/extended"
