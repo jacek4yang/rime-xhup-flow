@@ -574,6 +574,28 @@ static int run_learning(const char *shared, const char *user_dir,
             }
             reset_composition(session);
             type_keys(session, code);
+        } else if (strcmp(action, "commit-text") == 0) {
+            char *code = strtok_r(NULL, " \t", &save);
+            char *text = strtok_r(NULL, " \t", &save);
+            if (!code || !text) { report(0, "commit-text 参数", "missing code/text"); continue; }
+            reset_composition(session);
+            type_keys(session, code);
+            capture_menu(session, menu, sizeof(menu));
+            int rank = menu_rank(menu, text);
+            if (rank < 1 || !rime->select_candidate(session, rank - 1)) {
+                report(0, "commit-text 目标可选择", text);
+                continue;
+            }
+            RIME_STRUCT(RimeCommit, committed);
+            if (!rime->get_commit(session, &committed)) {
+                report(0, "commit-text 目标实际提交", text);
+                continue;
+            }
+            report(committed.text && !strcmp(committed.text, text), "commit-text 精确上屏", text);
+            rime->free_commit(&committed);
+            const char *remaining = rime->get_input(session);
+            report(!remaining || !*remaining, "commit-text 完整消费输入", code);
+            report(!has_commit(session), "commit-text 无重复提交", text);
         } else if (strcmp(action, "commit") == 0) {
             char *code = strtok_r(NULL, " \t", &save);
             char *rank_str = strtok_r(NULL, " \t", &save);

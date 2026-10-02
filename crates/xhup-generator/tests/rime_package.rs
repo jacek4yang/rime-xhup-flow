@@ -140,9 +140,9 @@ fn schema_semantics() {
     // translator 链:全部静态层在唯一 primary table translator 中。
     assert!(
         schema.lines().filter(|line| !line.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n").contains(
-            "  translators:\n    - punct_translator\n    - table_translator\n    - table_translator@flow\n    - lua_translator@*xhup_flow.native_tail\n    - table_translator@learn"
+            "  translators:\n    - punct_translator\n    - table_translator\n    - lua_translator@*xhup_flow.native_tail"
         ),
-        "translator 链应为 punct → static primary → Flow → bounded native tail → learn"
+        "translator 链应为 punct → static primary → single native boundary provider"
     );
     // primary translator:全部既有固定层;initial_quality 1000000 只是
     // translator 间优先级栅栏,不改变其内部相对次序。
@@ -161,11 +161,16 @@ fn schema_semantics() {
     // #150/#151 由 bounded native tail 与完整跨度选择联合保障。
     assert!(
         schema.contains(
-            "flow:\n  dictionary: xhup_flow_flow\n  user_dict: xhup_flow_user\n  enable_completion: true\n  enable_sentence: true\n  sentence_over_completion: true\n  enable_user_dict: true\n  initial_quality: 100"
+            "  dictionary: xhup_flow_learn\n  user_dict: xhup_flow_user\n  enable_completion: true\n  enable_sentence: true\n  sentence_over_completion: true\n  enable_user_dict: true\n  enable_encoder: true\n  encode_commit_history: true\n  max_phrase_length: 20\n  max_homographs: 1\n  initial_quality: 100"
         ),
         "flow translator 配置不符合组句语义"
     );
-    // learn translator:学习短语编码(encoder),关闭组句,共享用户词典。
+    assert!(!schema.contains("    - table_translator@learn"));
+    assert!(!schema.contains("    - table_translator@flow"));
+    assert!(
+        schema.contains("flow_lookup:\n  dictionary: xhup_flow_learn\n  enable_user_dict: false")
+    );
+    // 历史 learn 配置保留,但不绑定重复的运行时学习写入者。
     assert!(
         schema.contains(
             "learn:\n  dictionary: xhup_flow_learn\n  user_dict: xhup_flow_user\n  enable_completion: false\n  enable_sentence: false\n  enable_user_dict: true\n  enable_encoder: true\n  encode_commit_history: true\n  max_phrase_length: 20\n  max_homographs: 1\n  initial_quality: 1000"
