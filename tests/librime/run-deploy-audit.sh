@@ -6,8 +6,8 @@
 # 与其它审计脚本的差别:其它脚本用 rime_deployer --compile + 手工编译
 # 辅助词典搭建部署目录(聚焦 runtime 行为);本脚本模拟普通用户的真实
 # 部署路径 —— 把生成包放入干净目录后执行 `rime_deployer --build`,
-# 断言 xhup_flow 方案的 schema/dependencies 机制让三个 runtime 词典
-# (包含 PRIMARY/FIXED_FIRST 的主词典 + Flow / Learn 辅助词典)自然产出
+# 断言 xhup_flow 方案的 schema/dependencies 机制让两个 runtime 词典
+# (包含 PRIMARY/FIXED_FIRST 的主词典 + 单一原生组句/学习词典)自然产出
 # .table.bin,
 # 再用 runtime_smoke 对该部署跑真实输入冒烟。
 #
@@ -23,6 +23,7 @@ set -euo pipefail
 PACKAGE_DIR=${1:?"用法: run-deploy-audit.sh <生成包目录>"}
 SHARED_DATA_DIR=${RIME_SHARED_DATA_DIR:-/usr/share/rime-data}
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+python3 "$SCRIPT_DIR/../release/check_generated_runtime_sources.py" "$PACKAGE_DIR"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -93,7 +94,6 @@ echo "rime_deployer --build 峰值 RSS: ${deploy_peak} KiB"
 fail=0
 for dict in \
   xhup_flow \
-  xhup_flow_flow \
   xhup_flow_learn; do
   if [[ -f "$deploy_dir/build/$dict.table.bin" ]]; then
     echo "PASS  --build 产出 $dict.table.bin"
@@ -102,7 +102,22 @@ for dict in \
     fail=1
   fi
 done
+if [[ -e "$deploy_dir/build/xhup_flow_flow.table.bin" ]]; then
+  echo "FAIL unused duplicate Flow table compiled" >&2
+  fail=1
+else
+  echo "PASS no duplicate Flow compiled table"
+fi
 [[ $fail -eq 0 ]] || exit 1
+python3 - "$deploy_dir/build" <<'PY'
+import json
+import pathlib
+import sys
+root = pathlib.Path(sys.argv[1])
+print("DEPLOY_TABLE_BYTES " + json.dumps(
+    {p.name: p.stat().st_size for p in sorted(root.glob("*.bin"))},
+    sort_keys=True))
+PY
 
 cc $CFLAGS -o "$work/runtime_smoke" "$SCRIPT_DIR/runtime_smoke.c" \
   $(pkg-config --cflags --libs rime)

@@ -1,15 +1,11 @@
 //! Flow 引擎词典的确定性序列化(两个专用词典)。
 //!
-//! - **组句词典 `xhup_flow_flow`**:供隔离的 `table_translator@flow`
-//!   (enable_sentence)使用。它包含 hot / extended 词汇证据和全部两键单字
-//!   音码原语：已知词改善分段排名，单字保证词表外组合、结构助词与语气字
-//!   不会令句子路径中断。primary 静态 translator 的高质量栅栏保护冻结菜单。
-//! - **学习词典 `xhup_flow_learn`**:通过 `import_tables` 复用完整组句词典，
-//!   只本地追加 3/4 键单字全码原语，供
-//!   `table_translator@learn`(enable_sentence **false**、user_dict、
-//!   enable_encoder)使用。导入保证 Flow/Learn 共享 userdb 时 syllable-id
-//!   空间一致；追加全码让 TableEncoder 的 DfsEncode 仍可逐字解析。
-//!   learn translator 关闭组句，其 exact 查询经 uniquifier 去重后不可见。
+//! - **组句源词典 `xhup_flow_flow`**:包含 hot / extended 词汇证据与
+//!   单字音码/全码原语,由学习词典 import;默认部署不再单独编译重复表。
+//! - **运行时词典 `xhup_flow_learn`**:通过 `import_tables` 复用完整
+//!   组句源词典,保留 encoder 与全码补充。一个原生提供者同时承担组句和
+//!   有界学习;只读探测与旧 API 降级也用此表。primary 静态 translator
+//!   的质量栅栏保护冻结菜单。逻辑词条/编码不变,仅移除未使用的物理副本。
 //!
 //! 两个词典都只含 canonical 完整关系,**显式排除全部简码别名**
 //! (一级简码 / canonical v2 PRIMARY + FIXED_FIRST):简码别名是肌肉记忆

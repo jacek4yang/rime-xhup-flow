@@ -7,11 +7,10 @@ schema:
   version: "{{VERSION}}"
   author:
     - XHUP Flow
-  # librime 部署只编译默认 translator 命名空间的词典;Flow / Learn
-  # 两个辅助词典必须经官方 schema/dependencies 机制
-  # 声明,Weasel / rime_deployer 才会为它们生成 table.bin。
+  # 单一原生提供者与只读探测均使用 learn 编译表;该表 import 完整
+  # flow 源词典,无需再编译/部署一份重复的 flow table。
+  # 旧 flow wrapper 源文件仍保留为拥有文件/手动研究入口,不在部署图中。
   dependencies:
-    - xhup_flow_flow
     - xhup_flow_learn
   description: |
     XHUP Flow 2.0 智能化双拼音形方案。本方案需要 librime-lua 运行时支持

@@ -69,7 +69,7 @@ patch:
 EOF
 rime_deployer --compile "$deploy_dir/xhup_flow.schema.yaml" "$deploy_dir" \
   "$SHARED_DATA_DIR" >/dev/null
-for dict in xhup_flow_fixed_first_shortcuts xhup_flow_flow xhup_flow_learn; do
+for dict in xhup_flow_fixed_first_shortcuts xhup_flow_learn; do
   compile_dict_isolated "$dict" "$deploy_dir"
 done
 

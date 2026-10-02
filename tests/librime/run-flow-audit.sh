@@ -172,7 +172,7 @@ fi
 
 flow_dir=$work/flow
 prepare_deploy "$flow_dir" xhup_flow
-for dict in xhup_flow_flow xhup_flow_learn; do
+for dict in xhup_flow_learn; do
   compile_dict_isolated "$dict" "$flow_dir"
 done
 
