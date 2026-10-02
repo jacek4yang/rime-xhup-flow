@@ -107,6 +107,24 @@ class RimeArchive(unittest.TestCase):
         self.assertEqual(hashlib.sha256(notice.read_bytes()).hexdigest(),
                          "9c048697be2502a16e8bcb282d5d465a07295b2def0ffb05a269c5d39dbe1586")
 
+    def test_extracted_installer_missing_or_changed_notice_fails(self):
+        import check_bundle_notices
+        config = ROOT / "trainer/src-tauri/tauri.conf.json"
+        mapping = json.loads(config.read_text())["bundle"]["resources"]
+        extracted = self.work / "extracted"
+        for source, target in mapping.items():
+            path = extracted / target
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile((config.parent / source).resolve(), path)
+        self.assertEqual(check_bundle_notices.verify(extracted, ROOT), len(mapping))
+        path = extracted / "licenses/RIME-DATA-NOTICE.md"
+        path.write_text("changed")
+        with self.assertRaises(ValueError):
+            check_bundle_notices.verify(extracted, ROOT)
+        path.unlink()
+        with self.assertRaises(ValueError):
+            check_bundle_notices.verify(extracted, ROOT)
+
     def test_workflow_checks_final_archive_bytes(self):
         text = (ROOT / ".github/workflows/product-packaging.yml").read_text()
         section = text.split("      - name: 组装发布 zip", 1)[1].split(

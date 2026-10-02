@@ -480,6 +480,13 @@ jobs:
           for f in artifacts/linux/*; do [[ -s "$f" ]] || { echo "::error::产物为空: $f"; exit 1; }; done
           ls -l artifacts/linux/
 
+      - name: 从实际 deb 提取并校验全部许可资源字节
+        run: |
+          extracted="$(mktemp -d)"
+          trap 'rm -rf "$extracted"' EXIT
+          dpkg-deb -x artifacts/linux/*.deb "$extracted"
+          python3 tests/release/check_bundle_notices.py "$extracted/usr/lib/XHUP Flow"
+
       - name: 上传 Linux 产物
         uses: actions/upload-artifact@v7
         with:
