@@ -45,7 +45,7 @@ jobs:
   # tests/librime/run-flow-audit.sh 的 XHUP_AUDIT_SHARDS 控制(默认 2)。
   librime-full:
     name: librime 全量审计(全静态等值 + 组句 + 学习 + 部署)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # 实测 3h16m–5h00m,曾撞满 300 分钟超时(#113);360 留余量。
     timeout-minutes: 360
 
@@ -81,6 +81,16 @@ jobs:
             librime-plugin-lua \
             lua5.4
 
+      - name: 固定源码 Lua 插件（与 PR 完整学习资格门禁一致）
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            liblua5.4-dev libopencc-dev libgoogle-glog-dev libboost-dev \
+            libmarisa-dev libyaml-cpp-dev libx11-dev darts
+          bash tests/librime/build-supported-lua.sh /tmp/xhup-supported-lua
+          plugin=$(dpkg -L librime-plugin-lua | grep '/librime-lua.so$')
+          test -n "$plugin"
+          sudo install -m 755 /tmp/xhup-supported-lua/librime-lua.so "$plugin"
+
       - name: 打印 librime 环境
         run: |
           rime_deployer --help 2>&1 | head -3 || true
@@ -91,6 +101,7 @@ jobs:
         run: |
           cargo run -p xhup-cli --locked -- generate rime --output /tmp/xhup-flow-package
           python3 tests/release/check_distribution_sources.py --depfile target/debug/xhup-cli.d
+          python3 tests/release/check_generated_runtime_sources.py /tmp/xhup-flow-package
 
       - name: 导出全静态菜单 manifest 并构建 xhup-cli
         run: |
