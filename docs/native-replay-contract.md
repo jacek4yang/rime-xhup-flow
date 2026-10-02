@@ -3,14 +3,16 @@
 `tests/librime/runtime_replay.c` uses real librime and asserts Lua registration.
 It runs only in an isolated generated-package deployment. It records each key,
 raw input, composition/preedit, selected range, candidate texts, target/prefix
-rank and keypress time. Search is explicitly bounded at 256 candidates; the first
+rank, keypress time, key-to-first-menu time (including `get_context`), and
+bounded top-256 probe time. The replay fixture uses a five-candidate page. Search is explicitly bounded at 256 candidates; the first
 16 menu entries are captured. Absence within that bound is not proof of absence
 from every possible native path. Fixed public regression strings are not user
 corpus data. No runtime telemetry is added. The isolated replay fixture disables
 native learning in compiled `flow/enable_user_dict` and `learn/enable_user_dict`
 configuration and asserts those values through the actual Rime API; a similarly
-named context switch does NOT turn native learning off. Learning-on persistence
-is a separate native suite.
+named context switch does NOT turn native learning off. `XHUP_REPLAY_VERIFY_LEARNING=1` additionally checks learning-off export,
+recompiles with native learning enabled, checks native code identities in exported
+records, and repeats the replay in a fresh process.
 
 Run the hard gate:
 

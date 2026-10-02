@@ -131,6 +131,7 @@ patch:
 EOF
   if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
     printf 'patch:\n  flow/enable_user_dict: false\n  learn/enable_user_dict: false\n' > "$dir/xhup_flow.custom.yaml"
+    printf 'patch:\n  schema_list/+ :\n    - schema: xhup_flow\n  menu/page_size: 5\n' > "$dir/default.custom.yaml"
   fi
   rime_deployer --compile "$dir/$schema_id.schema.yaml" "$dir" \
     "$SHARED_DATA_DIR" >/dev/null
@@ -173,7 +174,22 @@ done
 if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
   cc $CFLAGS -std=c11 "$SCRIPT_DIR/runtime_replay.c" $(pkg-config --cflags --libs rime) -o "$work/replay"
   "$work/replay" "$flow_dir" "$SHARED_DATA_DIR" "${XHUP_REPLAY_MODE:---qualify}"
-  exit $?
+  if [[ "${XHUP_REPLAY_VERIFY_LEARNING:-0}" == 1 ]]; then
+    if [[ -d "$flow_dir/xhup_flow_user.userdb" ]]; then
+      (cd "$flow_dir" && rime_dict_manager -e xhup_flow_user "$work/off.tsv")
+      [[ -z "$(exported_entries "$work/off.tsv")" ]] || { echo "FAIL learning-off wrote records" >&2; exit 1; }
+    fi
+    printf 'patch:\n  flow/enable_user_dict: true\n  learn/enable_user_dict: true\n' > "$flow_dir/xhup_flow.custom.yaml"
+    rime_deployer --compile "$flow_dir/xhup_flow.schema.yaml" "$flow_dir" "$SHARED_DATA_DIR" >/dev/null
+    "$work/replay" "$flow_dir" "$SHARED_DATA_DIR" --learn
+    (cd "$flow_dir" && rime_dict_manager -e xhup_flow_user "$work/learn.tsv")
+    # Exact boundary-provider learning identity; no delimiter or foreign code.
+    grep -E '^你[[:space:]]+ni[[:space:]]' "$work/learn.tsv"
+    grep -E '^好[[:space:]]+hcnz[[:space:]]' "$work/learn.tsv"
+    "$work/replay" "$flow_dir" "$SHARED_DATA_DIR" --learn
+    echo 'PASS native genuine identity, variant code persistence and process restart' >&2
+  fi
+  exit 0
 fi
 
 cc $CFLAGS -o "$work/audit" "$SCRIPT_DIR/runtime_flow_audit.c" \

@@ -41,6 +41,8 @@ pub const OWNED_FILES: &[&str] = &[
     "lua/xhup_flow/context_ranker.lua",
     "lua/xhup_flow/user_memory.lua",
     "lua/xhup_flow/joint_decoder.lua",
+    "lua/xhup_flow/native_tail.lua",
+    "lua/xhup_flow/full_span.lua",
     "lua/xhup_flow/init.lua",
     "lua/xhup_flow/data/quick_hints.lua",
 ];

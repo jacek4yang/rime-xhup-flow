@@ -39,6 +39,8 @@ fn artifact_set_is_exact_and_ordered() {
             "lua/xhup_flow/context_ranker.lua",
             "lua/xhup_flow/user_memory.lua",
             "lua/xhup_flow/joint_decoder.lua",
+            "lua/xhup_flow/native_tail.lua",
+            "lua/xhup_flow/full_span.lua",
             "lua/xhup_flow/init.lua",
             "lua/xhup_flow/data/quick_hints.lua",
             "xhup_flow.schema.yaml",
@@ -137,10 +139,10 @@ fn schema_semantics() {
     }
     // translator 链:全部静态层在唯一 primary table translator 中。
     assert!(
-        schema.contains(
-            "  translators:\n    - punct_translator\n    - table_translator\n    - table_translator@flow\n    - table_translator@learn"
+        schema.lines().filter(|line| !line.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n").contains(
+            "  translators:\n    - punct_translator\n    - table_translator\n    - table_translator@flow\n    - lua_translator@*xhup_flow.native_tail\n    - table_translator@learn"
         ),
-        "translator 链应为 punct → static primary → Flow"
+        "translator 链应为 punct → static primary → Flow → bounded native tail → learn"
     );
     // primary translator:全部既有固定层;initial_quality 1000000 只是
     // translator 间优先级栅栏,不改变其内部相对次序。
@@ -155,8 +157,8 @@ fn schema_semantics() {
         "FIXED_FIRST 必须并入同一静态 translator"
     );
     // Flow translator:完整词汇 + 单字开放组句 + 共享用户词典；严格位于静态之后。
-    // 无自动提交;completion 允许(#150/#151):未完成尾键以 completion
-    // 候选兜底,菜单不塌缩;exact/sentence 优先(sentence_over_completion)。
+    // 无自动提交;普通 completion 不等同于已解码前缀 + 未完成尾码。
+    // #150/#151 由 bounded native tail 与完整跨度选择联合保障。
     assert!(
         schema.contains(
             "flow:\n  dictionary: xhup_flow_flow\n  user_dict: xhup_flow_user\n  enable_completion: true\n  enable_sentence: true\n  sentence_over_completion: true\n  enable_user_dict: true\n  initial_quality: 100"
@@ -190,6 +192,7 @@ fn schema_semantics() {
             "    - lua_filter@*xhup_flow.context_ranker",
             "    - lua_filter@*xhup_flow.user_memory",
             "    - lua_filter@*xhup_flow.joint_decoder",
+            "    - lua_filter@*xhup_flow.full_span",
             "    - uniquifier",
         ],
         "filters 链应为 quick_hint → context_ranker → user_memory → uniquifier"
@@ -314,12 +317,14 @@ fn schema_excludes_non_portable_or_deferred_features() {
     assert_eq!(
         lua_lines,
         [
+            "    - lua_translator@*xhup_flow.native_tail",
             "    - lua_filter@*xhup_flow.quick_hint",
             "    - lua_filter@*xhup_flow.context_ranker",
             "    - lua_filter@*xhup_flow.user_memory",
             "    - lua_filter@*xhup_flow.joint_decoder",
+            "    - lua_filter@*xhup_flow.full_span",
         ],
-        "方案只允许 quick_hint、context_ranker 与 user_memory 三个 Lua 组件引用"
+        "仅许可已列出的运行时组件"
     );
     // 行内斜杠只允许出现在注释与许可 Lua 模块路径中。
     for line in schema.lines() {
@@ -328,6 +333,8 @@ fn schema_excludes_non_portable_or_deferred_features() {
             || code.contains("lua_filter@*xhup_flow.context_ranker")
             || code.contains("lua_filter@*xhup_flow.user_memory")
             || code.contains("lua_filter@*xhup_flow.joint_decoder")
+            || code.contains("lua_filter@*xhup_flow.full_span")
+            || code.contains("lua_translator@*xhup_flow.native_tail")
         {
             continue;
         }

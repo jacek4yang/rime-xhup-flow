@@ -84,6 +84,8 @@ engine:
     - punct_translator
     - table_translator
     - table_translator@flow
+    # 有界原生尾码/末段边界查询;词边与最终句评分仍由 librime 负责。
+    - lua_translator@*xhup_flow.native_tail
     - table_translator@learn
   filters:
     # 候选注释与简码提示(xhup_flow mandatory Lua 运行时合同组件):
@@ -108,6 +110,7 @@ engine:
     # joint lattice 守护诊断(§11/§14/R3):默认关闭(严格透传);开启后
     # 有界证据采集 + 重复词有界提升,永不越过静态强固定 rank-1。
     - lua_filter@*xhup_flow.joint_decoder
+    - lua_filter@*xhup_flow.full_span
     - uniquifier
 
 speller:
@@ -129,11 +132,10 @@ translator:
 # xhup_flow_user(句子候选属于用户词典语言,提交时 Memorize 学习
 # 其词条元素);initial_quality 100 与 primary 的 1000000 质量栅栏保证
 # 开放候选位于全部静态候选之后。
-# #150/#151 变长分段 + 未完尾缀:completion 允许 Flow translator 对
-# 「已解码前缀 + 未完成尾键」保持候选(尾键作为待定前缀给出以其开头
-# 的码位延伸候选),菜单不因最后一个码未完成而塌缩。completion 候选
-# 位于 exact/sentence 之后(sentence_over_completion),静态强固定
-# rank-1 与 exact 候选的次序不受影响。
+# completion 只负责原生字典预测,不保证「已解码前缀 + 未完成尾码」。
+# #150/#151 由 native_tail 有界原生查询保留前缀及末段替代边界,
+# full_span 在去重前保留完整跨度;不新增词边或第二套 Lua 解码器。
+# 逐键、选择、上屏与学习重启合同由真实 librime 回放检查。
 flow:
   dictionary: xhup_flow_flow
   user_dict: xhup_flow_user
