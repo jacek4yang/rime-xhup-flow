@@ -104,13 +104,26 @@ normalize(kTGHZ2013 该字读音集) ∪ { normalize(kMandarin_8105 主读音) }
 
 ## 再生成
 
-本文件由固定上游数据推导、经评审提交的项目产物。本次推导使用一次性标准库脚本完成(不入库);生产级再生成器计划未来在 `xhup-generator` 中专项实现。再生成必须机械满足:8580 行、8105 字、8105 primary + 475 alt、上文非 XHUP 边界六关系;任一不符即停止并上报,不得改动预期强行通过。
+现已提供独立的 Python 标准库再生成器 `reconstruct_readings.py`，不读取
+既有 `readings.tsv` 来决定输出。将固定提交的两份上游文件下载到本地目录后：
+
+```sh
+python3 data/hanzi/reconstruct_readings.py --source-dir /path/to/pinned-inputs \
+  --check data/hanzi/readings.tsv
+```
+
+输入文件 SHA256 记录在 `upstream-inputs.json`，先核对字节身份再解析。
+脚本严格按上面的读音规范化与并集规则生成；注释中的读音建议不覆盖
+primary。输出与入库的 8,580 行逐字节一致，且保持 8,105 字、
+8,105 primary + 475 alt；没有按输出反推的特殊字补丁。
+CI 从固定提交重新下载并验证，同时运行声调、ü/ê、注释、并集、
+重复/无效源及哈希篡改回归。任何差异必须失败，不能更新预期来掩盖。
 
 
 ## 官网扩展字读音(2026-09-15)
 
 
-eadings_official_ext.tsv(309 字,3 列):小鹤官网 ixdata 覆盖但不在规范 8105
+`readings_official_ext.tsv`(309 字,3 列):小鹤官网 ixdata 覆盖但不在规范 8105
 清单的字(〇 + CJK 扩展A),列:字、带调拼音、小鹤全码。仅作字形层扩展参考,
 **readings.tsv 权威层不变**。读音差异(两源对 8105 交集字的 50 处多音/异读分歧)
 见 ../shape/CROSSCHECK.md。

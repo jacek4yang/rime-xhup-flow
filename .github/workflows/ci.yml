@@ -76,6 +76,18 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
+      - name: 规范读音上游独立重建（固定提交及 SHA256）
+        run: |
+          python3 -m unittest discover -s data/hanzi -p 'test_*.py'
+          mkdir /tmp/xhup-reading-inputs
+          for file in kMandarin_8105.txt kTGHZ2013.txt; do
+            curl --fail --location --silent --show-error \
+              "https://raw.githubusercontent.com/mozillazg/pinyin-data/923b108dc5d45dee061324c011b478fb649f8b73/$file" \
+              -o "/tmp/xhup-reading-inputs/$file"
+          done
+          python3 data/hanzi/reconstruct_readings.py \
+            --source-dir /tmp/xhup-reading-inputs --check data/hanzi/readings.tsv
+
       - name: 可分发来源门禁回归（合成 depfile，不是实际编译证据）
         run: python3 -m unittest discover -s tests/release -p 'test_distribution_sources.py'
 
