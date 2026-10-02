@@ -62,14 +62,28 @@ end
 
 local env,base,created,calls,output,counts=run("nihcnzqu",10)
 check(#calls<=5 and calls[2]=="ni hcnz qu","structural path is native exact-boundary query")
-check(output[1].type=="sentence" and output[1]._end==18,"native type and raw outer endpoint")
-check(created[output[1]],"genuine native object preserved, never another shadow")
-check(output[1].quality==10.5,"explicit structural utility, not lexical frequency")
+for i=1,policy.HEAD do check(output[i]==base[i],"native visible prefix is not displaced by structural alternatives") end
+local alternative=output[policy.HEAD+1]
+check(alternative.type=="sentence" and alternative._end==18,"native type and raw outer endpoint")
+check(created[alternative],"genuine native object preserved, never another shadow")
+check(alternative.quality==10,"native quality unchanged, no structural score boost")
 local found={}
 for _,c in ipairs(output) do found[c]=(found[c] or 0)+1 end
 for i,c in ipairs(base) do
   check(found[c]==1,"every base object retained exactly once")
   if i>policy.HEAD then check(output[#output-#base+i]==c,"entire base tail unchanged") end
+end
+-- Independent of score magnitudes/types/spans: the provider cannot overtake
+-- the native protected prefix. All original identities and order survive.
+for size=0,12 do
+  local e,b,_,_,out=fixture("nihcnzqu",0)
+  for i=#b,size+1,-1 do b[i]=nil end
+  for i,c in ipairs(b) do c.quality=-1000*i; c.type="completion"; c._end=i%3 end
+  policy.func("nihcnzqu",{start=0,_end=8,tags={}},e)
+  for i=1,math.min(size,policy.HEAD) do check(out[i]==b[i],"protected prefix ignores invented structural preference") end
+  local originals={};for _,c in ipairs(out) do if c.type=="completion" then originals[#originals+1]=c end end
+  check(#originals==size,"empty/short/base stream has no losses")
+  for i,c in ipairs(b) do check(originals[i]==c,"entire native relative order preserved") end
 end
 local visits,lookups=counts()
 check(visits<=lookups and lookups<=#("nihcnzqu")*31,"single edge per exact lookup")

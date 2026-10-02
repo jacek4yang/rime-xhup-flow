@@ -14,10 +14,18 @@ scalar dynamic program and deterministic tie order. **This is structural policy,
 not native frequency scoring, a language model, or a claim of optimal linguistic
 segmentation.** It creates no dictionary entries or Lua text candidate objects.
 It asks native Rime to translate the resulting space-delimited code path and
-retains the returned genuine native Phrase/Sentence. A +0.5 utility preference
-for the complete structural proposal and -1 for pending-prefix proposals are
-explicit policy; no fabricated lexical evidence is persisted. Original native
-candidates remain selectable, including the unchanged tail of the stream.
+retains the returned genuine native Phrase/Sentence. The original native first
+five candidates (default visible page) keep their identity and order; at most eight
+structural alternatives follow that prefix. Native quality values are unchanged,
+and all remaining native candidates retain relative order. A short native stream
+is emitted completely before alternatives. The same-text full-span filter may
+substitute a longer interpretation of the identical text, not a different word.
+
+The earlier +0.5/full-span promotion policy harmed an external wiki set: top1 fell
+from 41.13% to 33.94%, despite improved pending-prefix and bounded reachability.
+That negative result is retained by the independent-corpus study (#187). Removing
+invented score preference is a general ordering invariant, not a word-specific
+patch. The first set is now seen regression data; correction needs new evaluation.
 
 Bounds per invocation:
 
@@ -26,8 +34,8 @@ Bounds per invocation:
   `128 * 31` lookups; no corpus scan or corpus copy in Lua.
 - At most one full native query plus four boundary/pending-prefix queries,
   at most two candidates inspected per extra query.
-- Merge at most 32 original candidates and eight proposals, preserving every
-  original candidate and the remaining original stream.
+- Preserve five original native candidates, append at most eight proposals, then
+  stream the unchanged native tail; no score sorting or base-head materialization.
 - The separate `full_span` filter swaps same-text/start candidates only inside
   its first 32 objects, so a shorter same-text phrase does not hide the full path.
 - No file I/O, external model, network, persistent input log or Lua learning store.
@@ -43,7 +51,7 @@ Do not wrap a planned native Sentence in another ShadowCandidate: the quick-hint
 filter may add a shadow of its own. Native `GetGenuineCandidate` unwraps only one
 shadow; the resulting inner Shadow is not a Phrase and silently loses learning.
 The planner preserves the actual native object, changing only its outer raw
-span, presentation and explicit utility. The regression gate commits a synthetic
+span and presentation, never its native quality. The regression gate commits a synthetic
 sentence to an empty native database, exports its exact codes/counts, then repeats
 in a fresh process. It requires one update per component per commit, not merely
 that some older dictionary entry exists.
