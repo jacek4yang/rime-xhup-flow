@@ -45,6 +45,7 @@ fn learning_error(error: xhup_cli::learning::LearningError) -> CommandError {
         E::SnapshotMissing { .. } => "snapshot_missing",
         E::SnapshotNameMismatch { .. } => "snapshot_name_mismatch",
         E::InvalidSnapshot { .. } => "invalid_snapshot",
+        E::UnsafeOperation { .. } => "unsafe_learning_operation",
         E::SnapshotIo { .. } => "snapshot_io",
         E::SnapshotNotProduced { .. } => "snapshot_not_produced",
         E::UserDictAbsent => "user_dict_absent",
