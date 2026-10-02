@@ -24,7 +24,6 @@ use std::sync::OnceLock;
 
 use xhup_core::{HanziReading, KeySequence};
 
-use crate::sogou_filter::production_sogou_word_entries;
 use crate::words::{canonical_extended_word_entries, canonical_word_entries};
 
 /// 一条最终化的静态词语编码关系(模块内投影的事实来源)。
@@ -146,11 +145,8 @@ pub fn canonical_word_code_entries() -> Vec<RimeWordCodeEntry> {
 
 /// 全部扩展词 exact 关系，按码长、码、分数降序、词排序。
 ///
-/// 聚合范围 = 万象 extended 层 + 搜狗细胞词库**生产子集**(PR-4 构建分流:
-/// 排除 `target` 与 `llm_review-remove`;原始分片不修改,见
-/// data/words/sogou/README.md)。万象条目携带真实聚合分数;搜狗条目
-/// 分数恒为 1,仅在与万象不重叠的 (词, 码) 上提供增量 exact 候选证据,
-/// 排名永远低于任何万象支持的候选。被排除词仍走 open composition。
+/// 只消费已审核可分发的万象 extended 层。搜狗授权未解决,仅留作本地
+/// 研究,不进入生产投影或生产二进制。词库外文本仍可走 open composition。
 pub fn canonical_extended_word_code_entries() -> &'static [RimeExtendedWordCodeEntry] {
     static ENTRIES: OnceLock<Vec<RimeExtendedWordCodeEntry>> = OnceLock::new();
     ENTRIES
@@ -162,24 +158,6 @@ pub fn canonical_extended_word_code_entries() -> &'static [RimeExtendedWordCodeE
                 *score = score
                     .checked_add(entry.frequency_score())
                     .expect("扩展词聚合分数 u64 溢出");
-            }
-            // 搜狗层仅提供万象两层之外的增量:与 hot/extended 相同
-            // (词, 读音序列) 的条目跳过,避免同一词在组句词典重复出现,
-            // 也避免与 hot 静态层权重竞争(hot 词的真实频率证据永远优先)。
-            let mut wanxiang_keys: std::collections::BTreeSet<(&str, KeySequence)> = aggregated
-                .keys()
-                .map(|(word, code)| (*word, code.clone()))
-                .collect();
-            for entry in canonical_word_entries() {
-                let code = derive_code(entry.readings());
-                wanxiang_keys.insert((entry.word(), code));
-            }
-            for entry in production_sogou_word_entries() {
-                let code = derive_code(entry.readings());
-                if wanxiang_keys.contains(&(entry.word(), code.clone())) {
-                    continue;
-                }
-                aggregated.insert((entry.word(), code), entry.frequency_score());
             }
             let mut entries: Vec<_> = aggregated
                 .into_iter()
@@ -330,6 +308,25 @@ pub(crate) fn scored_four_key_entries() -> Vec<crate::merged_ranking::ScoredEntr
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn every_distributed_extended_entry_has_an_eligible_wanxiang_source() {
+        let allowed: std::collections::BTreeSet<_> = super::canonical_extended_word_entries()
+            .iter()
+            .map(|e| (e.word(), super::derive_code(e.readings())))
+            .collect();
+        for entry in super::canonical_extended_word_code_entries() {
+            assert!(
+                allowed.contains(&(entry.word(), entry.code().clone())),
+                "production extended entry lacks eligible source"
+            );
+        }
+        assert_eq!(
+            super::canonical_extended_word_code_entries().len(),
+            allowed.len(),
+            "removing restricted source must not silently reduce eligible coverage"
+        );
+    }
+
     use super::*;
     use crate::rime::canonical_char_entries;
     use xhup_core::XhupHanzi;
@@ -382,8 +379,8 @@ mod tests {
             })
         );
         assert!(
-            extended.iter().any(|entry| entry.word() == "一辑"),
-            "llm_review keep 应进入生产扩展词层"
+            extended.iter().all(|entry| entry.word() != "一辑"),
+            "分类 keep 不是再分发授权;restricted-only 词不得进入生产扩展词层"
         );
         assert!(
             extended.iter().all(|entry| entry.word() != "一仇"),

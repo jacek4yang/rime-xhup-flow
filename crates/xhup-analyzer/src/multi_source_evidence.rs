@@ -28,7 +28,8 @@
 //! - 同域多源(如 conversation 与 kdconv_ge2)不重复计数:融合前按
 //!   声明顺序去重 —— 每个语言域只保留声明中第一个已测量的源。
 //!
-//! 隐私与许可:全部输入为入库聚合产物,无原始语料;构建纯本地确定性。
+//! 隐私与许可:生产只消费万象/KdConv;Sogou 及其衍生白名单不嵌入。
+//! 二值研究通道仅供调用方显式传入的研究数据,不是生产证据信号。
 
 use std::collections::BTreeMap;
 
@@ -37,8 +38,8 @@ use crate::corpus::CorpusStats;
 /// 会话域派生统计(与 evidence.rs 同源嵌入)。
 const CONVERSATION_TSV: &str = include_str!("../../../data/corpus/conversation_kdconv.tsv");
 
-/// 保护白名单(词 → 来源集合;来源 id 即证据源标记)。
-const PROTECT_LIST_TSV: &str = include_str!("../../../data/words/sogou/protect_list.tsv");
+// Sogou-derived whitelist is research-only: never embed it into distributed CLI.
+// Synthetic fixture support remains for research/evidence tests.
 
 /// 证据源标识(声明顺序 = 同域去重优先级)。
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -305,7 +306,7 @@ pub fn parse_protect_list(text: &str) -> BTreeMap<String, BTreeSet<String>> {
 /// 全库实例(嵌入入库数据,构建一次复用)。
 pub fn build_from_canonical(words: &BTreeMap<String, f64>) -> MultiSourceEvidenceSet {
     let corpus = CorpusStats::from_tsv(CONVERSATION_TSV).expect("嵌入语料统计必须可解析");
-    let protect = parse_protect_list(PROTECT_LIST_TSV);
+    let protect = BTreeMap::new();
     MultiSourceEvidenceSet::build(words, &corpus, &protect)
 }
 

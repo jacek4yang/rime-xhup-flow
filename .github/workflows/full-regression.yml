@@ -88,7 +88,9 @@ jobs:
           dpkg-query -W librime-dev librime-bin rime-prelude || true
 
       - name: 生成 Rime 包
-        run: cargo run -p xhup-cli --locked -- generate rime --output /tmp/xhup-flow-package
+        run: |
+          cargo run -p xhup-cli --locked -- generate rime --output /tmp/xhup-flow-package
+          python3 tests/release/check_distribution_sources.py --depfile target/debug/xhup-cli.d
 
       - name: 导出全静态菜单 manifest 并构建 xhup-cli
         run: |

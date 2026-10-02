@@ -37,6 +37,8 @@ mod rime_shortcuts;
 mod rime_word_shortcuts;
 mod rime_words;
 mod shortcuts;
+// Restricted source material is compiled only into local research tests.
+#[cfg(all(test, feature = "research-sogou"))]
 mod sogou_filter;
 mod trainer;
 mod two_key_shortcuts;

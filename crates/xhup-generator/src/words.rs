@@ -20,6 +20,7 @@ const EXTENDED_WORDS_TSV: &str = include_str!("../../../data/words/wanxiang_exte
 
 /// 搜狗细胞词库聚合层(2~4 字分片,来源与限制见 data/words/sogou/README.md)。
 /// 逐片嵌入;条目分数恒为 1(来源无真实词频),仅提供 exact 候选增量证据。
+#[cfg(all(test, feature = "research-sogou"))]
 const SOGOU_WORD_SHARDS: &[&str] = &[
     include_str!("../../../data/words/sogou/sogou_cell_01.tsv"),
     include_str!("../../../data/words/sogou/sogou_cell_02.tsv"),
@@ -79,10 +80,11 @@ pub(crate) fn canonical_extended_word_entries() -> &'static [CanonicalWordEntry]
 }
 
 /// 搜狗细胞词库聚合层全部 semantic entry(原始分片,含 target /
-/// llm_review-remove)。生产构建走 sogou_filter 生产子集。
+/// llm_review-remove)。仅显式 research-sogou 测试可用;生产完全排除。
 ///
 /// 分片为同一 TSV 格式的连续切片,排序键 (词长, 词, 读音序列) 跨片单调;
 /// 解析时按分片顺序拼接并校验跨片边界,保证与单片等价。
+#[cfg(all(test, feature = "research-sogou"))]
 pub(crate) fn canonical_sogou_word_entries() -> &'static [CanonicalWordEntry] {
     static ENTRIES: OnceLock<Vec<CanonicalWordEntry>> = OnceLock::new();
     ENTRIES
@@ -196,6 +198,7 @@ fn parse_tsv(text: &'static str, name: &str) -> Vec<CanonicalWordEntry> {
 
 /// 解析单个搜狗分片:与 [`parse_tsv`] 相同格式与校验,但不要求该分片
 /// 非空(分片行数由提取器确定性切分,边界单调性由调用方跨片校验)。
+#[cfg(all(test, feature = "research-sogou"))]
 fn parse_tsv_shard(text: &'static str, name: &str) -> Vec<CanonicalWordEntry> {
     let mut entries: Vec<CanonicalWordEntry> = Vec::new();
     let mut previous_key: Option<(usize, &'static str, Vec<HanziReading>)> = None;
@@ -312,6 +315,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "research-sogou")]
     fn sogou_shard_counts_match_committed_manifest() {
         let entries = canonical_sogou_word_entries();
         assert_eq!(entries.len(), 2_082_859);
@@ -327,6 +331,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "research-sogou")]
     fn sogou_shards_strictly_ordered_across_shard_boundaries() {
         let entries = canonical_sogou_word_entries();
         for pair in entries.windows(2) {
