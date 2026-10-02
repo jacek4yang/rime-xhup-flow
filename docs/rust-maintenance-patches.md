@@ -42,6 +42,13 @@ provenance checks. URLPattern's missing root MIT notice was retrieved at its
 published VCS commit `ea97a5de9740a7eda311281828b3270d92fb1afb`. The maintained
 macro-error crate's published license files are retained unchanged.
 
+Trainer's Tauri resource map carries all seven maintenance-crate notices alongside
+both GLib notices in `licenses/`, including compile-time macro notices rather than
+assuming macro expansion eliminates attribution obligations. The integrity gate
+rejects omitted or colliding resource mappings. These checks bind packaging inputs;
+final installer extraction must still verify actual notice bytes. They are not a
+complete third-party license/SBOM review of all transitive dependencies.
+
 ## Validation
 
 - Trainer check passed without the prior future-incompatibility warning.
