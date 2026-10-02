@@ -128,6 +128,9 @@ jobs:
       - name: 全量原生审计分区与失败关闭回执回归（合成数据）
         run: python3 -m unittest discover -s tests/librime -p 'test_audit_shards.py'
 
+      - name: 外部原生语料选择与统计工具回归（不冒充完整语料运行）
+        run: python3 -m unittest discover -s tests/quality -p 'test_*.py'
+
       # 语料回放回归门禁:canonical 映射变更导致回放指标回退超容差即红
       # (夹具与基线见 data/corpus/README.md;断言语义见 replay-bench)。
       - name: 语料回放回归门禁

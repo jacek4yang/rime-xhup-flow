@@ -1,0 +1,56 @@
+{
+  "scope": "Known KDConv/PTT upstream sentences only; unknown lexical-frequency source text is not certified disjoint",
+  "opencc": "opencc-python-reimplemented==0.1.7",
+  "sources": [
+    {
+      "name": "film_train.json",
+      "sha256": "b48a491c30ace856914c6863679ba5c8ea95d7e3a1734f45177f69afbcd88e74",
+      "url": "https://raw.githubusercontent.com/thu-coai/KdConv/653db76432de09a004ba708a68f8bbd5500e6bec/data/film/train.json"
+    },
+    {
+      "name": "film_dev.json",
+      "sha256": "2f156d8d34bdd3eac31c196772156d36e017f8cb2255a2c312bd98e367ed363e",
+      "url": "https://raw.githubusercontent.com/thu-coai/KdConv/653db76432de09a004ba708a68f8bbd5500e6bec/data/film/dev.json"
+    },
+    {
+      "name": "film_test.json",
+      "sha256": "5ba2b79f9791bedbe5fe8a1bf5d7cbf277697743ee426ecd05459d9e28bcf21b",
+      "url": "https://raw.githubusercontent.com/thu-coai/KdConv/653db76432de09a004ba708a68f8bbd5500e6bec/data/film/test.json"
+    },
+    {
+      "name": "music_train.json",
+      "sha256": "d5835bb6a61da0067ab2d0dc3ba90059f07cfa781a70206a8266ecafd22641ad",
+      "url": "https://raw.githubusercontent.com/thu-coai/KdConv/653db76432de09a004ba708a68f8bbd5500e6bec/data/music/train.json"
+    },
+    {
+      "name": "music_dev.json",
+      "sha256": "ee34a4af167195db43fdcc910f8d125956222517f0572d248a069057493d557f",
+      "url": "https://raw.githubusercontent.com/thu-coai/KdConv/653db76432de09a004ba708a68f8bbd5500e6bec/data/music/dev.json"
+    },
+    {
+      "name": "music_test.json",
+      "sha256": "46f048c5db9dde45127cf6630b2fa06b685be369b71c5bc2dc3022d3f4bbad65",
+      "url": "https://raw.githubusercontent.com/thu-coai/KdConv/653db76432de09a004ba708a68f8bbd5500e6bec/data/music/test.json"
+    },
+    {
+      "name": "travel_train.json",
+      "sha256": "b582a7171f8a7bb6b579bbf8d31a06cebd0966e520c95301a143b1629d20fb2f",
+      "url": "https://raw.githubusercontent.com/thu-coai/KdConv/653db76432de09a004ba708a68f8bbd5500e6bec/data/travel/train.json"
+    },
+    {
+      "name": "travel_dev.json",
+      "sha256": "8d1f31295888cf61eff398bab8aa042f7fccd04a088bd63c939f0b79625a9093",
+      "url": "https://raw.githubusercontent.com/thu-coai/KdConv/653db76432de09a004ba708a68f8bbd5500e6bec/data/travel/dev.json"
+    },
+    {
+      "name": "travel_test.json",
+      "sha256": "730426b0997b8375c8477c7e658c0ec645fced6ab8d546adda114b21cf30faac",
+      "url": "https://raw.githubusercontent.com/thu-coai/KdConv/653db76432de09a004ba708a68f8bbd5500e6bec/data/travel/test.json"
+    },
+    {
+      "name": "Gossiping-QA-Dataset.txt",
+      "sha256": "cf5ef0a931a8a14444a9854aa13cf6e7516b3ec4922b7cde5d45d13ed825ae79",
+      "url": "https://raw.githubusercontent.com/zake7749/Gossiping-Chinese-Corpus/65b7e3630a560223a2b4d702d78d120d5ff1e8dd/data/Gossiping-QA-Dataset.txt"
+    }
+  ]
+}
