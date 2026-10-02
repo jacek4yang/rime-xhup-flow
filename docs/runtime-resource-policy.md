@@ -3,7 +3,9 @@
 The runtime planner has structural work bounds, not a universal latency promise:
 128 input keys, at most 128×31 exact dictionary lookups, one entry per lookup,
 four alternative native queries, two inspected candidates per alternative, and a
-32+8 merge head. Longer inputs bypass planning and retain native Rime behavior.
+protected prefix of five native candidates followed by at most eight alternatives.
+The remaining native stream is unchanged; no base candidates are score-sorted.
+Longer inputs bypass planning and retain native Rime behavior.
 Session memory is capped at 512 strings × 256 bytes with saturating counts.
 Persistent native learning has a logical update quota, not a byte-exact DB cap.
 These limits do not bound internal native dictionary search or arbitrary custom
