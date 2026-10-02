@@ -79,6 +79,9 @@ jobs:
       - name: 可分发来源门禁回归（合成 depfile，不是实际编译证据）
         run: python3 -m unittest discover -s tests/release -p 'test_distribution_sources.py'
 
+      - name: GLib 定界回移源码与许可门禁（不是忽略其它 advisories）
+        run: python3 tests/security/check_glib_backport.py
+
       - name: 格式检查
         run: cargo fmt --all -- --check
 

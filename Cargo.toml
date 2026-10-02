@@ -9,6 +9,10 @@ members = [
     "trainer/src-tauri",
 ]
 
+[patch.crates-io]
+# GTK 0.18 pins this line; backport upstream output-pointer soundness fix.
+glib = { path = "vendor/glib" }
+
 [workspace.package]
 edition = "2024"
 version = "2.0.0-rc.2"
