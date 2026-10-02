@@ -15,11 +15,11 @@ mkdir "$output/source" "$output/objects"
 tar -xzf "$output/source.tar.gz" --strip-components=1 -C "$output/source"
 for source in "$output"/source/src/*.cc "$output"/source/src/lib/*.cc; do
   # Intentional pkg-config word splitting for compiler/linker flags.
-  g++ -std=c++17 -O1 -fPIC $(pkg-config --cflags rime lua5.4 opencc) \
+  g++ -std=c++17 -O1 -fPIC -fvisibility=hidden $(pkg-config --cflags rime lua5.4 opencc) \
     -c "$source" -o "$output/objects/$(basename "$source").o"
 done
 for source in "$output"/source/src/lib/*.c; do
-  gcc -O1 -fPIC $(pkg-config --cflags lua5.4) \
+  gcc -O1 -fPIC -fvisibility=hidden $(pkg-config --cflags lua5.4) \
     -c "$source" -o "$output/objects/$(basename "$source").o"
 done
 g++ -shared "$output"/objects/*.o $(pkg-config --libs rime lua5.4 opencc) \

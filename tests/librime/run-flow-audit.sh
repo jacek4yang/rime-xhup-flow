@@ -76,6 +76,7 @@ if [[ -z "$ONLY_LEARNING" && -z "$MANIFEST" ]]; then
 fi
 SHARED_DATA_DIR=${RIME_SHARED_DATA_DIR:-/usr/share/rime-data}
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+python3 "$SCRIPT_DIR/../release/check_generated_runtime_sources.py" "$PACKAGE_DIR"
 
 work=$(mktemp -d)
 if [[ "${XHUP_AUDIT_KEEP_WORK:-0}" == 1 ]]; then
