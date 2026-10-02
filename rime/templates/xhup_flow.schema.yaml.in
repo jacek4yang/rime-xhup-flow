@@ -140,6 +140,18 @@ flow_lookup:
   dictionary: xhup_flow_learn
   enable_user_dict: false
 
+# Old librime-lua cannot intercept native memorization. Keep typing available
+# without constructing a writer; native_tail verifies this explicit false flag.
+flow_readonly:
+  dictionary: xhup_flow_learn
+  enable_completion: true
+  enable_sentence: true
+  sentence_over_completion: true
+  enable_user_dict: false
+  enable_encoder: false
+  encode_commit_history: false
+  initial_quality: 100
+
 flow:
   # Native tick-based update quota. Exhaustion pauses learning, never typing;
   # reset/import is explicit, and no second Lua persistence ledger is used.

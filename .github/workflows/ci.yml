@@ -215,7 +215,8 @@ jobs:
 
   librime:
     name: librime runtime smoke
-    runs-on: ubuntu-latest
+    # Keep the old-binding fallback reproducible alongside the pinned new binding.
+    runs-on: ubuntu-24.04
     # 轻量冒烟(#132):真实 librime 会话 + Lua 合同/单测/仿真 + 真实插件
     # Lua 审计 + 日常输入控制,全部分钟级。穷尽式审计(全静态等值 1.3M 项
     # 流程、rime_deployer --build 全量部署)已移至 full-regression.yml
@@ -279,7 +280,20 @@ jobs:
             librime-plugin-lua \
             lua5.4
 
-      - name: librime session 冒烟(实际 Lua 环境的完整 Flow + Static)
+      - name: 旧版 Lua 只读降级（真实输入、明确拒绝学习、重启无写入）
+        run: XHUP_AUDIT_ONLY_REPLAY=1 XHUP_REPLAY_VERIFY_READONLY=1 tests/librime/run-flow-audit.sh /tmp/xhup-flow-package
+
+      - name: 构建并安装具备有界学习 API 的固定源码 Lua 插件
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            liblua5.4-dev libopencc-dev libgoogle-glog-dev libboost-dev \
+            libmarisa-dev libyaml-cpp-dev darts
+          bash tests/librime/build-supported-lua.sh /tmp/xhup-supported-lua
+          plugin=$(dpkg -L librime-plugin-lua | grep '/librime-lua.so$')
+          test -n "$plugin"
+          sudo install -m 755 /tmp/xhup-supported-lua/librime-lua.so "$plugin"
+
+      - name: librime session 冒烟(固定新版 Lua 环境的完整 Flow + Static)
         run: tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
 
       - name: Lua runtime 合同与自检单测(lua5.4,不依赖 librime)

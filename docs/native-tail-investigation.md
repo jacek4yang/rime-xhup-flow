@@ -61,6 +61,18 @@ commit-history encoding. An excessive imported tick also pauses new learning.
 Quota/API/storage refusal keeps typing available and reports
 `xhup_flow_learning_status`; the first Flow candidate carries a learning-paused
 hint. Missing bounded-learning APIs fail closed, not into an unbounded writer.
+The capability check happens **before** constructing a learning-enabled provider.
+Bindings without `Component.TableTranslator` (including Ubuntu 24.04's
+September 2023 Lua plugin) use the explicitly learning-disabled `flow_readonly`
+namespace, retain native typing, and report `bounded_api_unavailable`. A missing
+or overridden read-only flag fails before construction. Missing storage on a
+capable binding is `storage_unavailable`, not evidence that learning is off.
+Full learning qualification requires the callback/user-dictionary APIs; CI
+separately exercises the distro's old read-only fallback and a source-hash-pinned
+librime-lua commit `68f9c364a2d25a04c7d4794981d7c796b05ab627`.
+The old fallback must never open a user database, even when learning is requested
+and the process restarts. This degradation is not full learning support.
+
 This is a **logical update bound**, not a byte-exact LevelDB size cap or power-loss
 durability guarantee. Export/reset/import are explicit ownership-checked CLI or
 Trainer operations; reset affects native learning, not separate research state.
@@ -96,6 +108,8 @@ platform guarantees or broad corpus-quality acceptance. The generated package ha
 also passed core replay with learning off/on/restart, extended editing, exact
 single-writer counts, and quota refusal without mutation. Its separate native
 learning audit verifies exact committed text, persistence, and actual CLI
-export/reset/import. Full static compatibility, supported Lua/Rime versions, and
-remaining release qualification must pass before promotion. Windows/macOS manual acceptance follows
+export/reset/import. The local librime 1.16.1 full audit passed all 141,138
+static codes both before and after learning, plus native learning management.
+Other supported Lua/Rime versions and remaining release qualification must pass
+before promotion. Windows/macOS manual acceptance follows
 README. No stable publication is authorized.

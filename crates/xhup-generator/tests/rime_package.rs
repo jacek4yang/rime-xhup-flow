@@ -169,6 +169,7 @@ fn schema_semantics() {
     assert!(!schema.contains("    - table_translator@flow"));
     assert!(
         schema.contains("flow_lookup:\n  dictionary: xhup_flow_learn\n  enable_user_dict: false")
+            && schema.contains("flow_readonly:\n  dictionary: xhup_flow_learn\n  enable_completion: true\n  enable_sentence: true\n  sentence_over_completion: true\n  enable_user_dict: false\n  enable_encoder: false\n  encode_commit_history: false")
     );
     // 历史 learn 配置保留,但不绑定重复的运行时学习写入者。
     assert!(

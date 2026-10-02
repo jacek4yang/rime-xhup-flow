@@ -10,13 +10,15 @@ int main(int argc, char **argv) {
   traits.app_name = "rime.xhup-extended-public-test";
   traits.min_log_level = 2; r->setup(&traits); r->initialize(&traits);
   RimeSessionId s;
-  if (!strcmp(argv[3], "--learn-once") || !strcmp(argv[3], "--learn-blocked")) {
+  if (!strcmp(argv[3], "--learn-once") || !strcmp(argv[3], "--learn-blocked") || !strcmp(argv[3], "--learn-unavailable")) {
     s=start(); State state=type(s,"single-native-writer","nihcnzqu","你好去",NULL);
     selected_commit(s,&state,"你好去","single-native-writer");
     char status[80]="";
     check(r->get_property(s,"xhup_flow_learning_status",status,sizeof(status)), "native learning status exposed");
     fprintf(stderr, "native learning status=%s\n", status);
-    check(!strcmp(status,!strcmp(argv[3],"--learn-blocked")?"quota_exhausted":"ready"), "native learning status matches operation");
+    const char *expected = !strcmp(argv[3],"--learn-unavailable") ? "bounded_api_unavailable"
+      : (!strcmp(argv[3],"--learn-blocked") ? "quota_exhausted" : "ready");
+    check(!strcmp(status,expected), "native learning status matches operation");
     r->destroy_session(s);
   } else if (!strcmp(argv[3], "--stress")) {
     char input[130]="", expected[400]="";

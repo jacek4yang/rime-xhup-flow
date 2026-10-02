@@ -8,7 +8,7 @@ end
 Segment = function(start, finish) return { start=start, _end=finish } end
 ShadowCandidate = function() error("a second shadow would break native learning") end
 local function fixture(input, start)
-  local env = { engine = { schema = {} } }
+  local env = { engine = { schema = {config={get_bool=function() return false end}} } }
   local base, created, calls, emitted = {}, {}, {}, {}
   for i=1,100 do base[i]={ text=tostring(i), start=start, _end=start+#input, quality=10 } end
   local current, visits, lookups = "", 0, 0
@@ -40,10 +40,11 @@ local function fixture(input, start)
     end
     return stream(items)
   end }
-  Component = { Translator = function(engine, _, name)
+  Component = { TableTranslator = function(engine, _, name)
     check(engine==env.engine and name=="table_translator@flow", "one native writer")
     return native
   end }
+  Component.Translator = Component.TableTranslator
   Memory = function(engine, schema, name)
     check(engine==env.engine and schema==engine.schema and name=="flow_lookup", "read-only namespace")
     return memory
@@ -107,12 +108,12 @@ local function learning_fixture(tick, limit)
     disconnect=function(self) self.user_dict=nil end }
   local status
   local engine={ context={set_property=function(_,name,value) check(name=="xhup_flow_learning_status","status property"); status=value end},
-    schema={config={get_int=function(_,name)
+    schema={config={get_bool=function() return true end, get_int=function(_,name)
       if name=="flow/learning_max_updates" then return limit end
       if name=="flow/max_phrase_length" then return 20 end
       if name=="flow/max_homographs" then return 1 end
     end}}}
-  Component={Translator=function() return native end}
+  Component={Translator=function() return native end, TableTranslator=function() return native end}
   Memory=function() return {} end
   local e={engine=engine};policy.init(e)
   return e,native,function() return status end
@@ -130,4 +131,30 @@ check(not native.memorize_callback(native,huge) and native.writes==0,"unbounded 
 local corrupt={get=function() error("unverified commit") end}
 check(not native.memorize_callback(native,corrupt) and status()=="storage_unverified","callback errors cannot bypass bounds")
 policy.fini(le);check(native.memorize_callback==nil,"callback cycle released on fini")
+-- Old Lua must never even construct the learning-enabled namespace.
+local legacy_calls = {}
+Component = {Translator=function(_, _, name)
+  legacy_calls[#legacy_calls+1]=name
+  check(name=="table_translator@flow_readonly","old binding never constructs a writer")
+  return {query=function() return stream({}) end}
+end}
+local legacy={engine={schema={config={get_bool=function(_, key)
+  check(key=="flow_readonly/enable_user_dict","verify explicit readonly configuration")
+  return false
+end}}}}
+policy.init(legacy)
+check(#legacy_calls==1 and legacy.native and legacy.learning_status=="bounded_api_unavailable",
+  "old API degrades visibly while retaining native typing")
+policy.fini(legacy)
+legacy.engine.schema.config.get_bool=function() return nil end
+policy.init(legacy)
+check(#legacy_calls==1 and not legacy.native and legacy.learning_status=="readonly_config_unverified",
+  "missing readonly flag fails before constructing any provider")
+legacy.engine.schema.config.get_bool=function() return true end
+policy.init(legacy)
+check(#legacy_calls==1 and not legacy.native,"customized writable fallback rejected")
+local unavailable,writer,storage_status=learning_fixture(0,65536)
+writer.user_dict=nil
+policy.init(unavailable)
+check(storage_status()=="storage_unavailable","missing storage is not learning-off evidence")
 print(string.format("PASS native boundary policy: %d assertions (Lua stubs, not librime)",checks))

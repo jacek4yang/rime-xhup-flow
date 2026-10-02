@@ -13,8 +13,11 @@ local function learning_status(env, status)
 end
 
 local function bound_learning(env)
-  if not env.native.user_dict then learning_status(env, "off"); return end
   local config = env.engine.schema.config
+  if not env.native.user_dict then
+    learning_status(env, config:get_bool("flow/enable_user_dict") == false and "off" or "storage_unavailable")
+    return
+  end
   local limit = config:get_int("flow/learning_max_updates") or M.MAX_LEARNING_UPDATES
   limit = math.max(0, math.min(limit, M.MAX_LEARNING_UPDATES))
   local phrase_length = config:get_int("flow/max_phrase_length") or 20
@@ -59,13 +62,25 @@ function M.init(env)
     env.native_error = "native translator API unavailable"
     return
   end
-  local ok, native = pcall(Component.Translator, env.engine, "", "table_translator@flow")
+  -- Old bindings construct a plain native writer without exposing any callback
+  -- or disconnect API. Detect that BEFORE construction, never from user_dict=nil.
+  local bounded_api = type(Component.TableTranslator) == "function"
+  local namespace = bounded_api and "flow" or "flow_readonly"
+  if not bounded_api and env.engine.schema.config:get_bool(namespace .. "/enable_user_dict") ~= false then
+    learning_status(env, "readonly_config_unverified")
+    env.native_error = "read-only fallback configuration unavailable"
+    return
+  end
+  local constructor = bounded_api and Component.TableTranslator or Component.Translator
+  local ok, native = pcall(constructor, env.engine, "", "table_translator@" .. namespace)
   if not ok or not native then
     env.native_error = "native translator construction failed"
     return
   end
   env.native = native
-  local bounded = pcall(bound_learning, env)
+  local bounded = true
+  if bounded_api then bounded = pcall(bound_learning, env)
+  else learning_status(env, "bounded_api_unavailable") end
   if not bounded then
     learning_status(env, "bounded_api_unavailable")
     -- Never silently keep an unbounded writer after a failed capability check.
@@ -80,7 +95,11 @@ function M.init(env)
 end
 
 function M.fini(env)
-  if env.native then pcall(function() env.native.memorize_callback = nil end) end
+  if env.native then
+    -- Disconnect before clearing the callback; never reopen an unbounded writer.
+    if env.native.disconnect then pcall(env.native.disconnect, env.native) end
+    pcall(function() env.native.memorize_callback = nil end)
+  end
   env.memory, env.native = nil, nil
 end
 

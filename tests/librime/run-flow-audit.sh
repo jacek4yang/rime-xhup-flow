@@ -180,6 +180,19 @@ if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
   "$work/replay" "$flow_dir" "$SHARED_DATA_DIR" "${XHUP_REPLAY_MODE:---qualify}"
   cc $CFLAGS -std=c11 "$SCRIPT_DIR/runtime_extended.c" $(pkg-config --cflags --libs rime) -o "$work/extended"
   "$work/extended" "$flow_dir" "$SHARED_DATA_DIR" --stress
+  if [[ "${XHUP_REPLAY_VERIFY_READONLY:-0}" == 1 ]]; then
+    # Intentionally request learning on the OLD binding. The policy must refuse
+    # before construction, retain real typing, and never create a native writer.
+    printf 'patch:\n  flow/enable_user_dict: true\n  learn/enable_user_dict: true\n' > "$flow_dir/xhup_flow.custom.yaml"
+    rime_deployer --compile "$flow_dir/xhup_flow.schema.yaml" "$flow_dir" "$SHARED_DATA_DIR" >/dev/null
+    for restart in 1 2; do
+      "$work/extended" "$flow_dir" "$SHARED_DATA_DIR" --learn-unavailable
+      [[ ! -e "$flow_dir/xhup_flow_user.userdb" ]] || {
+        echo "FAIL old binding opened a learning store" >&2; exit 1;
+      }
+    done
+    echo "PASS old binding: requested learning refused before storage, including restart"
+  fi
   if [[ "${XHUP_REPLAY_VERIFY_LEARNING:-0}" == 1 ]]; then
     if [[ -d "$flow_dir/xhup_flow_user.userdb" ]]; then
       (cd "$flow_dir" && rime_dict_manager -e xhup_flow_user "$work/off.tsv")
