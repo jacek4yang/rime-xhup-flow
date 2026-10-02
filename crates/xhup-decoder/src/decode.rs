@@ -1,14 +1,15 @@
 //! 有界 Beam/Viterbi 联合解码基础。
 //!
 //! 在已有 [`Lattice`] 上从左到右展开假设，每一位置最多保留 `beam_width` 条；
-//! 完整路径再用调用方提供的 [`DeterministicScorer`] 重打分。生产解码不再
-//! 依赖 [`Lattice::complete_paths`] 物化全部路径；后者仍是可验证参考枚举器。
+//! 前缀与完整路径均使用调用方的 [`DeterministicScorer`]，不以另一套 baseline 剪枝。
+//! 这是离线研究搜索，不是已部署的原生输入法。有限 beam 仍可能丢失未来高分路径；
+//! [`Lattice::complete_paths`] 是小图上验证这一近似的穷举参考。
 
 use std::cmp::Ordering;
 use std::fmt;
 use std::num::NonZeroUsize;
 
-use crate::scoring::{BaselineScorer, DeterministicScorer, Score, log2_q10, rank_paths};
+use crate::scoring::{DeterministicScorer, Score, rank_paths};
 use crate::{EdgeId, Lattice, LatticePath, RuntimeContext, ScoredPath};
 
 /// beam 搜索与 Top-K 截取的显式上限。
@@ -54,7 +55,7 @@ impl Default for DecodeConfig {
 ///
 /// 真实数据实测（`context-replay-bench --bounded` 扫描 2701 个同码歧义 token）：
 /// 菜单扇出未超过 32，且 `beam_width >= 32` 时与穷举排序逐 token 一致。默认
-/// 上限取该实测值，既能覆盖真实菜单，又把最坏情况的搜索规模钉死。
+/// 上限取该实测值作为研究资源策略；单 token 菜单测量不保证多段路径召回。
 pub const DEFAULT_MAX_BEAM_WIDTH: NonZeroUsize = NonZeroUsize::new(32).expect("32 != 0");
 
 /// 自适应扩宽的结果：最终宽度与是否仍被截断。
@@ -114,7 +115,7 @@ impl<B> fmt::Debug for DecodeResult<B> {
     }
 }
 
-/// 前缀假设：增量 baseline 边分 + 已覆盖文本，供位置内确定性剪枝。
+/// 前缀假设：调用方 scorer 的前缀分 + 已覆盖文本，供确定性剪枝。
 struct Hypothesis {
     score: Score,
     text: String,
@@ -132,7 +133,7 @@ impl Hypothesis {
         }
     }
 
-    fn extend(&self, edge_id: EdgeId, segment: &str, edge_score: Score) -> Self {
+    fn extend(&self, edge_id: EdgeId, segment: &str) -> Self {
         let mut text = String::with_capacity(self.text.len() + segment.len());
         text.push_str(&self.text);
         text.push_str(segment);
@@ -143,7 +144,7 @@ impl Hypothesis {
         edge_ids.extend_from_slice(&self.edge_ids);
         edge_ids.push(edge_id);
         Self {
-            score: self.score.saturating_add(edge_score),
+            score: 0, // Filled with the caller's objective before entering a beam.
             text,
             segments,
             edge_ids,
@@ -173,22 +174,22 @@ fn retain_beam(beam: &mut Vec<Hypothesis>, beam_width: usize) -> bool {
     overflow
 }
 
-fn empty_result<B>() -> DecodeResult<B> {
+fn empty_result<B>(truncated: bool) -> DecodeResult<B> {
     DecodeResult {
         ranked: Vec::new(),
-        truncated: false,
-        fallback: None,
+        truncated,
+        fallback: truncated.then_some(FallbackReason::BeamTruncated),
     }
 }
 
 /// 在 `lattice` 上做确定性有界 beam 搜索，再对存活完整路径用 `scorer` 重打分。
 ///
-/// beam 展开使用与 [`BaselineScorer`] 相同的可加边分（`log2(freq+1)` Q10
-/// 减去每段惩罚），以便在不调用完整路径 scorer 的前提下剪枝。到达输入末尾
-/// 的假设经 [`rank_paths`] 排序后截取 `top_k`。
+/// 每次展开后调用同一 `scorer` 评估已覆盖前缀；到达末尾后按同一目标
+/// [`rank_paths`] 排序并截取 `top_k`。这不是未来得分上界，非加性或上下文
+/// 目标在有限宽度下仍可能失去最优后续路径；截断必须作为近似报告。
 ///
 /// 任一位置候选数超过 `beam_width` 时 `truncated` 为真。无完整路径时返回
-/// 空结果且 `truncated == false`，不会 panic。
+/// 空结果，但仍保留实际发生的截断标记，不会把丢失路径伪装成完整搜索。
 ///
 /// 若需要「足够宽时与穷举排序等价」的保证，用 [`decode_beam_adaptive`]。
 pub fn decode_beam<S: DeterministicScorer>(
@@ -244,7 +245,6 @@ fn decode_beam_with_width<S: DeterministicScorer>(
     beam_width: usize,
 ) -> DecodeResult<S::Breakdown> {
     let n = lattice.input().len();
-    let segment_penalty = BaselineScorer::default().segment_penalty();
     let mut beams: Vec<Vec<Hypothesis>> = (0..=n).map(|_| Vec::new()).collect();
     beams[0].push(Hypothesis::root());
     let mut truncated = false;
@@ -264,15 +264,16 @@ fn decode_beam_with_width<S: DeterministicScorer>(
                     .edge(edge_id)
                     .expect("outgoing edge 必须属于 lattice");
                 let segment = edge.candidate().text();
-                let edge_score =
-                    log2_q10(edge.candidate().frequency()).saturating_sub(segment_penalty);
-                beams[edge.span().end()].push(hyp.extend(edge_id, segment, edge_score));
+                let mut extended = hyp.extend(edge_id, segment);
+                let prefix = LatticePath::from_edge_ids(extended.edge_ids.clone());
+                extended.score = scorer.score(context, lattice, &prefix).0;
+                beams[edge.span().end()].push(extended);
             }
         }
     }
 
     if beams[n].is_empty() {
-        return empty_result();
+        return empty_result(truncated);
     }
 
     let paths: Vec<LatticePath> = std::mem::take(&mut beams[n])

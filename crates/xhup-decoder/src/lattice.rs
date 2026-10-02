@@ -206,7 +206,8 @@ impl LatticeEdge {
     }
 }
 
-/// 一条覆盖完整 composition 的分段路径。
+/// 一条从 composition 起点连续覆盖的分段路径。
+/// 搜索内部可将前缀交给 scorer；公开解码结果与 complete_paths 只返回完整路径。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LatticePath {
     edge_ids: Box<[EdgeId]>,
