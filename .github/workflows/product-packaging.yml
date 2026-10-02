@@ -222,12 +222,10 @@ jobs:
           set -euo pipefail
           ver="${{ steps.meta.outputs.rime_version }}"
           mkdir -p artifacts
-          stage="$(mktemp -d)"
-          trap 'rm -rf "$stage"' EXIT
-          cp build/rime-package/*.yaml "$stage/"
-          cp -r build/rime-package/lua "$stage/"
-          cp rime/package/INSTALL.md "$stage/"
-          (cd "$stage" && zip -q -r "$GITHUB_WORKSPACE/artifacts/xhup-flow-rime-v$ver.zip" *)
+          python3 tests/release/rime_archive.py create build/rime-package \
+            "artifacts/xhup-flow-rime-v$ver.zip"
+          python3 tests/release/rime_archive.py check build/rime-package \
+            "artifacts/xhup-flow-rime-v$ver.zip"
           (cd artifacts && sha256sum "xhup-flow-rime-v$ver.zip" > "xhup-flow-rime-v$ver.zip.sha256")
           ls -l artifacts/
 

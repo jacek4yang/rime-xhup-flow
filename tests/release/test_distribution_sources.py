@@ -33,6 +33,10 @@ class DistributionGate(unittest.TestCase):
         self.dep.write_text("xhup-cli: word_codes.rs data/words/sogou/protect_list.tsv")
         self.assertNotEqual(self.run_gate(), 0)
 
+    def test_full_official_dataset_dependency(self):
+        self.dep.write_text("xhup-cli: word_codes.rs data/xhup/flypy_official_char_codes.tsv")
+        self.assertNotEqual(self.run_gate(), 0)
+
     def test_wrong_manifest(self):
         (self.root / "data/words/sogou/MANIFEST.tsv").write_text("modified")
         self.assertNotEqual(self.run_gate(), 0)
