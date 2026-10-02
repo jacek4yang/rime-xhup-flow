@@ -9,7 +9,7 @@
 //!   static-shortcut-audit --dump-static-menu-manifest 同源);
 //! - 输出:确定性 TSV(头部聚合指标 + 逐条判定);
 //! - expected_effort_saving / top-N 浅层覆盖使用 LexicalEvidenceSet
-//!   daily-prior(log 域相对值,exp 归一化;缺失跳过)。misleading 判定
+//!   daily-prior(分位效用的 exp 质量归一化;缺失跳过)。misleading 判定
 //!   仍纯 rank,与加权无关;
 //! - `--threshold`:misleading-hint rate 门禁(0 ≤ t ≤ 1);超标即退出码 1。
 //!   CI 以 `--threshold 0.0` 断言「misleading = 0」(§3 合同)。
@@ -52,8 +52,8 @@ fn main() -> ExitCode {
 
     let occupancy = xhup_analyzer::occupancy::CodeOccupancy::build_current_production();
     let (hints, full_lens) = xhup_generator::lua_hints_view_with_full_lens();
-    // daily-prior:log 域相对值(0 = 中位),不是概率;不可与 1e-6 比较,
-    // 也不可直接当 P(word)。审计侧 exp 转为正质量后在先验图上归一化。
+    // daily-prior:0..=1 分位效用,不是概率或 log 频率。
+    // 审计侧 exp 是显式软加权策略,在先验图上归一化;不恢复真实词频。
     // 缺失先验的词显式跳过,不填 0。
     let data = xhup_analyzer::build_analysis();
     let evidence = xhup_analyzer::LexicalEvidenceSet::build(&data.words, &data.frequency);

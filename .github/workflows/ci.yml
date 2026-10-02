@@ -131,6 +131,11 @@ jobs:
           --bigram data/corpus/kdconv_bigram.tsv
           --baseline data/benchmarks/context-replay-baseline.json
 
+      - name: 多源证据量纲与消融报告（研究回归，不是独立质量验收）
+        run: |
+          cargo run --locked -p xhup-analyzer --bin evidence-scales-audit > /tmp/evidence-scales.json
+          diff -u data/benchmarks/evidence-scales-v1.json /tmp/evidence-scales.json
+
       - name: 知识库来源与证据审计
         run: cargo run --locked -p xhup-analyzer --bin knowledge-audit -- --check
 

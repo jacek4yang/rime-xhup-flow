@@ -8,7 +8,7 @@
 //! 3. 是否「有用」(rank 1:输入简码即首选命中)还是「误导」
 //!    (词不在菜单或 rank > 1,用户必须翻页/选择,提示价值存疑)?
 //! 4. 全库聚合指标:top1/top3 rate、misleading-hint rate、
-//!    expected effort saving(daily-prior 加权:log 域先验 exp 归一化)、
+//!    expected effort saving(daily-prior 效用的 exp 质量归一化)、
 //!    collision mass、prefix utilization、
 //!    high-frequency shallow-slot coverage(daily-prior 降序)。
 //!
@@ -79,8 +79,8 @@ pub struct ShortcutAuditMetrics {
     pub misleading: usize,
     /// 期望键节省:Σ w(word) × saved。
     ///
-    /// daily-prior 是 log 域相对值(0 = 中位),**不是**概率,不可与 1e-6
-    /// 比较,也不可直接当 P(word)。正质量 = `exp(prior)`,仅保留有限且
+    /// daily-prior 是 0..=1 的分位效用,**不是**概率或 log 频率。
+    /// 正质量 = `exp(prior)` 是显式加权策略(范围 1..=e),仅保留有限且
     /// 严格为正的值,在传入的先验图上归一化使 Σw = 1;缺失先验的词显式
     /// 跳过,不填 0。未提供 daily_prior 图时回退到 `normalized_frequency`。
     pub expected_effort_saving: f64,
@@ -102,7 +102,7 @@ pub struct ShortcutAuditInput<'a> {
     pub full_code_lens: &'a BTreeMap<String, usize>,
     /// 词 → 万象归一化频率(daily_prior 缺失时的回退加权/排序)。
     pub normalized_frequency: &'a BTreeMap<String, f64>,
-    /// 词 → daily-prior(log 域相对值,0 = 中位)。`Some` 时优先用于
+    /// 词 → daily-prior(分位效用,不是概率)。`Some` 时优先用于
     /// expected_effort_saving 与 top-N 浅层覆盖;图中不存在的词视为缺失。
     pub daily_prior: Option<&'a BTreeMap<String, f64>>,
     /// 真实菜单体系(canonical 层静态占用)。
@@ -176,8 +176,8 @@ fn aggregate(entries: &[ShortcutAuditEntry], input: &ShortcutAuditInput) -> Shor
 
 /// daily-prior → 正质量:`exp(prior)`,仅有限且严格为正。
 ///
-/// 先验是 log 域相对值(0 = 中位),不是概率;exp 把中位置于质量 1,
-/// 高于中位的词质量大于 1。溢出/下溢到非有限或非正的值视为不可用。
+/// 当前先验为 0..=1 分位效用;exp 是明确的软加权策略,不是恢复词频。
+/// 泛用调用方提供的值若溢出/下溢到非有限或非正质量,则视为不可用。
 fn exp_positive_mass(prior: f64) -> Option<f64> {
     let mass = prior.exp();
     (mass.is_finite() && mass > 0.0).then_some(mass)
