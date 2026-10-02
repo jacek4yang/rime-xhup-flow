@@ -226,6 +226,9 @@ jobs:
             rime-prelude \
             pkg-config
 
+      - name: 原生学习快照所有权与历史迁移回归
+        run: cargo test -p xhup-cli --locked --test learning_native -- --ignored
+
       - name: 打印 librime 环境
         run: |
           rime_deployer --help 2>&1 | head -3 || true
