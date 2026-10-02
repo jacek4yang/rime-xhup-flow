@@ -58,6 +58,11 @@ unmaintained-package warnings: `proc-macro-error` 1.0.4 in GTK macros, plus
 `unic-char-property`, `unic-char-range`, `unic-common`, `unic-ucd-ident` and
 `unic-ucd-version` 0.9.0 under Tauri's URLPattern parser. The local source-patched
 GLib is not listed as a registry warning; its source gate remains mandatory.
-These six maintenance warnings still require separate bounded disposition. This frontend remediation does not itself close F16, native
+The [source-bound maintenance migrations](rust-maintenance-patches.md) now remove
+all six warnings rather than ignoring them: maintained macro diagnostics and
+Unicode identifier predicates replace the retired dependency chains. The refreshed
+Rust audit on this revision reports **zero vulnerabilities and zero warnings**.
+CI denies warnings and checks exact vendor provenance; no blanket audit exemption
+is used. This does not retroactively qualify the earlier unpatched revision. This frontend remediation does not itself close F16, native
 decoder qualification, or stable-release acceptance. Windows/macOS manual testing
 is delegated to users as described in README; untested results remain unknown.

@@ -80,7 +80,16 @@ jobs:
         run: python3 -m unittest discover -s tests/release -p 'test_distribution_sources.py'
 
       - name: GLib 定界回移源码与许可门禁（不是忽略其它 advisories）
-        run: python3 tests/security/check_glib_backport.py
+        run: |
+          python3 tests/security/check_glib_backport.py
+          python3 tests/security/check_rust_maintenance.py
+          python3 -m unittest discover -s tests/security -p 'test_*.py'
+          python3 tests/security/check_macro_diagnostic.py
+
+      - name: RustSec 完整审计（含维护警告，无忽略）
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          cargo audit --deny warnings
 
       - name: 格式检查
         run: cargo fmt --all -- --check
