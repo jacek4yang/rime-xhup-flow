@@ -101,12 +101,24 @@ def intervals(cases, planner, baseline):
                        for key, samples in zip(METRICS, values)} for label, values in draws.items()}}
 
 
-def summarize(metadata, planner, baseline):
+def summarize(metadata, planner, baseline, overlap=None):
     subsets = {"all": metadata["cases"]}
     for low, high in ((2,4),(5,8),(9,16),(17,64)):
         subsets[f"length_{low}_{high}"] = [c for c in metadata["cases"] if low <= c["characters"] <= high]
     for value in (True, False):
         subsets[f"proper_name_{str(value).lower()}"] = [c for c in metadata["cases"] if c["proper_name"] == value]
+    if overlap is not None:
+        if overlap["fixture_sha256"] != metadata["fixture_sha256"]:
+            raise ValueError("overlap report is for a different frozen fixture")
+        expected = {c["id"] for c in metadata["cases"]}
+        for source in ("kdconv", "ptt"):
+            if set(overlap[source]["cases"]) != expected:
+                raise ValueError("incomplete overlap report")
+        subsets["no_known_overlap"] = [c for c in metadata["cases"] if all(
+            not overlap[source]["cases"][c["id"]]["exact_sentence_matches"]
+            and not overlap[source]["cases"][c["id"]]["shared_8char_span_sentences"]
+            for source in ("kdconv", "ptt"))]
+        subsets["no_known_overlap_length_ge8"] = [c for c in subsets["no_known_overlap"] if c["characters"] >= 8]
     result = {label: {name: rates([rows[c["id"]] for c in cases]) for name, cases in subsets.items() if cases}
               for label, rows in (("planner",planner),("native-only",baseline))}
     result["clustered_95_intervals"] = intervals(metadata["cases"], planner, baseline)
@@ -119,11 +131,15 @@ def main():
     parser.add_argument("planner", type=Path)
     parser.add_argument("baseline", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--overlap", type=Path)
     args = parser.parse_args()
     metadata = json.loads(args.metadata.read_text())
     planner, planner_timing = read_trace(args.planner, metadata, "planner")
     baseline, baseline_timing = read_trace(args.baseline, metadata, "native-only")
-    report = summarize(metadata, planner, baseline)
+    overlap = json.loads(args.overlap.read_text()) if args.overlap else None
+    report = summarize(metadata, planner, baseline, overlap)
+    if args.overlap:
+        report["known_overlap_sha256"] = hashlib.sha256(args.overlap.read_bytes()).hexdigest()
     report.update({"schema": 1, "source": metadata["source"], "counts": metadata["counts"],
                    "fixture_sha256": metadata["fixture_sha256"],
                    "encoder_export_sha256": metadata["encoder_export_sha256"],

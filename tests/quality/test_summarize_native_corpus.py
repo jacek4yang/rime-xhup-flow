@@ -26,6 +26,24 @@ class SummaryTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     read_trace(path, meta, "planner")
 
+    def test_complete_trace_and_missing_step_or_commit(self):
+        meta = {"cases": [{"id": "a", "characters": 2}]}
+        key = {"case": "a", "key": 97, "keypress_ns": 1, "key_to_menu_ns": 2, "bounded_probe_ns": 3}
+        commit = {"case": "a", "event": "selection_commit"}
+        result = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": 0,
+                  "keys": 4, "commit_exact": True}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trace"
+            records = [key]*8 + [commit, result]
+            path.write_text("\n".join(map(json.dumps, records)))
+            rows, timing = read_trace(path, meta, "planner")
+            self.assertEqual(rows["a"], result)
+            self.assertEqual(timing["key_to_menu_ns"]["samples"], 8)
+            for incomplete in (records[1:], [key]*8 + [result]):
+                path.write_text("\n".join(map(json.dumps, incomplete)))
+                with self.assertRaises(ValueError):
+                    read_trace(path, meta, "planner")
+
     def test_cluster_resampling_is_paired_and_deterministic(self):
         cases = [{"id": str(i), "sentence": str(i//2)} for i in range(6)]
         rows = {c["id"]: {"rank": int(c["id"])%3-1, "commit_exact": False,
