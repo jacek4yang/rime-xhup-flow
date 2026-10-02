@@ -37,9 +37,14 @@ still conflicts with installed Vite7; miniapp uses Webpack, Trainer uses Vite7.
   per-ID/version/expiry disposition.
 - Swiper11 has a critical reported advisory. Current miniapp is WeChat-only and
   contains no Swiper import; optional H5 reachability must be checked explicitly.
-- Rust glib `VariantStrIter` has an unsound output-pointer bug, fixed in glib0.20.
-  GTK0.18 transitively pins glib0.18. No application call to `array_iter_str` was
-  found; that is not proof of global unreachability. A backport or explicitly
-  justified, dated exception is still required before F16 closure.
+- Rust glib `VariantStrIter` output-pointer unsoundness (RUSTSEC-2024-0429)
+  is mitigated by merged PR #172's exact two-line upstream backport to vendored
+  glib0.18.5. `tests/security/check_glib_backport.py` checks 121 upstream file
+  identities, the exact patched source hash, Cargo binding and bundled notices.
+  Debug and optimized string-array iterator regressions passed. See
+  [backport provenance](../vendor/glib/XHUP-BACKPORT.md). This is source-specific
+  mitigation, not an advisory-wide ignore: Cargo audit may still flag the unchanged
+  version. Unmaintained Rust dependencies and all remaining frontend advisories
+  above still require disposition; F16 is not closed.
 
 No stable-release security clearance is implied by these partial remediations.
