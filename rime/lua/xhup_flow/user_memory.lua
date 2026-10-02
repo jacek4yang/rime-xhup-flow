@@ -3,13 +3,13 @@
 -- librime-lua `*module` 组件(schema 以 `lua_filter@*xhup_flow.user_memory`
 -- 注册)。职责闭环「真实选择 → 隐私安全观察 → 版本化状态」:
 --
--- 1. **观察**:commit_notifier 记录每次实际上屏的词形与次数
---    (进程内存态);不记录句子、按键序列、时间戳(§5 隐私红线)。
+-- 1. **观察**:commit_notifier 记录实际上屏文本与次数(可包含句子);
+--    不记录按键序列或时间戳。长度/容量限制尚待统一学习模型处理。
 -- 2. **持久化**:按 #127 的版本化 TSV 格式
 --    (`xhup_flow_user_model.tsv`,schema 行 `xhup-user-model/v1`),
---    每 FLUSH_EVERY 次提交原子写盘一次(临时文件 + os.rename 同目录
---    原子替换;崩溃最多丢最近 N-1 次观察 —— 学习是统计行为,可接受,
-    --    换取不为每次提交全量重写文件)。
+--    每 FLUSH_EVERY 次提交尝试写盘,正常 fini 再尝试一次。
+--    失败保留旧快照和 dirty 状态;不承诺断电/fsync 持久性。
+--    标准 Lua 在 Windows 无安全替换 API,暂时 fail closed(仅内存观察)。
 -- 3. **加载**:init 时若快照存在则读入内存(损坏/未来版本 → 静默回退
 --    空状态,与 #127 的降级语义一致;绝不 panic)。
 -- 4. **可关**:方案开关 `user_memory` 默认关闭(reset 0);关闭 = 完全
@@ -87,25 +87,35 @@ function M.render_tsv(counts)
     return table.concat(parts, "\n") .. "\n"
 end
 
--- 原子写盘:临时文件 + 同目录 rename。失败返回 nil+错误(调用方静默
--- 降级;绝不 panic,绝不覆盖坏旧文件——rename 失败时旧文件仍在)。
+-- POSIX Lua 的 os.tmpname 使用 mkstemp 创建并保留文件,不使用可预测的
+-- path.tmp。临时目录与目标不同文件系统时 rename 失败,保留旧快照;
+-- 不以复制或删除旧文件兜底。Windows 的 tmpname 不创建文件且 rename
+-- 无替换语义,故显式拒绝持久化,等待受支持的 native storage bridge。
+-- 错误不包含观察文本;flush/close 并非 fsync,不声称物理崩溃持久性。
 function M.atomic_write(path, text)
     if type(path) ~= "string" or path == "" then
         return nil, "empty path"
     end
-    local tmp = path .. ".tmp"
+    if package.config:sub(1, 1) == "\\" then
+        return nil, "safe snapshot replacement unavailable on Windows"
+    end
+    local named, tmp = pcall(os.tmpname)
+    if not named or type(tmp) ~= "string" or tmp == "" then
+        return nil, "cannot create temporary file"
+    end
     local f = io.open(tmp, "wb")
     if not f then
+        os.remove(tmp)
         return nil, "cannot open temporary file"
     end
-    local ok = f:write(text)
-    ok = ok and f:close()
-    if not ok then
+    local written = f:write(text)
+    local flushed = f:flush()
+    -- 即使 write/flush 失败也必须关闭句柄。
+    local closed = f:close()
+    if not written or not flushed or not closed then
         os.remove(tmp)
-        return nil, "cannot write temporary file"
+        return nil, "cannot write/flush/close temporary file"
     end
-    -- Windows 上 rename 不覆盖已存在目标:先删再改名。
-    os.remove(path)
     if not os.rename(tmp, path) then
         os.remove(tmp)
         return nil, "cannot replace snapshot"
@@ -168,7 +178,7 @@ function M.init(env)
     -- - 计数/写盘仅在实际开启时(开关状态实时读取 —— 不能在 init
     --   缓存:schema 开关 reset 0 在会话创建后才可能被置 true)。
     pcall(function()
-        env.engine.context.commit_notifier:connect(function()
+        env.commit_connection = env.engine.context.commit_notifier:connect(function()
             local text = nil
             pcall(function()
                 text = env.engine.context:get_commit_text()
@@ -195,13 +205,36 @@ end
 
 -- 立即写盘(把内存计数落盘;不改内存状态)。
 function M.flush(env)
-    if not env.dirty or not env.snapshot_path then
-        return
+    if not env.dirty then
+        return true
+    end
+    if not env.snapshot_path then
+        env.persistence_error = "snapshot path unavailable"
+        return nil, env.persistence_error
     end
     local text = M.render_tsv(env.counts)
-    M.atomic_write(env.snapshot_path, text)
+    local ok, err = M.atomic_write(env.snapshot_path, text)
+    env.persistence_error = err
+    if not ok then
+        return nil, err
+    end
     env.pending = 0
     env.dirty = false
+    return true
+end
+
+-- 正常卸载尽力保存;异常终止不会调用 fini。失败可由调用方重试 flush,
+-- 不能清 dirty 或声称已落盘。日志只含固定错误类别,不含用户文本。
+function M.fini(env)
+    if env.commit_connection then
+        env.commit_connection:disconnect()
+        env.commit_connection = nil
+    end
+    local ok, err = M.flush(env)
+    if not ok and log and log.error then
+        log.error("XHUP Flow user memory not persisted: " .. err)
+    end
+    return ok, err
 end
 
 function M.func(translation, env)
