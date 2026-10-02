@@ -12,6 +12,11 @@ members = [
 [patch.crates-io]
 # GTK 0.18 pins this line; backport upstream output-pointer soundness fix.
 glib = { path = "vendor/glib" }
+# Narrow dependency migrations; source identities are checked by CI.
+glib-macros = { path = "vendor/glib-macros" }
+gtk3-macros = { path = "vendor/gtk3-macros" }
+urlpattern = { path = "vendor/urlpattern" }
+proc-macro-error2 = { path = "vendor/proc-macro-error2" }
 
 [workspace.package]
 edition = "2024"

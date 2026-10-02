@@ -31,3 +31,5 @@ xhup-cli = { path = "../../crates/xhup-cli" }
 
 [dev-dependencies]
 sha2 = "0.10"
+urlpattern = "0.3"
+regex = "1"

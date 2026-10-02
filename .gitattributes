@@ -15,3 +15,7 @@ data/words/sogou/README.md -export-ignore
 
 # Keep audited upstream bytes stable on Windows too.
 vendor/glib/** -text
+vendor/glib-macros/** -text
+vendor/gtk3-macros/** -text
+vendor/urlpattern/** -text
+vendor/proc-macro-error2/** -text

@@ -1,0 +1,18 @@
+{
+  "glib-macros": {
+    "inventory": "a9e372af8c6020d1b08b64d55778972cf0ed79c227ac1deac83e51f33498fc44",
+    "notices": {}
+  },
+  "gtk3-macros": {
+    "inventory": "9fa87900bdb8fe788262f20110bb25608b96f2c118ba6182e732da6c79ed1c35",
+    "notices": {}
+  },
+  "proc-macro-error2": {
+    "inventory": "5fa200b2ce2675b27909ba725a31a0bf9ee66a8ae34419da1c5619a3458e50ac",
+    "notices": {}
+  },
+  "urlpattern": {
+    "inventory": "02119a7f5068323481a943ff55557207fbda32248bb3095eb38f32e37cd39602",
+    "notices": {}
+  }
+}
