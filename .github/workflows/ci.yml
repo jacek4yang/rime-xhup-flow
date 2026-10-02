@@ -76,6 +76,9 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
+      - name: 可分发来源门禁回归（合成 depfile，不是实际编译证据）
+        run: python3 -m unittest discover -s tests/release -p 'test_distribution_sources.py'
+
       - name: 格式检查
         run: cargo fmt --all -- --check
 

@@ -23,6 +23,7 @@ use serde::Serialize;
 /// 产物一致;安装即写这些文件)。所有权唯一来源:改生成器产物集合时
 /// 必须同步本清单,`bundled_package_matches_manifest` 测试兜底。
 pub const OWNED_FILES: &[&str] = &[
+    "xhup_flow.sources.tsv",
     "xhup_flow.dict.yaml",
     "xhup_flow.schema.yaml",
     "xhup_flow_chars.dict.yaml",
