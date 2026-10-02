@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from summarize_native_corpus import intervals, rates, read_trace
+from summarize_native_corpus import intervals, rates, read_trace, prefix_contract, require_contracts
 
 
 class SummaryTests(unittest.TestCase):
@@ -43,6 +43,26 @@ class SummaryTests(unittest.TestCase):
                 path.write_text("\n".join(map(json.dumps, incomplete)))
                 with self.assertRaises(ValueError):
                     read_trace(path, meta, "planner")
+
+    def test_offsetting_gains_cannot_hide_prefix_harm(self):
+        baseline = {"a": {"rank": 0}, "b": {"rank": 1}, "c": {"rank": 9}}
+        planner = {"a": {"rank": 1}, "b": {"rank": 0}, "c": {"rank": 3}}
+        contract = prefix_contract(planner, baseline)
+        self.assertEqual(contract, {"baseline_top5_cases": 2,
+                                   "unchanged_rank_cases": 0, "changed_rank_cases": 2})
+        report = {"planner": {"all": {"contract_failures": 0}},
+                  "native-only": {"all": {"contract_failures": 0}},
+                  "native_top5_contract": contract}
+        require_contracts(report)  # Negative historical study may be recorded.
+        with self.assertRaises(ValueError):
+            require_contracts(report, True)
+        report["native_top5_contract"] = prefix_contract(baseline, baseline)
+        require_contracts(report, True)
+        report["native-only"]["all"]["contract_failures"] = 1
+        with self.assertRaises(ValueError):
+            require_contracts(report)
+        with self.assertRaises(ValueError):
+            prefix_contract({}, baseline)
 
     def test_cluster_resampling_is_paired_and_deterministic(self):
         cases = [{"id": str(i), "sentence": str(i//2)} for i in range(6)]
