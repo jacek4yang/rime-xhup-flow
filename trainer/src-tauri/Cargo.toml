@@ -16,6 +16,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+xhup-generator = { path = "../../crates/xhup-generator" }
+sha2 = "0.10"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -23,4 +25,6 @@ serde_json = "1"
 tauri = { version = "2", features = [] }
 xhup-analyzer = { path = "../../crates/xhup-analyzer" }
 xhup-cli = { path = "../../crates/xhup-cli" }
-xhup-generator = { path = "../../crates/xhup-generator" }
+
+[dev-dependencies]
+sha2 = "0.10"
