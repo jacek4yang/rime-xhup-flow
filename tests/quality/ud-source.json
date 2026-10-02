@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/UniversalDependencies/UD_Chinese-GSDSimp",
+  "revision": "9b1fc1d388b8f4ac7cf12a704995618571454b80",
+  "release": "UD r2.16",
+  "path": "zh_gsdsimp-ud-test.conllu",
+  "sha256": "573f59b799b499a920d2d5bdc0e3c1dbd7bcacf86bdece4334ecbd03e21b6150",
+  "license": "CC BY-SA 4.0 (UD annotations); underlying wiki text retains its own attribution/license",
+  "contributors": [
+    "Qi, Peng",
+    "Yasuoka, Koichi"
+  ],
+  "scope": "source-external wiki evaluation; not a representative conversation population",
+  "selection": "all contiguous Hanzi token runs with uniquely parseable supplied transliteration; 2..64 characters; count every exclusion; no outcome-based selection",
+  "planning": "frozen before evaluating candidate ranks; no runtime/ranking calibration using this set"
+}
