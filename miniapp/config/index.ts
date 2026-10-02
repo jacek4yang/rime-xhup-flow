@@ -22,6 +22,11 @@ export default defineConfig(async (merge) => {
     framework: "react",
     compiler: "webpack5",
     mini: {
+      // Taro 4.2 webpackbar passes obsolete presentation options to Webpack.
+      // Remove only the progress UI, not validation, optimization or build checks.
+      webpackChain(chain: { plugins: { delete(name: string): unknown } }) {
+        chain.plugins.delete("webpackbar");
+      },
       // 共享核心以 TS 源码直接进 bundle:官方扩展点是 compile.include
       // (脚本规则默认只包含 src 与 Taro 自身的 node_modules)。
       compile: {
