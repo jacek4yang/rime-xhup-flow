@@ -105,7 +105,7 @@ rime_deployer --compile "$smoke_dir/xhup_flow.schema.yaml" "$smoke_dir" \
   "$SHARED_DATA_DIR" >/dev/null
 rime_deployer --compile "$smoke_dir/xhup_flow_static.schema.yaml" "$smoke_dir" \
   "$SHARED_DATA_DIR" >/dev/null
-for dict in xhup_flow_flow xhup_flow_learn; do
+for dict in xhup_flow_learn; do
   compile_package_dict_isolated "$dict" "$smoke_dir"
 done
 

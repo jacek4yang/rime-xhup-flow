@@ -165,6 +165,11 @@ fn schema_semantics() {
         ),
         "flow translator 配置不符合组句语义"
     );
+    assert!(schema.contains("  dependencies:\n    - xhup_flow_learn\n"));
+    assert!(
+        !schema.contains("    - xhup_flow_flow\n"),
+        "unused duplicate table must not enter the deployment graph"
+    );
     assert!(!schema.contains("    - table_translator@learn"));
     assert!(!schema.contains("    - table_translator@flow"));
     assert!(
