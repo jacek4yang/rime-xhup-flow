@@ -269,15 +269,18 @@ jobs:
         run: cargo build -p xhup-cli --locked
 
       # 纯静态回退与无插件降级门禁: xhup_flow_static 保持零 Lua 运行,
-      # 主方案 xhup_flow 在无插件环境亦能安全回退(docs/lua-runtime.md §2)。
-      - name: librime session 冒烟(纯静态回退 + canonical v2 哨兵)
-        run: tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
+      # 无插件时只承诺独立 Static;主方案的原生边界提供者需要 Lua。
+      - name: librime session 冒烟(无插件纯静态回退)
+        run: XHUP_SMOKE_STATIC_ONLY=1 tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
 
       - name: 安装 librime-lua 插件与 Lua 解释器
         run: |
           sudo apt-get install -y --no-install-recommends \
             librime-plugin-lua \
             lua5.4
+
+      - name: librime session 冒烟(实际 Lua 环境的完整 Flow + Static)
+        run: tests/librime/run-runtime-smoke.sh /tmp/xhup-flow-package
 
       - name: Lua runtime 合同与自检单测(lua5.4,不依赖 librime)
         run: lua5.4 tests/lua/test_contract.lua
