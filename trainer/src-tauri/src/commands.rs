@@ -291,38 +291,12 @@ pub fn product_redeploy() -> Result<String, CommandError> {
 /// 导出 Android 兼容 Rime 包(平台中立源文件目录,含安装说明)。
 ///
 /// 在 `destination`(用户提供的已存在目录)下创建
-/// `xhup-flow-rime-v<版本>/`,写入全部方案/词典与 INSTALL.md。
+/// 排他创建 `xhup-flow-rime-v<版本>/`,写入全部方案/词典、来源策略与许可。
 /// 不做 zip(零额外依赖);不触碰 Android 私有存储,由用户自行导入。
 #[tauri::command]
 pub fn product_export_package(destination: String) -> Result<String, CommandError> {
-    let dest_dir = std::path::PathBuf::from(&destination);
-    if !dest_dir.is_dir() {
-        return Err(CommandError::new(
-            "package_invalid",
-            format!("目标目录不存在:{}", dest_dir.display()),
-        ));
-    }
     let package = RimePackage::bundled()?;
-    let target = dest_dir.join(format!("xhup-flow-rime-v{}", package.version));
-    std::fs::create_dir_all(&target).map_err(|source| {
-        CommandError::new(
-            "io",
-            format!("无法创建导出目录 {}: {source}", target.display()),
-        )
-    })?;
-    for (file, contents) in &package.files {
-        std::fs::write(target.join(file), contents).map_err(|source| {
-            CommandError::new(
-                "io",
-                format!("无法写入 {}: {source}", target.join(file).display()),
-            )
-        })?;
-    }
-    std::fs::write(
-        target.join("INSTALL.md"),
-        include_str!("../../../rime/package/INSTALL.md"),
-    )
-    .map_err(|source| CommandError::new("io", format!("无法写入 INSTALL.md: {source}")))?;
+    let target = crate::package_export::export(std::path::Path::new(&destination), &package)?;
     Ok(target.display().to_string())
 }
 
