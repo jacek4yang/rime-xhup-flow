@@ -41,13 +41,17 @@ int main(int argc, char **argv) {
     if(state.target_rank>=0) {
       check(r->select_candidate(s,state.target_rank),"multi-space pending selection accepted");
       RIME_STRUCT(RimeCommit, early); char prior[TEXT]="";
-      if(r->get_commit(s,&early)) {copy(prior,sizeof(prior),early.text);r->free_commit(&early);}
+      if(r->get_commit(s,&early)) {
+        copy(prior,sizeof(prior),early.text);
+        check(!strcmp(prior,"你好你好"),"early commit contains only the selected prefix");
+        r->free_commit(&early);
+      }
       const char *raw=r->get_input(s);
       check(raw && *raw && raw[strlen(raw)-1]=='q',"pending q retained");
       state=step(s,"pending-multiple-spaces",'u',"去",NULL);
       check(state.target_rank>=0,"tail completion after multi-space prefix");
       if(state.target_rank>=0) {
-        r->select_candidate(s,state.target_rank);
+        check(r->select_candidate(s,state.target_rank),"completed pending tail selection accepted");
         RIME_STRUCT(RimeCommit, final);
         int ok=r->get_commit(s,&final);
         if(!ok) {r->commit_composition(s);RIME_STRUCT_INIT(RimeCommit,final);ok=r->get_commit(s,&final);}
@@ -57,6 +61,11 @@ int main(int argc, char **argv) {
           check(!strcmp(all,"你好你好去"),"multi-space prefix and tail committed exactly once");
           r->free_commit(&final);
         }
+        check(!r->get_input(s) || !*r->get_input(s),"pending prefix and tail consume all raw input");
+        RIME_STRUCT_INIT(RimeCommit,final);
+        int duplicate=r->get_commit(s,&final);
+        check(!duplicate,"pending prefix and tail produce no duplicate commit");
+        if(duplicate) r->free_commit(&final);
       }
     }
     r->destroy_session(s);
