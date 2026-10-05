@@ -504,6 +504,32 @@ jobs:
           dpkg-deb -x artifacts/linux/*.deb "$extracted"
           python3 tests/release/check_bundle_notices.py "$extracted/usr/lib/XHUP Flow"
 
+      - name: 安装真实桌面冒烟环境
+        run: sudo apt-get install -y --no-install-recommends xvfb webkit2gtk-driver dbus-x11
+
+      - name: 实际 deb 的 WebKit / Rust IPC 回归
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          extracted="$(mktemp -d)"
+          trap 'rm -rf "$extracted"' EXIT
+          dpkg-deb -x artifacts/linux/*.deb "$extracted"
+          cargo run --locked -q -p xhup-core --example syllable_codes > "$RUNNER_TEMP/syllable-codes.tsv"
+          dbus-run-session -- python3 tests/desktop/linux_artifact_smoke.py \
+            --binary "$extracted/usr/bin/trainer" --source-root "$GITHUB_WORKSPACE" \
+            --syllables "$RUNNER_TEMP/syllable-codes.tsv" \
+            --version "${{ steps.meta.outputs.app_version }}" \
+            --report "$RUNNER_TEMP/desktop-smoke/report.json"
+
+      - name: 保留真实桌面回归报告（失败不视为通过）
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-desktop-smoke
+          path: ${{ runner.temp }}/desktop-smoke/
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: 上传 Linux 产物
         uses: actions/upload-artifact@v7
         with:
