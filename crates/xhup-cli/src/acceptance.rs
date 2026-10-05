@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 pub mod provenance;
+pub mod runtime_qualification;
 
 /// 单项验收状态。严格有限,反序列化拒绝未知值(malformed 用例依赖此点)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -300,6 +301,16 @@ pub fn check_rc(manifest: &AcceptanceManifest) -> Vec<Violation> {
 /// stable 策略校验: schema 2、同 core RC、必查 PASS、显式豁免及证据。
 /// 这只是纯数据校验;发布必须调用 provenance::verify 校验独立来源和真实附件。
 pub fn check_stable(manifest: &AcceptanceManifest, expected_version: &str) -> Vec<Violation> {
+    check_stable_policy(manifest, expected_version, false)
+}
+
+// Only the explicit owner-authorized runtime qualification verifier may allow
+// still-visible UNVERIFIED platform checks. Default/full-platform remains strict.
+fn check_stable_policy(
+    manifest: &AcceptanceManifest,
+    expected_version: &str,
+    user_platform_testing: bool,
+) -> Vec<Violation> {
     let mut violations = validate_structure(manifest);
     if manifest.schema_version != 2 {
         violations.push(Violation {
@@ -364,11 +375,14 @@ pub fn check_stable(manifest: &AcceptanceManifest, expected_version: &str) -> Ve
                         check: Some(key.clone()),
                         message: "FAIL 阻塞 stable 发布".to_string(),
                     }),
-                    CheckState::Unverified => violations.push(Violation {
-                        platform: Some(entry.platform.clone()),
-                        check: Some(key.clone()),
-                        message: "UNVERIFIED 阻塞 stable 发布(缺少真机/等价验证)".to_string(),
-                    }),
+                    CheckState::Unverified if !user_platform_testing => {
+                        violations.push(Violation {
+                            platform: Some(entry.platform.clone()),
+                            check: Some(key.clone()),
+                            message: "UNVERIFIED 阻塞 stable 发布(缺少真机/等价验证)".to_string(),
+                        })
+                    }
+                    CheckState::Unverified => {}
                 }
             }
             if !entry

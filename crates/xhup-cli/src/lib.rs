@@ -162,6 +162,16 @@ struct ValidateAcceptanceArgs {
     /// 已下载的 RC 发布附件目录(包括 BUILD-MANIFEST.json)
     #[arg(long, requires = "stable")]
     artifacts_dir: Option<PathBuf>,
+    /// 显式仓库所有者授权的平台待验决定；不改变默认完整验收规则
+    #[arg(long, requires_all = ["stable", "qualification_proofs", "repository", "actor"])]
+    runtime_qualification: Option<PathBuf>,
+    /// 工作流从 GitHub 独立获取并重新汇总的证明目录
+    #[arg(long, requires = "runtime_qualification")]
+    qualification_proofs: Option<PathBuf>,
+    #[arg(long, requires = "runtime_qualification")]
+    repository: Option<String>,
+    #[arg(long, requires = "runtime_qualification")]
+    actor: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -521,7 +531,42 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                     source: source.to_string(),
                 }
             })?;
-            let violations = if args.stable {
+            let violations = if let Some(path) = &args.runtime_qualification {
+                let bytes = fs::read(path).map_err(|source| CliError::AcceptanceRead {
+                    path: path.clone(),
+                    source,
+                })?;
+                let authorization = serde_json::from_slice(&bytes).map_err(|source| {
+                    CliError::AcceptanceInvalid {
+                        path: path.clone(),
+                        source: source.to_string(),
+                    }
+                })?;
+                let context = acceptance::runtime_qualification::Context {
+                    version: args
+                        .expect_version
+                        .as_deref()
+                        .expect("clap requires expect-version"),
+                    source: args
+                        .expect_source
+                        .as_deref()
+                        .expect("clap requires expect-source"),
+                    artifacts: args
+                        .artifacts_dir
+                        .as_deref()
+                        .expect("clap requires artifacts-dir"),
+                    proofs: args
+                        .qualification_proofs
+                        .as_deref()
+                        .expect("clap requires qualification-proofs"),
+                    repository: args
+                        .repository
+                        .as_deref()
+                        .expect("clap requires repository"),
+                    actor: args.actor.as_deref().expect("clap requires actor"),
+                };
+                acceptance::runtime_qualification::verify(&manifest, &authorization, &context)
+            } else if args.stable {
                 acceptance::provenance::verify(
                     &manifest,
                     args.expect_version
@@ -538,7 +583,13 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                 acceptance::check_rc(&manifest)
             };
             if violations.is_empty() {
-                let mode = if args.stable { "stable" } else { "rc" };
+                let mode = if args.runtime_qualification.is_some() {
+                    acceptance::runtime_qualification::POLICY
+                } else if args.stable {
+                    "stable"
+                } else {
+                    "rc"
+                };
                 println!(
                     "验收清单校验通过({mode} 门禁): {} v{}",
                     args.manifest.display(),

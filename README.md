@@ -10,6 +10,17 @@
 v1 收口从 main 移除;既有版本仍可从 Releases 下载,文档见
 [docs/legacy-fullcode-scheme.md](docs/legacy-fullcode-scheme.md)。
 
+## 发布验收范围
+
+v2.0.0 可按所有者明确授权的「底层运行时合格、用户平台待验」范围发布，
+不代表 Windows / macOS / Android 人工安装和实际输入法体验均已通过。
+Windows、macOS 真机测试由用户完成；Linux 虚拟 Fcitx 前端实验未通过，
+不能替代已通过的 librime 测试或宣称真实前端验收通过。
+Windows/macOS 包未签名，macOS 未公证；安装时请核对附件哈希和来源。
+每次发布的实际范围以 Release 中 `ACCEPTANCE.json`、`QUALIFICATION.json`
+及证明为准，`UNVERIFIED` 始终表示待验。默认完整平台门禁仍保留。
+详见[发布资格策略](docs/runtime-qualified-release.md)。
+
 ## XHUP Flow 是什么?与普通小鹤/Rime 配置有何不同?
 
 普通小鹤音形配置只提供固定的码表。XHUP Flow 在此之上做了四件事:

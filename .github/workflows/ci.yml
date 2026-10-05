@@ -125,6 +125,7 @@ jobs:
       - name: 工作流 run 块 shell 语法守卫
         run: |
           python3 tests/release/check_workflow_shell.py
+          python3 -m unittest discover -s tests/release -p 'test_collect_qualification.py'
           python3 -m unittest discover -s tests/release -p 'test_packaging_runtime_gates.py'
 
       - name: 外部原生语料选择与统计工具回归（不冒充完整语料运行）

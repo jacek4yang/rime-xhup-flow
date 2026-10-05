@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -83,7 +84,8 @@ class PromotionWorkflow(unittest.TestCase):
                         GH_LOG=str(self.work / "gh.log"), REMOTE=str(self.remote),
                         RESOLVED_SOURCE=SOURCE, GITHUB_SHA="b" * 40,
                         GITHUB_OUTPUT=str(self.work / "output"), GH_REPO="fixture/repo",
-                        CORE="2.0.0", VERSION="2.0.0", IS_RC="false", PUBLISH="true")
+                        CORE="2.0.0", VERSION="2.0.0", IS_RC="false", PUBLISH="true",
+                        QUALIFICATION="full-platform", GITHUB_ACTOR="fixture")
 
     def run_block(self):
         (self.work / "release/acceptance-v2.0.0.json").write_text(json.dumps(self.manifest))
@@ -100,6 +102,70 @@ class PromotionWorkflow(unittest.TestCase):
         self.assertIn(f"artifact_version={RC}", (self.work / "output").read_text())
         self.assertNotIn("seal-build", (self.work / "cargo.log").read_text())
         self.assertEqual(json.loads((self.work / "artifacts/ACCEPTANCE.json").read_text()), self.manifest)
+
+    def test_default_mode_still_rejects_unverified(self):
+        self.manifest["platforms"][0]["checks"]["clean_install"] = "UNVERIFIED"
+        self.assertNotEqual(self.run_block().returncode, 0)
+
+    def test_qualified_mode_requires_real_collector_and_decision(self):
+        self.env["QUALIFICATION"] = "runtime-qualified-user-platform-testing-v1"
+        self.manifest["platforms"][0]["checks"]["clean_install"] = "UNVERIFIED"
+        self.assertNotEqual(self.run_block().returncode, 0)
+        self.assertFalse((self.work / "artifacts/QUALIFICATION.json").exists())
+
+    def qualified_fixture(self):
+        # Replace only network/receipt collection with synthetic proof bytes;
+        # the real CLI still verifies policy + exact RC payloads in the run block.
+        self.env["QUALIFICATION"] = "runtime-qualified-user-platform-testing-v1"
+        self.manifest["platforms"][0]["checks"]["clean_install"] = "UNVERIFIED"
+        decision = dict(schema_version=1, policy=self.env["QUALIFICATION"], version="2.0.0",
+                        accepted_rc=RC, source_commit=SOURCE,
+                        build_manifest_sha256=self.manifest["build_manifest_sha256"],
+                        repository="fixture/repo", approved_by="fixture", approved_at="2026-10-05T00:00:00Z",
+                        rationale="SYNTHETIC TEST", limitations=["Pending user testing"],
+                        user_testing_platforms=["windows"], ci_run=11, runtime_run=12, package_run=13)
+        (self.work / "release/qualification-v2.0.0.json").write_text(json.dumps(decision))
+        proofs = self.work / "synthetic-proofs"
+        proofs.mkdir()
+        for label, run_id, workflow in [("ci", 11, "ci"), ("runtime", 12, "full-regression"),
+                                         ("package", 13, "xhup-flow-rc-release")]:
+            run = dict(id=run_id, run_attempt=1, status="completed", conclusion="success",
+                       head_sha=SOURCE, head_branch="main", path=f".github/workflows/{workflow}.yml",
+                       event="workflow_dispatch", repository=dict(full_name="fixture/repo", owner=dict(login="fixture")))
+            (proofs / f"{label}-run.json").write_text(json.dumps(run))
+        jobs = [dict(name=name, status="completed", conclusion="success", head_sha=SOURCE, run_id=11)
+                for name in ["Rust workspace", "trainer 前端", "librime runtime smoke",
+                             "原生冒烟(ubuntu-latest)", "原生冒烟(macos-latest)", "原生冒烟(windows-latest)"]]
+        (proofs / "ci-jobs.json").write_text(json.dumps(dict(total_count=6, jobs=jobs)))
+        (proofs / "coverage.json").write_text(json.dumps(dict(version=1, revision=SOURCE,
+            run="12.1", plan_sha256="a" * 64, partitions_completed=16, rows=dict(static=1, extended=1, open=1000))))
+        shim = self.bin / "python3"
+        shim.write_text(f'#!{sys.executable}\nimport os,shutil,sys\n'
+                        'if sys.argv[1] == "tests/release/collect_qualification.py":\n'
+                        ' shutil.copytree("synthetic-proofs", "qualification-proofs")\n'
+                        f'else: os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])\n')
+        shim.chmod(0o700)
+        return proofs
+
+    def test_qualified_scope_promotes_same_bytes_without_turning_unverified_to_pass(self):
+        self.qualified_fixture()
+        result = self.run_block()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for name in self.names + ["BUILD-MANIFEST.json"]:
+            self.assertEqual((self.work / "artifacts" / name).read_bytes(), (self.remote / name).read_bytes())
+        self.assertEqual(json.loads((self.work / "artifacts/ACCEPTANCE.json").read_text()), self.manifest)
+        self.assertTrue((self.work / "artifacts/QUALIFICATION-PROOFS.tar.gz").is_file())
+        self.assertIn("--runtime-qualification", (self.work / "cargo.log").read_text())
+        self.assertNotIn("seal-build", (self.work / "cargo.log").read_text())
+
+    def test_qualified_scope_does_not_bypass_run_proof_verification(self):
+        proofs = self.qualified_fixture()
+        path = proofs / "runtime-run.json"
+        run = json.loads(path.read_text())
+        run["head_sha"] = "c" * 40
+        path.write_text(json.dumps(run))
+        self.assertNotEqual(self.run_block().returncode, 0)
+        self.assertFalse((self.work / "artifacts/QUALIFICATION.json").exists())
 
     def test_changed_download_is_blocked(self):
         (self.remote / self.names[0]).write_bytes(b"tampered")

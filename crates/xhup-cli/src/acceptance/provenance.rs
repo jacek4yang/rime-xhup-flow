@@ -202,7 +202,20 @@ pub fn verify(
     expected_source: &str,
     directory: &Path,
 ) -> Vec<Violation> {
-    let mut violations = check_stable(manifest, version);
+    verify_with_checks(
+        manifest,
+        expected_source,
+        directory,
+        check_stable(manifest, version),
+    )
+}
+
+pub(super) fn verify_with_checks(
+    manifest: &AcceptanceManifest,
+    expected_source: &str,
+    directory: &Path,
+    mut violations: Vec<Violation>,
+) -> Vec<Violation> {
     let mut fail = |message: String| {
         violations.push(Violation {
             platform: None,
