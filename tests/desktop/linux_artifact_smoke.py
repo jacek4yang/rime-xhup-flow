@@ -4,6 +4,7 @@ Run inside dbus-run-session. Requires Xvfb, WebKitWebDriver and a built binary.
 This does not qualify fcitx5 desktop integration or Android user acceptance.
 """
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -19,6 +20,19 @@ import urllib.error
 import urllib.request
 
 ELEMENT = "element-6066-11e4-a52e-4f735466cecf"
+
+
+class SettledTemporaryDirectory(tempfile.TemporaryDirectory):
+    """Allow terminated WebKit helpers to finish cache writes; never ignore failure."""
+
+    def cleanup(self):
+        for attempt in range(20):
+            try:
+                return super().cleanup()
+            except OSError as error:
+                if error.errno != errno.ENOTEMPTY or attempt == 19:
+                    raise
+                time.sleep(.1)
 
 
 def sha(path):
@@ -52,7 +66,7 @@ def main():
         report["checks"].append(label)
         print("PASS", label, flush=True)
 
-    with tempfile.TemporaryDirectory(prefix="xhup-gui-") as temporary:
+    with SettledTemporaryDirectory(prefix="xhup-gui-") as temporary:
         work = Path(temporary)
         env = os.environ.copy()
         for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
@@ -177,8 +191,10 @@ def main():
                 check(before == {name: sha(target / name) for name in actual}, "refused duplicate export leaves every byte unchanged")
 
                 click("卸载")
-                wait(lambda: "确认执行" in text())
-                click("确认执行")
+                confirm = wait(lambda: execute("return [...document.querySelectorAll('[role=dialog] button')]"
+                    ".find(e=>e.textContent.trim()==='卸载' && e.getClientRects().length)"))
+                check((rime / "xhup_flow.schema.yaml").is_file(), "uninstall requires explicit dialog confirmation")
+                call("POST", f"/session/{session}/element/{confirm[ELEMENT]}/click", {})
                 wait(lambda: not (rime / "xhup_flow.schema.yaml").exists())
                 check(sentinel.read_bytes() == b"# synthetic user configuration, preserve me\n", "uninstall restores the exact pre-install shared configuration")
                 check(not (rime / '.xhup-flow-default-backup.json').exists(), "successful restoration releases managed shared-file ownership")
