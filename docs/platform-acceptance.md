@@ -8,7 +8,8 @@
 > 状态严格四档:PASS / FAIL / UNVERIFIED / N/A —— 语义与清单一致:
 > PASS 必须附证据(清单 `evidence` + `verified_at`);UNVERIFIED 是
 > 稳定版(GA)发布的阻塞项,不冒充通过;N/A 仅限平台不适用的用例
-> (Android 的 Trainer 桌面控制中心生命周期)。
+> (仅历史 schema 1 的 Android 桌面控制中心生命周期)。当前 schema 2 的
+> `trainer_lifecycle` 验收所有已交付平台的练习、进度保存、备份和重启恢复，不再允许 N/A。
 
 ## 验收范围
 
@@ -35,7 +36,7 @@
 - 遗留(UNVERIFIED):真机手输的 Flow 整句输入、OOV 组合与 Trainer
   桌面安装包生命周期 —— 需要人工交互验证,见 #83。
 
-## 逐平台验收项
+## 历史逐平台验收项
 
 每个平台执行同一组用例(键名即清单 `checks` 的键):
 
@@ -98,7 +99,7 @@
 - 顶层 `build_manifest_sha256`:已受验 BUILD-MANIFEST.json **原始字节**
   的 64 位小写 SHA256;
 - 平台 `runtime`:受验 librime、Lua(或明确无 Lua)、客户端及版本;
-- 平台 `exemptions`:检查键到非空理由的映射,默认空对象。
+- 平台 `exemptions`:保留的历史字段；当前 schema 2 不接受豁免，应为空对象。
 
 `version` 是目标 stable `x.y.z`,`accepted_rc` 必须是同 core 的规范
 `x.y.z-rc.N`(N >= 1,不允许前导零、构建后缀或子串匹配)。
@@ -106,8 +107,10 @@
 `artifacts` 必须与构建清单的全部 11 个文件名/摘要精确相同。
 
 四个平台各出现一次,各包含现有 12 个检查键,不得新增未知平台/检查键。
-必查项必须 PASS。唯一 N/A 是 `android/trainer_lifecycle`,且 schema 2
-必须在 `exemptions.trainer_lifecycle` 填写理由;其他 N/A 一律失败。
+默认完整平台门禁要求必查项 PASS；当前 schema 2 不接受 N/A，
+Android 的训练器生命周期也要实际验收。历史 schema 1 的桌面控制中心豁免
+只用于读取旧记录，不能作为当前稳定晋升证据。明确授权的平台待验策略
+可保留 UNVERIFIED，但不得将失败或未测改写为 PASS。
 每个平台的 PASS 必须附非空 `evidence` 和真实有效的 UTC
 `verified_at`(`YYYY-MM-DDTHH:MM:SSZ`,校验日历日期)。
 来源、平台/架构/客户端/运行时身份均不可为空。

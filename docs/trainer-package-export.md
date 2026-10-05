@@ -1,3 +1,5 @@
+> 历史设计记录：当前 Trainer 已移除输入法管理及内嵌安装包，本文描述的安装/导出功能不再提供。当前安装方式见[手动教程](install-guide.zh-CN.md)。
+
 # Trainer 平台中立包导出
 
 Linux 实际 RC.3 `.deb`（演练 run 37041603245）在独立 HOME/XDG 目录、

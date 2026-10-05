@@ -1,25 +1,11 @@
-pub mod commands;
-mod exclusive;
-pub mod manager;
-mod package_export;
+//! Native container for the training-only application.
+//!
+//! Practice data and progress are owned by the frontend. This container exposes
+//! no custom commands and never installs, detects or modifies a Rime profile.
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![
-            commands::product_status,
-            commands::product_plan,
-            commands::product_execute,
-            commands::product_diagnostics,
-            commands::product_redeploy,
-            commands::product_export_package,
-            commands::learning_export,
-            commands::learning_import,
-            commands::learning_reset,
-            commands::explain_word,
-            commands::explain_hint,
-            commands::explain_words_batch,
-        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
