@@ -12,6 +12,11 @@ v1 收口从 main 移除;既有版本仍可从 Releases 下载,文档见
 
 ## 发布验收范围
 
+当前所有者选择[本地完整验收、云端仅最终打包发布](docs/local-qualified-release.md)：
+完整测试与全部 librime 分片在本地运行并保留可复核证据，云端 CI 不重复执行。
+本流程发布附带 `LOCAL-VALIDATION.json`、`LOCAL-QUALIFICATION.json` 与完整证据归档；
+未运行的云端测试不是 PASS，平台人工待验状态不变。
+
 v2.0.0 可按所有者明确授权的「底层运行时合格、用户平台待验」范围发布，
 不代表 Windows / macOS / Android 人工安装和实际输入法体验均已通过。
 Windows、macOS 真机测试由用户完成；Linux 虚拟 Fcitx 前端实验未通过，
