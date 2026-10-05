@@ -433,11 +433,11 @@ jobs:
           4. 重新部署(Deploy);
           5. 方案选单仅显示并默认启用 XHUP Flow。
 
-          该 ZIP **刻意不含** \`default.custom.yaml\`、
-          \`default.yaml\`、\`installation.yaml\`、\`user.yaml\`、
-          \`sync/\`、\`*.userdb\`,不会覆盖你的其他输入方案、用户词典、
-          同步数据与个人状态。启用方案需自行在 \`default.custom.yaml\` 的
-          \`schema_list\` 追加 \`xhup_flow\`(或用客户端的方案选单)。
+          该 ZIP 包含独占方案列表 \`default.custom.yaml\`，安装会替换原文件中的方案列表
+          和其他全局自定义项。请先备份原文件，更新时保留首次备份，卸载时恢复；
+          原本不存在则在卸载时删除本包文件。默认只启用 \`xhup_flow\`，无需追加 schema_list。
+          ZIP 不含 \`default.yaml\`、\`installation.yaml\`、\`user.yaml\`、\`sync/\` 或 \`*.userdb\`，
+          不删除其他方案文件、学习数据或系统输入法。详细步骤见包内 INSTALL.md。
 
           ## 产物与签名状态
 

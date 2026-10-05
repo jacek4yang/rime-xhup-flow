@@ -223,7 +223,7 @@ jobs:
             "artifacts/xhup-flow-rime-v$ver.zip"
           python3 tests/release/rime_archive.py check build/rime-package \
             "artifacts/xhup-flow-rime-v$ver.zip"
-          (cd artifacts && sha256sum "xhup-flow-rime-v$ver.zip" > "xhup-flow-rime-v$ver.zip.sha256")
+          # The shared release SHA256SUMS.txt owns checksums; no extra sidecar enters sealing.
           ls -l artifacts/
 
       - name: 上传 Rime 源包产物

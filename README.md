@@ -12,15 +12,16 @@ v1 收口从 main 移除;既有版本仍可从 Releases 下载,文档见
 
 ## 发布验收范围
 
-当前所有者选择[本地完整验收、云端仅最终打包发布](docs/local-qualified-release.md)：
-完整测试与全部 librime 分片在本地运行并保留可复核证据，云端 CI 不重复执行。
-本流程发布附带 `LOCAL-VALIDATION.json`、`LOCAL-QUALIFICATION.json` 与完整证据归档；
-未运行的云端测试不是 PASS，平台人工待验状态不变。
+本次 v2.0.0 按所有者明确授权，采用[云端底层运行时资格发布流程](docs/runtime-qualified-release.md)。
+发布要求同一冻结 RC 源提交的 CI、Full Regression 和 RC Release 全部成功，
+并核验完整原生审计证据、封存清单及实际附件字节；平台人工验收状态保持待验。
+此前的[本地完整验收方案](docs/local-qualified-release.md)保留为历史替代流程，
+不作为本次云端资格证明。
 
 v2.0.0 可按所有者明确授权的「底层运行时合格、用户平台待验」范围发布，
 不代表 Windows / macOS / Android 人工安装和实际输入法体验均已通过。
 Windows、macOS 真机测试由用户完成；Linux 虚拟 Fcitx 前端实验未通过，
-不能替代已通过的 librime 测试或宣称真实前端验收通过。
+且明确不作为本次发布门禁。底层 librime 资格通过不代表真实桌面输入上下文通过。
 Windows/macOS 包未签名，macOS 未公证；安装时请核对附件哈希和来源。
 每次发布的实际范围以 Release 中 `ACCEPTANCE.json`、`QUALIFICATION.json`
 及证明为准，`UNVERIFIED` 始终表示待验。默认完整平台门禁仍保留。
@@ -86,8 +87,8 @@ Flow 层，来源外文本仍可逐字或分段输入。连续整串的候选和
 
 以下是目标兼容平台，不代表每个前端版本均已完成实际使用验收。
 **Windows / macOS 人工验收由用户执行**；CI 编译或 smoke 通过不替代
-真实小狼毫 / 鼠须管与 WebView 测试。当前 v2.0.0 仍在资格验证阶段，
-请使用明确标注的候选版，不要将旧 RC 或开发分支视为稳定版。
+真实小狼毫 / 鼠须管与 WebView 测试。请以对应 Release 的验收记录、
+发布范围和附件哈希为准；旧 RC 或开发分支不能替代该版本的发布证据。
 
 | 系统 | 前端 | 用户数据目录 |
 | --- | --- | --- |
@@ -105,8 +106,10 @@ Flow 层，来源外文本仍可逐字或分段输入。连续整串的候选和
 Windows 可用 `Get-FileHash <文件> -Algorithm SHA256`；macOS 可用
 `shasum -a 256 <文件>`。版本未知请明确填“未知”，不要凭文件存在推断模块已加载。
 
-- [ ] **安装与部署**：Trainer 的预览计划正确；安装后前端重新部署成功，
-  能切换 Flow / Static；自有方案、全局配置和原有学习数据未被覆盖。
+- [ ] **安装与部署**：Trainer 的预览计划明确列出 `default.custom.yaml` 替换及首次备份；
+  安装并重新部署后，Rime 方案菜单只显示 XHUP Flow。
+  原全局自定义项在独占期间被替换，首次备份应完整保留；
+  其他方案文件和原有学习数据不应被删除或改写。
 - [ ] **真实 Lua 与静态回退**：确认 Flow 所需模块实际加载，无插件报错；
   Static 可独立输入。缺少插件时可在排障中显式修改方案列表切换 Static
   （这会退出独占配置），不把静默降级当成 Flow 通过。
@@ -163,30 +166,18 @@ Trainer 首次安装会备份原 `default.custom.yaml`，升级与修复不改�
    原本没有该文件则删除本包的 `default.custom.yaml`，然后重新部署。
    手工安装与 Trainer 管理安装不要混用；切换前先恢复原始配置。
 
-ZIP 只包含 XHUP Flow 拥有的文件(方案、词典、Lua 模块、说明),
-**绝不包含也不会覆盖**:
+ZIP 包含 XHUP Flow 方案、词典、Lua 模块、来源登记和安装说明，
+并包含独占方案列表 `default.custom.yaml`。安装会替换原文件中的方案列表
+及其他全局自定义项；必须先按上述步骤备份，更新时保留首次备份。
 
-- `default.custom.yaml` / `default.yaml`(你的方案列表与全局设置);
-- `installation.yaml` / `user.yaml`(Rime 安装与状态文件);
-- 你的其它输入方案与词典;
-- 任何 `*.userdb`(你的学习/词频数据)与 `sync/` 同步数据。
+包中不含 `default.yaml`、`installation.yaml`、`user.yaml`、其他输入方案、
+任何 `*.userdb` 或 `sync/` 同步数据。不要删除或覆盖这些现有文件。
 
-启用方案需在你的 `default.custom.yaml` 的 `schema_list` 中追加
-XHUP Flow(最小示例):
-
-```yaml
-patch:
-  schema_list/+:
-    - schema: xhup_flow
-    - schema: xhup_flow_static
-```
-
-Trainer 控制中心会自动完成这一步(幂等合并,可卸载还原)。
-
-### 启用方案(两套方案同时安装)
-
-Flow(组句学习)与 Static(纯静态)一起安装;在输入法的方案菜单中
-切换,不需要改写任何配置文件。
+Flow、Static 和词典 wrapper 文件会一起安装，但默认方案菜单只显示 `xhup_flow`。
+不要再追加 `schema_list/+`：这会改变独占配置。若需要零 Lua 静态回退或排障，
+请在保留原配置备份后，显式修改方案列表启用 `xhup_flow_static`，再重新部署；
+此时已退出独占配置。Trainer 检测到共享配置被手工修改时，会拒绝覆盖，
+升级、修复或卸载前应先保留改动并处理冲突。
 
 ## Flow 与 Static 模式怎么选?
 
@@ -218,18 +209,21 @@ Flow(组句学习)与 Static(纯静态)一起安装;在输入法的方案菜单�
 
 ## 更新
 
-- Trainer 控制中心:检测到新版本后点**升级**(覆盖前自动备份到用户
-  目录的 `xhup_backup/`,可手动回滚)。
-- 手动更新:用新包覆盖旧文件,**不要删除 `xhup_flow_user.userdb`**,
-  然后重新部署。
+- Trainer 控制中心：升级或修复前先预览计划；被覆盖文件的上一版保存在
+  `xhup_backup/`，该目录不是历史备份全集。原 `default.custom.yaml` 的首次备份
+  单独保存在 `.xhup-flow-default-backup.json`，更新不会改写这份首次备份。
+- 手动更新：保留原 `default.custom.yaml` 的首次备份，用新包更新方案文件，
+  不要删除 userdb，然后重新部署。
 
 ## 卸载
 
-- Trainer 控制中心:**卸载**(明确列出将删除的文件;默认保留学习数据)。
-- 手动卸载:从 Rime 用户目录删除全部 `xhup_flow*.yaml` 方案/词典文件
-  与 `lua/xhup_flow/` 目录;
-  如确认不再需要学习数据,可自行删除 `xhup_flow_user.userdb`(普通卸载
-  无必要)。
+- Trainer 控制中心：预览并确认卸载计划；卸载删除自有方案文件，
+  恢复首次安装前的 `default.custom.yaml`，原本不存在则恢复为不存在。
+  其他方案文件和学习数据保留；检测到安装后的手工配置改动时拒绝覆盖。
+- 手动卸载：先恢复首次备份的 `default.custom.yaml`；原本不存在则删除本包的
+  `default.custom.yaml`。再删除本包的 `xhup_flow*.yaml`、`xhup_flow.sources.tsv`
+  和 `lua/xhup_flow/`，然后重新部署。保留其他方案、学习数据和 Rime 用户状态。
+- 手工安装与 Trainer 管理安装不要混用；切换安装方式前先恢复原始配置。
 
 ## 隐私
 

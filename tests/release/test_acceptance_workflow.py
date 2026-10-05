@@ -198,6 +198,50 @@ class PromotionWorkflow(unittest.TestCase):
         self.assertIn("seal-build", (self.work / "cargo.log").read_text())
         self.assertFalse((self.work / "gh.log").exists())
 
+    def test_rime_producer_inventory_is_sealable(self):
+        packaging = (ROOT / ".github/workflows/product-packaging.yml").read_text().splitlines()
+        blocks = [script for _, _, script in run_blocks(packaging)
+                  if "rime_archive.py create" in script]
+        self.assertEqual(len(blocks), 1)
+        script = blocks[0].replace("${{ steps.meta.outputs.rime_version }}", RC)
+        # Only the archive operation is substituted; execute the actual producer
+        # shell so generated sidecars and uploaded directory inventory are real.
+        python = self.bin / "python3"
+        python.write_text('#!/bin/bash\nset -eu\n'
+                          '[[ "$1" == tests/release/rime_archive.py ]]\n'
+                          'case "$2" in\n'
+                          ' create) printf "synthetic rime archive" > "$4" ;;\n'
+                          ' check) test -s "$4" ;;\n'
+                          ' *) exit 99 ;;\nesac\n')
+        python.chmod(0o700)
+        produced = subprocess.run(["bash", "-c", script], cwd=self.work,
+                                  env=self.env, text=True, capture_output=True)
+        self.assertEqual(produced.returncode, 0, produced.stderr)
+        directory = self.work / "artifacts"
+        for name in self.names[1:]:
+            shutil.copyfile(self.remote / name, directory / name)
+        sealed = subprocess.run([self.cli, "seal-build", "--version", RC,
+                                 "--source-commit", SOURCE, "--artifacts-dir", str(directory)],
+                                text=True, capture_output=True)
+        self.assertEqual(sealed.returncode, 0, sealed.stderr)
+        self.assertEqual(sorted(p.name for p in directory.iterdir()),
+                         sorted(self.names + ["BUILD-MANIFEST.json"]))
+
+    def test_rc_unknown_extra_file_still_blocks_sealing(self):
+        self.env.update(IS_RC="true", VERSION=RC, GITHUB_SHA=SOURCE)
+        (self.remote / "BUILD-MANIFEST.json").unlink()
+        shutil.copytree(self.remote, self.work / "artifacts")
+        (self.work / "artifacts/unexpected.txt").write_text("must not be published")
+        self.assertNotEqual(self.run_block().returncode, 0)
+        self.assertFalse((self.work / "artifacts/BUILD-MANIFEST.json").exists())
+
+    def test_release_notes_disclose_exclusive_default_configuration(self):
+        text = WORKFLOW.read_text()
+        self.assertIn("该 ZIP 包含独占方案列表", text)
+        self.assertIn("安装会替换原文件中的方案列表", text)
+        self.assertNotIn("该 ZIP **刻意不含**", text)
+        self.assertNotIn("追加 \\`xhup_flow\\`", text)
+
     def test_rehearsal_does_not_create_promotable_manifest(self):
         self.env.update(IS_RC="true", VERSION=RC, PUBLISH="false")
         (self.remote / "BUILD-MANIFEST.json").unlink()
