@@ -1,9 +1,12 @@
 # 本地完整验收，云端仅最终打包发布
 
-仓库所有者明确选择本流程，避免在 GitHub Actions 重复执行完整测试。
-CI / Full Regression 保留 `workflow_dispatch` 诊断入口，不再自动触发。
-取消或未运行的云端测试不是 PASS，不改变分支保护，也不伪造 CI 运行证明。
-旧完整平台门禁和旧云端 runtime-qualified 流程保留，但本流程不冒用它们的资格。
+本文保留此前提出的本地完整验收替代流程。本次 v2.0.0 已按所有者最新明确授权，
+改用[云端底层运行时资格流程](runtime-qualified-release.md)，要求同源 CI、
+Full Regression 与 RC Release 的实际成功证明。本文中的 `LOCAL-VALIDATION.json`
+与 `LOCAL-QUALIFICATION.json` 不作为本次发布的资格依据。
+
+CI / Full Regression 仍保留 `workflow_dispatch` 入口；是否自动触发与本次是否
+已实际执行是两回事。取消、失败或未运行的测试不能记作 PASS。
 
 ## 1. 冻结源码并完成本地验收
 
