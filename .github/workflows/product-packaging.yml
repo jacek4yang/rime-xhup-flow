@@ -308,7 +308,18 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Tauri 构建(NSIS + MSI,MSI 内部版本 ${{ steps.meta.outputs.win_version }})
-        run: pnpm -C trainer tauri build --bundles nsis,msi --config "${{ steps.meta.outputs.config }}"
+        run: pnpm -C trainer tauri build --verbose --bundles nsis,msi --config "${{ steps.meta.outputs.config }}"
+
+      - name: 保留 WiX 诊断（失败不是成功产物）
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-wix-diagnostics
+          path: |
+            target/release/wix/
+            target/release/bundle/nsis/
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: 校验并重命名产物
         shell: bash
@@ -324,6 +335,12 @@ jobs:
           cp target/release/bundle/msi/*.msi "artifacts/windows/xhup-flow-trainer-v$ver-windows-x64.msi"
           for f in artifacts/windows/*; do [[ -s "$f" ]] || { echo "::error::产物为空: $f"; exit 1; }; done
           ls -l artifacts/windows/
+
+      - name: 从实际 MSI 管理提取校验许可（不启动应用）
+        run: |
+          $msi = Get-ChildItem artifacts/windows/*.msi
+          if ($msi.Count -ne 1) { throw "expected one MSI" }
+          python tests/release/check_msi_notices.py $msi.FullName "$env:RUNNER_TEMP/msi-notice-check"
 
       - name: 上传 Windows 产物
         uses: actions/upload-artifact@v7
