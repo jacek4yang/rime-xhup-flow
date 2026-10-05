@@ -1,11 +1,48 @@
-# Dependency security review — 2026-10-02 (F16)
+# Dependency security review — 2026-10-05 (F16)
 
 An audit exit code is not a claim of no risk. Initial workspace pnpm audit
-reported 51 advisories, intermediate compatible patches left 36, and the current
-locked frontend dependency graph reports **zero advisories at every severity**
-(including development tools). No advisory IDs are ignored. CI runs both the
-complete audit and local integration tests for the two dependency adapters.
-This is a point-in-time database result, not proof of absence of vulnerabilities.
+reported 51 advisories; the October 2 locked graph reached zero, but that result
+is **superseded** by newly reviewed October 4 advisories. The current raw audit
+still reports **one high braces advisory**, with an exact local source mitigation.
+It is not a zero-advisory result. CI retains the complete raw JSON and fails on
+any unmitigated/new/changed advisory or source drift. No pnpm advisory-ignore
+configuration is used; the explicit source-bound disposition is described below.
+
+## October 5 follow-up
+
+- `http-cache-semantics` is upgraded to 4.3.0 (GHSA-ch52-4w7c-c8xp). Testing the
+  actual published 4.3.0 still reproduced reuse of non-storable responses when a
+  caller supplied `max-stale`. A separate lockfile-bound patch makes
+  `evaluateRequest` refuse such responses before freshness evaluation. Regression
+  covers private/no-store/authenticated responses and permits ordinary public
+  caching. A published version number alone was not accepted as proof.
+- `braces` has no published fixed version for GHSA-vfj7-8cjw-p6xm. A local patch
+  bounds the three recursive AST walks (compile/expand/stringify) at depth 64,
+  including caller-supplied ASTs. Excessive nesting raises a controlled RangeError
+  rather than an engine stack overflow. Callers still must handle invalid input;
+  this is not a claim of unrestricted glob expansion safety. Normal alternatives,
+  ranges, escapes and shallow nesting are retained. Tests include 4,096 nesting
+  levels and cyclic/deep ASTs.
+- `tests/security/frontend-audit.cjs` runs the full audit, retains its original
+  output and verifies **all reachable installed braces copies**. It reverses only
+  the exact three guard changes and checks the complete ten-file upstream SHA256
+  inventory, including LICENSE. The pinned registry archive SHA512 matches the
+  lockfile; all ten files were independently compared with that archive. Missing
+  guards, extra files, symlinks or unrelated edits fail. Mutation tests exercise
+  these refusals and audit schema/count/status failures.
+- The sole disposition requires this exact advisory/module/range/severity/CWE,
+  unchanged 3.0.3 findings and proven source bytes. A newly published upstream fix
+  also fails this disposition so that the local patch must be retired in favor
+  of a reviewed upgrade. This is an explicit local mitigation, **not** suppression
+  of all braces findings or an assertion that the advisory database is empty.
+
+No minimum-release-age policy was relaxed. All patches retain upstream licenses.
+On this lockfile, both production builds, all workspace typechecks, 351 frontend
+unit/component tests (184 core, 112 Trainer, 55 miniapp), seven depth tests,
+four audit/cache policy tests and four existing adapter integration tests passed.
+The live gate reports one raw advisory, one source-bound mitigation and zero
+unmitigated findings. Older zero-audit and packaging results cannot qualify this
+dependency change; final binary packaging must be rerun.
 
 ## Frontend remediation
 

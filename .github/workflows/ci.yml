@@ -210,8 +210,20 @@ jobs:
       - name: 下载与模板压缩依赖适配回归（本地服务器与合成归档）
         run: TARO_ENV=weapp node --test tests/security/frontend-dependencies.test.cjs
 
-      - name: 前端完整依赖公告门禁（含开发工具，无忽略）
-        run: pnpm audit --audit-level low
+      - name: 前端漏洞修复与拒绝变异回归（实际安装依赖）
+        run: node --test tests/security/braces-depth.test.cjs tests/security/frontend-audit.test.cjs
+
+      - name: 前端完整公告与精确源码缓解门禁（保留原始公告）
+        run: node tests/security/frontend-audit.cjs
+
+      - name: 保留完整前端审计与源码缓解报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-security-evidence
+          path: artifacts/security/
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: 共享核心测试(含平台纯度守卫)
         run: pnpm core:test
