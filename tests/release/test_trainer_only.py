@@ -4,12 +4,33 @@ import tomllib
 import re
 import subprocess
 import tempfile
+import hashlib
+import shutil
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class TrainerOnlyTests(unittest.TestCase):
+    def test_download_failure_cannot_validate_a_stale_file(self):
+        guide = (ROOT / "docs/install-guide.zh-CN.md").read_text()
+        function = re.search(r"download_xhup\(\) \(.*?\n\)", guide, re.S).group()
+        for shell in ("bash", "dash"):
+            if not shutil.which(shell):
+                continue
+            with self.subTest(shell=shell), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory)
+                (path / "old.apk").write_bytes(b"stale but hash-valid")
+                digest = hashlib.sha256(b"stale but hash-valid").hexdigest()
+                (path / "SHA256SUMS.txt").write_text(f"{digest}  old.apk\n")
+                script = ("BASE=https://example.invalid\ncurl() { return 22; }\n" + function
+                          + "\ndownload_xhup old.apk && touch installation-attempted\n")
+                result = subprocess.run([shell, "-c", script], cwd=path,
+                                        capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("SHA-256 OK", result.stdout)
+                self.assertFalse((path / "installation-attempted").exists())
+
     def test_native_container_has_no_application_commands(self):
         source = (ROOT / "trainer/src-tauri/src/lib.rs").read_text()
         self.assertNotIn("invoke_handler", source)

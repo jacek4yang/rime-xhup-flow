@@ -69,19 +69,20 @@ ASSET_VERSION='2.0.0-rc.3'
 BASE='https://github.com/jacek4yang/rime-xhup-flow/releases/download/xhup-flow-v2.0.0'
 mkdir -p "$HOME/Downloads/XHUP-v2.0.0"
 cd "$HOME/Downloads/XHUP-v2.0.0" || exit
-curl -fL --retry 3 "$BASE/SHA256SUMS.txt" -o SHA256SUMS.txt
+curl -fL --retry 3 "$BASE/SHA256SUMS.txt" -o SHA256SUMS.txt || exit 1
 
 download_xhup() (
     set -eu
     file="$1"
-    curl -fL --retry 3 "$BASE/$file" -o "$file"
-    expected=$(awk -v f="$file" '$2 == f {print $1}' SHA256SUMS.txt)
+    curl -fL --retry 3 "$BASE/$file" -o "$file" || exit 1
+    expected=$(awk -v f="$file" '$2 == f {print $1}' SHA256SUMS.txt) || exit 1
     [ "${#expected}" -eq 64 ] || { echo '缺少或重复的哈希记录'; exit 1; }
     if command -v sha256sum >/dev/null 2>&1; then
-        actual=$(sha256sum "$file" | awk '{print $1}')
+        actual=$(sha256sum "$file") || exit 1
     else
-        actual=$(shasum -a 256 "$file" | awk '{print $1}')
+        actual=$(shasum -a 256 "$file") || exit 1
     fi
+    actual=${actual%% *}
     [ "$actual" = "$expected" ] || { echo "SHA-256 不匹配，停止：$file"; exit 1; }
     printf 'SHA-256 OK: %s\n' "$file"
 )
