@@ -3,6 +3,8 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -39,6 +41,17 @@ class RimeArchive(unittest.TestCase):
         self.paths = archive.payloads(self.package, ROOT)
         self.zip = self.work / "package.zip"
         archive.create(self.zip, self.paths)
+
+    def test_pre_archive_cli_uses_exact_inventory(self):
+        command = [sys.executable, str(ROOT / "tests/release/rime_archive.py"), "verify", str(self.package)]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        (self.package / "default.custom.yaml").unlink()
+        # Same count, wrong file: a numerical gate alone must not pass.
+        (self.package / "foreign.yaml").write_text("foreign")
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("inventory mismatch", result.stderr)
 
     def test_all_generated_files_not_just_yaml_lua_and_determinism(self):
         self.assertEqual(archive.check(self.zip, self.paths), 31)

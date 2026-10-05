@@ -137,11 +137,8 @@ jobs:
           cargo run -p xhup-cli --locked -- generate rime --output build/rime-package
           python3 tests/release/check_distribution_sources.py --depfile target/debug/xhup-cli.d
           python3 tests/release/check_generated_runtime_sources.py build/rime-package
-          # 顶层:12 个 YAML + 来源策略 TSV + lua/ 子目录。
-          # 所有拥有文件非空;精确文件/字节由包清单与后续校验绑定。
-          files="$(ls build/rime-package)"
-          count="$(echo "$files" | wc -l)"
-          [[ "$count" -eq 14 ]] || { echo "::error::期望 12 YAML + 来源策略 + lua/,实际 $count:$files"; exit 1; }
+          # 与归档使用同一精确清单：新增独占配置不会与另一份硬编码计数漂移。
+          python3 tests/release/rime_archive.py verify build/rime-package
           [[ -s build/rime-package/xhup_flow.sources.tsv ]]
           for f in build/rime-package/*.yaml \
                    build/rime-package/lua/xhup_flow/quick_hint.lua \

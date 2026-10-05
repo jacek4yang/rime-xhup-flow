@@ -109,6 +109,11 @@ jobs:
       - name: 格式检查
         run: cargo fmt --all -- --check
 
+      - name: 本地维护依赖不得产生编译警告
+        run: |
+          cargo rustc -p glib --lib --locked -- -D warnings
+          cargo rustc -p gtk3-macros --lib --locked -- -D warnings
+
       - name: cargo check
         run: cargo check --workspace --all-targets --locked
 

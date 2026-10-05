@@ -4,6 +4,7 @@ import hashlib
 import json
 import tomllib
 from pathlib import Path
+from rust_warning_patches import original_before_warning_fixes
 
 ROOT = Path(__file__).resolve().parents[2]
 vendor = ROOT / "vendor/glib"
@@ -15,7 +16,8 @@ patched_file = "src/variant_iter.rs"
 patched_hash = "a0f5ee8acb8faa089bcdfbc9a57372609fce7654026ccef7d9a224d05a654ccc"
 for name, upstream_hash in manifest.items():
     expected = patched_hash if name == patched_file else upstream_hash
-    assert hashlib.sha256((vendor / name).read_bytes()).hexdigest() == expected, name
+    data = original_before_warning_fixes(f"vendor/glib/{name}", (vendor / name).read_bytes())
+    assert hashlib.sha256(data).hexdigest() == expected, name
 lock = tomllib.loads((ROOT / "Cargo.lock").read_text())
 glib = [p for p in lock["package"] if p["name"] == "glib"]
 assert len(glib) == 1 and glib[0]["version"] == "0.18.5" and "source" not in glib[0], glib
