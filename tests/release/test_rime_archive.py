@@ -35,12 +35,13 @@ class RimeArchive(unittest.TestCase):
             b"# distribution-policy=clean-v1\n"
             b"# research-only sources are metadata only; their payloads are excluded\n"
             + (ROOT / "data/xhup/sources.tsv").read_bytes())
+        shutil.copyfile(ROOT / "rime/package/default.custom.yaml", self.package / "default.custom.yaml")
         self.paths = archive.payloads(self.package, ROOT)
         self.zip = self.work / "package.zip"
         archive.create(self.zip, self.paths)
 
     def test_all_generated_files_not_just_yaml_lua_and_determinism(self):
-        self.assertEqual(archive.check(self.zip, self.paths), 30)
+        self.assertEqual(archive.check(self.zip, self.paths), 31)
         other = self.work / "second.zip"
         archive.create(other, self.paths)
         self.assertEqual(self.zip.read_bytes(), other.read_bytes())
@@ -48,7 +49,7 @@ class RimeArchive(unittest.TestCase):
             archive.create(self.zip, self.paths)
 
     def test_missing_policy_or_notice_and_modified_member(self):
-        for missing in ("xhup_flow.sources.tsv", "NOTICE.md",
+        for missing in ("default.custom.yaml", "xhup_flow.sources.tsv", "NOTICE.md",
                         "licenses/pinyin-data-MIT.txt"):
             out = self.work / "missing.zip"
             with zipfile.ZipFile(out, "w") as zipped:

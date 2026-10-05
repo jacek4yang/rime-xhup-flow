@@ -150,6 +150,10 @@ fn render_dict_compile_wrapper(schema_id: &str) -> String {
 pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
     vec![
         RimeArtifact {
+            filename: "default.custom.yaml",
+            contents: include_str!("../../../rime/package/default.custom.yaml").to_owned(),
+        },
+        RimeArtifact {
             filename: "xhup_flow.sources.tsv",
             contents: format!(
                 "# distribution-policy=clean-v1\n# research-only sources are metadata only; their payloads are excluded\n{}",

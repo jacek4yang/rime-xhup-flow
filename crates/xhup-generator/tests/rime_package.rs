@@ -23,6 +23,7 @@ fn artifact_set_is_exact_and_ordered() {
     assert_eq!(
         filenames,
         [
+            "default.custom.yaml",
             "xhup_flow.sources.tsv",
             "xhup_flow_shortcuts.dict.yaml",
             "xhup_flow_chars.dict.yaml",
@@ -46,7 +47,7 @@ fn artifact_set_is_exact_and_ordered() {
             "xhup_flow.schema.yaml",
             "xhup_flow_static.schema.yaml",
         ],
-        "产物集合与顺序固定:来源策略 → 一级简码 → 单字 → PRIMARY → 固定词 → 顶层词典 → FIXED_FIRST → Flow/Learn → 两个编译 wrapper → Lua → 两套方案"
+        "产物集合与顺序固定:独占方案列表 → 来源策略 → 一级简码 → 单字 → PRIMARY → 固定词 → 顶层词典 → FIXED_FIRST → Flow/Learn → 两个编译 wrapper → Lua → 两套方案"
     );
 }
 
@@ -460,16 +461,26 @@ fn auxiliary_dictionaries_are_in_dependency_compile_graph() {
 
 #[test]
 fn artifact_manifest_forbids_user_owned_paths() {
-    // 产物清单安全不变量(发布级):XHUP 源包只做「自有文件 overlay」,
-    // 绝不携带会覆盖用户状态/配置的文件名,也不携带路径逃逸。
+    // 共享配置的唯一例外是用户明确授权的独占列表；精确内容另行固定。
+    // 原始共享配置必须由安装器备份恢复，包中不能带私人备份或其他用户状态。
     const FORBIDDEN_EXACT: &[&str] = &[
-        "default.custom.yaml",
+        ".xhup-flow-default-backup.json",
         "default.yaml",
         "installation.yaml",
         "user.yaml",
         "rime.lua",
     ];
     let artifacts = generate_rime_artifacts();
+    let exclusive = artifacts
+        .iter()
+        .find(|a| a.filename() == "default.custom.yaml")
+        .unwrap();
+    assert_eq!(
+        exclusive.contents(),
+        include_str!("../../../rime/package/default.custom.yaml")
+    );
+    assert_eq!(exclusive.contents().matches("schema: ").count(), 1);
+    assert!(exclusive.contents().ends_with("    - schema: xhup_flow\n"));
     let mut seen = std::collections::BTreeSet::new();
     for artifact in &artifacts {
         let name = artifact.filename();

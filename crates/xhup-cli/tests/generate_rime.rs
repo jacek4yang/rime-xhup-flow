@@ -82,6 +82,42 @@ fn list_files_recursive(output: &Path) -> Vec<String> {
 }
 
 #[test]
+fn foreign_shared_configuration_is_rejected_before_any_output() {
+    let output = temp_output();
+    fs::create_dir(&output).unwrap();
+    let original = b"# personal\npatch:\n  schema_list: [foreign]\n";
+    fs::write(output.join("default.custom.yaml"), original).unwrap();
+    assert!(matches!(
+        generate(&output),
+        Err(CliError::SharedConfigurationConflict { .. })
+    ));
+    assert_eq!(
+        fs::read(output.join("default.custom.yaml")).unwrap(),
+        original
+    );
+    assert_eq!(list_files_recursive(&output), ["default.custom.yaml"]);
+    fs::remove_dir_all(output).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn shared_configuration_symlink_is_never_followed() {
+    let output = temp_output();
+    fs::create_dir(&output).unwrap();
+    let target = output.join("original");
+    let original = include_bytes!("../../../rime/package/default.custom.yaml");
+    fs::write(&target, original).unwrap();
+    std::os::unix::fs::symlink(&target, output.join("default.custom.yaml")).unwrap();
+    assert!(matches!(
+        generate(&output),
+        Err(CliError::SharedConfigurationConflict { .. })
+    ));
+    assert_eq!(fs::read(&target).unwrap(), original);
+    assert_eq!(fs::read_dir(&output).unwrap().count(), 2);
+    fs::remove_dir_all(output).unwrap();
+}
+
+#[test]
 fn first_generation_creates_directory_and_all_artifacts() {
     let output = temp_output();
 
@@ -109,6 +145,7 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
     assert_eq!(
         filenames,
         [
+            "default.custom.yaml",
             "lua/xhup_flow/annotation.lua",
             "lua/xhup_flow/context_ranker.lua",
             "lua/xhup_flow/data/quick_hints.lua",
@@ -132,7 +169,7 @@ fn generated_file_set_is_exact_and_top_dictionary_imports_all_tables() {
             "xhup_flow_word_shortcuts.dict.yaml",
             "xhup_flow_words.dict.yaml",
         ],
-        "输出应为且仅为 12 个 Rime 源文件(含 2 个词典编译 wrapper schema)+ 7 个 Lua 运行时文件 + clean-v1 来源策略"
+        "输出应且仅包含独占方案列表、词典/schema、Lua 运行时和 clean-v1 来源策略的精确清单"
     );
     for filename in &filenames {
         assert!(
@@ -200,7 +237,14 @@ fn existing_artifacts_are_replaced_exactly() {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).unwrap();
         }
-        fs::write(path, "垃圾内容").unwrap();
+        // Shared configuration is not an arbitrary overwrite target. The
+        // separate conflict test proves foreign bytes are preserved/rejected.
+        let previous = if artifact.filename() == "default.custom.yaml" {
+            artifact.contents()
+        } else {
+            "垃圾内容"
+        };
+        fs::write(path, previous).unwrap();
     }
 
     generate(&output).unwrap();

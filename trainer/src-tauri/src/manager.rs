@@ -3,8 +3,9 @@
 //! 设计约束(见里程碑 D):
 //! - **纯逻辑层**:不依赖 Tauri 类型与真实平台 API(目录发现仅用
 //!   标准库 + 环境变量),可被 Tauri 命令与单元测试共同复用;
-//! - **所有权清单**:安装只写 XHUP 拥有的文件;卸载只删拥有文件;
-//!   绝不触碰用户其它 Rime 配置与学习数据(`xhup_flow_user.userdb`);
+//! - **所有权清单**:安装写固定清单；共享 `default.custom.yaml` 是唯一
+//!   经用户确认的例外，由 exclusive 模块首次备份并在卸载时恢复，不直接删除；
+//!   不删除其它方案和学习数据(`xhup_flow_user.userdb`);
 //! - **计划先于动作**:install/update/repair 都先产出 [`Plan`](行动
 //!   清单),由调用方确认后执行;支持 dry-run 测试;
 //! - **覆盖前备份**:升级/修复会先备份将被覆盖的 XHUP 文件;
@@ -17,9 +18,10 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::exclusive;
 use serde::Serialize;
 
-/// XHUP Flow 拥有的 Rime 源文件清单(与 `generate_rime_artifacts` 的
+/// XHUP Flow 的固定生成文件清单(共享 default.custom.yaml 采用可恢复所有权；与 `generate_rime_artifacts` 的
 /// 产物一致;安装即写这些文件)。所有权唯一来源:改生成器产物集合时
 /// 必须同步本清单,`bundled_package_matches_manifest` 测试兜底。
 pub const OWNED_FILES: &[&str] = &[
@@ -45,6 +47,7 @@ pub const OWNED_FILES: &[&str] = &[
     "lua/xhup_flow/full_span.lua",
     "lua/xhup_flow/init.lua",
     "lua/xhup_flow/data/quick_hints.lua",
+    "default.custom.yaml",
 ];
 
 /// v1.0 canonical v2 切换后不再生成、但升级时必须清理的旧版自有文件。
@@ -574,7 +577,9 @@ pub fn install_status(
     let mut integrity = Vec::new();
     for file in OWNED_FILES {
         let target = user_data_dir.join(file);
-        if target.is_file() {
+        if target.is_file()
+            && (*file != exclusive::DEFAULT || exclusive::active_or_backed_up(user_data_dir))
+        {
             installed_files += 1;
             let state = match package.and_then(|package| package.contents_of(file)) {
                 Some(expected) => match fs::read(&target) {
@@ -662,11 +667,11 @@ pub fn plan_install(user_data_dir: &Path, package: &RimePackage) -> Result<Plan,
     }
     Ok(Plan {
         actions,
-        notes: vec![],
+        notes: vec!["仅在 Rime 内独占：覆盖 default.custom.yaml，使方案列表只显示 XHUP Flow；原文件（含原全局设置）只备份一次，卸载时原样恢复。不会卸载系统输入法或删除其他方案及学习数据。".into()],
     })
 }
 
-/// 产出卸载计划:只删拥有文件(用户数据目录必须存在)。
+/// 产出卸载计划:删除自有文件，共享配置仅在有备份记录时恢复原文件。
 pub fn plan_uninstall(user_data_dir: &Path) -> Result<Plan, ManagerError> {
     if !user_data_dir.is_dir() {
         return Err(ManagerError::UserDataDirMissing {
@@ -676,14 +681,20 @@ pub fn plan_uninstall(user_data_dir: &Path) -> Result<Plan, ManagerError> {
     let actions = OWNED_FILES
         .iter()
         .chain(OBSOLETE_OWNED_FILES)
-        .filter(|file| user_data_dir.join(file).is_file())
+        .filter(|file| {
+            if **file == exclusive::DEFAULT {
+                exclusive::has_backup(user_data_dir)
+            } else {
+                user_data_dir.join(file).is_file()
+            }
+        })
         .map(|file| PlanAction::Delete {
             file: (*file).to_string(),
         })
         .collect();
     Ok(Plan {
         actions,
-        notes: vec![],
+        notes: vec!["恢复独占安装前的 default.custom.yaml（若原本不存在则移除），保留其他方案和学习数据；若发现安装后手工修改则拒绝覆盖。".into()],
     })
 }
 
@@ -945,6 +956,35 @@ pub fn execute(
             _ => {}
         }
     }
+    let exclusive_action = plan
+        .actions
+        .iter()
+        .find(|action| action.file() == exclusive::DEFAULT);
+    let exclusive_error = |source| ManagerError::Io {
+        path: user_data_dir.join(exclusive::DEFAULT),
+        source,
+    };
+    if let Some(action) = exclusive_action {
+        if matches!(action, PlanAction::Delete { .. }) {
+            if plan
+                .actions
+                .iter()
+                .any(|action| !matches!(action, PlanAction::Delete { .. }))
+            {
+                return Err(ManagerError::PackageInvalid {
+                    missing: "cannot mix shared configuration restore with installation".into(),
+                });
+            }
+            exclusive::validate_restore(user_data_dir).map_err(exclusive_error)?;
+        } else {
+            if package_contents(package, exclusive::DEFAULT)? != exclusive::CONTENTS {
+                return Err(ManagerError::PackageInvalid {
+                    missing: "exclusive schema list bytes".into(),
+                });
+            }
+            exclusive::validate_install(user_data_dir).map_err(exclusive_error)?;
+        }
+    }
     let mut done = 0;
     // 卸载:逐文件删除(幂等)。
     let deletes: Vec<&PlanAction> = plan
@@ -959,6 +999,11 @@ pub fn execute(
     if !deletes.is_empty() && !has_writes {
         for action in &deletes {
             if let PlanAction::Delete { file } = action {
+                if file == exclusive::DEFAULT {
+                    exclusive::restore(user_data_dir).map_err(exclusive_error)?;
+                    done += 1;
+                    continue;
+                }
                 let target = user_data_dir.join(file);
                 if target.exists() {
                     fs::remove_file(&target).map_err(|source| ManagerError::Io {
@@ -1002,6 +1047,9 @@ pub fn execute(
     // 2. backup:Overwrite 目标复制到 xhup_backup/(紧邻前一版本)。
     //    复制前要求普通文件(拒绝符号链接)。
     let backup_result = (|| -> Result<(), ManagerError> {
+        if exclusive_action.is_some() {
+            exclusive::ensure_backup(user_data_dir).map_err(exclusive_error)?;
+        }
         for action in &plan.actions {
             if let PlanAction::Overwrite { file, .. } = action {
                 let target = user_data_dir.join(file);
@@ -1338,7 +1386,9 @@ mod tests {
         let files = OWNED_FILES
             .iter()
             .map(|file| {
-                let contents = if *file == schema {
+                let contents = if *file == exclusive::DEFAULT {
+                    exclusive::CONTENTS.to_owned()
+                } else if *file == schema {
                     format!("schema:\n  version: \"{marker}\"\n")
                 } else {
                     marker.to_string()
@@ -1358,6 +1408,92 @@ mod tests {
         fs::write(dir.join("default.custom.yaml"), "用户的自定义配置").unwrap();
         fs::create_dir_all(dir.join("xhup_flow_user.userdb")).unwrap();
         dir
+    }
+
+    fn assert_not_installed(user: &Path, file: &str) {
+        if file == exclusive::DEFAULT {
+            assert_eq!(
+                fs::read_to_string(user.join(file)).unwrap(),
+                "用户的自定义配置"
+            );
+            assert!(!exclusive::has_backup(user));
+        } else {
+            assert!(
+                !user.join(file).exists(),
+                "{file} must not remain installed"
+            );
+        }
+    }
+
+    #[test]
+    fn exclusive_restore_and_outside_edit_refusal_preserve_unrelated_state() {
+        let user = fake_user_dir("exclusive-edits");
+        let package = fake_package("1.0.0");
+        assert_eq!(
+            install_status(&user, RimeClient::Fcitx5, Some(&package)).health(&package.version),
+            InstallHealth::NotInstalled
+        );
+        execute(
+            &plan_install(&user, &package).unwrap(),
+            &user,
+            Some(&package),
+        )
+        .unwrap();
+        let snapshot = fs::read(user.join(".xhup-flow-default-backup.json")).unwrap();
+        execute(
+            &plan_install(&user, &package).unwrap(),
+            &user,
+            Some(&package),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(user.join(".xhup-flow-default-backup.json")).unwrap(),
+            snapshot
+        );
+        fs::write(user.join(exclusive::DEFAULT), "new private edit").unwrap();
+        assert!(
+            execute(
+                &plan_install(&user, &package).unwrap(),
+                &user,
+                Some(&package)
+            )
+            .is_err()
+        );
+        assert!(execute(&plan_uninstall(&user).unwrap(), &user, None).is_err());
+        assert!(user.join(OWNED_FILES[0]).is_file());
+        assert_eq!(
+            fs::read_to_string(user.join(exclusive::DEFAULT)).unwrap(),
+            "new private edit"
+        );
+        fs::write(user.join(exclusive::DEFAULT), exclusive::CONTENTS).unwrap();
+        execute(&plan_uninstall(&user).unwrap(), &user, None).unwrap();
+        assert_not_installed(&user, exclusive::DEFAULT);
+        assert!(user.join("xhup_flow_user.userdb").is_dir());
+        fs::remove_dir_all(user).unwrap();
+    }
+
+    #[test]
+    fn exclusive_fresh_root_restores_absence_and_keeps_other_schema_files() {
+        let user = temp_dir("exclusive-absent");
+        fs::write(user.join("luna_pinyin.schema.yaml"), "foreign schema").unwrap();
+        let package = fake_package("1.0.0");
+        execute(
+            &plan_install(&user, &package).unwrap(),
+            &user,
+            Some(&package),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(user.join(exclusive::DEFAULT)).unwrap(),
+            exclusive::CONTENTS
+        );
+        execute(&plan_uninstall(&user).unwrap(), &user, None).unwrap();
+        assert!(!user.join(exclusive::DEFAULT).exists());
+        assert_eq!(
+            fs::read_to_string(user.join("luna_pinyin.schema.yaml")).unwrap(),
+            "foreign schema"
+        );
+        fs::remove_dir_all(user).unwrap();
     }
 
     #[test]
@@ -1473,6 +1609,8 @@ mod tests {
             Some(&package),
         )
         .unwrap();
+        // Shared default.custom.yaml creates a real backup on first install.
+        fs::remove_dir_all(user.join("xhup_backup")).unwrap();
         std::os::unix::fs::symlink(&outside, user.join("xhup_backup")).unwrap();
         let updated = fake_package("2.0");
         assert!(
@@ -1554,7 +1692,11 @@ mod tests {
         assert!(
             plan.actions
                 .iter()
-                .all(|action| matches!(action, PlanAction::Write { .. }))
+                .all(|action| if action.file() == exclusive::DEFAULT {
+                    matches!(action, PlanAction::Overwrite { .. })
+                } else {
+                    matches!(action, PlanAction::Write { .. })
+                })
         );
         assert_eq!(
             execute(&plan, &user, Some(&package)).unwrap(),
@@ -1667,7 +1809,7 @@ mod tests {
         assert_eq!(plan.actions.len(), OWNED_FILES.len());
         execute(&plan, &user, None).unwrap();
         for file in OWNED_FILES {
-            assert!(!user.join(file).exists(), "{file} 应被删除");
+            assert_not_installed(&user, file);
         }
         // 无关文件与 userdb 保留。
         assert!(user.join("default.custom.yaml").is_file());
@@ -1687,7 +1829,7 @@ mod tests {
         assert_eq!(plan.actions.len(), OBSOLETE_OWNED_FILES.len());
         execute(&plan, &user, None).unwrap();
         for file in OBSOLETE_OWNED_FILES {
-            assert!(!user.join(file).exists());
+            assert_not_installed(&user, file);
         }
         let _ = fs::remove_dir_all(&user);
     }
@@ -1740,7 +1882,7 @@ mod tests {
         let plan = plan_install(&user, &package).unwrap();
         // 计划产出后,盘上没有任何 XHUP 文件。
         for file in OWNED_FILES {
-            assert!(!user.join(file).exists());
+            assert_not_installed(&user, file);
         }
         execute(&plan, &user, Some(&package)).unwrap();
         for file in OWNED_FILES {
@@ -1760,7 +1902,7 @@ mod tests {
         ));
         // 失败后不留下半成品目标文件(临时文件已清理)。
         for file in OWNED_FILES {
-            assert!(!user.join(file).exists());
+            assert_not_installed(&user, file);
             assert!(!user.join(format!(".{file}.xhup-tmp")).exists());
         }
         let _ = fs::remove_dir_all(&user);
@@ -2280,7 +2422,7 @@ mod tests {
         // 卸载 → 拥有文件全删,无关文件与 userdb 保留,幂等。
         execute(&plan_uninstall(&user).unwrap(), &user, None).unwrap();
         for file in OWNED_FILES {
-            assert!(!user.join(file).exists());
+            assert_not_installed(&user, file);
         }
         assert!(user.join("default.custom.yaml").is_file());
         assert!(user.join("xhup_flow_user.userdb").is_dir());
@@ -2447,7 +2589,14 @@ mod tests {
         // 3) 无关用户配置原样保留(升级不碰非拥有文件)。
         assert_eq!(
             fs::read_to_string(user.join("default.custom.yaml")).unwrap(),
-            "用户的自定义配置"
+            exclusive::CONTENTS
+        );
+        let saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(user.join(".xhup-flow-default-backup.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            saved["original"],
+            serde_json::to_value("用户的自定义配置".as_bytes()).unwrap()
         );
 
         // 4) 本地学习状态(userdb)完整保留 —— 学习持久化是 §4 核心用例。
@@ -2545,7 +2694,7 @@ mod tests {
         // 卸载只删拥有文件(含过时项);userdb 与无关配置保留。
         execute(&plan_uninstall(&user).unwrap(), &user, None).unwrap();
         for file in OWNED_FILES.iter().chain(OBSOLETE_OWNED_FILES.iter()) {
-            assert!(!user.join(file).exists(), "{file} 卸载后不应存在");
+            assert_not_installed(&user, file);
         }
         assert!(user.join("default.custom.yaml").is_file());
         assert!(user.join("xhup_flow_user.userdb/Table.bin").is_file());

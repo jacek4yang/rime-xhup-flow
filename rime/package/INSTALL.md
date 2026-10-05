@@ -14,6 +14,7 @@ clients: Weasel (Windows), Squirrel (macOS), Fcitx5-Rime / IBus-Rime
 
 | 文件 | 说明 |
 | ---- | ---- |
+| `default.custom.yaml` | 独占列表：Rime 只显示 XHUP Flow（替换前必须备份原文件） |
 | `xhup_flow.schema.yaml` | 主方案(Flow:静态层 + 组句 + 本地学习) |
 | `xhup_flow_static.schema.yaml` | 静态回退方案(仅固定层,无组句学习) |
 | `xhup_flow.dict.yaml` | 顶层词典(导入下列词典) |
@@ -50,12 +51,16 @@ clients: Weasel (Windows), Squirrel (macOS), Fcitx5-Rime / IBus-Rime
 组句/学习 provider 使用，不重复编译另一份 Flow table。
 Flow wrapper 保留作兼容/研究资源。wrapper 不在 `schema_list` 中，不供用户选择。
 
-两套方案同时安装;在输入法的方案菜单中选择 Flow 或 Static。
+**安装后 Rime 的方案列表只有 `xhup_flow`。** Static 和 wrapper 文件保留作
+兼容/编译资源，不显示在方案菜单，不会自动添加默认拼音或其他方案。
+这只修改 Rime 内部方案，不卸载系统键盘、系统输入法或其他方案文件。
+如确需排障时启用 Static，请显式修改自己的方案列表；这将退出独占配置。
 
 ## 安装 / Install
 
 把全部 YAML、`xhup_flow.sources.tsv` 与 `lua/` 复制到 Rime 用户数据目录
-（保持目录结构，不覆盖其它方案或用户状态）。在下载/备份处保留
+（保持目录结构，不删除其它方案或用户状态）。**先按下述步骤处理共享的
+`default.custom.yaml`，不要直接覆盖。** 在下载/备份处保留
 `INSTALL.md`、`NOTICE.md` 与 `licenses/`；再分发时必须一并携带：
 
 - Windows 小狼毫:`%APPDATA%\Rime`
@@ -64,14 +69,38 @@ Flow wrapper 保留作兼容/研究资源。wrapper 不在 `schema_list` 中，�
 - Linux IBus:`~/.config/ibus/rime`(部分发行版为 `~/.config/ibus/rime`)
 - fcitx5-android:把文件放入应用可访问的 Rime 目录(应用内「部署」)
 
-然后在输入法菜单执行「重新部署」。Trainer 桌面应用的
-「输入法」控制中心可以自动完成上述安装、升级、修复与卸载。
+### 备份与恢复（手工安装必须执行）
 
-Copy all YAML files, `xhup_flow.sources.tsv` and `lua/` into the Rime user
-data directory; retain INSTALL, NOTICE and licenses with your package.
-Then trigger "Redeploy" from the input method menu. The
-Trainer desktop app's Input Method control center automates install,
-update, repair and uninstall.
+1. 退出输入法或暂停其部署。在用户数据目录外新建一个专用备份目录。
+2. 若原来存在 `default.custom.yaml`，把它原样复制到该备份目录并核对内容；
+   若不存在，记录「原文件不存在」。**后续升级不得用本包文件覆盖这份首次备份。**
+3. 再复制本包文件，包含新的 `default.custom.yaml`。它替换原全局自定义配置，
+   因此原文件中的快捷键等自定义项不会继续生效；原始内容仍在备份中。
+4. 重新部署并检查方案菜单只有 XHUP Flow。若客户端首次安装向导重写方案列表，
+   重新检查 `default.custom.yaml`，不要在菜单另外添加其他方案。
+5. 手工卸载或退出独占时，恢复上述原文件；原本不存在则只删除本包的
+   `default.custom.yaml`。然后重新部署。不要删除其他方案、`user.yaml`、
+   `installation.yaml`、`sync/` 或任何 `*.userdb`。
+
+Trainer「输入法」控制中心会在确认计划后自动保存原配置到用户目录内的
+`.xhup-flow-default-backup.json`，升级不改写首次备份，卸载自动恢复。
+该备份可能包含私人设置，不要随导出包分享。若安装后手工修改共享配置，
+恢复操作会拒绝覆盖，请先保留改动并手动处理冲突。
+手工覆盖安装与 Trainer 管理安装不要交叉使用：无原始备份的独占文件会被
+Trainer 拒绝接管，请先恢复手工备份再安装。
+
+最后在输入法菜单执行「重新部署」。原子文件替换不等于多文件断电事务；
+中断后保留备份，修复前核查磁盘状态。
+
+Before copying, back up the original `default.custom.yaml` outside the user
+folder, or record that it was absent. Keep this **first** backup through upgrades.
+Copy all YAML files, `xhup_flow.sources.tsv` and `lua/`, then redeploy: the Rime
+schema list now contains only XHUP Flow. The replacement also supersedes any
+other settings in the old default.custom.yaml; it does not remove system input
+methods, other schema files or learning data. Restore the first backup (or remove
+our default.custom.yaml if originally absent) when uninstalling, then redeploy.
+Trainer performs the first-backup/restore steps automatically and refuses to
+overwrite later manual edits. Retain INSTALL, NOTICE and licenses with the package.
 
 ## 隐私 / Privacy
 
