@@ -1,0 +1,98 @@
+name: Archive completed rehearsal branches
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Archive the five fixed rehearsal tips, verify tags, then delete only unchanged branches
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: archive-completed-rehearsal-branches
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    if: github.actor == github.repository_owner && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Verify fixed tips and preserve history before deletion
+        shell: bash
+        env:
+          APPLY: ${{ inputs.apply }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          branches=(
+            test/final-packaging-rehearsal
+            test/native-full-rehearsal
+            test/rc3-desktop-rehearsal
+            test/rc3-rehearsal-utf8
+            test/rc3-security-rehearsal
+          )
+          commits=(
+            aca42a529326bc0396e6916b0fa391b0b938ae34
+            e352c55ffe4d9cb86028c1d331ac57afdc8c0707
+            05d8834e4b90d90b8b9541ca0462dd655d4d91c4
+            bd4b09ea848f694c05108c27b65ad0d46086ac5b
+            1a29a2d8a077feb125efc87e5d6977fc17a0674f
+          )
+          tags=()
+          leases=()
+          deletions=()
+          for i in "${!branches[@]}"; do
+            branch="${branches[$i]}"
+            sha="${commits[$i]}"
+            tag="archive/2026-10-05/$branch"
+            head="$(git ls-remote --heads origin "refs/heads/$branch" | cut -f1)"
+            archived="$(git ls-remote --tags origin "refs/tags/$tag" | cut -f1)"
+            [[ -z "$archived" || "$archived" == "$sha" ]] || { echo "Archive tag mismatch: $tag"; exit 1; }
+            if [[ -z "$head" ]]; then
+              [[ "$archived" == "$sha" ]] || { echo "Missing branch and archive: $branch"; exit 1; }
+              echo "Already archived and removed: $branch"
+              continue
+            fi
+            [[ "$head" == "$sha" ]] || { echo "Branch moved; refuse deletion: $branch"; exit 1; }
+            count="$(gh api --method GET "repos/$GH_REPO/pulls" -f state=open -f "head=$OWNER:$branch" --jq length)"
+            [[ "$count" == 0 ]] || { echo "Open pull request uses $branch"; exit 1; }
+            git cat-file -e "$sha^{commit}"
+            if [[ -z "$archived" ]]; then
+              git update-ref "refs/tags/$tag" "$sha"
+              tags+=("refs/tags/$tag:refs/tags/$tag")
+            fi
+            leases+=("--force-with-lease=refs/heads/$branch:$sha")
+            deletions+=(":refs/heads/$branch")
+            echo "Verified: $branch $sha -> $tag"
+          done
+          if [[ "$APPLY" != true ]]; then
+            echo 'Dry run only: no remote refs changed.'
+            exit 0
+          fi
+          if ((${#tags[@]})); then
+            git push --atomic origin "${tags[@]}"
+          fi
+          for i in "${!branches[@]}"; do
+            tag="archive/2026-10-05/${branches[$i]}"
+            [[ "$(git ls-remote --tags origin "refs/tags/$tag" | cut -f1)" == "${commits[$i]}" ]] || exit 1
+          done
+          if ((${#deletions[@]})); then
+            git push --atomic "${leases[@]}" origin "${deletions[@]}"
+          fi
+          for branch in "${branches[@]}"; do
+            [[ -z "$(git ls-remote --heads origin "refs/heads/$branch")" ]] || exit 1
+          done
+          echo 'All five rehearsal histories are reachable through verified archive tags; branches removed.'
