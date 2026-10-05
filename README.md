@@ -92,7 +92,8 @@ Windows 可用 `Get-FileHash <文件> -Algorithm SHA256`；macOS 可用
 - [ ] **安装与部署**：Trainer 的预览计划正确；安装后前端重新部署成功，
   能切换 Flow / Static；自有方案、全局配置和原有学习数据未被覆盖。
 - [ ] **真实 Lua 与静态回退**：确认 Flow 所需模块实际加载，无插件报错；
-  Static 可独立输入。缺少插件时切换 Static，不把静默降级当成 Flow 通过。
+  Static 可独立输入。缺少插件时可在排障中显式修改方案列表切换 Static
+  （这会退出独占配置），不把静默降级当成 Flow 通过。
 - [ ] **逐键输入与编辑**：测试 `jbzq` → `jbzqu`（“进去”），
   `nihcnz`（“你好”）、`nihcnzqu`（“你好去”）、
   `nihcnznihcnzqu`（“你好你好去”）。检查候选、未完成尾码、
@@ -123,19 +124,28 @@ Windows 可用 `Get-FileHash <文件> -Algorithm SHA256`；macOS 可用
    确认后写入方案文件;然后点**重新部署**(检测到官方部署机制时
    自动执行,否则展示该平台的官方手动步骤)。
 
-升级与修复走同一入口:应用自动对比已安装版本与随附版本;卸载只删除
-XHUP 拥有的文件,不影响学习数据与你的其它 Rime 配置。
+安装后 **Rime 的方案列表仅保留 XHUP Flow**；不卸载系统其他输入法，也不删除
+其他 Rime 方案文件和学习数据。Static 和词典 wrapper 保留为内部兼容/编译资源，
+不显示在方案菜单。
+
+Trainer 首次安装会备份原 `default.custom.yaml`，升级与修复不改写首次备份，
+卸载时恢复原文件（原本没有则恢复为没有）。原文件中的全局自定义项在独占期间
+会被替换；检测到安装后的手工改动时拒绝覆盖。安装前请阅读计划说明。
+备份可能包含私人设置，不要随配置包分享。
 
 ### 方式二:平台中立 Rime 源包(不装 Trainer)
 
 从 Releases 下载 `xhup-flow-rime-vX.Y.Z.zip`:
 
 1. 找到上表所列的 Rime 用户数据目录;
-2. 把 ZIP 内容**直接解压到该目录**,允许覆盖同名的 XHUP Flow 文件
-   (`xhup_flow*.yaml` 与 `lua/xhup_flow/`);
+2. **先把原 `default.custom.yaml` 备份到用户目录外**（原本没有则记录没有），
+   后续升级保留首次备份。再按包内 `INSTALL.md` 把文件复制到该目录，
+   包括独占列表 `default.custom.yaml`、`xhup_flow*.yaml` 和 `lua/xhup_flow/`；
 3. 重新部署 Rime(小狼毫:「开始菜单 → 小狼毫 → 重新部署」;鼠须管:
    菜单栏图标 → Deploy;Fcitx5/IBus:托盘图标 → 重新部署/Restart);
-4. 在方案菜单中启用 XHUP Flow / XHUP Flow Static。
+4. 确认方案菜单中只有 XHUP Flow。退出独占或手工卸载时恢复首次备份，
+   原本没有该文件则删除本包的 `default.custom.yaml`，然后重新部署。
+   手工安装与 Trainer 管理安装不要混用；切换前先恢复原始配置。
 
 ZIP 只包含 XHUP Flow 拥有的文件(方案、词典、Lua 模块、说明),
 **绝不包含也不会覆盖**:

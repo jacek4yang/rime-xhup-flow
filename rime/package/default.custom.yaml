@@ -1,0 +1,6 @@
+# Managed XHUP Flow exclusive Rime schema list.
+# Back up an existing default.custom.yaml before manual installation.
+# Does not uninstall system keyboards, other input methods or Rime user data.
+patch:
+  schema_list:
+    - schema: xhup_flow

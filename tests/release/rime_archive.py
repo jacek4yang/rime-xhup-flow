@@ -17,7 +17,7 @@ DICTIONARIES = (
 GENERATED = ({f"{name}.schema.yaml" for name in YAML}
              | {f"{name}.dict.yaml" for name in DICTIONARIES}
              | {f"lua/xhup_flow/{name}.lua" for name in MODULES}
-             | {"lua/xhup_flow/data/quick_hints.lua", "xhup_flow.sources.tsv"})
+             | {"lua/xhup_flow/data/quick_hints.lua", "xhup_flow.sources.tsv", "default.custom.yaml"})
 NOTICES = {
     "INSTALL.md": "rime/package/INSTALL.md",
     "NOTICE.md": "rime/package/NOTICE.md",
@@ -40,6 +40,8 @@ def payloads(package, root):
     if actual != GENERATED:
         raise ValueError(f"generated inventory mismatch: missing={GENERATED-actual}, extra={actual-GENERATED}")
     verify_runtime(package, root)
+    if (package / "default.custom.yaml").read_bytes() != (root / "rime/package/default.custom.yaml").read_bytes():
+        raise ValueError("exclusive schema configuration differs from canonical source")
     policy = (b"# distribution-policy=clean-v1\n"
               b"# research-only sources are metadata only; their payloads are excluded\n"
               + (root / "data/xhup/sources.tsv").read_bytes())

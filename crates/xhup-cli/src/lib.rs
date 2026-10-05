@@ -230,6 +230,11 @@ pub enum CliError {
         /// 输出路径。
         path: PathBuf,
     },
+    /// 生成目录包含非本包的共享 Rime 配置；生成器不是安装器，不覆盖它。
+    SharedConfigurationConflict {
+        /// 原始配置路径。
+        path: PathBuf,
+    },
     /// 无法写入临时产物文件。
     WriteTemporaryFile {
         /// 临时文件路径。
@@ -282,6 +287,11 @@ impl fmt::Display for CliError {
             Self::OutputNotDirectory { path } => {
                 write!(f, "输出路径不是目录: {}", path.display())
             }
+            Self::SharedConfigurationConflict { path } => write!(
+                f,
+                "拒绝覆盖共享配置 {}：请生成到单独目录，再按 INSTALL.md 备份安装，或使用 Trainer",
+                path.display()
+            ),
             Self::WriteTemporaryFile { path, source } => {
                 write!(f, "无法写入临时文件 {}: {source}", path.display())
             }
@@ -318,6 +328,7 @@ impl Error for CliError {
             Self::UserState(source) => Some(source),
             Self::Doctor(source) => Some(source),
             Self::OutputNotDirectory { .. }
+            | Self::SharedConfigurationConflict { .. }
             | Self::AcceptanceInvalid { .. }
             | Self::AcceptanceViolations { .. } => None,
         }
@@ -349,6 +360,35 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
         Command::Generate(args) => match args.target {
             GenerateTarget::Rime(args) => {
+                use std::io::Read as _;
+                let path = args.output.join("default.custom.yaml");
+                let expected = include_bytes!("../../../rime/package/default.custom.yaml");
+                let conflict = || CliError::SharedConfigurationConflict { path: path.clone() };
+                match fs::symlink_metadata(&path) {
+                    Ok(metadata) => {
+                        if !metadata.is_file()
+                            || metadata.file_type().is_symlink()
+                            || metadata.len() != expected.len() as u64
+                        {
+                            return Err(conflict());
+                        }
+                        let mut bytes = Vec::new();
+                        fs::File::open(&path)
+                            .map_err(|_| conflict())?
+                            .take(expected.len() as u64 + 1)
+                            .read_to_end(&mut bytes)
+                            .map_err(|_| conflict())?;
+                        if bytes != expected {
+                            return Err(conflict());
+                        }
+                    }
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                        ) => {}
+                    Err(_) => return Err(conflict()),
+                }
                 let artifacts = generate_rime_artifacts();
                 let files: Vec<(&str, &str)> = artifacts
                     .iter()

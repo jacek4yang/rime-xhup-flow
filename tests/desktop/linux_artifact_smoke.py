@@ -154,7 +154,9 @@ def main():
                 click("确认执行")
                 wait(lambda: (rime / "lua/xhup_flow/data/quick_hints.lua").is_file())
                 check(all((rime / name).is_file() for name in GENERATED), "UI confirmed install writes every nested package file")
-                check(sentinel.read_bytes() == b"# synthetic user configuration, preserve me\n", "unrelated user configuration preserved")
+                check(sentinel.read_bytes() == (root / 'rime/package/default.custom.yaml').read_bytes(), "installed Rime schema list is exclusively XHUP Flow")
+                saved = json.loads((rime / '.xhup-flow-default-backup.json').read_text(encoding='utf-8'))
+                check(bytes(saved['original']) == b"# synthetic user configuration, preserve me\n", "original shared configuration is backed up byte for byte")
                 check("未验证（Unknown）" in text(), "installation is not misreported as live runtime qualification")
 
                 type_into("#export-destination", str(export_parent))
@@ -173,6 +175,13 @@ def main():
                     ".then(()=>done({ok:true}),e=>done({ok:false,code:e.code}));", [str(export_parent)], True)
                 check(not duplicate["ok"] and duplicate.get("code") == "io", "existing export is explicitly refused")
                 check(before == {name: sha(target / name) for name in actual}, "refused duplicate export leaves every byte unchanged")
+
+                click("卸载")
+                wait(lambda: "确认执行" in text())
+                click("确认执行")
+                wait(lambda: not (rime / "xhup_flow.schema.yaml").exists())
+                check(sentinel.read_bytes() == b"# synthetic user configuration, preserve me\n", "uninstall restores the exact pre-install shared configuration")
+                check(not (rime / '.xhup-flow-default-backup.json').exists(), "successful restoration releases managed shared-file ownership")
 
                 click("今日")
                 click("开始练习")

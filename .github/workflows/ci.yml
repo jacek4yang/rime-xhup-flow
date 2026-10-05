@@ -381,6 +381,9 @@ jobs:
       - name: xhup-cli doctor 运行环境与 Lua 合同诊断
         run: target/debug/xhup-cli doctor --user-data-dir /tmp/xhup-flow-package
 
+      - name: 实际 Rime 独占方案列表（保留外部文件、旧选择不生效）
+        run: bash tests/librime/run-exclusive-schema.sh /tmp/xhup-flow-package
+
       - name: librime 逐键资格门禁（尾码、分段、编辑与完整提交）
         run: XHUP_AUDIT_ONLY_REPLAY=1 XHUP_REPLAY_VERIFY_LEARNING=1 tests/librime/run-flow-audit.sh /tmp/xhup-flow-package
 
