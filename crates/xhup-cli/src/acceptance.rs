@@ -90,7 +90,7 @@ pub struct PlatformEntry {
     /// 明确的 librime / Lua / 客户端版本;schema 2 stable 必填。
     #[serde(default)]
     pub runtime: Option<String>,
-    /// 仅允许 Android/trainer_lifecycle;schema 2 必须给出非空原因。
+    /// 历史 schema 1 可保留 Android 控制中心 N/A；当前 schema 2 不接受豁免。
     #[serde(default)]
     pub exemptions: BTreeMap<String, String>,
 }
@@ -215,19 +215,15 @@ pub fn validate_structure(manifest: &AcceptanceManifest) -> Vec<Violation> {
         }
         for (key, state) in &entry.checks {
             if *state == CheckState::NotApplicable
-                && (entry.platform != "android"
-                    || key != "trainer_lifecycle"
-                    || (manifest.schema_version == 2
-                        && !entry
-                            .exemptions
-                            .get(key)
-                            .is_some_and(|s| !s.trim().is_empty())))
+                && (manifest.schema_version != 1
+                    || entry.platform != "android"
+                    || key != "trainer_lifecycle")
             {
                 violations.push(Violation {
                     platform: Some(entry.platform.clone()),
                     check: Some(key.clone()),
                     message:
-                        "N/A 仅允许 android/trainer_lifecycle;schema 2 必须提供 exemption 原因"
+                        "N/A 仅保留于历史 schema 1 android/trainer_lifecycle；当前训练器各平台均需验收"
                             .to_string(),
                 });
             }
@@ -621,19 +617,6 @@ mod tests {
             entry.verified_at = Some("2026-09-27T00:00:00Z".to_string());
         }
         manifest.schema_version = 2;
-        // Android 的 trainer_lifecycle 按显式有理由的 N/A 语义允许。
-        let android = manifest
-            .platforms
-            .iter_mut()
-            .find(|p| p.platform == "android")
-            .unwrap();
-        android.exemptions.insert(
-            "trainer_lifecycle".to_string(),
-            "无桌面控制中心".to_string(),
-        );
-        android
-            .checks
-            .insert("trainer_lifecycle".to_string(), CheckState::NotApplicable);
         assert!(check_stable(&manifest, "2.0.0").is_empty());
     }
 

@@ -24,7 +24,7 @@ Rust 生成器(xhup-generator,唯一语义来源)
       Flow Engine(xhup_flow)
       静态层 + 完整词汇/单字开放组句 + 本地学习
              ↓
-      Trainer 控制中心(Rust manager:安装/升级/修复/卸载/诊断)
+      用户按安装教程复制方案、备份配置并重新部署
              ↓
       打包(product-packaging 工作流:Rime 包 + 桌面/移动安装物)
 ```
@@ -36,10 +36,9 @@ Rust 生成器(xhup-generator,唯一语义来源)
   不回退过期数据)。
 - **生成是确定性的**:同一规范数据 + 同一生成器源码(含版本)+ 同一
   模板 ⇒ 字节级一致的产物(有测试兜底;CI 生成 `CANONICAL-SHA256SUMS.txt`)。
-- **Tauri 是薄平台层**:控制中心的业务逻辑全部在
-  `trainer/src-tauri/src/manager.rs`(纯 Rust、可单测),Tauri 命令
-  只做环境检测与转发;前端通过 `window.__TAURI_INTERNALS__.invoke`
-  类型化调用,浏览器环境自动降级。
+- **Tauri 是纯训练容器**：不注册应用自定义 IPC，不链接输入法管理核心，
+  不内嵌 Rime 安装包。练习、错题、统计、键位与进度备份由同一前端和共享核心负责；
+  输入法安装、部署及学习词库管理与 Trainer 分离。
 
 ## 候选优先级契约
 
@@ -91,8 +90,7 @@ hot static words(100,000) ⊂ pinned extended words(1,301,434)
 - `ShortcutPolicyId` 值;
 - `xhup_flow_user` 用户词典身份(学习数据载体);
 - Trainer 持久化数据迁移兼容(进度/备份可跨版本导入);
-- 控制中心所有权清单规则(`OWNED_FILES`:卸载只删 XHUP 拥有文件,
-  绝不触碰其它 Rime 配置与学习数据)。
+- Trainer 不读取、写入或删除输入法用户目录；手动安装须保存原配置与学习数据。
 
 ## 版本模型
 
@@ -110,25 +108,20 @@ Rime 包版本随生成器内嵌;全部产品级版本来源由
 
 ## 平台中立 Rime 源包
 
-`xhup-cli generate rime` 产出 14 个源文件(12 个 YAML + 2 个 Lua),
+`xhup-cli generate rime` 确定性产出完整源文件与来源登记，
 不含 userdb;面向 Weasel / Squirrel / fcitx5-rime / ibus-rime /
 fcitx5-android 等标准 librime 客户端。打包时附
 [rime/package/INSTALL.md](../rime/package/INSTALL.md) 安装说明。
 CI 在临时目录用 librime 实机编译两套方案作为发布门禁。
 
-## 控制中心(产品管理)
+## 训练应用与手动安装边界
 
-```text
-React(状态/计划展示/确认) → Tauri 命令(薄) → manager.rs(纯逻辑)
-      → 平台适配(目录探测/环境变量) → 文件系统/Rime 环境
-```
+Trainer 的 Rust 层仅初始化 Tauri。应用启动、练习和重启不要求存在 Rime；
+历史 product_*、learning_*、explain_* 自定义 IPC 均未注册。
+`xhup-flow.trainer.v2` 保存练习进度，JSON 备份不包含 Rime userdb。
+构建期仍用生成器生成训练数据，但不将 Rime 安装包或管理实现链接进应用。
 
-安全不变量(单测覆盖):
-
-- 计划先于动作:install/upgrade/repair/uninstall 都先产出 dry-run
-  `Plan`,执行前按当前磁盘状态重新规划;
-- 只写/只删 `OWNED_FILES`;覆盖前备份到 `xhup_backup/`(保留最早版本);
-  临时文件 + 原子 rename 写入;
-- `xhup_flow_user.userdb` 永不在计划内;用户其它 Rime 配置不被触碰;
-- 学习管理复用 `xhup-cli` `learning`(rime_dict_manager 官方机制);
-- 诊断报告脱敏(不含学习词内容/个人文件/环境细节)。
+发布包的真实 Linux WebKit 测试验证无 Rime 环境可练习、旧管理 IPC 拒绝、
+原有 Rime 文件与学习字节保持不变，以及实际关闭重启后进度仍可恢复。
+用户通过[手动教程](install-guide.zh-CN.md)独立安装输入法前端与方案；
+旧安装器设计文档只作历史记录，不代表当前支持功能。

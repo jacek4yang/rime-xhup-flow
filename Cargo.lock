@@ -3637,15 +3637,9 @@ version = "2.0.0-rc.3"
 dependencies = [
  "glib",
  "regex",
- "serde",
- "serde_json",
- "sha2",
  "tauri",
  "tauri-build",
  "urlpattern",
- "xhup-analyzer",
- "xhup-cli",
- "xhup-generator",
 ]
 
 [[package]]

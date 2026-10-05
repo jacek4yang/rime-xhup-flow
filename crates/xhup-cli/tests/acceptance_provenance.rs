@@ -233,7 +233,7 @@ rejects!(
 );
 
 #[test]
-fn explicitly_reasoned_android_exemption_passes() {
+fn current_android_training_lifecycle_cannot_be_exempted() {
     let mut f = Fixture::new();
     f.manifest.platforms[3]
         .checks
@@ -241,7 +241,7 @@ fn explicitly_reasoned_android_exemption_passes() {
     f.manifest.platforms[3]
         .exemptions
         .insert("trainer_lifecycle".into(), "desktop-only lifecycle".into());
-    assert!(f.verify().is_empty());
+    assert!(f.verify().iter().any(|v| v.message.contains("N/A")));
 }
 
 #[test]

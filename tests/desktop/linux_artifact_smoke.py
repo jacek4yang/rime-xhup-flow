@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real Linux WebKit/IPC smoke in private HOME/XDG. No mocked product APIs.
+"""Real training-only Linux WebKit smoke in private HOME/XDG. No mocked app APIs.
 Run inside dbus-run-session. Requires Xvfb, WebKitWebDriver and a built binary.
 This does not qualify fcitx5 desktop integration or Android user acceptance.
 """
@@ -52,8 +52,6 @@ def main():
     args = parser.parse_args()
     root = args.source_root.resolve()
     binary = args.binary.resolve(strict=True)
-    sys.path.insert(0, str(root / "tests/release"))
-    from rime_archive import GENERATED, NOTICES, verify_runtime
     report = {
         "binary_sha256": sha(binary), "expected_version": args.version,
         "source_commit": subprocess.check_output(["git", "-C", root, "rev-parse", "HEAD"], text=True).strip(),
@@ -78,11 +76,12 @@ def main():
             env[key] = str(path)
         env.update(TAURI_WEBVIEW_AUTOMATION="true", GDK_BACKEND="x11")
         rime = work / "data/fcitx5/rime"
-        rime.mkdir(parents=True)
         sentinel = rime / "default.custom.yaml"
-        sentinel.write_bytes(b"# synthetic user configuration, preserve me\n")
-        export_parent = work / "export"
-        export_parent.mkdir()
+        def profile_snapshot():
+            if not rime.exists():
+                return None
+            return {p.relative_to(rime).as_posix(): ("dir" if p.is_dir() else sha(p))
+                    for p in sorted(rime.rglob("*"))}
         driver = None
         session = None
         x = None
@@ -156,48 +155,23 @@ def main():
                             raise RuntimeError("WebDriver exited")
                         time.sleep(.1)
                 session = start()
-                wait(lambda: "欢迎使用 XHUP Flow" in text())
+                wait(lambda: "小鹤音形训练" in text())
                 check(execute("return location.protocol") == "tauri:", "packaged local frontend loads under real WebKit")
-                click("跳过,稍后再说")
-                click("输入法")
-                wait(lambda: args.version in text())
-                check("未验证（Unknown）" in text(), "live capability is not inferred from files")
-                click("安装")
-                wait(lambda: "xhup_flow.sources.tsv" in text())
-                check(not (rime / "xhup_flow.schema.yaml").exists(), "install plan does not write before confirmation")
-                click("确认执行")
-                wait(lambda: (rime / "lua/xhup_flow/data/quick_hints.lua").is_file())
-                check(all((rime / name).is_file() for name in GENERATED), "UI confirmed install writes every nested package file")
-                check(sentinel.read_bytes() == (root / 'rime/package/default.custom.yaml').read_bytes(), "installed Rime schema list is exclusively XHUP Flow")
-                saved = json.loads((rime / '.xhup-flow-default-backup.json').read_text(encoding='utf-8'))
-                check(bytes(saved['original']) == b"# synthetic user configuration, preserve me\n", "original shared configuration is backed up byte for byte")
-                check("未验证（Unknown）" in text(), "installation is not misreported as live runtime qualification")
-
-                type_into("#export-destination", str(export_parent))
-                click("导出包")
-                target = export_parent / ("xhup-flow-rime-v" + args.version)
-                wait(lambda: target.is_dir() and all((target / name).is_file() for name in NOTICES))
-                actual = {p.relative_to(target).as_posix() for p in target.rglob("*") if p.is_file()}
-                check(actual == GENERATED | set(NOTICES), "export has exact public inventory and no user state")
-                check(all((target / n).read_bytes() == (rime / n).read_bytes() for n in GENERATED), "export and installed immutable payload bytes match")
-                check(all((target / n).read_bytes() == (root / src).read_bytes() for n, src in NOTICES.items()), "all exported license/document bytes match source")
-                verify_runtime(target, root)
-                check(True, "export runtime modules and schemas match source")
-                before = {name: sha(target / name) for name in actual}
-                duplicate = execute("const done=arguments[arguments.length-1];"
-                    "window.__TAURI_INTERNALS__.invoke('product_export_package',{destination:arguments[0]})"
-                    ".then(()=>done({ok:true}),e=>done({ok:false,code:e.code}));", [str(export_parent)], True)
-                check(not duplicate["ok"] and duplicate.get("code") == "io", "existing export is explicitly refused")
-                check(before == {name: sha(target / name) for name in actual}, "refused duplicate export leaves every byte unchanged")
-
-                click("卸载")
-                confirm = wait(lambda: execute("return [...document.querySelectorAll('[role=dialog] button')]"
-                    ".find(e=>e.textContent.trim()==='卸载' && e.getClientRects().length)"))
-                check((rime / "xhup_flow.schema.yaml").is_file(), "uninstall requires explicit dialog confirmation")
-                call("POST", f"/session/{session}/element/{confirm[ELEMENT]}/click", {})
-                wait(lambda: not (rime / "xhup_flow.schema.yaml").exists())
-                check(sentinel.read_bytes() == b"# synthetic user configuration, preserve me\n", "uninstall restores the exact pre-install shared configuration")
-                check(not (rime / '.xhup-flow-default-backup.json').exists(), "successful restoration releases managed shared-file ownership")
+                check(not rime.exists(), "training starts without creating a Rime profile")
+                check(not execute("return [...document.querySelectorAll('button')].some(e=>"
+                    "['输入法','安装','修复','卸载','导出包'].includes(e.textContent.trim()))"),
+                    "no input-method management entry or installer onboarding")
+                removed_commands = ["product_status", "product_plan", "product_execute",
+                    "product_diagnostics", "product_redeploy", "product_export_package",
+                    "learning_export", "learning_import", "learning_reset",
+                    "explain_word", "explain_hint", "explain_words_batch"]
+                for command in removed_commands:
+                    rejected = execute("const done=arguments[arguments.length-1];"
+                        "window.__TAURI_INTERNALS__.invoke(arguments[0],{})"
+                        ".then(()=>done({ok:true}),e=>done({ok:false,error:String(e)}));", [command], True)
+                    check(not rejected["ok"] and "not found" in rejected.get("error", "").lower()
+                        and command in rejected.get("error", ""), f"removed IPC {command} is not registered")
+                check(not rime.exists(), "removed IPC probes never create input-method state")
 
                 click("今日")
                 click("开始练习")
@@ -219,11 +193,28 @@ def main():
                 check(sum(p["correct"] for p in progress.values()) == 1, "correct answer is persisted locally")
                 call("DELETE", "/session/" + session)
                 session = None
+                check(not rime.exists(), "practice and shutdown require no Rime installation")
+                rime.mkdir(parents=True)
+                sentinel.write_bytes(b"# synthetic user configuration, preserve me\n")
+                (rime / "other.schema.yaml").write_bytes(b"schema: unrelated\n")
+                (rime / "xhup_flow_user.userdb").mkdir()
+                (rime / "xhup_flow_user.userdb/synthetic").write_bytes(b"private learning sentinel\n")
+                before_profile = profile_snapshot()
                 session = start()
                 wait(lambda: "小鹤音形训练" in text())
                 after = execute("return JSON.parse(localStorage.getItem('xhup-flow.trainer.v2')).state.progress")
                 check(progress == after, "practice progress survives actual application restart")
-                check("欢迎使用 XHUP Flow" not in text(), "onboarding choice survives restart")
+                check("欢迎使用 XHUP Flow" not in text(), "restart never opens installer onboarding")
+                for destination in ("错题", "统计", "键位", "学习", "设置"):
+                    click(destination)
+                check("导出进度备份" in text(), "training progress backup remains available")
+                check(execute("return document.querySelector('[data-testid=training-data-version]')?.textContent.trim()") == args.version,
+                    "packaged training dataset version matches the expected artifact version")
+                check("输入法学习数据" not in text(), "settings do not manage Rime user dictionaries")
+                check(profile_snapshot() == before_profile, "all preexisting Rime files and learning bytes remain unchanged")
+                call("DELETE", "/session/" + session)
+                session = None
+                check(profile_snapshot() == before_profile, "shutdown leaves the entire Rime profile unchanged")
                 report["passed"] = True
         except Exception as error:
             report["error"] = str(error)

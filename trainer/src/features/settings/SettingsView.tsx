@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Download, Info, Trash2, Upload } from "lucide-react";
+import { Download, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -35,7 +35,7 @@ const THEMES: ThemePreference[] = ["system", "light", "dark"];
 const HINT_MODES: HintMode[] = ["always", "on-delay", "on-error", "hidden"];
 const DIFFICULTIES: Difficulty[] = ["beginner", "daily", "full"];
 
-export function SettingsView({ onRerunOnboarding }: { onRerunOnboarding?: () => void }) {
+export function SettingsView() {
   const index = useTrainerIndex();
   const theme = useTrainerStore((state) => state.theme);
   const hintMode = useTrainerStore((state) => state.hintMode);
@@ -172,7 +172,7 @@ export function SettingsView({ onRerunOnboarding }: { onRerunOnboarding?: () => 
         <CardContent className="flex flex-col gap-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">{t("settings.dataVersion")}</span>
-            <span className="font-mono">{index.dataset.packageVersion}</span>
+            <span className="font-mono" data-testid="training-data-version">{index.dataset.packageVersion}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">{t("settings.dataSchema")}</span>
@@ -185,17 +185,6 @@ export function SettingsView({ onRerunOnboarding }: { onRerunOnboarding?: () => 
             <span className="font-mono tabular-nums">
               {index.dataset.entries.length}
             </span>
-          </div>
-          <Separator className="my-2" />
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-muted-foreground">{t("settings.onboarding")}</span>
-            <Button
-              variant="outline"
-              className="min-h-11"
-              onClick={onRerunOnboarding}
-            >
-              {t("settings.rerunOnboarding")}
-            </Button>
           </div>
           <Separator className="my-2" />
           <p className="text-sm text-muted-foreground">
@@ -235,16 +224,6 @@ export function SettingsView({ onRerunOnboarding }: { onRerunOnboarding?: () => 
             />
           </div>
           {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("settings.learning")}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-start gap-2 text-sm text-muted-foreground">
-          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <p>{t("settings.learningHint")}</p>
         </CardContent>
       </Card>
 

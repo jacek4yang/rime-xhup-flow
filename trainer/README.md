@@ -48,12 +48,15 @@ pnpm tauri dev        # Tauri 桌面开发
 pnpm tauri build      # Tauri 桌面打包
 ```
 
-## 控制中心(桌面版)
+## 纯训练边界
 
-桌面应用额外提供「输入法」控制中心页:Rime 环境检测、XHUP Flow
-方案安装/升级/修复/卸载(计划先行、覆盖前备份、只动 XHUP 拥有文件)、
-学习数据导出/导入/重置与脱敏诊断。业务逻辑在 Rust 侧
-(`src-tauri/src/manager.rs`),浏览器环境该页自动降级为提示。
+Trainer 在桌面、Web 和 Android 上只负责练习、学习教程、错题、统计、
+键位参考与训练进度备份。无需 Rime 即可启动和练习。
+Tauri 只承载本地前端，不注册应用自定义 IPC，不链接输入法安装/学习库管理核心，
+不内嵌 Rime 安装包，也不读取或改写输入法用户目录。
+
+输入法安装由用户按[手动教程](../docs/install-guide.zh-CN.md)完成。
+`xhup-flow.trainer.v2` 的训练进度与 Rime 的 `xhup_flow_user.userdb` 是独立数据。
 
 ## 练习模式
 

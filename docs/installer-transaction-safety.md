@@ -1,3 +1,5 @@
+> 历史设计记录：当前 Trainer 已移除输入法管理及内嵌安装包，本文描述的安装/导出功能不再提供。当前安装方式见[手动教程](install-guide.zh-CN.md)。
+
 # Installer transaction safety — current hardening (F15)
 
 The existing plan/apply design remains. Apply now resolves the user root, holds

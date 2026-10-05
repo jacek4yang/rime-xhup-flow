@@ -12,7 +12,6 @@ import {
   Grid3x3,
   House,
   Keyboard,
-  Package,
   RotateCcw,
   Settings,
 } from "lucide-react";
@@ -26,9 +25,6 @@ import { PracticeSetupView } from "@/features/practice/PracticeSetupView";
 import { WeaknessCenter } from "@/features/review/ReviewView";
 import { StatsView } from "@/features/stats/StatsView";
 import { ReferenceView } from "@/features/reference/ReferenceView";
-import { ControlCenterView } from "@/features/product/ControlCenterView";
-import { FirstRunWizard } from "@/features/first-run/FirstRunWizard";
-import { clearOnboarding } from "@/features/first-run/onboarding";
 import { LearnView } from "@/features/learn/LearnView";
 import { SettingsView } from "@/features/settings/SettingsView";
 import type { PracticeMode } from "@xhup/trainer-core";
@@ -40,7 +36,6 @@ export type ViewKey =
   | "stats"
   | "reference"
   | "learn"
-  | "product"
   | "settings";
 
 const NAV_ITEMS: { key: ViewKey; label: I18nKey; icon: typeof House }[] = [
@@ -50,7 +45,6 @@ const NAV_ITEMS: { key: ViewKey; label: I18nKey; icon: typeof House }[] = [
   { key: "stats", label: "nav.stats", icon: ChartColumn },
   { key: "reference", label: "nav.reference", icon: Grid3x3 },
   { key: "learn", label: "nav.learn", icon: GraduationCap },
-  { key: "product", label: "nav.product", icon: Package },
   { key: "settings", label: "nav.settings", icon: Settings },
 ];
 
@@ -68,8 +62,6 @@ export function AppShell() {
   const [learnChapterRequest, setLearnChapterRequest] = useState<string | null>(null);
   /** 跳入练习时指定的复习条目(错题「练这些」)。 */
   const [reviewEntries, setReviewEntries] = useState<TrainingItem[] | null>(null);
-  /** 首次启动向导的重新运行信号(设置页触发,自增)。 */
-  const [onboardingReopen, setOnboardingReopen] = useState(0);
   /** 根级退出保护提示(「再按一次退出」)。 */
   const [exitToast, setExitToast] = useState(false);
   /** 导航上退轨迹:history 每压入一层,这里记一个来源视图。 */
@@ -191,15 +183,7 @@ export function AppShell() {
             initialChapterId={learnChapterRequest ?? undefined}
           />
         )}
-        {view === "product" && <ControlCenterView />}
-        {view === "settings" && (
-          <SettingsView
-            onRerunOnboarding={() => {
-              clearOnboarding();
-              setOnboardingReopen((n) => n + 1);
-            }}
-          />
-        )}
+        {view === "settings" && <SettingsView />}
       </main>
       {/* 练习流程是沉浸式屏幕:隐藏底部标签栏,返回手势负责上退。 */}
       {view !== "practice" && <MobileBottomNav active={view} onNavigate={navigate} />}
@@ -211,17 +195,7 @@ export function AppShell() {
           {t("app.exitToast")}
         </div>
       )}
-      {/* 首次启动向导:完成/跳过后不再出现;不影响常规导航。 */}
-      <FirstRunWizard
-        reopenSignal={onboardingReopen}
-        onStartTraining={(mode) => {
-          setPresetMode(mode);
-          setPresetChapterId(null);
-          setReviewEntries(null);
-          setView("practice");
-        }}
-        onOpenControlCenter={() => navigate("product")}
-      />
+
     </div>
   );
 }

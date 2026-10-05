@@ -363,7 +363,7 @@ jobs:
           > release/acceptance-v$CORE.json(schema 2,完整证据及源/工件哈希验证)。
           > 原字节晋升 RC $ARTIFACT_VERSION,附件名称及内嵌版本仍为 RC;不重新构建。"
             acceptance="
-          ## 平台验收状态(schema 2:必查 PASS;仅 Android 桌面生命周期可有理由 N/A)
+          ## 平台验收状态(schema 2:全部必查项需 PASS;训练器生命周期覆盖所有平台)
 
           - Windows: **${ACC_WINDOWS:-UNVERIFIED}**
           - Linux: **${ACC_LINUX:-UNVERIFIED}**
@@ -375,7 +375,7 @@ jobs:
             banner="> 正式版按仓库所有者明确授权的底层运行时资格范围发布，**不是全平台人工验收通过**。
           > 完整原生审计、CI、RC 来源与附件哈希已校验；UNVERIFIED 项仍待用户真机测试。
           > 原字节晋升 RC $ARTIFACT_VERSION，附件名称与内嵌版本仍为 RC。授权与限制见 QUALIFICATION.json。"
-            acceptance="${acceptance/schema 2:必查 PASS;仅 Android 桌面生命周期可有理由 N\/A/实际状态：UNVERIFIED 不代表 PASS}"
+            acceptance="${acceptance/schema 2:全部必查项需 PASS;训练器生命周期覆盖所有平台/实际状态：UNVERIFIED 不代表 PASS}"
           fi
           cat > "$notes" <<EOF
           # XHUP Flow v$VERSION$title_suffix
@@ -386,8 +386,8 @@ jobs:
 
           XHUP Flow:冻结静态层(一级简码 / 单字全码 / 词语简码 / 固定词)
           之上的连续组句与本地学习输入方案,配套训练器(12 种练习模式、
-          错题中心、统计)与输入法控制中心(安装 / 升级 / 修复 / 卸载 /
-          重新部署 / 学习管理 / 诊断)。
+          错题中心、统计与训练进度备份)。Trainer 不管理输入法，
+          输入方案全部由用户按手动教程独立安装。
 
           ## 输入能力
 
@@ -416,11 +416,12 @@ jobs:
 
           ## 下载与安装
 
-          ### 桌面 / Android 训练器(含输入法管理)
+          ### 桌面 / Android 独立训练器
 
-          按下表下载对应平台安装包,安装后打开「控制中心」可一键安装 /
-          修复 / 卸载 XHUP Flow 的 Rime 方案文件。首次安装保存原 \`default.custom.yaml\`，
-          使用期间以独占配置替换（含原全局自定义设置），更新保留最初备份，卸载恢复。
+          按下表下载对应平台安装包。Trainer 只负责练习、错题、统计、键位参考
+          与训练进度备份，无需 Rime 即可练习，不安装、检测或修改输入法文件。
+          输入法由用户独立安装；详细命令（含电脑下载与 ADB 安装 Android）见
+          [手动安装教程](https://github.com/$GITHUB_REPOSITORY/blob/main/docs/install-guide.zh-CN.md)。
 
           ### 仅使用 Rime 输入方案(已有 Rime 客户端)
 
@@ -429,7 +430,7 @@ jobs:
              鼠须管: ~/Library/Rime;fcitx5: ~/.local/share/fcitx5/rime;
              ibus: ~/.config/ibus/rime);
           3. **先将原 default.custom.yaml 备份到目录外**，再解压 ZIP；更新不得覆盖首次备份。
-             手动卸载时恢复原文件（原本不存在则删除该文件），不要混用手动安装与 Trainer 管理；
+             手动卸载时恢复原文件（原本不存在则删除该文件），旧版管理安装须先核对真正的原始备份；
           4. 重新部署(Deploy);
           5. 方案选单仅显示并默认启用 XHUP Flow。
 
@@ -480,7 +481,7 @@ jobs:
           ## 隐私
 
           本地运行:无账号、无遥测、无云端同步;学习数据仅存本机
-          \`xhup_flow_user.userdb\`,可通过控制中心或 \`xhup-cli learning\`
+          \`xhup_flow_user.userdb\`,可通过独立的 \`xhup-cli learning\`
           导出 / 恢复 / 重置。
           EOF
           echo "notes=$notes" >> "$GITHUB_ENV"

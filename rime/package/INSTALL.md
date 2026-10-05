@@ -82,12 +82,11 @@ Flow wrapper 保留作兼容/研究资源。wrapper 不在 `schema_list` 中，�
    `default.custom.yaml`。然后重新部署。不要删除其他方案、`user.yaml`、
    `installation.yaml`、`sync/` 或任何 `*.userdb`。
 
-Trainer「输入法」控制中心会在确认计划后自动保存原配置到用户目录内的
-`.xhup-flow-default-backup.json`，升级不改写首次备份，卸载自动恢复。
-该备份可能包含私人设置，不要随导出包分享。若安装后手工修改共享配置，
-恢复操作会拒绝覆盖，请先保留改动并手动处理冲突。
-手工覆盖安装与 Trainer 管理安装不要交叉使用：无原始备份的独占文件会被
-Trainer 拒绝接管，请先恢复手工备份再安装。
+Trainer 是独立练习工具，不会安装、升级、修复、卸载或部署本方案。
+所有复制、首次备份、恢复和重新部署均由用户完成。
+旧版管理工具留下的 `.xhup-flow-default-backup.json` 可能含私人原始配置；
+先核对并恢复正确的首次备份，不要将当前独占文件误认为原始文件。
+不要把配置备份或学习词库随安装包分享。
 
 最后在输入法菜单执行「重新部署」。原子文件替换不等于多文件断电事务；
 中断后保留备份，修复前核查磁盘状态。
@@ -99,8 +98,9 @@ schema list now contains only XHUP Flow. The replacement also supersedes any
 other settings in the old default.custom.yaml; it does not remove system input
 methods, other schema files or learning data. Restore the first backup (or remove
 our default.custom.yaml if originally absent) when uninstalling, then redeploy.
-Trainer performs the first-backup/restore steps automatically and refuses to
-overwrite later manual edits. Retain INSTALL, NOTICE and licenses with the package.
+Trainer is a separate practice application and does not install or manage Rime.
+Users perform all backup, copy, restore and deployment steps themselves. Preserve
+any existing edits and legacy backups. Retain INSTALL, NOTICE and licenses with the package.
 
 ## 隐私 / Privacy
 
