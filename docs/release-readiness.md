@@ -3,6 +3,9 @@
 状态:**stable 1.0.0 发布基线(历史存档)**。v2.0.0 的发布就绪状态见
 下方「v2.0.0 GA 就绪记录」;v1 部分保留作对照,不再更新。
 
+v2 可另按显式所有者授权的[底层运行时资格策略](runtime-qualified-release.md)发布。
+该策略保留平台 UNVERIFIED，不把下文的完整平台模式要求或历史证据伪作已完成。
+
 本文档不再保留 RC-era 人工合并清单;
 最终证据以 `main` required checks、`XHUP Flow RC Release` 正式工作流与
 GitHub Release 附件为准。

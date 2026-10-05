@@ -9,6 +9,9 @@ use xhup_cli::acceptance::{
     provenance::{self, BUILD_MANIFEST, BuildManifest},
 };
 
+#[path = "support/runtime_qualification.rs"]
+mod runtime_qualification;
+
 const SOURCE: &str = "0123456789abcdef0123456789abcdef01234567";
 const RC: &str = "2.0.0-rc.3";
 static NEXT: AtomicUsize = AtomicUsize::new(0);
