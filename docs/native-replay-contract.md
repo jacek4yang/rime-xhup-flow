@@ -15,6 +15,10 @@ recompiles with native learning enabled, checks native code identities in export
 records, verifies exact once-per-component update counts across two fresh
 processes, and repeats the whole replay after restart. `runtime_extended.c`
 also checks 128 keys, internal caret editing, and multi-delimiter pending selection.
+Pending selection now explicitly checks the native tail-selection return value,
+complete raw-input consumption and an empty second commit read. If the frontend
+commits the prefix early, its exact text is checked separately. These assertions
+extend the existing version-controlled stress gate, rather than replace it.
 
 Run the hard gate:
 
