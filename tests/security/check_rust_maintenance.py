@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import tomllib
+from rust_warning_patches import original_before_warning_fixes
 
 ROOT = Path(__file__).resolve().parents[2]
 PREFIX = "// Take a look at the license at the top of the repository in the LICENSE file.\n"
@@ -50,7 +51,7 @@ def check(root=ROOT):
         assert actual == expected, f"{name}: unexpected/missing source files"
         assert not any(p.is_symlink() for p in directory.rglob("*")), f"{name}: symlink"
         for relative, original_hash in upstream["files"].items():
-            data = (directory / relative).read_bytes()
+            data = original_before_warning_fixes(f"vendor/{name}/{relative}", (directory / relative).read_bytes())
             for old, new in reversed(changes.get(relative, [])):
                 assert data.count(new.encode()) == 1, f"{name}/{relative}: missing exact patch"
                 data = data.replace(new.encode(), old.encode(), 1)

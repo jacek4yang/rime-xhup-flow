@@ -80,11 +80,16 @@ def create(archive, paths):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("create", "check"))
+    parser.add_argument("mode", choices=("verify", "create", "check"))
     parser.add_argument("package", type=Path)
-    parser.add_argument("archive", type=Path)
+    parser.add_argument("archive", type=Path, nargs="?")
     args = parser.parse_args()
+    if args.mode != "verify" and args.archive is None:
+        parser.error("create/check require an archive path")
     paths = payloads(args.package, Path(__file__).resolve().parents[2])
+    if args.mode == "verify":
+        print(f"PASS Rime package: {len(GENERATED)} exact generated files; all notices present")
+        return
     count = (create if args.mode == "create" else check)(args.archive, paths)
     print(f"PASS Rime archive: {count} exact generated/document/license file identities")
 

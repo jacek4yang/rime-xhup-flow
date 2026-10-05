@@ -1,0 +1,160 @@
+{
+  "vendor/glib/src/collections/list.rs": [
+    [
+      "    // rustdoc-stripper-ignore-next\n    /// Create a non-destructive iterator over the `List`.\n    #[inline]\n    pub fn iter(&self) -> Iter<T> {\n        Iter::new(self)\n    }\n\n    // rustdoc-stripper-ignore-next\n    /// Create a non-destructive mutable iterator over the `List`.\n    #[inline]\n    pub fn iter_mut(&mut self) -> IterMut<T> {\n        IterMut::new(self)\n    }\n\n",
+      "    // rustdoc-stripper-ignore-next\n    /// Create a non-destructive iterator over the `List`.\n    #[inline]\n    pub fn iter(&self) -> Iter<'_, T> {\n        Iter::new(self)\n    }\n\n    // rustdoc-stripper-ignore-next\n    /// Create a non-destructive mutable iterator over the `List`.\n    #[inline]\n    pub fn iter_mut(&mut self) -> IterMut<'_, T> {\n        IterMut::new(self)\n    }\n\n"
+    ]
+  ],
+  "vendor/glib/src/collections/slist.rs": [
+    [
+      "    // rustdoc-stripper-ignore-next\n    /// Create a non-destructive iterator over the `SList`.\n    #[inline]\n    pub fn iter(&self) -> Iter<T> {\n        Iter::new(self)\n    }\n\n    // rustdoc-stripper-ignore-next\n    /// Create a non-destructive mutable iterator over the `SList`.\n    #[inline]\n    pub fn iter_mut(&mut self) -> IterMut<T> {\n        IterMut::new(self)\n    }\n\n",
+      "    // rustdoc-stripper-ignore-next\n    /// Create a non-destructive iterator over the `SList`.\n    #[inline]\n    pub fn iter(&self) -> Iter<'_, T> {\n        Iter::new(self)\n    }\n\n    // rustdoc-stripper-ignore-next\n    /// Create a non-destructive mutable iterator over the `SList`.\n    #[inline]\n    pub fn iter_mut(&mut self) -> IterMut<'_, T> {\n        IterMut::new(self)\n    }\n\n"
+    ]
+  ],
+  "vendor/glib/src/enums.rs": [
+    [
+      "    // rustdoc-stripper-ignore-next\n    /// Returns a new `FlagsBuilder` for conveniently setting/unsetting flags\n    /// and building a `Value`.\n    pub fn builder(&self) -> FlagsBuilder {\n        FlagsBuilder::new(self)\n    }\n\n    // rustdoc-stripper-ignore-next\n    /// Returns a new `FlagsBuilder` for conveniently setting/unsetting flags\n    /// and building a `Value`. The `Value` is initialized with `value`.\n    pub fn builder_with_value(&self, value: Value) -> Option<FlagsBuilder> {\n        if self.type_() != value.type_() {\n            return None;\n        }\n",
+      "    // rustdoc-stripper-ignore-next\n    /// Returns a new `FlagsBuilder` for conveniently setting/unsetting flags\n    /// and building a `Value`.\n    pub fn builder(&self) -> FlagsBuilder<'_> {\n        FlagsBuilder::new(self)\n    }\n\n    // rustdoc-stripper-ignore-next\n    /// Returns a new `FlagsBuilder` for conveniently setting/unsetting flags\n    /// and building a `Value`. The `Value` is initialized with `value`.\n    pub fn builder_with_value(&self, value: Value) -> Option<FlagsBuilder<'_>> {\n        if self.type_() != value.type_() {\n            return None;\n        }\n"
+    ],
+    [
+      "#[must_use = \"The builder must be built to be used\"]\npub struct FlagsBuilder<'a>(&'a FlagsClass, Option<Value>);\nimpl<'a> FlagsBuilder<'a> {\n    fn new(flags_class: &FlagsClass) -> FlagsBuilder {\n        let value = unsafe { Value::from_type_unchecked(flags_class.type_()) };\n        FlagsBuilder(flags_class, Some(value))\n    }\n\n    fn with_value(flags_class: &FlagsClass, value: Value) -> FlagsBuilder {\n        FlagsBuilder(flags_class, Some(value))\n    }\n\n",
+      "#[must_use = \"The builder must be built to be used\"]\npub struct FlagsBuilder<'a>(&'a FlagsClass, Option<Value>);\nimpl<'a> FlagsBuilder<'a> {\n    fn new(flags_class: &FlagsClass) -> FlagsBuilder<'_> {\n        let value = unsafe { Value::from_type_unchecked(flags_class.type_()) };\n        FlagsBuilder(flags_class, Some(value))\n    }\n\n    fn with_value(flags_class: &FlagsClass, value: Value) -> FlagsBuilder<'_> {\n        FlagsBuilder(flags_class, Some(value))\n    }\n\n"
+    ]
+  ],
+  "vendor/glib/src/main_context.rs": [
+    [
+      "    ///\n    /// This will fail if the main context is owned already by another thread.\n    #[doc(alias = \"g_main_context_acquire\")]\n    pub fn acquire(&self) -> Result<MainContextAcquireGuard, crate::BoolError> {\n        unsafe {\n            let ret: bool = from_glib(ffi::g_main_context_acquire(self.to_glib_none().0));\n            if ret {\n",
+      "    ///\n    /// This will fail if the main context is owned already by another thread.\n    #[doc(alias = \"g_main_context_acquire\")]\n    pub fn acquire(&self) -> Result<MainContextAcquireGuard<'_>, crate::BoolError> {\n        unsafe {\n            let ret: bool = from_glib(ffi::g_main_context_acquire(self.to_glib_none().0));\n            if ret {\n"
+    ],
+    [
+      "struct ThreadDefaultContext<'a>(&'a MainContext);\n\nimpl<'a> ThreadDefaultContext<'a> {\n    fn new(ctx: &MainContext) -> ThreadDefaultContext {\n        unsafe {\n            ffi::g_main_context_push_thread_default(ctx.to_glib_none().0);\n        }\n",
+      "struct ThreadDefaultContext<'a>(&'a MainContext);\n\nimpl<'a> ThreadDefaultContext<'a> {\n    fn new(ctx: &MainContext) -> ThreadDefaultContext<'_> {\n        unsafe {\n            ffi::g_main_context_push_thread_default(ctx.to_glib_none().0);\n        }\n"
+    ]
+  ],
+  "vendor/glib/src/object.rs": [
+    [
+      "    ///\n    /// `None` is returned if the object does not implement the interface `T`.\n    #[doc(alias = \"get_interface\")]\n    fn interface<T: IsInterface>(&self) -> Option<InterfaceRef<T>>;\n\n    // rustdoc-stripper-ignore-next\n    /// Sets the property `property_name` of the object to value `value`.\n",
+      "    ///\n    /// `None` is returned if the object does not implement the interface `T`.\n    #[doc(alias = \"get_interface\")]\n    fn interface<T: IsInterface>(&self) -> Option<InterfaceRef<'_, T>>;\n\n    // rustdoc-stripper-ignore-next\n    /// Sets the property `property_name` of the object to value `value`.\n"
+    ],
+    [
+      "    }\n\n    #[inline]\n    fn interface<U: IsInterface>(&self) -> Option<InterfaceRef<U>> {\n        Interface::from_class(self.object_class())\n    }\n\n",
+      "    }\n\n    #[inline]\n    fn interface<U: IsInterface>(&self) -> Option<InterfaceRef<'_, U>> {\n        Interface::from_class(self.object_class())\n    }\n\n"
+    ],
+    [
+      "    /// Gets the parent class struct, if any.\n    #[doc(alias = \"g_type_class_peek_parent\")]\n    #[inline]\n    pub fn parent(&self) -> Option<ClassRef<T>> {\n        unsafe {\n            let ptr = gobject_ffi::g_type_class_peek_parent(&self.0 as *const _ as *mut _);\n            if ptr.is_null() {\n",
+      "    /// Gets the parent class struct, if any.\n    #[doc(alias = \"g_type_class_peek_parent\")]\n    #[inline]\n    pub fn parent(&self) -> Option<ClassRef<'_, T>> {\n        unsafe {\n            let ptr = gobject_ffi::g_type_class_peek_parent(&self.0 as *const _ as *mut _);\n            if ptr.is_null() {\n"
+    ],
+    [
+      "    ///\n    /// This will return `None` if `klass` is not implementing `Self`.\n    #[inline]\n    pub fn from_class<U: IsClass>(klass: &Class<U>) -> Option<InterfaceRef<T>> {\n        if !klass.type_().is_a(T::static_type()) {\n            return None;\n        }\n",
+      "    ///\n    /// This will return `None` if `klass` is not implementing `Self`.\n    #[inline]\n    pub fn from_class<U: IsClass>(klass: &Class<U>) -> Option<InterfaceRef<'_, T>> {\n        if !klass.type_().is_a(T::static_type()) {\n            return None;\n        }\n"
+    ],
+    [
+      "    /// interface.\n    #[doc(alias = \"g_type_interface_peek_parent\")]\n    #[inline]\n    pub fn parent(&self) -> Option<InterfaceRef<T>> {\n        unsafe {\n            let ptr = gobject_ffi::g_type_interface_peek_parent(&self.0 as *const _ as *mut _);\n            if ptr.is_null() {\n",
+      "    /// interface.\n    #[doc(alias = \"g_type_interface_peek_parent\")]\n    #[inline]\n    pub fn parent(&self) -> Option<InterfaceRef<'_, T>> {\n        unsafe {\n            let ptr = gobject_ffi::g_type_interface_peek_parent(&self.0 as *const _ as *mut _);\n            if ptr.is_null() {\n"
+    ]
+  ],
+  "vendor/glib/src/param_spec.rs": [
+    [
+      "    pub fn builder_with_default<T: StaticType + FromGlib<i32> + IntoGlib<GlibType = i32>>(\n        name: &str,\n        default_value: T,\n    ) -> ParamSpecEnumBuilder<T> {\n        ParamSpecEnumBuilder::new(name, default_value)\n    }\n\n    pub fn builder<T: StaticType + FromGlib<i32> + IntoGlib<GlibType = i32> + Default>(\n        name: &str,\n    ) -> ParamSpecEnumBuilder<T> {\n        ParamSpecEnumBuilder::new(name, T::default())\n    }\n}\n",
+      "    pub fn builder_with_default<T: StaticType + FromGlib<i32> + IntoGlib<GlibType = i32>>(\n        name: &str,\n        default_value: T,\n    ) -> ParamSpecEnumBuilder<'_, T> {\n        ParamSpecEnumBuilder::new(name, default_value)\n    }\n\n    pub fn builder<T: StaticType + FromGlib<i32> + IntoGlib<GlibType = i32> + Default>(\n        name: &str,\n    ) -> ParamSpecEnumBuilder<'_, T> {\n        ParamSpecEnumBuilder::new(name, T::default())\n    }\n}\n"
+    ],
+    [
+      "\n    pub fn builder<T: StaticType + FromGlib<u32> + IntoGlib<GlibType = u32>>(\n        name: &str,\n    ) -> ParamSpecFlagsBuilder<T> {\n        ParamSpecFlagsBuilder::new(name)\n    }\n}\n",
+      "\n    pub fn builder<T: StaticType + FromGlib<u32> + IntoGlib<GlibType = u32>>(\n        name: &str,\n    ) -> ParamSpecFlagsBuilder<'_, T> {\n        ParamSpecFlagsBuilder::new(name)\n    }\n}\n"
+    ],
+    [
+      "        }\n    }\n\n    pub fn builder(name: &str) -> ParamSpecStringBuilder {\n        ParamSpecStringBuilder::new(name)\n    }\n}\n",
+      "        }\n    }\n\n    pub fn builder(name: &str) -> ParamSpecStringBuilder<'_> {\n        ParamSpecStringBuilder::new(name)\n    }\n}\n"
+    ],
+    [
+      "        }\n    }\n\n    pub fn builder<T: StaticType>(name: &str) -> ParamSpecBoxedBuilder<T> {\n        ParamSpecBoxedBuilder::new(name)\n    }\n}\n",
+      "        }\n    }\n\n    pub fn builder<T: StaticType>(name: &str) -> ParamSpecBoxedBuilder<'_, T> {\n        ParamSpecBoxedBuilder::new(name)\n    }\n}\n"
+    ],
+    [
+      "        }\n    }\n\n    pub fn builder(name: &str) -> ParamSpecValueArrayBuilder {\n        ParamSpecValueArrayBuilder::new(name)\n    }\n}\n",
+      "        }\n    }\n\n    pub fn builder(name: &str) -> ParamSpecValueArrayBuilder<'_> {\n        ParamSpecValueArrayBuilder::new(name)\n    }\n}\n"
+    ],
+    [
+      "        }\n    }\n\n    pub fn builder<T: StaticType + IsA<Object>>(name: &str) -> ParamSpecObjectBuilder<T> {\n        ParamSpecObjectBuilder::new(name)\n    }\n}\n",
+      "        }\n    }\n\n    pub fn builder<T: StaticType + IsA<Object>>(name: &str) -> ParamSpecObjectBuilder<'_, T> {\n        ParamSpecObjectBuilder::new(name)\n    }\n}\n"
+    ]
+  ],
+  "vendor/glib/src/subclass/types.rs": [
+    [
+      "    /// Returns the corresponding object instance.\n    #[doc(alias = \"get_instance\")]\n    #[deprecated = \"Use obj() instead\"]\n    fn instance(&self) -> crate::BorrowedObject<Self::Type>;\n\n    // rustdoc-stripper-ignore-next\n    /// Returns the implementation from an instance.\n",
+      "    /// Returns the corresponding object instance.\n    #[doc(alias = \"get_instance\")]\n    #[deprecated = \"Use obj() instead\"]\n    fn instance(&self) -> crate::BorrowedObject<'_, Self::Type>;\n\n    // rustdoc-stripper-ignore-next\n    /// Returns the implementation from an instance.\n"
+    ],
+    [
+      "    ///\n    /// Shorter alias for `instance()`.\n    #[doc(alias = \"get_instance\")]\n    fn obj(&self) -> crate::BorrowedObject<Self::Type>;\n\n    // rustdoc-stripper-ignore-next\n    /// Returns the implementation from an instance.\n",
+      "    ///\n    /// Shorter alias for `instance()`.\n    #[doc(alias = \"get_instance\")]\n    fn obj(&self) -> crate::BorrowedObject<'_, Self::Type>;\n\n    // rustdoc-stripper-ignore-next\n    /// Returns the implementation from an instance.\n"
+    ],
+    [
+      "\nimpl<T: ObjectSubclass> ObjectSubclassExt for T {\n    #[inline]\n    fn instance(&self) -> crate::BorrowedObject<Self::Type> {\n        self.obj()\n    }\n\n",
+      "\nimpl<T: ObjectSubclass> ObjectSubclassExt for T {\n    #[inline]\n    fn instance(&self) -> crate::BorrowedObject<'_, Self::Type> {\n        self.obj()\n    }\n\n"
+    ],
+    [
+      "    }\n\n    #[inline]\n    fn obj(&self) -> crate::BorrowedObject<Self::Type> {\n        unsafe {\n            let data = Self::type_data();\n            let type_ = data.as_ref().type_();\n",
+      "    }\n\n    #[inline]\n    fn obj(&self) -> crate::BorrowedObject<'_, Self::Type> {\n        unsafe {\n            let data = Self::type_data();\n            let type_ = data.as_ref().type_();\n"
+    ]
+  ],
+  "vendor/glib/src/translate.rs": [
+    [
+      "    ///\n    /// The pointer in the `Stash` is only valid for the lifetime of the `Stash`.\n    #[allow(clippy::wrong_self_convention)]\n    fn to_glib_none_mut(&'a mut self) -> StashMut<P, Self>;\n}\n\nimpl<'a, P: Ptr, T: ToGlibPtr<'a, P>> ToGlibPtr<'a, P> for Option<T> {\n",
+      "    ///\n    /// The pointer in the `Stash` is only valid for the lifetime of the `Stash`.\n    #[allow(clippy::wrong_self_convention)]\n    fn to_glib_none_mut(&'a mut self) -> StashMut<'a, P, Self>;\n}\n\nimpl<'a, P: Ptr, T: ToGlibPtr<'a, P>> ToGlibPtr<'a, P> for Option<T> {\n"
+    ]
+  ],
+  "vendor/glib/src/value.rs": [
+    [
+      "    ///\n    /// Returns `Ok` if the type is correct.\n    #[inline]\n    pub fn get<'a, T>(&'a self) -> Result<T, <<T as FromValue>::Checker as ValueTypeChecker>::Error>\n    where\n        T: FromValue<'a>,\n    {\n",
+      "    ///\n    /// Returns `Ok` if the type is correct.\n    #[inline]\n    pub fn get<'a, T>(&'a self) -> Result<T, <<T as FromValue<'a>>::Checker as ValueTypeChecker>::Error>\n    where\n        T: FromValue<'a>,\n    {\n"
+    ],
+    [
+      "    // rustdoc-stripper-ignore-next\n    /// Tries to get a value of an owned type `T`.\n    #[inline]\n    pub fn get_owned<T>(&self) -> Result<T, <<T as FromValue>::Checker as ValueTypeChecker>::Error>\n    where\n        T: for<'b> FromValue<'b> + 'static,\n    {\n",
+      "    // rustdoc-stripper-ignore-next\n    /// Tries to get a value of an owned type `T`.\n    #[inline]\n    pub fn get_owned<T>(&self) -> Result<T, <<T as FromValue<'_>>::Checker as ValueTypeChecker>::Error>\n    where\n        T: for<'b> FromValue<'b> + 'static,\n    {\n"
+    ]
+  ],
+  "vendor/glib/src/value_array.rs": [
+    [
+      "            b: ffi::gconstpointer,\n            func: ffi::gpointer,\n        ) -> i32 {\n            let func = func as *mut &mut (dyn FnMut(&Value, &Value) -> Ordering);\n\n            let a = &*(a as *const Value);\n            let b = &*(b as *const Value);\n",
+      "            b: ffi::gconstpointer,\n            func: ffi::gpointer,\n        ) -> i32 {\n            let func = func as *mut &mut dyn FnMut(&Value, &Value) -> Ordering;\n\n            let a = &*(a as *const Value);\n            let b = &*(b as *const Value);\n"
+    ],
+    [
+      "        }\n        unsafe {\n            let mut func = compare_func;\n            let func_obj: &mut (dyn FnMut(&Value, &Value) -> Ordering) = &mut func;\n            let func_ptr =\n                &func_obj as *const &mut (dyn FnMut(&Value, &Value) -> Ordering) as ffi::gpointer;\n\n            gobject_ffi::g_value_array_sort_with_data(\n                self.to_glib_none_mut().0,\n",
+      "        }\n        unsafe {\n            let mut func = compare_func;\n            let func_obj: &mut dyn FnMut(&Value, &Value) -> Ordering = &mut func;\n            let func_ptr =\n                &func_obj as *const &mut dyn FnMut(&Value, &Value) -> Ordering as ffi::gpointer;\n\n            gobject_ffi::g_value_array_sort_with_data(\n                self.to_glib_none_mut().0,\n"
+    ]
+  ],
+  "vendor/glib/src/variant.rs": [
+    [
+      "    /// }\n    /// # Ok::<(), Box<dyn std::error::Error>>(())\n    /// ```\n    pub fn array_iter_str(&self) -> Result<VariantStrIter, VariantTypeMismatchError> {\n        let child_ty = String::static_variant_type();\n        let actual_ty = self.type_();\n        let expected_ty = child_ty.as_array();\n",
+      "    /// }\n    /// # Ok::<(), Box<dyn std::error::Error>>(())\n    /// ```\n    pub fn array_iter_str(&self) -> Result<VariantStrIter<'_>, VariantTypeMismatchError> {\n        let child_ty = String::static_variant_type();\n        let actual_ty = self.type_();\n        let expected_ty = child_ty.as_array();\n"
+    ]
+  ],
+  "vendor/glib/src/variant_type.rs": [
+    [
+      "    /// # Panics\n    ///\n    /// This function panics if not called with a tuple or dictionary entry type.\n    pub fn tuple_types(&self) -> VariantTyIterator {\n        VariantTyIterator::new(self).expect(\"VariantTy does not represent a tuple\")\n    }\n\n",
+      "    /// # Panics\n    ///\n    /// This function panics if not called with a tuple or dictionary entry type.\n    pub fn tuple_types(&self) -> VariantTyIterator<'_> {\n        VariantTyIterator::new(self).expect(\"VariantTy does not represent a tuple\")\n    }\n\n"
+    ]
+  ],
+  "vendor/gtk3-macros/src/attribute_parser.rs": [
+    [
+      "// Take a look at the license at the top of the repository in the LICENSE file.\n\nuse proc_macro2::Span;\nuse syn::spanned::Spanned;\nuse syn::{\n    parse::{Error, Parse, ParseStream},\n    punctuated::Punctuated,\n};\nuse syn::{Attribute, DeriveInput, Field, Fields, Ident, LitStr, Meta, Token, Type};\n\nmod kw {\n    syn::custom_keyword!(file);\n",
+      "// Take a look at the license at the top of the repository in the LICENSE file.\n\nuse syn::spanned::Spanned;\nuse syn::{\n    parse::{Error, Parse, ParseStream},\n    punctuated::Punctuated,\n};\nuse syn::{Attribute, DeriveInput, Field, Fields, Ident, LitStr, Meta, Token};\n\nmod kw {\n    syn::custom_keyword!(file);\n"
+    ],
+    [
+      "pub struct FieldAttribute {\n    pub ty: FieldAttributeType,\n    pub args: Vec<FieldAttributeArg>,\n    pub path_span: Span,\n    pub span: Span,\n}\n\npub struct AttributedField {\n    pub ident: Ident,\n    pub ty: Type,\n    pub attr: FieldAttribute,\n}\n\n",
+      "pub struct FieldAttribute {\n    pub ty: FieldAttributeType,\n    pub args: Vec<FieldAttributeArg>,\n}\n\npub struct AttributedField {\n    pub ident: Ident,\n    pub attr: FieldAttribute,\n}\n\n"
+    ],
+    [
+      "        None => return Err(Error::new(field.span(), \"expected identifier\")),\n    };\n\n    let ty = &field.ty;\n    let mut attr = None;\n\n    for field_attr in field_attrs {\n        let span = field_attr.span();\n        let path_span = field_attr.path().span();\n        let ty = if field_attr.path().is_ident(\"template_child\") {\n            Some(FieldAttributeType::TemplateChild)\n        } else {\n",
+      "        None => return Err(Error::new(field.span(), \"expected identifier\")),\n    };\n\n    let mut attr = None;\n\n    for field_attr in field_attrs {\n        let span = field_attr.span();\n        let ty = if field_attr.path().is_ident(\"template_child\") {\n            Some(FieldAttributeType::TemplateChild)\n        } else {\n"
+    ],
+    [
+      "                attr = Some(FieldAttribute {\n                    ty,\n                    args,\n                    path_span,\n                    span,\n                })\n            } else {\n                return Err(Error::new(\n",
+      "                attr = Some(FieldAttribute {\n                    ty,\n                    args,\n                })\n            } else {\n                return Err(Error::new(\n"
+    ],
+    [
+      "    if let Some(attr) = attr {\n        Ok(Some(AttributedField {\n            ident: ident.clone(),\n            ty: ty.clone(),\n            attr,\n        }))\n    } else {\n",
+      "    if let Some(attr) = attr {\n        Ok(Some(AttributedField {\n            ident: ident.clone(),\n            attr,\n        }))\n    } else {\n"
+    ]
+  ]
+}

@@ -10,6 +10,7 @@ def verify(workflow):
     for gate in (
         "runs-on: ubuntu-24.04",
         "check_generated_runtime_sources.py build/rime-package",
+        "rime_archive.py verify build/rime-package",
         "build-supported-lua.sh /tmp/xhup-package-lua",
         "run-deploy-audit.sh build/rime-package",
         "XHUP_AUDIT_ONLY_REPLAY=1 XHUP_REPLAY_VERIFY_LEARNING=1 tests/librime/run-flow-audit.sh build/rime-package",
@@ -24,9 +25,16 @@ class PackagingRuntimeTests(unittest.TestCase):
     def test_all_gates_before_archive(self):
         verify(self.workflow)
 
+    def test_matrix_uses_automatic_names_without_unexpanded_expression(self):
+        workflow = (ROOT / ".github/workflows/full-regression.yml").read_text()
+        job = workflow.split("  librime-full:", 1)[1].split("    steps:", 1)[0]
+        self.assertNotIn("    name:", job)
+        self.assertIn("shard: [" + ", ".join(map(str, range(16))) + "]", job)
+        self.assertIn("needs: [prepare, librime-full]", workflow)
+
     def test_missing_gate_fails(self):
         for gate in ("check_generated_runtime_sources.py", "build-supported-lua.sh",
-                     "run-deploy-audit.sh", "XHUP_REPLAY_VERIFY_LEARNING=1"):
+                     "run-deploy-audit.sh", "XHUP_REPLAY_VERIFY_LEARNING=1", "rime_archive.py verify"):
             with self.subTest(gate=gate), self.assertRaises(AssertionError):
                 verify(self.workflow.replace(gate, "REMOVED"))
 
