@@ -24,5 +24,29 @@ Xvfb 与 WebKitWebDriver 下启动成功；界面安装计划和确认会写入�
 
 七个 Rust 回归覆盖实际随附包全文件字节、嵌套路径、许可证、无用户文件，
 错误清理/重试、已存在输出、路径逃逸、符号链接和并发只有一个成功者。
-实际修复后桌面回归须另外记录二进制 SHA256 与 source/run，不能继承上述
+实际修复后桌面回归另外记录二进制 SHA256 与 source/run，不能继承上述
 失败演练的成功状态。
+
+## 真实桌面回归
+
+`tests/desktop/linux_artifact_smoke.py` 使用独立 HOME/XDG、Xvfb 和
+WebKitWebDriver，调用真实前端及 Rust IPC，不替换产品 API。检查安装确认前
+不写入、完整导出与许可字节、拒绝覆盖后字节不变、键盘练习、暂停/继续，以及
+实际关闭再启动后的本地进度。默认短暂答题反馈阶段不能暂停，因此测试等待
+下一题后再验证暂停，不通过任意延迟或重复点击掩盖失败。
+
+修复提交 `2937ba5bbedcfdf2ddd5a0e9b35a9afe81526607` 的本地
+`tauri/custom-protocol` 二进制已通过 17 项检查，SHA256 为
+`0af63dfc8c2480e8adb112d3503a97dcd9b7bf5141d28501fc5a0805193b119e`。
+该构建仍为 RC.2 源码版本，是修复集成证据，不是已发布 RC.3 的证明。
+
+Linux 打包工作流在实际 `.deb` 提取后运行相同门禁，记录版本、源码提交、
+二进制/编码表哈希和检查结果；失败日志也单独上传，不混入正式安装包清单。
+最终产物必须重新通过，不能继承本地结果。Windows/macOS 人工验收仍按 README。
+
+```sh
+cargo run --locked -q -p xhup-core --example syllable_codes > /tmp/syllables.tsv
+dbus-run-session -- python3 tests/desktop/linux_artifact_smoke.py \
+  --binary /absolute/path/to/extracted/usr/bin/trainer --source-root "$PWD" \
+  --syllables /tmp/syllables.tsv --version 2.0.0-rc.3 --report /tmp/desktop-report.json
+```
