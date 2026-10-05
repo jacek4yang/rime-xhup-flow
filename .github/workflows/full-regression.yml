@@ -3,10 +3,7 @@ name: Full Regression
 # Complete manifests, not samples. One immutable input artifact feeds 16
 # isolated runners; the final collector requires all partition receipts.
 on:
-  push:
-    branches: [main]
-  schedule:
-    - cron: "30 2 * * *"
+  # 完整分片现由本地验收执行；云端仅保留人工诊断入口，不自动重复。
   workflow_dispatch:
 
 permissions:

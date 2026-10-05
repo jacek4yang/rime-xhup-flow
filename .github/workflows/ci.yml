@@ -1,12 +1,9 @@
 name: CI
 
 on:
-  # 全部 pull_request 都跑 CI(stacked PR 以 feature 分支为基,同样需要门禁);
-  # main 的 push 保持触发。
-  pull_request:
-  push:
-    branches:
-      - main
+  # 所有者选择完整本地验收；保留云端完整测试作为显式人工诊断入口。
+  # 不再在 PR/main 重复运行，发布只调用产品打包工作流。
+  workflow_dispatch:
 
 permissions:
   contents: read
