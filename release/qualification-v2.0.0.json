@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "policy": "runtime-qualified-user-platform-testing-v1",
+  "version": "2.0.0",
+  "accepted_rc": "2.0.0-rc.3",
+  "source_commit": "2c54d99f3a6f0792cf345450186dddc7b490325c",
+  "build_manifest_sha256": "9ea7da15826209fdd20e780293c870d5ca6b1ffa216a8b9b9d42321c89427059",
+  "repository": "jacek4yang/rime-xhup-flow",
+  "approved_by": "jacek4yang",
+  "approved_at": "2026-10-05T13:00:05Z",
+  "rationale": "The repository owner explicitly authorized a stable runtime-qualified release with user platform testing pending, conditional on all required same-source GitHub Actions gates passing. The owner reconfirmed the RC-to-stable promotion workflow on 2026-10-05T17:30:50Z.",
+  "limitations": [
+    "All twelve human platform acceptance checks remain UNVERIFIED on Windows, Linux, macOS and Android; automated runtime and Linux artifact checks are separate evidence, not substitutes.",
+    "Trainer is training-only. Input-method frontend installation, Rime copying/deployment, backups, updates and removal are manual user operations.",
+    "Windows installers are unsigned; macOS is unsigned and unnotarized. Android artifacts use the existing release signing chain.",
+    "Stable publication promotes the exact RC.3 bytes; asset names and embedded application versions retain the RC.3 suffix.",
+    "Current schema2 has no Android training-lifecycle exemption. Historical RC.1 acceptance is preserved unchanged and does not qualify RC.3."
+  ],
+  "user_testing_platforms": [
+    "windows",
+    "linux",
+    "macos",
+    "android"
+  ],
+  "ci_run": 37348712787,
+  "runtime_run": 37348791847,
+  "package_run": 37349106922
+}

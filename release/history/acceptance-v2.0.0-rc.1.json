@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "version": "2.0.0-rc.1",
+  "accepted_rc": null,
+  "source_commit": "89d69c499c94cfe43c78b173d2a40d31601d62a7",
+  "artifacts": [
+    {
+      "name": "xhup-flow-rime-v2.0.0-rc.1.zip",
+      "sha256": "8773e94787b551a6a84954d82106e9dc93e3b38258e5a7d24c1645e9e52e1e6b"
+    },
+    {
+      "name": "xhup-flow-trainer-v2.0.0-rc.1-android-arm64.apk",
+      "sha256": "8b59547929bce06ffdaa1fce269a5bdf86c9bd40a885620c22cddf56baa7e64b"
+    },
+    {
+      "name": "xhup-flow-trainer-v2.0.0-rc.1-android-universal.apk",
+      "sha256": "8279e6faee83b336cd0a6d0393e21bf5121e1fffb824c7224a84ee8b44011a87"
+    },
+    {
+      "name": "xhup-flow-trainer-v2.0.0-rc.1-linux-amd64.deb",
+      "sha256": "148291be04df20364dea6a75df5e5c910c4c251d56706d8d4e07ac8c9848ac64"
+    },
+    {
+      "name": "xhup-flow-trainer-v2.0.0-rc.1-linux-x86_64.rpm",
+      "sha256": "7ce7a60f9b331abd714df40043deb313f841311db7b8c41cea90600f0c01630e"
+    },
+    {
+      "name": "xhup-flow-trainer-v2.0.0-rc.1-macos-universal.dmg",
+      "sha256": "36a0607570fb4fc7633076ab0c05b54e1699312eb7d185b498cd54f40278278c"
+    },
+    {
+      "name": "xhup-flow-trainer-v2.0.0-rc.1-windows-x64-setup.exe",
+      "sha256": "e55b6234e0ceba366ed58c489519c62bd8577354ea249306416d4bc8f4cded0a"
+    },
+    {
+      "name": "xhup-flow-trainer-v2.0.0-rc.1-windows-x64.msi",
+      "sha256": "9262f341eab32b3494d62c1eb7b5c5b5771130bf45726a5a4e34b3e29b5da253"
+    }
+  ],
+  "platforms": [
+    {
+      "platform": "windows",
+      "frontend": "weasel",
+      "os": "Windows 11 x64(真机 WORKSTATION,Weasel 0.17.4 / rime 1.13.1)",
+      "architecture": "x86_64",
+      "artifact": "xhup-flow-rime-v2.0.0-rc.1.zip",
+      "checks": {
+        "clean_install": "PASS",
+        "upgrade_from_v1": "PASS",
+        "schema_deployment": "PASS",
+        "static_smoke": "PASS",
+        "flow_sentence_input": "UNVERIFIED",
+        "learning_persistence": "PASS",
+        "oov_reachability": "UNVERIFIED",
+        "context_ranker_neutrality": "PASS",
+        "joint_decoder_neutrality": "PASS",
+        "static_fallback": "PASS",
+        "trainer_lifecycle": "UNVERIFIED",
+        "privacy": "PASS"
+      },
+      "evidence": "Issue #83 评论 5849236946(2026-09-27 真机验收记录):v1.0.0 活动用户目录(C:\\Users\\20220\\AppData\\Roaming\\Rime)上应用 RC 源包(8 项 SHA256SUMS 校验);xhup-cli doctor PASS(12/12 核心文件、7/7 Lua 模块、2.0 mandatory 合同满足);rime_deployer --build(librime 1.13.1 Windows msvc-x64)重建 build/,xhup_flow 与 xhup_flow_static 的 build schema version 均 = 2.0.0-rc.1,table.bin 全部新编(03:50-03:51);userdb(xhup_flow_user.userdb,LevelDB 12 文件)升级前后原样保留,学习数据未触碰;default.custom.yaml 等无关用户配置未修改;clean_install 为临时目录沙箱全新部署 + doctor PASS;context_ranker/joint_decoder 中性 = 源级默认关闭(开关重置 0)+ CI 全量菜单审计逐字节等价(真机手输验证待补);flow_sentence_input/oov_reachability/trainer_lifecycle 待真机手输与 Trainer 安装包验证",
+      "verified_at": "2026-09-27T04:00:00+08:00"
+    },
+    {
+      "platform": "linux",
+      "frontend": "fcitx5-rime",
+      "os": "Linux x86_64",
+      "architecture": "x86_64",
+      "artifact": "xhup-flow-trainer-v2.0.0-rc.1-linux-amd64.deb",
+      "checks": {
+        "clean_install": "UNVERIFIED",
+        "upgrade_from_v1": "UNVERIFIED",
+        "schema_deployment": "UNVERIFIED",
+        "static_smoke": "UNVERIFIED",
+        "flow_sentence_input": "UNVERIFIED",
+        "learning_persistence": "UNVERIFIED",
+        "oov_reachability": "UNVERIFIED",
+        "context_ranker_neutrality": "UNVERIFIED",
+        "joint_decoder_neutrality": "UNVERIFIED",
+        "static_fallback": "UNVERIFIED",
+        "trainer_lifecycle": "UNVERIFIED",
+        "privacy": "UNVERIFIED"
+      },
+      "evidence": null,
+      "verified_at": null
+    },
+    {
+      "platform": "macos",
+      "frontend": "squirrel",
+      "os": "macOS",
+      "architecture": "aarch64+x86_64",
+      "artifact": "xhup-flow-trainer-v2.0.0-rc.1-macos-universal.dmg",
+      "checks": {
+        "clean_install": "UNVERIFIED",
+        "upgrade_from_v1": "UNVERIFIED",
+        "schema_deployment": "UNVERIFIED",
+        "static_smoke": "UNVERIFIED",
+        "flow_sentence_input": "UNVERIFIED",
+        "learning_persistence": "UNVERIFIED",
+        "oov_reachability": "UNVERIFIED",
+        "context_ranker_neutrality": "UNVERIFIED",
+        "joint_decoder_neutrality": "UNVERIFIED",
+        "static_fallback": "UNVERIFIED",
+        "trainer_lifecycle": "UNVERIFIED",
+        "privacy": "UNVERIFIED"
+      },
+      "evidence": null,
+      "verified_at": null
+    },
+    {
+      "platform": "android",
+      "frontend": "trime",
+      "os": "Android 10+",
+      "architecture": "arm64-v8a",
+      "artifact": "xhup-flow-trainer-v2.0.0-rc.1-android-arm64.apk",
+      "checks": {
+        "clean_install": "UNVERIFIED",
+        "upgrade_from_v1": "UNVERIFIED",
+        "schema_deployment": "UNVERIFIED",
+        "static_smoke": "UNVERIFIED",
+        "flow_sentence_input": "UNVERIFIED",
+        "learning_persistence": "UNVERIFIED",
+        "oov_reachability": "UNVERIFIED",
+        "context_ranker_neutrality": "UNVERIFIED",
+        "joint_decoder_neutrality": "UNVERIFIED",
+        "static_fallback": "UNVERIFIED",
+        "trainer_lifecycle": "N/A",
+        "privacy": "UNVERIFIED"
+      },
+      "evidence": null,
+      "verified_at": null
+    }
+  ]
+}
