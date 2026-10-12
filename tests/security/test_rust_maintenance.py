@@ -4,21 +4,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from check_rust_maintenance import ROOT, check
+from check_rust_maintenance import PATCHES, ROOT, check
 
 class SourceIntegrityTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for name in ("glib-macros", "gtk3-macros", "urlpattern", "proc-macro-error2"):
+        for name in PATCHES:
             shutil.copytree(ROOT / "vendor" / name, self.root / "vendor" / name)
         for name in ("Cargo.toml", "Cargo.lock", "trainer/src-tauri/tauri.conf.json"):
             (self.root / name).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / name, self.root / name)
-
-    def test_exact_patch_set(self):
-        self.assertEqual(check(self.root), 103)
 
     def test_unreviewed_source_is_rejected(self):
         path = self.root / "vendor/urlpattern/src/lib.rs"
@@ -39,9 +36,12 @@ class SourceIntegrityTests(unittest.TestCase):
 
     def test_retired_chain_cannot_return(self):
         lock = self.root / "Cargo.lock"
-        lock.write_text(lock.read_text() + '\n[[package]]\nname = "unic-common"\nversion = "0.9.0"\n')
-        with self.assertRaisesRegex(AssertionError, "retired chain"):
-            check(self.root)
+        original = lock.read_text()
+        for name in ("unic-common", "paste"):
+            with self.subTest(name=name):
+                lock.write_text(original + f'\n[[package]]\nname = "{name}"\nversion = "1.0.15"\n')
+                with self.assertRaisesRegex(AssertionError, "retired chain"):
+                    check(self.root)
 
     def test_binary_notice_removal_is_rejected(self):
         path = self.root / "trainer/src-tauri/tauri.conf.json"

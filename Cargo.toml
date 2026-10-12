@@ -17,6 +17,7 @@ glib-macros = { path = "vendor/glib-macros" }
 gtk3-macros = { path = "vendor/gtk3-macros" }
 urlpattern = { path = "vendor/urlpattern" }
 proc-macro-error2 = { path = "vendor/proc-macro-error2" }
+full_moon = { path = "vendor/full_moon" }
 
 [workspace.package]
 edition = "2024"

@@ -1,4 +1,10 @@
 {
+  "full_moon": {
+    "inventory": "74da660047e870dee70f2d4c5f72ad4745ec3842c7da2b55da51fd2ce8d128f6",
+    "notices": {
+      "LICENSE.md": "70649508b8f902be00ba1fe9c7ab1b89b378e51826bed1bed6aa94f43ccbe51a"
+    }
+  },
   "glib-macros": {
     "inventory": "a9e372af8c6020d1b08b64d55778972cf0ed79c227ac1deac83e51f33498fc44",
     "notices": {}
