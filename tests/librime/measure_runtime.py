@@ -68,6 +68,7 @@ def main():
         "schema": args.schema, "learning": args.learning,
         "trials": args.trials, "repetitions": args.repetitions,
         "platform": platform.platform(),
+        "cpu_affinity": sorted(os.sched_getaffinity(0)),
         "source_sha256": {p.name: sha256(p) for p in source_files},
         "plugin_sha256": sha256(plugin),
         "dynamic_dependencies": subprocess.check_output(["ldd", str(plugin)], text=True),

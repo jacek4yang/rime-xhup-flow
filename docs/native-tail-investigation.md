@@ -140,6 +140,24 @@ Real-librime tests also cover 128-key input, caret movement inside composition,
 backspace/reinsertion, selecting a prefix with multiple virtual delimiters,
 finishing its pending tail, exact once-only commit, and process restart.
 
+## Paired performance diagnostics
+
+`tests/librime/compare_runtime.py` alternates baseline/candidate process order,
+starts each side with empty synthetic user state, and retains all traces and
+observable candidate/preedit/input differences. Both deployments remain intact.
+Use an output directory and `TMPDIR` with sufficient quota; every trial copies a
+deployment. A failed copy or compilation is a failed run, not a runtime result.
+
+The performance driver records both monotonic wall time to first-page
+materialization and `CLOCK_THREAD_CPUTIME_ID` over that work. CPU time excludes
+descheduling but includes the surrounding clock-read overhead; it is diagnostic,
+not a replacement for user-visible latency, especially for microsecond Static
+operations. Full regression replay does not enable these extra CPU clock reads.
+The measurement provenance records inherited CPU affinity. On heterogeneous CPUs,
+compare both versions on the same CPU class, for example with `taskset -c 0`,
+and retain unpinned results separately rather than silently discarding outliers.
+None of these native API measurements establishes GUI rendering latency.
+
 ## Investigation history and corrections
 
 The original final-boundary-only policy passed a narrow matrix but failed
