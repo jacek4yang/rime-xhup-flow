@@ -16,12 +16,12 @@ const SLOT_LABELS = [
  * 已接受的键逐格填入;当前格高亮;错键时当前格抖动提示(不填入错键)。
  */
 export function PracticeCode({
-  code,
+  length,
   typed,
   lastWrongKey,
   outcome,
 }: {
-  code: string;
+  length: number;
   typed: string;
   lastWrongKey: string | null;
   outcome: QuestionOutcome | null;
@@ -29,16 +29,16 @@ export function PracticeCode({
   const { t } = useI18n();
   // 句子长码可达 40 键:缩小槽位并允许换行,任何码长都完整可见
   // (与小程序端 CodeSlots 同一套降级语义:收缩/换行,绝不截断)。
-  const compact = code.length > 8;
+  const compact = length > 8;
   return (
     <div
       className="flex flex-wrap items-start justify-center gap-2 sm:gap-3"
       aria-label={t("practice.codeSlotsAria", {
-        total: code.length,
+        total: length,
         typed: typed.length,
       })}
     >
-      {[...code].map((_, index) => {
+      {Array.from({ length }, (_, index) => {
         const filled = index < typed.length;
         const isCurrent = index === typed.length && outcome === null;
         const showError = isCurrent && lastWrongKey !== null;

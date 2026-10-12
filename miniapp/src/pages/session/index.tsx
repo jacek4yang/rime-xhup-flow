@@ -9,7 +9,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, ScrollView } from "@tarojs/components";
 import Taro, { useDidHide } from "@tarojs/taro";
 import {
-  HINT_DELAY_MS,
+  hintAccess,
+  revealAnswer,
+  tickQuestion,
   MODE_LABELS,
   MODE_POOL_ROTATION,
   activeCode,
@@ -133,6 +135,10 @@ export default function Session() {
             chars: event.item.charCount,
             corrections: event.corrections,
             practiceMs: event.practiceMs,
+            questionMs: event.questionMs,
+            usedAnswerHint: event.usedAnswerHint,
+            independentRecall: event.independentRecall,
+            routeUsed: event.routeUsed,
             bestStreak: event.bestStreak,
             now: Date.now(),
           });
@@ -172,6 +178,8 @@ export default function Session() {
         : createSession(
             {
               mode: src === "weak" ? "mixed" : (mode as Parameters<typeof createSession>[0]["mode"]),
+              intent: settings.practiceIntent,
+              hintMode: settings.hintMode,
               targetLength: settings.sessionLength,
               pools,
             },
@@ -203,8 +211,16 @@ export default function Session() {
   // 实况计时:活跃阶段每秒刷新显示。
   const [, setTick] = useState(0);
   useEffect(() => {
-    if (!session || (session.phase !== "question" && session.phase !== "feedback")) return;
-    const timer = setInterval(() => setTick((n) => n + 1), 1000);
+    if (!session || session.phase !== "question") return;
+    const timer = setInterval(() => {
+      const current = sessionRef.current;
+      if (current) {
+        const next = tickQuestion(current, Date.now());
+        sessionRef.current = next;
+        setSession(next);
+      }
+      setTick((n) => n + 1);
+    }, 200);
     return () => clearInterval(timer);
   }, [session?.phase]);
 
@@ -348,13 +364,9 @@ export default function Session() {
       : session.activeMs + (Date.now() - session.lastTickAt);
   const sessionKpm = kpm(session.keystrokes, displayedMs);
   const sessionCpm = cpm(session.charsCompleted, displayedMs);
-  const hintVisible =
-    state.settings.hintMode === "always" ||
-    (state.settings.hintMode === "on-delay" && displayedMs >= HINT_DELAY_MS) ||
-    (state.settings.hintMode === "on-error" && session.hadError) ||
-    session.phase === "feedback";
+  const hintVisible = hintAccess(session, Date.now()).revealAnswer;
   const { targetLength } = session.config;
-  const refMode = resolveRefMode(state.settings.keyRefMode, session.config.mode);
+  const refMode = hintVisible ? resolveRefMode(state.settings.keyRefMode, session.config.mode) : "none";
   // 计时策略(#28,与桌面一致):讲解打开即暂停——读讲解的时间不进
   // KPM/CPM 分母;重试时恢复并重置计时起点。
   const teachingVisible =
@@ -401,20 +413,31 @@ export default function Session() {
 
         <View className="session-card">
           <Text className="session-target">{session.current.target}</Text>
-          <Text className="session-reading">
-            {session.current.kind === "sentence" && hintVisible
-              ? (session.current.components ?? []).join(" · ")
-              : session.current.readings.join(" / ")}
-          </Text>
           {hintVisible && (
-            <Text className="session-code-hint">{session.current.primaryCode}</Text>
+            <Text className="session-reading">
+              {session.current.kind === "sentence"
+                ? (session.current.components ?? []).join(" · ")
+                : session.current.readings.join(" / ")}
+            </Text>
+          )}
+          {hintVisible && (
+            <Text className="session-code-hint">{activeCode(session)}</Text>
           )}
           <CodeSlots
-            code={activeCode(session)}
+            length={activeCode(session).length}
             typed={session.typed}
             lastWrongKey={session.lastWrongKey}
             outcome={session.phase === "feedback" ? session.lastOutcome : null}
           />
+          {!hintVisible && (
+            <View className="button button-secondary" onClick={() => {
+              const next = revealAnswer(session);
+              sessionRef.current = next;
+              setSession(next);
+            }}>
+              <Text>{t("practice.revealAnswer")}</Text>
+            </View>
+          )}
           {session.phase === "feedback" && (
             <Text
               className={`session-feedback ${
@@ -429,7 +452,7 @@ export default function Session() {
             </Text>
           )}
 
-          {session.phase === "paused" && (
+          {session.phase === "paused" && !teachingPausedRef.current && (
             <View className="pause-overlay">
               <Text className="pause-title">{t("common.paused")}</Text>
               <View
@@ -453,6 +476,14 @@ export default function Session() {
           {teachingVisible && session.lastWrongKey !== null && (
             <TeachingCard
               item={session.current}
+              code={activeCode(session)}
+              expected={activeCode(session)[session.typed.length] ?? null}
+              revealAnswer={hintVisible}
+              onReveal={() => {
+                const next = revealAnswer(session);
+                sessionRef.current = next;
+                setSession(next);
+              }}
               entry={findEntry(trainerIndex.dataset.entries, session.current.target)}
               wrongKey={session.lastWrongKey}
               position={session.typed.length}

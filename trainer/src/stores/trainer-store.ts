@@ -55,6 +55,7 @@ import {
   type KeyRefMode,
   SESSION_LENGTH_OPTIONS,
   type HintMode,
+  type PracticeIntent,
   type PracticeMode,
   type QuestionOutcome,
   type QuestionRoute,
@@ -70,6 +71,7 @@ export type TrainerData = {
   language: Language;
   theme: ThemePreference;
   hintMode: HintMode;
+  practiceIntent: PracticeIntent;
   /** 键帽参考内容模式(与提示策略正交;见 KeyRefMode)。 */
   keyRefMode: KeyRefMode;
   /** 键位触感反馈(off/light/medium;桌面不支持时自动无效)。 */
@@ -114,6 +116,9 @@ export type QuestionResultPayload = {
   chars: number;
   corrections: number;
   practiceMs: number;
+  questionMs: number;
+  usedAnswerHint: boolean;
+  independentRecall: boolean;
   bestStreak: number;
   now: number;
 };
@@ -133,6 +138,7 @@ export type TrainerActions = {
   setLanguage: (language: Language) => void;
   setTheme: (theme: ThemePreference) => void;
   setHintMode: (hintMode: HintMode) => void;
+  setPracticeIntent: (practiceIntent: PracticeIntent) => void;
   setKeyRefMode: (keyRefMode: KeyRefMode) => void;
   setKeyHaptics: (keyHaptics: HapticsMode) => void;
   setErrorTeaching: (errorTeaching: ErrorTeachingMode) => void;
@@ -172,6 +178,7 @@ function defaultData(): TrainerData {
     language: "zh",
     theme: DEFAULT_THEME,
     hintMode: DEFAULT_HINT_MODE,
+    practiceIntent: "blind",
     keyRefMode: DEFAULT_KEY_REF_MODE,
     keyHaptics: DEFAULT_HAPTICS_MODE,
     errorTeaching: DEFAULT_ERROR_TEACHING,
@@ -344,6 +351,7 @@ export function sanitizePersisted(value: unknown): TrainerData {
     language: pickEnum(value.language, LANGUAGES, defaults.language),
     theme: pickEnum(value.theme, THEMES, defaults.theme),
     hintMode: pickEnum(value.hintMode, HINT_MODES, defaults.hintMode),
+    practiceIntent: value.practiceIntent === "learn" ? "learn" : "blind",
     keyRefMode: pickEnum(value.keyRefMode, KEY_REF_MODES, defaults.keyRefMode),
     keyHaptics: pickEnum(value.keyHaptics, HAPTICS_MODES, defaults.keyHaptics),
     errorTeaching: pickEnum(
@@ -403,6 +411,7 @@ export const useTrainerStore = create<TrainerStore>()(
       setLanguage: (language) => set({ language }),
       setTheme: (theme) => set({ theme }),
       setHintMode: (hintMode) => set({ hintMode }),
+      setPracticeIntent: (practiceIntent) => set({ practiceIntent }),
       setKeyRefMode: (keyRefMode) => set({ keyRefMode }),
       setKeyHaptics: (keyHaptics) => set({ keyHaptics }),
       setErrorTeaching: (errorTeaching) => set({ errorTeaching }),
@@ -415,8 +424,8 @@ export const useTrainerStore = create<TrainerStore>()(
           const previous = state.progress[payload.id] ?? emptyProgress();
           const updated =
             payload.outcome === "perfect"
-              ? applyPerfect(previous, payload.now, payload.practiceMs)
-              : applyImperfect(previous, payload.now, payload.practiceMs);
+              ? applyPerfect(previous, payload.now, payload.questionMs)
+              : applyImperfect(previous, payload.now, payload.questionMs);
           const dateKey = localDateKey(new Date(payload.now));
           const keyErrors = { ...state.keyErrors };
           for (const key of new Set(payload.wrongKeys)) {
@@ -519,6 +528,7 @@ export const useTrainerStore = create<TrainerStore>()(
         language: state.language,
         theme: state.theme,
         hintMode: state.hintMode,
+        practiceIntent: state.practiceIntent,
         keyRefMode: state.keyRefMode,
         keyHaptics: state.keyHaptics,
         errorTeaching: state.errorTeaching,

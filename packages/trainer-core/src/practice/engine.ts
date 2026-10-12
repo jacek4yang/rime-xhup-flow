@@ -37,10 +37,13 @@ import {
   type ReviewItem,
   type Rng,
 } from "./scheduler";
-import type { PracticeMode, QuestionOutcome, QuestionRoute } from "./types";
+import type { HintMode, PracticeIntent, PracticeMode, QuestionOutcome, QuestionRoute } from "./types";
+import { questionElapsedMs, tickQuestion } from "./hints";
 
 export type SessionConfig = {
   mode: PracticeMode;
+  intent: PracticeIntent;
+  hintMode: HintMode;
   /** 目标题数;0 表示无限。 */
   targetLength: number;
   pools: readonly QuestionPool[];
@@ -56,6 +59,8 @@ export type SessionState = {
   route: QuestionRoute;
   typed: string;
   hadError: boolean;
+  usedAnswerHint: boolean;
+  questionActiveMs: number;
   wrongKeysThisQuestion: number;
   /** 本题按过的键(去重;键位统计用),每题重置。 */
   wrongKeys: string[];
@@ -108,6 +113,9 @@ export type SessionEvent =
       /** 本题退格修正次数。 */
       corrections: number;
       practiceMs: number;
+      questionMs: number;
+      usedAnswerHint: boolean;
+      independentRecall: boolean;
       bestStreak: number;
     }
   | { type: "time-flushed"; practiceMs: number }
@@ -168,6 +176,8 @@ export function createSession(
     route: "primary" as const,
     typed: "",
     hadError: false,
+    usedAnswerHint: false,
+    questionActiveMs: 0,
     wrongKeysThisQuestion: 0,
     wrongKeys: [] as string[],
     confusionsThisQuestion: {},
@@ -207,22 +217,22 @@ export function typeKey(
   if (state.phase !== "question" || !/^[a-z]$/.test(key)) {
     return { state, events: [] };
   }
+  state = tickQuestion(state, now);
   const { current } = state;
   const primary = current.primaryCode;
   const alternate = current.alternateCode;
 
-  // 路线判定:主练码匹配则保持;主练码分歧且备用码在「当前已输入前缀 +
-  // 本键」上连续匹配时,切换到备用合法码(全码)。已锁定的备用路线沿用。
+  // 必须匹配整个已接受前缀，不能拼接两条合法路线形成非法编码。
+  const prefix = state.typed + key;
   let route = state.route;
-  const expectedOn = (code: string): string => code[state.typed.length];
-  if (route === "primary" && key !== expectedOn(primary)) {
-    if (alternate !== null && key === expectedOn(alternate)) {
-      route = "alternate";
-    }
+  if (primary.startsWith(prefix)) {
+    route = "primary";
+  } else if (alternate !== null && alternate.startsWith(prefix)) {
+    route = "alternate";
   }
   const effective = route === "alternate" && alternate !== null ? alternate : primary;
 
-  if (key !== effective[state.typed.length]) {
+  if (!effective.startsWith(prefix)) {
     // 混淆捕获:期望键 = 当前活动路线在该码位的字符,实际键 = 所按之键;
     // 码位由条目种类与序号推导(positionForIndex,词/句降级为 other:N)。
     const expected = effective[state.typed.length] ?? "";
@@ -271,14 +281,15 @@ function completeQuestion(
 ): StepResult {
   const routeUsed = state.route;
   const outcome: QuestionOutcome =
-    state.hadError || routeUsed === "alternate" ? "imperfect" : "perfect";
+    state.hadError || state.usedAnswerHint || routeUsed === "alternate" ? "imperfect" : "perfect";
   const id = state.current.id;
   const previous = state.progressById.get(id) ?? emptyProgress();
-  const practiceMsThisQuestion = now - state.lastTickAt;
+  const practiceMsThisQuestion = Math.max(0, now - state.lastTickAt);
+  const questionMs = questionElapsedMs(state, now);
   const updated =
     outcome === "perfect"
-      ? applyPerfect(previous, now, practiceMsThisQuestion)
-      : applyImperfect(previous, now, practiceMsThisQuestion);
+      ? applyPerfect(previous, now, questionMs)
+      : applyImperfect(previous, now, questionMs);
   const progressById = new Map(state.progressById);
   progressById.set(id, updated);
 
@@ -303,6 +314,7 @@ function completeQuestion(
     bestStreak,
     activeMs: practiceMs,
     lastTickAt: now,
+    questionActiveMs: questionMs,
     progressById,
     reviewQueue,
   };
@@ -321,6 +333,9 @@ function completeQuestion(
         confusions: state.confusionsThisQuestion,
         corrections: state.correctionsThisQuestion,
         practiceMs: practiceMsThisQuestion,
+        questionMs,
+        usedAnswerHint: state.usedAnswerHint,
+        independentRecall: outcome === "perfect",
         bestStreak,
       },
     ],
@@ -363,6 +378,8 @@ export function advance(
       phase: "question",
       typed: "",
       hadError: false,
+      usedAnswerHint: false,
+      questionActiveMs: 0,
       wrongKeysThisQuestion: 0,
       wrongKeys: [],
       confusionsThisQuestion: {},
@@ -379,9 +396,11 @@ export function advance(
 /** 退格:删除最后一个已接受的键,计入修正次数,不影响对错计数。 */
 export function backspace(state: SessionState): SessionState {
   if (state.phase !== "question" || state.typed.length === 0) return state;
+  const typed = state.typed.slice(0, -1);
   return {
     ...state,
-    typed: state.typed.slice(0, -1),
+    typed,
+    route: state.current.primaryCode.startsWith(typed) ? "primary" : state.route,
     corrections: state.corrections + 1,
     correctionsThisQuestion: state.correctionsThisQuestion + 1,
     lastWrongKey: null,
@@ -399,6 +418,7 @@ export function retryCurrent(state: SessionState): SessionState {
   return {
     ...state,
     typed: "",
+    route: "primary",
     corrections: state.corrections + 1,
     correctionsThisQuestion: state.correctionsThisQuestion + 1,
     lastWrongKey: null,
@@ -410,9 +430,12 @@ export function pause(state: SessionState, now: number): StepResult {
   if (state.phase !== "question") {
     return { state, events: [] };
   }
-  const practiceMs = state.activeMs + (now - state.lastTickAt);
+  state = tickQuestion(state, now);
+  const elapsed = Math.max(0, now - state.lastTickAt);
+  const practiceMs = state.activeMs + elapsed;
   return {
-    state: { ...state, phase: "paused", activeMs: practiceMs, lastTickAt: now },
+    state: { ...state, phase: "paused", activeMs: practiceMs,
+      questionActiveMs: state.questionActiveMs + elapsed, lastTickAt: now },
     events: [{ type: "time-flushed", practiceMs: practiceMs - state.activeMs }],
   };
 }
@@ -427,9 +450,9 @@ export function resume(state: SessionState, now: number): SessionState {
 export function finish(state: SessionState, now: number): StepResult {
   if (state.phase === "completed") return { state, events: [] };
   const practiceMs =
-    state.phase === "paused"
-      ? state.activeMs
-      : state.activeMs + (now - state.lastTickAt);
+    state.phase === "question"
+      ? state.activeMs + Math.max(0, now - state.lastTickAt)
+      : state.activeMs;
   return {
     state: {
       ...state,

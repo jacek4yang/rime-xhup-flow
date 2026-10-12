@@ -26,6 +26,10 @@ const CODE_PART_KEYS: readonly [I18nKey, I18nKey, I18nKey, I18nKey] = [
 
 export function TeachingCard({
   item,
+  code,
+  expected,
+  revealAnswer,
+  onReveal,
   entry,
   wrongKey,
   position,
@@ -34,6 +38,10 @@ export function TeachingCard({
   onRetry,
 }: {
   item: TrainingItem;
+  code: string;
+  expected: string | null;
+  revealAnswer: boolean;
+  onReveal: () => void;
   /** 单字条目的规范数据(词/句为 null)。 */
   entry: TrainerEntry | null;
   wrongKey: string;
@@ -43,12 +51,22 @@ export function TeachingCard({
   onRetry: () => void;
 }) {
   const { t } = useI18n();
-  const expected = item.primaryCode[position];
   const isCharSlot = item.kind === "char" || item.kind === "level1";
   const slotLabel =
     isCharSlot && position < CODE_PART_KEYS.length
       ? t(CODE_PART_KEYS[position])
       : t("practice.teachingSlotN", { n: position + 1 });
+
+  if (!revealAnswer) {
+    return (
+      <View className="teaching-overlay">
+        <Text className="teaching-title">{t("practice.teachingTitle")}</Text>
+        <Text>{item.target} · {slotLabel} · {wrongKey.toUpperCase()}</Text>
+        <View className="button" onClick={onReveal}><Text>{t("practice.revealAnswer")}</Text></View>
+        <View className="button teaching-retry" onClick={onRetry}><Text>{t("practice.teachingRetry")}</Text></View>
+      </View>
+    );
+  }
 
   // 同首形高频例字(规范数据聚合;detailed 模式展示)。
   const sameShapeSamples =
@@ -78,7 +96,7 @@ export function TeachingCard({
 
       <View className="teaching-code">
         <View className="teaching-code-row">
-          {[...item.primaryCode].map((char, index) => (
+          {[...code].map((char, index) => (
             <Text
               key={index}
               className={`teaching-code-char ${index === position ? "teaching-code-wrong" : ""}`}
@@ -89,7 +107,7 @@ export function TeachingCard({
         </View>
         <Text className="teaching-note">
           {slotLabel}:{t("practice.teachingDivergence", {
-            expected: expected.toUpperCase(),
+            expected: expected?.toUpperCase() ?? "—",
             actual: wrongKey.toUpperCase(),
           })}
         </Text>
@@ -98,8 +116,8 @@ export function TeachingCard({
       {mode === "detailed" && isCharSlot && position >= 2 && (
         <Text className="teaching-note">
           {t("practice.teachingShapeHint", {
-            first: item.primaryCode[2]?.toUpperCase() ?? "—",
-            second: item.primaryCode[3]?.toUpperCase() ?? "—",
+            first: code[2]?.toUpperCase() ?? "—",
+            second: code[3]?.toUpperCase() ?? "—",
           })}
         </Text>
       )}

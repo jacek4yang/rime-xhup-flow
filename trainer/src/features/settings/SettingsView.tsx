@@ -39,6 +39,8 @@ export function SettingsView() {
   const index = useTrainerIndex();
   const theme = useTrainerStore((state) => state.theme);
   const hintMode = useTrainerStore((state) => state.hintMode);
+  const practiceIntent = useTrainerStore((state) => state.practiceIntent);
+  const setPracticeIntent = useTrainerStore((state) => state.setPracticeIntent);
   const difficulty = useTrainerStore((state) => state.difficulty);
   const sessionLength = useTrainerStore((state) => state.sessionLength);
   const language = useTrainerStore((state) => state.language);
@@ -125,6 +127,14 @@ export function SettingsView() {
                 onClick={() => setTheme(candidate)}
               >
                 {t(THEME_LABELS[candidate])}
+              </OptionButton>
+            ))}
+          </OptionRow>
+          <OptionRow label={t("practice.intent.blind")}>
+            {(["blind", "learn"] as const).map((intent) => (
+              <OptionButton key={intent} selected={practiceIntent === intent}
+                onClick={() => setPracticeIntent(intent)}>
+                {t(`practice.intent.${intent}`)}
               </OptionButton>
             ))}
           </OptionRow>

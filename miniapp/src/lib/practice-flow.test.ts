@@ -47,7 +47,7 @@ function runSession(mode: PracticeMode, questions: number) {
   const pools = modePools(mode);
   if (pools.length === 0) return null;
   let state = createSession(
-    { mode, targetLength: questions, pools },
+    { mode, intent: "blind", hintMode: "on-error", targetLength: questions, pools },
     new Map(),
     makeRng(),
     1000,
@@ -141,7 +141,7 @@ describe("一级简码双路线评分(B5 契约)", () => {
     expect(pool.items.length).toBeGreaterThan(0);
     const rng = makeRng();
     let state = createSession(
-      { mode: "level1", targetLength: 1, pools: [pool] },
+      { mode: "level1", intent: "blind", hintMode: "on-error", targetLength: 1, pools: [pool] },
       new Map(),
       rng,
       1000,
@@ -175,7 +175,7 @@ describe("一级简码双路线评分(B5 契约)", () => {
     const pool = buildPool("level1", [synthetic]);
     const rng = makeRng();
     let state = createSession(
-      { mode: "level1", targetLength: 1, pools: [pool] },
+      { mode: "level1", intent: "blind", hintMode: "on-error", targetLength: 1, pools: [pool] },
       new Map(),
       rng,
       1000,
@@ -197,7 +197,7 @@ describe("一级简码双路线评分(B5 契约)", () => {
     if (pool.items.length === 0) return; // 分片恰好全覆盖时无此路径
     const rng = makeRng();
     let state = createSession(
-      { mode: "level1", targetLength: 1, pools: [pool] },
+      { mode: "level1", intent: "blind", hintMode: "on-error", targetLength: 1, pools: [pool] },
       new Map(),
       rng,
       1000,

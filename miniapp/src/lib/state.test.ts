@@ -147,6 +147,7 @@ describe("应用状态仓库(存储注入)", () => {
       chars: 1,
       corrections: 0,
       practiceMs: 4_000,
+      questionMs: 4_000, usedAnswerHint: false, independentRecall: true, routeUsed: "primary",
       bestStreak: 1,
       now,
     });
@@ -160,6 +161,7 @@ describe("应用状态仓库(存储注入)", () => {
       chars: 1,
       corrections: 1,
       practiceMs: 6_000,
+      questionMs: 6_000, usedAnswerHint: false, independentRecall: false, routeUsed: "primary",
       bestStreak: 1,
       now: now + 30_000,
     });
@@ -209,6 +211,7 @@ describe("应用状态仓库(存储注入)", () => {
       chars: 1,
       corrections: 0,
       practiceMs: 600,
+      questionMs: 600, usedAnswerHint: false, independentRecall: false, routeUsed: "primary" as const,
       bestStreak: 0,
     };
     store.recordQuestionResult({ ...base, confusions: recordConfusion({}, "n", "m", "shape1"), now });
@@ -236,6 +239,7 @@ describe("应用状态仓库(存储注入)", () => {
     store.recordQuestionResult({
       id: "的:de", outcome: "perfect", keystrokes: 2, wrongKeyEvents: 0,
       wrongKeys: [], chars: 1, corrections: 0, practiceMs: 1000, bestStreak: 1,
+      questionMs: 1000, usedAnswerHint: false, independentRecall: true, routeUsed: "primary",
       now: new Date(2026, 8, 6).getTime(),
     });
     store.resetProgress();
