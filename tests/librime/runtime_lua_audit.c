@@ -17,6 +17,7 @@
  * 只使用稳定 C API;无第三方测试框架;不访问用户真实 Rime 目录。
  */
 
+#include "runtime_module.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -96,8 +97,7 @@ int main(int argc, char **argv) {
     traits.distribution_name = "xhup-flow-lua-audit";
     traits.distribution_code_name = "xhup-flow-lua-audit";
     traits.distribution_version = "0";
-    rime->setup(&traits);
-    rime->initialize(&traits);
+    xhup_initialize(rime, &traits);
     /* 全新 user 目录的首次 initialize 会异步进入维护模式,必须等部署
      * 线程完成再开会话,否则引擎未就绪,按键全部不被处理
      * (与 runtime_flow_audit.c 的 open_session 同构)。 */

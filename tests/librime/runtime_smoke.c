@@ -5,6 +5,7 @@
  * continuation。只访问隔离的测试 user dir。
  */
 
+#include "runtime_module.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -195,8 +196,7 @@ int main(int argc, char **argv) {
     traits.distribution_code_name = "xhup-runtime-smoke";
     traits.distribution_version = "1";
     traits.app_name = "xhup.runtime_smoke";
-    rime->setup(&traits);
-    rime->initialize(&traits);
+    xhup_initialize(rime, &traits);
     if (rime->is_maintenance_mode && rime->is_maintenance_mode()) {
         rime->join_maintenance_thread();
     }

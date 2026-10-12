@@ -1,5 +1,11 @@
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
-from prepare_ud_corpus import normalize, parse_syllables, prepare
+from prepare_ud_corpus import normalize, parse_syllables, prepare, partition
 
 
 class PreparationTests(unittest.TestCase):
@@ -48,6 +54,55 @@ class PreparationTests(unittest.TestCase):
         output, meta = prepare(source.encode(), {"a": "aa", "aa": "bb"})
         self.assertEqual(output, b"\n")
         self.assertEqual(meta["counts"]["ambiguous_transliteration_tokens"], 1)
+
+    def test_partition_keeps_parent_chunks_and_all_failures_in_denominator(self):
+        rows = b"a-1\taa\tA\nb-1\tbb\tB\na-2\tcc\tC\n"
+        metadata = {"cases": [
+            {"id": "a-1", "sentence": "a"},
+            {"id": "b-1", "sentence": "e"},
+            {"id": "a-2", "sentence": "a"},
+        ]}
+        groups = partition(rows, metadata)
+        self.assertEqual(groups["development"], b"a-1\taa\tA\na-2\tcc\tC\n")
+        self.assertEqual(groups["confirmation"], b"b-1\tbb\tB\n")
+        self.assertEqual(partition(rows, metadata), groups)
+        self.assertEqual([case["partition"] for case in metadata["cases"]],
+                         ["development", "confirmation", "development"])
+
+    def test_partition_rejects_unbound_metadata(self):
+        for cases in [[], [{"id": "other", "sentence": "a"}],
+                      [{"id": "a", "sentence": ""}]]:
+            with self.assertRaises(ValueError):
+                partition(b"a\taa\tA\n", {"cases": cases})
+
+    def test_frozen_fixture_mismatch_preserves_existing_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.conllu"
+            source.write_text("# sent_id = a\n"
+                              "1\t你好\t_\tNOUN\t_\t_\t0\troot\t_\tTranslit=nihao\n")
+            inventory = root / "syllables.tsv"
+            inventory.write_text("ni\tni\nhao\thc\n" +
+                                 "".join(f"unused{i}\taa\n" for i in range(404)))
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                "fixture_sha256": "0" * 64,
+            }))
+            output, metadata = root / "output.tsv", root / "metadata.json"
+            output.write_bytes(b"previous fixture")
+            metadata.write_bytes(b"previous metadata")
+            result = subprocess.run([
+                sys.executable, str(Path(__file__).with_name("prepare_ud_corpus.py")),
+                str(source), str(inventory), str(output), str(metadata),
+                "--manifest", str(manifest), "--partition-prefix", str(root / "split"),
+            ], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("frozen fixture_sha256 mismatch", result.stderr)
+            self.assertEqual(output.read_bytes(), b"previous fixture")
+            self.assertEqual(metadata.read_bytes(), b"previous metadata")
+            self.assertFalse((root / "split.development.tsv").exists())
+            self.assertFalse((root / "split.confirmation.tsv").exists())
 
 
 if __name__ == "__main__":

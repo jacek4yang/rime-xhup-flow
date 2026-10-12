@@ -15,6 +15,7 @@
  * 只使用稳定 C API;无第三方测试框架;不访问用户真实 Rime 目录。
  */
 
+#include "runtime_module.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,8 +46,7 @@ int main(int argc, char **argv) {
     traits.distribution_code_name = "xhup-priority-preflight";
     traits.distribution_version = "0";
     traits.app_name = "xhup.priority_preflight";
-    rime->setup(&traits);
-    rime->initialize(&traits);
+    xhup_initialize(rime, &traits);
     if (rime->is_maintenance_mode && rime->is_maintenance_mode()) {
         rime->join_maintenance_thread();
     }

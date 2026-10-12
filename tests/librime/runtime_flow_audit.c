@@ -32,6 +32,7 @@
  */
 
 #define _POSIX_C_SOURCE 200809L
+#include "runtime_module.h"
 #include "audit_input.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -173,8 +174,7 @@ static int open_session(const char *shared, const char *user_dir,
     traits.distribution_name = "XHUP-Flow";
     traits.distribution_code_name = "xhup-flow";
     traits.distribution_version = "0";
-    rime->setup(&traits);
-    rime->initialize(&traits);
+    xhup_initialize(rime, &traits);
     if (rime->is_maintenance_mode && rime->is_maintenance_mode()) {
         rime->join_maintenance_thread();
     }

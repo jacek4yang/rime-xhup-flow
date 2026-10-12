@@ -129,6 +129,7 @@ def run(args):
         step_env = dict(env)
         if native:
             step_env["LD_PRELOAD"] = env["PLUGIN"]
+            step_env["XHUP_LUA_LIBRARY"] = env["PLUGIN"]
         started = datetime.now(timezone.utc).isoformat()
         with log.open("wb") as stream:
             result = subprocess.run(["bash", "-euo", "pipefail", "-c", command], cwd=ROOT,

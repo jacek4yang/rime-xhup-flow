@@ -1,0 +1,46 @@
+diff --git a/lauxlib.c b/lauxlib.c
+index 923105e..74f5935 100644
+--- a/lauxlib.c
++++ b/lauxlib.c
+@@ -1024,13 +1024,18 @@ LUALIB_API const char *luaL_gsub (lua_State *L, const char *s,
+ 
+ 
+ static void *l_alloc (void *ud, void *ptr, size_t osize, size_t nsize) {
+-  (void)ud; (void)osize;  /* not used */
++  size_t old_size = ptr ? osize : 0;  /* NULL uses osize as a type tag */
++  (void)ud;
+   if (nsize == 0) {
+     free(ptr);
++    xhup_profile_alloc(old_size, 0);
+     return NULL;
+   }
+-  else
+-    return realloc(ptr, nsize);
++  else {
++    void *result = realloc(ptr, nsize);
++    if (result) xhup_profile_alloc(old_size, nsize);
++    return result;
++  }
+ }
+ 
+ 
+diff --git a/lgc.c b/lgc.c
+index 5817f9e..8d3e265 100644
+--- a/lgc.c
++++ b/lgc.c
+@@ -1235,6 +1235,7 @@ static void markold (global_State *g, GCObject *from, GCObject *to) {
+ ** Finish a young-generation collection.
+ */
+ static void finishgencycle (lua_State *L, global_State *g) {
++  xhup_profile_gc(1);  /* completed generational sweep */
+   correctgraylists(g);
+   checkSizes(L, g);
+   g->gcstate = GCSpropagate;  /* skip restart */
+@@ -1634,6 +1635,7 @@ static lu_mem singlestep (lua_State *L) {
+       }
+       else {  /* emergency mode or no more finalizers */
+         g->gcstate = GCSpause;  /* finish collection */
++        xhup_profile_gc(0);  /* completed incremental collection */
+         work = 0;
+       }
+       break;

@@ -1,6 +1,7 @@
 /* Real librime: bounded session ranking, explicit consent, no secondary store.
  * Historical TSV persistence is intentionally retired; native learning has its
  * separate exact-count/export/import/restart gate in run-flow-audit.sh. */
+#include "runtime_module.h"
 #include <rime_api.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -86,7 +87,7 @@ int main(int argc, char **argv) {
   traits.app_name = "rime.xhup-session-evidence-audit";
   traits.shared_data_dir = argv[1]; traits.user_data_dir = argv[2];
   traits.min_log_level = 2;
-  rime->setup(&traits); rime->initialize(&traits);
+  xhup_initialize(rime, &traits);
   if (rime->is_maintenance_mode()) rime->join_maintenance_thread();
   check(rime->find_module("lua") != NULL, "actual Lua registration");
   session = start();

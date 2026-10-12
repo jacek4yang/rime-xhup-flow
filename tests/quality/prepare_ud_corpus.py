@@ -104,6 +104,23 @@ def prepare(raw, inventory):
     return ("\n".join(rows) + "\n").encode(), {"counts": dict(sorted(counts.items())), "cases": cases}
 
 
+def partition(output, metadata):
+    """Keep every chunk of a parent sentence in the same frozen partition."""
+    rows = [row for row in output.decode("utf-8").splitlines() if row]
+    if len(rows) != len(metadata["cases"]):
+        raise ValueError("fixture and metadata case counts differ")
+    groups = {"development": [], "confirmation": []}
+    for row, case in zip(rows, metadata["cases"]):
+        if row.split("\t", 1)[0] != case["id"] or not case["sentence"]:
+            raise ValueError("fixture identity mismatch or missing parent sentence")
+        parity = hashlib.sha256(case["sentence"].encode("utf-8")).digest()[0] % 2
+        group = "confirmation" if parity else "development"
+        case["partition"] = group
+        groups[group].append(row)
+    return {name: ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+            for name, lines in groups.items()}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
@@ -111,6 +128,8 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("metadata", type=Path)
     parser.add_argument("--manifest", type=Path, default=HERE / "ud-source.json")
+    parser.add_argument("--partition-prefix", type=Path,
+                        help="freeze parent-SHA256 even development / odd confirmation TSVs")
     args = parser.parse_args()
     manifest = json.loads(args.manifest.read_text())
     raw = args.source.read_bytes()
@@ -122,6 +141,22 @@ def main():
     output, metadata = prepare(raw, inventory)
     metadata.update({"source": manifest, "fixture_sha256": hashlib.sha256(output).hexdigest(),
                      "encoder_export_sha256": hashlib.sha256(args.syllable_codes.read_bytes()).hexdigest()})
+    for field in ("fixture_sha256", "encoder_export_sha256"):
+        if field in manifest and manifest[field] != metadata[field]:
+            raise ValueError(f"frozen {field} mismatch")
+    if args.partition_prefix:
+        partitions = partition(output, metadata)
+        metadata["partition_policy"] = "sha256-parent-utf8-first-byte-even-development-v1"
+        metadata["partitions"] = {}
+        for name, content in partitions.items():
+            metadata["partitions"][name] = {
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "cases": len(content.splitlines()),
+            }
+            if name in manifest and manifest[name] != metadata["partitions"][name]:
+                raise ValueError(f"frozen {name} partition mismatch")
+        for name, content in partitions.items():
+            Path(f"{args.partition_prefix}.{name}.tsv").write_bytes(content)
     args.output.write_bytes(output)
     args.metadata.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(metadata["counts"], sort_keys=True))
