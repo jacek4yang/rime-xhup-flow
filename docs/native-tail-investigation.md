@@ -158,6 +158,71 @@ compare both versions on the same CPU class, for example with `taskset -c 0`,
 and retain unpinned results separately rather than silently discarding outliers.
 None of these native API measurements establishes GUI rendering latency.
 
+### v2.1 prefix-index measurements
+
+Runtime implementation `bff0e4e`, measurement harness `9e6a594`, compared with the
+fixed v2.0.0 deployment on librime 1.16.1 / Lua 5.4.8. The i5-1240P has two CPU
+classes: CPU0 is a 4.4 GHz maximum-frequency core thread; CPU8 is a 3.3 GHz
+maximum-frequency core. Each row below uses five alternating process pairs,
+10 repetitions, and 19,800 key events per side. No runtime parameters were tuned
+between cohorts. Values are p50 / p95 / p99 in milliseconds:
+
+| CPU / learning | Key processing, old → indexed | Key to first page, old → indexed |
+| --- | --- | --- |
+| CPU0 / off | 3.539 / 5.197 / 5.478 → 3.359 / 3.929 / 4.100 | 3.547 / 5.205 / 5.488 → 3.367 / 3.938 / 4.110 |
+| CPU0 / on | 3.697 / 5.668 / 5.945 → 3.527 / 4.298 / 4.469 | 3.705 / 5.677 / 5.954 → 3.535 / 4.308 / 4.478 |
+| CPU8 / off | 9.490 / 11.777 / 12.196 → 9.174 / 10.158 / 10.374 | 9.504 / 11.793 / 12.211 → 9.189 / 10.173 / 10.387 |
+| CPU8 / on | 9.553 / 12.104 / 12.605 → 9.247 / 10.548 / 10.882 | 9.567 / 12.119 / 12.620 → 9.261 / 10.563 / 10.896 |
+
+Every individual Flow workload's p95/p99 processing, first-page wall time and
+thread CPU time stayed within 1.10× baseline in these fixed-core cohorts.
+First-session median/max and peak RSS also stayed within 1.10×. First-session
+medians were 44.133→42.416, 57.102→58.142, 68.231→66.853 and 80.913→77.954 ms
+in row order; this is a fresh-process measurement, **not a cold disk-cache test**.
+Peak RSS was 34,916→34,944; 37,024→37,032; 34,868→34,952; and
+37,016→37,060 KiB. These observations do not establish a startup speedup.
+
+Static first-page p50/p95/p99 is reported in **microseconds**, not relative
+near-zero ratios: CPU0 1.987/6.399/18.309→1.993/6.361/17.352;
+CPU8 4.715/11.064/23.083→4.726/10.531/22.956. Each also has five process pairs.
+All recorded candidate heads, raw input, preedit, selection ranges, page size
+and key handling were identical in the six cohorts.
+
+The earlier unpinned run is retained: three learning-off workloads exceeded the
+1.10× p99 threshold in one candidate process. The old trace did not record CPU
+affinity per key; its cause cannot be established retrospectively. Fixed-core
+results control a known heterogeneous-CPU confound, not erase that failed cohort.
+Two interrupted runs also remain: `/tmp` quota exhausted during copying, then
+during compiler temporary output. Home-backed output and `TMPDIR` completed the
+remaining runs without modifying user caches.
+
+Separate instrumentation (11,880 keys) measured Lua-issued `Memory.dict_lookup`
+calls 7,877,280→1,216,170, maximum per key 2,172→283. This counter does **not**
+include dictionary searches inside TableTranslator. Native translator query
+calls remained 42,600. Lua allocation calls were 14,602,387→6,738,481 and growth
+bytes 1,062,259,384→533,378,235; incremental GC remained 19,890. No instrumented
+latency is used as a performance result.
+
+In one continuous 100-round session (39,600 keys), each round's Lua live bytes
+remained exactly 8,467,594 before / 8,491,539 after; statm RSS remained exactly
+39,288 / 39,284 KiB respectively. Compared with PR3's compiler output, compiled
+Lua grew from 1,796,779 to 1,812,410
+bytes, including the 14,578-byte index. There is no session lookup cache.
+
+Complete-menu enumeration was measured separately, three pairs × three
+repetitions: all 99 menu counts per side matched. `ni` still enumerates 21,468
+candidates (median 2,726.584→2,807.198 ms); `jqu` has 806
+(11.494→11.312 ms); the 128-key case has 34 (5.796→4.213 ms).
+Full-menu text/order was not captured by this performance driver. The large
+`ni` enumeration cost remains; it is not the normal first-page latency.
+
+Raw evidence is retained under
+`~/.local/share/xhup-flow/qualification/v2.1-native-index-bff0e4e/`, including
+`analysis.json`, all process traces, and the initial-run archive SHA-256
+`319e43c867a151a5a0a49fcbe1b268fed399bfe31306546b830226f0b53d8f08`.
+These are focused native API observations, not full Static compatibility,
+ranking-quality improvement, mixed-shortcut support, or GUI/platform acceptance.
+
 ## Investigation history and corrections
 
 The original final-boundary-only policy passed a narrow matrix but failed
