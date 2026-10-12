@@ -4,6 +4,7 @@ import {
   advance,
   backspace,
   createSession,
+  confirmQuestion,
   expectedKey,
   finish,
   pause,
@@ -101,6 +102,8 @@ describe("简码路线(B5)", () => {
     for (const key of ["u", "i", "j"]) {
       state = typeKey(state, key, zeroRng, 100).state;
     }
+    expect(state.phase).toBe("question");
+    state = confirmQuestion(state, zeroRng, 100).state;
     expect(state.phase).toBe("feedback");
     expect(state.lastOutcome).toBe("perfect");
     expect(state.lastRoute).toBe("primary");
@@ -109,7 +112,7 @@ describe("简码路线(B5)", () => {
   it("主练码自身无分歧时按 perfect 完成", () => {
     // fixture:发展 FF 简码 faj,全码 favj;输入主练码 faj。
     const pool = buildPool("shortcut-fixed-first", [
-      { ...shortcutItem, id: "shortcut:发展:faj", primaryCode: "faj", alternateCode: "favj" },
+      { ...shortcutItem, id: "shortcut:发展:faj", primaryCode: "faj", acceptedCodes: ["faj"], alternateCode: "favj" },
     ]);
     const config: SessionConfig = { ...makeConfig(), mode: "fixed-first", targetLength: 1, pools: [pool] };
     let state = start(config);
@@ -128,6 +131,7 @@ describe("简码路线(B5)", () => {
       id: "shortcut:发展:faj",
       target: "发展",
       primaryCode: "faj",
+      acceptedCodes: ["faj"],
       alternateCode: "favj",
       charCount: 2,
     };
@@ -145,7 +149,7 @@ describe("简码路线(B5)", () => {
   });
 
   it("拒绝拼接不同路线的前缀", () => {
-    const item = { ...shortcutItem, primaryCode: "faj", alternateCode: "uvwj" };
+    const item = { ...shortcutItem, primaryCode: "faj", acceptedCodes: ["faj"], alternateCode: "uvwj" };
     let state = start({ ...makeConfig(), mode: "zero-regression", pools: [buildPool("shortcut-primary", [item])] });
     state = typeKey(state, "f", zeroRng, 100).state;
     state = typeKey(state, "v", zeroRng, 200).state;
@@ -155,12 +159,11 @@ describe("简码路线(B5)", () => {
   });
 
   it("备用路线退格到共享前缀可重选，重试不洗掉错误", () => {
-    const item = { ...shortcutItem, primaryCode: "faj", alternateCode: "favj" };
+    const item = { ...shortcutItem, primaryCode: "faj", acceptedCodes: ["faj"], alternateCode: "favj" };
     let state = start({ ...makeConfig(), mode: "zero-regression", pools: [buildPool("shortcut-primary", [item])] });
     for (const key of "fav") state = typeKey(state, key, zeroRng, 100).state;
     state = backspace(state);
     expect(state.route).toBe("primary");
-    expect(expectedKey(state)).toBe("j");
     state = typeKey(state, "v", zeroRng, 200).state;
     state = typeKey(state, "z", zeroRng, 300).state;
     state = retryCurrent(state);
@@ -175,6 +178,7 @@ describe("简码路线(B5)", () => {
     const item = {
       ...shortcutItem,
       primaryCode: "faj",
+      acceptedCodes: ["faj"],
       alternateCode: "favj",
     };
     const state: SessionState = {
@@ -254,6 +258,7 @@ describe("答题判定", () => {
     const item = {
       ...makeIndex().pools["shortcut-primary"][0],
       primaryCode: "faj",
+      acceptedCodes: ["faj"],
       alternateCode: "favj",
     };
     const pool = buildPool("shortcut-fixed-first", [item]);

@@ -42,6 +42,8 @@ export type TrainingItem = {
   /** 展示目标(汉字 / 词语 / 句子)。 */
   target: string;
   primaryCode: string;
+  /** 同目标、同码长的规范等价主练码；不从拼音推造。 */
+  acceptedCodes: readonly string[];
   alternateCode: string | null;
   /** 汉字数(CPM 分母)。 */
   charCount: number;
@@ -63,6 +65,7 @@ export function charItem(entry: TrainerEntry): TrainingItem {
     kind: "char",
     target: entry.char,
     primaryCode: entry.code,
+    acceptedCodes: [entry.code],
     alternateCode: null,
     charCount: 1,
     codeLength: entry.length,
@@ -84,6 +87,7 @@ export function level1Item(
     kind: "level1",
     target: shortcut.char,
     primaryCode: shortcut.key,
+    acceptedCodes: [shortcut.key],
     alternateCode: fullCode,
     charCount: 1,
     codeLength: 1,
@@ -101,6 +105,7 @@ export function wordItem(word: TrainerWord): TrainingItem {
     kind: "word",
     target: word.word,
     primaryCode: word.code,
+    acceptedCodes: [word.code],
     alternateCode: null,
     charCount: word.charCount,
     codeLength: word.length,
@@ -118,6 +123,7 @@ export function shortcutItem(shortcut: TrainerShortcut): TrainingItem {
     kind: "shortcut",
     target: shortcut.word,
     primaryCode: shortcut.shortcutCode,
+    acceptedCodes: [shortcut.shortcutCode],
     alternateCode: shortcut.fullCode,
     charCount: [...shortcut.word].length,
     codeLength: shortcut.shortcutCode.length,
@@ -139,6 +145,7 @@ export function sentenceItem(sentence: {
     kind: "sentence",
     target: sentence.text,
     primaryCode: sentence.code,
+    acceptedCodes: [sentence.code],
     alternateCode: null,
     charCount: [...sentence.text].length,
     codeLength: sentence.code.length,
@@ -239,8 +246,21 @@ export function buildTrainerIndex(dataset: TrainerDataset): TrainerIndex {
     sentence: [],
   };
 
+  const equivalentCodes = new Map<string, string[]>();
+  for (const entry of dataset.entries) {
+    const key = `${entry.char}:${entry.length}`;
+    const codes = equivalentCodes.get(key);
+    if (codes) {
+      if (!codes.includes(entry.code)) codes.push(entry.code);
+    } else {
+      equivalentCodes.set(key, [entry.code]);
+    }
+  }
+  for (const codes of equivalentCodes.values()) codes.sort();
   for (const entry of dataset.entries) {
     const item = charItem(entry);
+    item.acceptedCodes = [entry.code, ...equivalentCodes.get(`${entry.char}:${entry.length}`)!
+      .filter((code) => code !== entry.code)];
     byId.set(item.id, item);
     byCharLength[entry.length].push(entry);
     pools[`char-${entry.length}`].push(item);

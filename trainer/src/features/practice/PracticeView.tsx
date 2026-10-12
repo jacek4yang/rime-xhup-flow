@@ -31,6 +31,7 @@ import {
   advance,
   backspace,
   createSession,
+  confirmQuestion,
   expectedKey,
   finish,
   pause,
@@ -390,6 +391,9 @@ export function PracticeView({
     if (/^[a-zA-Z]$/.test(key)) {
       event.preventDefault();
       handleLetter(key.toLowerCase());
+    } else if (key === " " || key === "Enter") {
+      event.preventDefault();
+      commit(confirmQuestion(session, Math.random, Date.now()));
     } else if (key === "Backspace") {
       event.preventDefault();
       setSession(backspace(session));
@@ -511,6 +515,12 @@ export function PracticeView({
               lastWrongKey={session.lastWrongKey}
               outcome={session.phase === "feedback" ? session.lastOutcome : null}
             />
+            {session.phase === "question" && session.typed.length > 0 &&
+              session.typed === activeCode(session) && (
+              <Button onClick={() => commit(confirmQuestion(session, Math.random, Date.now()))}>
+                {t("practice.confirmCode")}
+              </Button>
+            )}
             {!codeHintVisible && (
               <Button variant="outline" onClick={() => setSession(revealAnswer(session))}>
                 {t("practice.revealAnswer")}
@@ -540,10 +550,10 @@ export function PracticeView({
           <ErrorTeachingCard
             item={session.current}
             code={activeCode(session)}
-            expected={activeCode(session)[session.typed.length] ?? null}
+            expected={expectedKey(session)}
             revealAnswer={codeHintVisible}
             onReveal={() => setSession(revealAnswer(session))}
-            entry={findEntry(index.chars, session.current.target)}
+            entry={findEntry(index.chars, session.current.target, activeCode(session))}
             wrongKey={session.lastWrongKey}
             position={session.typed.length}
             mode={errorTeaching}

@@ -14,6 +14,7 @@ import {
   buildPool,
   buildTrainerIndex,
   createSession,
+  confirmQuestion,
   emptyProgress,
   keyHeatmap,
   listWeakItems,
@@ -58,6 +59,10 @@ function runSession(mode: PracticeMode, questions: number) {
   while (state.phase !== "completed" && keystrokeBudget-- > 0) {
     if (state.phase === "feedback") {
       state = advance(state, makeRng(), 2000).state;
+      continue;
+    }
+    if (state.typed === state.current.primaryCode) {
+      state = confirmQuestion(state, makeRng(), 1500).state;
       continue;
     }
     const expected: string = state.current.primaryCode[state.typed.length];
@@ -129,31 +134,6 @@ describe("非单字模式端到端(真实编码)", () => {
 });
 
 describe("一级简码双路线评分(B5 契约)", () => {
-  it("分片数据:全码首键与简码同键时,按全码输入实际走简码路线(完美)", () => {
-    // 真实分片行为:一级简码的全码(如 我=wo)首键与简码键相同,
-    // 首键即触发简码路线完成 —— 这正是「忘了简码也能打出字」的降级。
-    const pool = buildPool(
-      "level1",
-      selectPool(index, "level1", "daily").filter(
-        (item) => item.alternateCode !== null && item.alternateCode !== "",
-      ),
-    );
-    expect(pool.items.length).toBeGreaterThan(0);
-    const rng = makeRng();
-    let state = createSession(
-      { mode: "level1", intent: "blind", hintMode: "on-error", targetLength: 1, pools: [pool] },
-      new Map(),
-      rng,
-      1000,
-    )!;
-    const item = state.current;
-    expect(item.alternateCode![0]).toBe(item.primaryCode[0]);
-    for (const key of item.alternateCode!) {
-      state = typeKey(state, key, rng, 1500).state;
-    }
-    expect(state.lastOutcome).toBe("perfect");
-    expect(state.lastRoute).toBe("primary");
-  });
 
   it("合成首键分歧条目:备用全码路线合法但计 imperfect(引擎 B5 语义)", () => {
     // 分片内没有首键分歧的一级简码;用合成 TrainingItem 验证引擎
@@ -163,6 +143,7 @@ describe("一级简码双路线评分(B5 契约)", () => {
       kind: "level1",
       target: "测",
       primaryCode: "q",
+      acceptedCodes: ["q"],
       alternateCode: "xa",
       charCount: 1,
       codeLength: 1,

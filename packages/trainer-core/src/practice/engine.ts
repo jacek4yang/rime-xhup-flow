@@ -57,6 +57,7 @@ export type SessionState = {
   current: TrainingItem;
   /** 当前题实际输入路线(初始为主练码;首键分歧时切换到备用码)。 */
   route: QuestionRoute;
+  matchedCode: string | null;
   typed: string;
   hadError: boolean;
   usedAnswerHint: boolean;
@@ -127,7 +128,8 @@ export type StepResult = {
 };
 
 /** 当前题实际参与匹配的码(主练码或备用码)。 */
-export function activeCode(state: Pick<SessionState, "route" | "current">): string {
+export function activeCode(state: Pick<SessionState, "route" | "current" | "matchedCode">): string {
+  if (state.matchedCode !== null) return state.matchedCode;
   return state.route === "alternate" && state.current.alternateCode !== null
     ? state.current.alternateCode
     : state.current.primaryCode;
@@ -174,6 +176,7 @@ export function createSession(
     phase: "question" as const,
     current: null,
     route: "primary" as const,
+    matchedCode: null as string | null,
     typed: "",
     hadError: false,
     usedAnswerHint: false,
@@ -219,23 +222,19 @@ export function typeKey(
   }
   state = tickQuestion(state, now);
   const { current } = state;
-  const primary = current.primaryCode;
   const alternate = current.alternateCode;
 
   // 必须匹配整个已接受前缀，不能拼接两条合法路线形成非法编码。
   const prefix = state.typed + key;
-  let route = state.route;
-  if (primary.startsWith(prefix)) {
-    route = "primary";
-  } else if (alternate !== null && alternate.startsWith(prefix)) {
-    route = "alternate";
-  }
-  const effective = route === "alternate" && alternate !== null ? alternate : primary;
+  const primary = current.acceptedCodes.find((code) => code.startsWith(prefix));
+  const alternateMatches = alternate !== null && alternate.startsWith(prefix);
+  const route = primary !== undefined ? "primary" : "alternate";
+  const effective = primary ?? (alternateMatches ? alternate : null);
 
-  if (!effective.startsWith(prefix)) {
+  if (effective === null) {
     // 混淆捕获:期望键 = 当前活动路线在该码位的字符,实际键 = 所按之键;
     // 码位由条目种类与序号推导(positionForIndex,词/句降级为 other:N)。
-    const expected = effective[state.typed.length] ?? "";
+    const expected = expectedKey(state) ?? "";
     const position = positionForIndex(current, state.typed.length);
     return {
       state: {
@@ -264,14 +263,23 @@ export function typeKey(
   const next: SessionState = {
     ...state,
     route,
+    matchedCode: effective,
     typed,
     keystrokes: state.keystrokes + 1,
     lastWrongKey: null,
   };
-  if (typed !== effective) {
+  if (typed !== effective ||
+      (alternate !== null && alternate.length > typed.length && alternate.startsWith(typed))) {
     return { state: next, events: [] };
   }
   return completeQuestion(next, rng, now);
+}
+
+/** 短码为更长合法码前缀时，只有显式确认才提交该短码。 */
+export function confirmQuestion(state: SessionState, rng: Rng, now: number): StepResult {
+  if (state.phase !== "question" || state.typed.length === 0 ||
+      state.typed !== activeCode(state)) return { state, events: [] };
+  return completeQuestion(tickQuestion(state, now), rng, now);
 }
 
 function completeQuestion(
@@ -377,6 +385,7 @@ export function advance(
       recentIds,
       phase: "question",
       typed: "",
+      matchedCode: null,
       hadError: false,
       usedAnswerHint: false,
       questionActiveMs: 0,
@@ -397,10 +406,12 @@ export function advance(
 export function backspace(state: SessionState): SessionState {
   if (state.phase !== "question" || state.typed.length === 0) return state;
   const typed = state.typed.slice(0, -1);
+  const primary = state.current.acceptedCodes.find((code) => code.startsWith(typed));
   return {
     ...state,
     typed,
-    route: state.current.primaryCode.startsWith(typed) ? "primary" : state.route,
+    route: primary !== undefined ? "primary" : "alternate",
+    matchedCode: typed.length === 0 ? null : primary ?? state.current.alternateCode,
     corrections: state.corrections + 1,
     correctionsThisQuestion: state.correctionsThisQuestion + 1,
     lastWrongKey: null,
@@ -419,6 +430,7 @@ export function retryCurrent(state: SessionState): SessionState {
     ...state,
     typed: "",
     route: "primary",
+    matchedCode: null,
     corrections: state.corrections + 1,
     correctionsThisQuestion: state.correctionsThisQuestion + 1,
     lastWrongKey: null,
@@ -469,6 +481,19 @@ export function finish(state: SessionState, now: number): StepResult {
 
 /** 当前题的期望下一键(用于键盘高亮;跟随实际输入路线)。 */
 export function expectedKey(state: SessionState): string | null {
-  if (state.phase !== "question") return null;
-  return activeCode(state)[state.typed.length] ?? null;
+  if (state.phase !== "question" && state.phase !== "paused") return null;
+  let expected: string | null | undefined;
+  for (const code of state.current.acceptedCodes) {
+    if (!code.startsWith(state.typed)) continue;
+    const next = code[state.typed.length] ?? null;
+    if (expected !== undefined && expected !== next) return null;
+    expected = next;
+  }
+  const alternate = state.current.alternateCode;
+  if (alternate !== null && alternate.startsWith(state.typed)) {
+    const next = alternate[state.typed.length] ?? null;
+    if (expected !== undefined && expected !== next) return null;
+    expected = next;
+  }
+  return expected ?? null;
 }

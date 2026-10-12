@@ -30,11 +30,11 @@ const ENTRIES: TrainerEntry[] = [
   },
 ];
 
-function fixtureIndex(): TrainerIndex {
+function fixtureIndex(entries = ENTRIES): TrainerIndex {
   return buildTrainerIndex({
     schemaVersion: 4,
     packageVersion: "0.1.0",
-    entries: ENTRIES,
+    entries,
     words: [{ word: "我们", code: "womf", length: 4, charCount: 2, rimeWeight: 9 }],
     level1Shortcuts: [{ key: "q", char: "去" }],
     primaryShortcuts: [
@@ -51,7 +51,7 @@ const ITEMS: TrainingItem[] = ENTRIES.map(charItem);
 
 function noop() {}
 
-function renderPractice(config?: Partial<PracticeConfig>) {
+function renderPractice(config?: Partial<PracticeConfig>, index = fixtureIndex()) {
   const fullConfig: PracticeConfig = {
     mode: "double",
     difficulty: "daily",
@@ -60,7 +60,7 @@ function renderPractice(config?: Partial<PracticeConfig>) {
     ...config,
   };
   return render(
-    <TrainerIndexProvider index={fixtureIndex()}>
+    <TrainerIndexProvider index={index}>
       <PracticeView
         config={fullConfig}
         onExit={noop}
@@ -290,6 +290,37 @@ describe("PracticeView", () => {
     );
     // 还原可见性,避免串扰后续用例。
     setHidden(false);
+  });
+
+  it.each(["xk", "hh"])("无上下文行字题接受规范等价码 %s，未作答不显示读音", (code) => {
+    const index = fixtureIndex([...ENTRIES, { ...ENTRIES[0], code: "hh" }]);
+    const { container } = renderPractice({ entries: [index.byId.get("行:xk")!] }, index);
+    expect(container.innerHTML).not.toMatch(/xing|hang|xk/);
+    for (const key of code) press(key);
+    expect(useTrainerStore.getState().progress["行:xk"]).toMatchObject({ correct: 1, wrong: 0 });
+  });
+
+  it.each([" ", "Enter", "touch"])("严格前缀简码通过 %s 显式完成，而非提前吞掉全码", (key) => {
+    const index = fixtureIndex();
+    const item = index.pools["shortcut-primary"].find((candidate) => candidate.target === "时间")!;
+    renderPractice({ entries: [item] }, index);
+    for (const letter of "uij") press(letter);
+    expect(useTrainerStore.getState().progress[item.id]).toBeUndefined();
+    if (key === "touch") fireEvent.click(screen.getByRole("button", { name: /确认/ }));
+    else press(key);
+    expect(useTrainerStore.getState().progress[item.id]).toMatchObject({ correct: 1, wrong: 0 });
+  });
+
+  it("备用路线超出简码长度后错键，教学使用全码而不越界", () => {
+    const index = fixtureIndex();
+    const item = index.pools["shortcut-fixed-first"][0];
+    renderPractice({ entries: [item] }, index);
+    for (const key of "favz") press(key);
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog.textContent).not.toContain("FAVJ");
+    fireEvent.click(screen.getAllByRole("button", { name: /查看解析/ })[1]);
+    expect(dialog.textContent).toContain("FAVJ");
+    expect(dialog.textContent).not.toContain("undefined");
   });
 
   it("显式学习模式始终显示编码", () => {

@@ -152,6 +152,7 @@ function cn_slot(isWrongSlot: boolean): string {
 export function findEntry(
   entries: readonly TrainerEntry[],
   target: string,
+  code: string,
 ): TrainerEntry | null {
-  return entries.find((entry) => entry.char === target) ?? null;
+  return entries.find((entry) => entry.char === target && entry.code === code) ?? null;
 }

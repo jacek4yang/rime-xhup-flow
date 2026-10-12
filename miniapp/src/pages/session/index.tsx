@@ -18,6 +18,7 @@ import {
   advance,
   backspace,
   buildPool,
+  confirmQuestion,
   buildShapeKeyStats,
   createSession,
   expectedKey,
@@ -429,6 +430,12 @@ export default function Session() {
             lastWrongKey={session.lastWrongKey}
             outcome={session.phase === "feedback" ? session.lastOutcome : null}
           />
+          {session.phase === "question" && session.typed.length > 0 &&
+            session.typed === activeCode(session) && (
+            <View className="button" onClick={() => apply(confirmQuestion(session, Math.random, Date.now()))}>
+              <Text>{t("practice.confirmCode")}</Text>
+            </View>
+          )}
           {!hintVisible && (
             <View className="button button-secondary" onClick={() => {
               const next = revealAnswer(session);
@@ -477,14 +484,14 @@ export default function Session() {
             <TeachingCard
               item={session.current}
               code={activeCode(session)}
-              expected={activeCode(session)[session.typed.length] ?? null}
+              expected={expectedKey(session)}
               revealAnswer={hintVisible}
               onReveal={() => {
                 const next = revealAnswer(session);
                 sessionRef.current = next;
                 setSession(next);
               }}
-              entry={findEntry(trainerIndex.dataset.entries, session.current.target)}
+              entry={findEntry(trainerIndex.dataset.entries, session.current.target, activeCode(session))}
               wrongKey={session.lastWrongKey}
               position={session.typed.length}
               mode={state.settings.errorTeaching}
