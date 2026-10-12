@@ -1,4 +1,5 @@
 /* Real deployed Rime selector contract; no UI/GTK simulation. */
+#include "runtime_module.h"
 #include <rime_api.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,8 +13,7 @@ int main(int argc, char **argv) {
   traits.distribution_code_name = "xhup_exclusive_test";
   traits.distribution_version = "1";
   traits.app_name = "rime.xhup_exclusive_test";
-  api->setup(&traits);
-  api->initialize(&traits);
+  xhup_initialize(api, &traits);
   int failed = 0;
   RimeSchemaList list = {0};
   if (!api->get_schema_list(&list)) {

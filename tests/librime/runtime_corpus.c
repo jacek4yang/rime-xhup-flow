@@ -6,13 +6,14 @@
 
 int main(int argc, char **argv) {
   if (argc != 5) return 2;
+  init_profile();
   FILE *fixture = fopen(argv[3], "r");
   if (!fixture) return 2;
   r = rime_get_api();
   RIME_STRUCT(RimeTraits, traits);
   traits.user_data_dir = argv[1]; traits.shared_data_dir = argv[2];
   traits.app_name = "rime.xhup-source-external"; traits.min_log_level = 2;
-  r->setup(&traits); r->initialize(&traits);
+  xhup_initialize(r, &traits);
   check(r->find_module("lua") != NULL, "Lua module registered");
   RimeConfig config = {0};
   if (!r->schema_open("xhup_flow", &config)) return 2;
