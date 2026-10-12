@@ -37,6 +37,14 @@ overrides:
   'qs@>=6.0.0 <6.16.0': 6.16.0
   'fast-uri@>=3.0.0 <3.1.8': 3.1.8
   'http-cache-semantics@>=4.0.0 <4.3.0': 4.3.0
+  'proxy-addr@>=1.1.0 <2.0.8': 2.0.8
+  'vm2@<3.12.2': 3.12.2
+  'shell-quote@>=1.8.4 <1.11.0': 1.11.0
+  'source-map-js@>=1.0.0 <1.2.2': 1.2.2
+  'compression@<1.8.2': 1.8.2
+  'joi@<17.13.8': 17.13.8
+  # Includes legacy selector-parser 6 consumers; production CSS builds verify compatibility.
+  'postcss-selector-parser@<7.1.6': 7.1.6
 
 patchedDependencies:
   '@tarojs/webpack5-runner@4.2.1': patches/@tarojs__webpack5-runner@4.2.1.patch
