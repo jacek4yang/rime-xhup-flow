@@ -80,7 +80,7 @@ describe("miniapp 课程与练习(共享核心)", () => {
     };
 
     let state = createSession(
-      { mode: "double", targetLength: 5, pools: [buildPool("char-2", items)] },
+      { mode: "double", intent: "blind", hintMode: "on-error", targetLength: 5, pools: [buildPool("char-2", items)] },
       new Map(),
       rng,
       1000,
@@ -130,7 +130,7 @@ describe("miniapp 课程与练习(共享核心)", () => {
       return seed / 2147483648;
     };
     let state = createSession(
-      { mode: "double", targetLength: 1, pools: [buildPool("char-2", items)] },
+      { mode: "double", intent: "blind", hintMode: "on-error", targetLength: 1, pools: [buildPool("char-2", items)] },
       new Map(),
       rng,
       1000,

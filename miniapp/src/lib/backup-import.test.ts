@@ -134,6 +134,7 @@ describe("应用语义:与 applyBackup 一致的整体替换", () => {
       chars: 1,
       corrections: 0,
       practiceMs: 3000,
+      questionMs: 3000, usedAnswerHint: false, independentRecall: false, routeUsed: "primary",
       bestStreak: 0,
       now: new Date(2026, 8, 1, 10, 0, 0).getTime(),
     });

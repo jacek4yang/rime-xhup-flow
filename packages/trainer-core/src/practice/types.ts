@@ -33,6 +33,9 @@ export type PracticeMode =
   /** 全模式综合(全部池轮换)。 */
   | "mixed-all";
 
+/** 学习与盲打是独立维度，不改变十二种题池模式。 */
+export type PracticeIntent = "blind" | "learn";
+
 /** 提示方式。on-delay:出题后迟疑一段时间自动显示(见 HINT_DELAY_MS)。 */
 export type HintMode = "always" | "on-delay" | "on-error" | "hidden";
 

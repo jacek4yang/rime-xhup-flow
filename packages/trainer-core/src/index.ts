@@ -14,6 +14,7 @@ export * from "./data/trainer-index";
 export * from "./practice/types";
 export * from "./practice/engine";
 export * from "./practice/scheduler";
+export * from "./practice/hints";
 
 // 学习域
 export * from "./learning/progress";

@@ -4,10 +4,12 @@ import {
   advance,
   backspace,
   createSession,
+  confirmQuestion,
   expectedKey,
   finish,
   pause,
   resume,
+  retryCurrent,
   typeKey,
   activeCode,
   type SessionConfig,
@@ -24,7 +26,7 @@ function makeConfig(): SessionConfig {
     buildPool("char-2", index.pools["char-2"]),
     buildPool("char-3", index.pools["char-3"]),
   ];
-  return { mode: "double", targetLength: 30, pools };
+  return { mode: "double", intent: "blind", hintMode: "on-error", targetLength: 30, pools };
 }
 
 function start(
@@ -95,11 +97,13 @@ describe("简码路线(B5)", () => {
   // fixture:时间 canonical v2 简码 uij(主)/ 全码 uijm(备用,非前缀分歧路径)
   it("主练码(简码)完成 = perfect,routeUsed = primary", () => {
     const pool = buildPool("shortcut-primary", [shortcutItem]);
-    const config: SessionConfig = { mode: "zero-regression", targetLength: 1, pools: [pool] };
+    const config: SessionConfig = { ...makeConfig(), mode: "zero-regression", targetLength: 1, pools: [pool] };
     let state = start(config);
     for (const key of ["u", "i", "j"]) {
       state = typeKey(state, key, zeroRng, 100).state;
     }
+    expect(state.phase).toBe("question");
+    state = confirmQuestion(state, zeroRng, 100).state;
     expect(state.phase).toBe("feedback");
     expect(state.lastOutcome).toBe("perfect");
     expect(state.lastRoute).toBe("primary");
@@ -108,9 +112,9 @@ describe("简码路线(B5)", () => {
   it("主练码自身无分歧时按 perfect 完成", () => {
     // fixture:发展 FF 简码 faj,全码 favj;输入主练码 faj。
     const pool = buildPool("shortcut-fixed-first", [
-      { ...shortcutItem, id: "shortcut:发展:faj", primaryCode: "faj", alternateCode: "favj" },
+      { ...shortcutItem, id: "shortcut:发展:faj", primaryCode: "faj", acceptedCodes: ["faj"], alternateCode: "favj" },
     ]);
-    const config: SessionConfig = { mode: "fixed-first", targetLength: 1, pools: [pool] };
+    const config: SessionConfig = { ...makeConfig(), mode: "fixed-first", targetLength: 1, pools: [pool] };
     let state = start(config);
     for (const key of ["f", "a", "j"]) {
       state = typeKey(state, key, zeroRng, 100).state;
@@ -127,11 +131,12 @@ describe("简码路线(B5)", () => {
       id: "shortcut:发展:faj",
       target: "发展",
       primaryCode: "faj",
+      acceptedCodes: ["faj"],
       alternateCode: "favj",
       charCount: 2,
     };
     const pool = buildPool("shortcut-fixed-first", [item]);
-    const config: SessionConfig = { mode: "fixed-first", targetLength: 1, pools: [pool] };
+    const config: SessionConfig = { ...makeConfig(), mode: "fixed-first", targetLength: 1, pools: [pool] };
     let state = start(config);
     for (const key of ["f", "a", "v", "j"]) {
       const result = typeKey(state, key, zeroRng, 100);
@@ -143,14 +148,42 @@ describe("简码路线(B5)", () => {
     expect(state.typed).toBe("favj");
   });
 
+  it("拒绝拼接不同路线的前缀", () => {
+    const item = { ...shortcutItem, primaryCode: "faj", acceptedCodes: ["faj"], alternateCode: "uvwj" };
+    let state = start({ ...makeConfig(), mode: "zero-regression", pools: [buildPool("shortcut-primary", [item])] });
+    state = typeKey(state, "f", zeroRng, 100).state;
+    state = typeKey(state, "v", zeroRng, 200).state;
+    expect(state.typed).toBe("f");
+    expect(state.route).toBe("primary");
+    expect(state.hadError).toBe(true);
+  });
+
+  it("备用路线退格到共享前缀可重选，重试不洗掉错误", () => {
+    const item = { ...shortcutItem, primaryCode: "faj", acceptedCodes: ["faj"], alternateCode: "favj" };
+    let state = start({ ...makeConfig(), mode: "zero-regression", pools: [buildPool("shortcut-primary", [item])] });
+    for (const key of "fav") state = typeKey(state, key, zeroRng, 100).state;
+    state = backspace(state);
+    expect(state.route).toBe("primary");
+    state = typeKey(state, "v", zeroRng, 200).state;
+    state = typeKey(state, "z", zeroRng, 300).state;
+    state = retryCurrent(state);
+    expect(state.route).toBe("primary");
+    expect(state.typed).toBe("");
+    expect(state.hadError).toBe(true);
+    for (const key of "faj") state = typeKey(state, key, zeroRng, 400).state;
+    expect(state.lastOutcome).toBe("imperfect");
+  });
+
   it("activeCode 跟随实际路线", () => {
     const item = {
       ...shortcutItem,
       primaryCode: "faj",
+      acceptedCodes: ["faj"],
       alternateCode: "favj",
     };
     const state: SessionState = {
       ...(start({
+        ...makeConfig(),
         mode: "fixed-first",
         targetLength: 1,
         pools: [buildPool("shortcut-fixed-first", [item])],
@@ -225,10 +258,11 @@ describe("答题判定", () => {
     const item = {
       ...makeIndex().pools["shortcut-primary"][0],
       primaryCode: "faj",
+      acceptedCodes: ["faj"],
       alternateCode: "favj",
     };
     const pool = buildPool("shortcut-fixed-first", [item]);
-    const config: SessionConfig = { mode: "fixed-first", targetLength: 0, pools: [pool] };
+    const config: SessionConfig = { ...makeConfig(), mode: "fixed-first", targetLength: 0, pools: [pool] };
     let state = start(config);
     for (const key of ["f", "a", "v", "j", "m"]) {
       const result = typeKey(state, key, zeroRng, 100);
@@ -248,7 +282,7 @@ describe("advance", () => {
       buildPool("char-2", index.pools["char-2"]),
       buildPool("char-3", index.pools["char-3"]),
     ];
-    const config: SessionConfig = { mode: "mixed", targetLength: 30, pools };
+    const config: SessionConfig = { ...makeConfig(), mode: "mixed", targetLength: 30, pools };
     let state = start(config);
     state = typeKey(state, "x", zeroRng, 100).state;
     state = typeKey(state, "k", zeroRng, 200).state;
@@ -277,7 +311,7 @@ describe("advance", () => {
       buildPool("char-2", index.pools["char-2"]),
       buildPool("char-3", index.pools["char-3"]),
     ];
-    const config: SessionConfig = { mode: "mixed", targetLength: 0, pools };
+    const config: SessionConfig = { ...makeConfig(), mode: "mixed", targetLength: 0, pools };
     let state = start(config);
     state = typeKey(state, "x", zeroRng, 100).state;
     state = typeKey(state, "k", zeroRng, 200).state;
@@ -292,7 +326,7 @@ describe("组句(B6)", () => {
       sentences: [sentence],
     });
     const pool = buildPool("sentence", index.pools.sentence);
-    const config: SessionConfig = { mode: "sentence", targetLength: 1, pools: [pool] };
+    const config: SessionConfig = { ...makeConfig(), mode: "sentence", targetLength: 1, pools: [pool] };
     let state = start(config);
     expect(state.current.charCount).toBe(4);
     for (const key of "womfuijm") {
@@ -380,7 +414,7 @@ describe("键位混淆捕获", () => {
     const index = makeIndex();
     // 好:hknc(4 码:声1 h 声2 k 形1 n 形2 c)。
     const pool = buildPool("char-4", index.pools["char-4"].filter((item) => item.id === "好:hknc"));
-    const config: SessionConfig = { mode: "full", targetLength: 30, pools: [pool] };
+    const config: SessionConfig = { ...makeConfig(), mode: "full", targetLength: 30, pools: [pool] };
     let state = start(config);
     state = typeKey(state, "h", zeroRng, 100).state;
     state = typeKey(state, "k", zeroRng, 110).state;
@@ -394,7 +428,7 @@ describe("键位混淆捕获", () => {
   it("词条目码位降级为 other:N(已知限制)", () => {
     const index = makeIndex();
     const pool = buildPool("word-4", index.pools["word-4"]);
-    const config: SessionConfig = { mode: "fixed-word", targetLength: 30, pools: [pool] };
+    const config: SessionConfig = { ...makeConfig(), mode: "fixed-word", targetLength: 30, pools: [pool] };
     const state = typeKey(start(config), "q", zeroRng, 100).state;
     // 我们:womf,第 0 位期望 w → other:0。
     expect(state.confusions["w>q@o0"]).toMatchObject({ position: { other: 0 } });
@@ -404,6 +438,7 @@ describe("键位混淆捕获", () => {
     // 单条目池:回炉未到期时排除最近题后回退整池,下一题仍是 行:xk。
     const item = makeIndex().pools["char-2"].find((entry) => entry.id === "行:xk")!;
     const config: SessionConfig = {
+      ...makeConfig(),
       mode: "double",
       targetLength: 0,
       pools: [buildPool("char-2", [item])],

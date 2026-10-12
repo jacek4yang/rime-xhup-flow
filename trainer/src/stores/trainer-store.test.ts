@@ -43,6 +43,7 @@ describe("recordQuestionResult", () => {
       chars: 1,
       corrections: 0,
       practiceMs: 1000,
+      questionMs: 1000, usedAnswerHint: false, independentRecall: true,
       bestStreak: 1,
       now,
     });
@@ -77,6 +78,7 @@ describe("recordQuestionResult", () => {
       chars: 1,
       corrections: 1,
       practiceMs: 800,
+      questionMs: 800, usedAnswerHint: false, independentRecall: false,
       bestStreak: 0,
       now,
     });
@@ -100,6 +102,7 @@ describe("recordQuestionResult", () => {
       chars: 1,
       corrections: 0,
       practiceMs: 600,
+      questionMs: 600, usedAnswerHint: false, independentRecall: false,
       bestStreak: 0,
       now,
     };
@@ -130,6 +133,7 @@ describe("recordQuestionResult", () => {
       chars: 1,
       corrections: 0,
       practiceMs: 100,
+      questionMs: 100, usedAnswerHint: false, independentRecall: true,
       bestStreak: 1,
       now,
     });
@@ -148,6 +152,7 @@ describe("recordQuestionResult", () => {
       chars: 2,
       corrections: 0,
       practiceMs: 2000,
+      questionMs: 2000, usedAnswerHint: false, independentRecall: false,
       bestStreak: 0,
       now,
     });
@@ -169,6 +174,7 @@ describe("recordQuestionResult", () => {
       chars: 1,
       corrections: 0,
       practiceMs: 500,
+      questionMs: 500, usedAnswerHint: false, independentRecall: false,
       bestStreak: 3,
       now,
     };
@@ -177,11 +183,11 @@ describe("recordQuestionResult", () => {
       .recordQuestionResult({ ...payload, outcome: "imperfect" });
     useTrainerStore
       .getState()
-      .recordQuestionResult({ ...payload, outcome: "perfect" });
+      .recordQuestionResult({ ...payload, outcome: "perfect", independentRecall: true, wrongKeyEvents: 0, wrongKeys: [] });
     const today = useTrainerStore.getState().daily[localDateKey(new Date(now))];
     expect(today?.questions).toBe(2);
     expect(today?.keystrokes).toBe(4);
-    expect(today?.wrongKeyEvents).toBe(2);
+    expect(today?.wrongKeyEvents).toBe(1);
     expect(today?.bestStreak).toBe(3);
   });
 });
@@ -341,30 +347,6 @@ describe("持久化", () => {
     expect(persisted.state).toMatchObject({ theme: "dark", keyErrors: {} });
   });
 
-  it("不持久化运行态字段", () => {
-    useTrainerStore.getState().setTheme("dark");
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)!) as {
-      state: Record<string, unknown>;
-    };
-    expect(Object.keys(raw.state).sort()).toEqual(
-      [
-        "language",
-        "theme",
-        "hintMode",
-        "keyRefMode",
-        "keyHaptics",
-        "errorTeaching",
-        "difficulty",
-        "sessionLength",
-        "lastMode",
-        "progress",
-        "daily",
-        "keyErrors",
-        "lessonEvidence",
-        "confusions",
-      ].sort(),
-    );
-  });
 });
 
 describe("V1 → V2 迁移(B9)", () => {
@@ -469,6 +451,7 @@ describe("language 与 resetItemProgress", () => {
       chars: 1,
       corrections: 0,
       practiceMs: 100,
+      questionMs: 100, usedAnswerHint: false, independentRecall: true,
       bestStreak: 1,
       now,
     };

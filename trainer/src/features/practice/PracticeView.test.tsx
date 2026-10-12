@@ -2,7 +2,7 @@
  * 练习流程的组件级测试:以用户可见行为为准(码位格、提示、暂停、小结)。
  */
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { TrainerEntry } from "@xhup/trainer-core";
@@ -30,11 +30,11 @@ const ENTRIES: TrainerEntry[] = [
   },
 ];
 
-function fixtureIndex(): TrainerIndex {
+function fixtureIndex(entries = ENTRIES): TrainerIndex {
   return buildTrainerIndex({
     schemaVersion: 4,
     packageVersion: "0.1.0",
-    entries: ENTRIES,
+    entries,
     words: [{ word: "我们", code: "womf", length: 4, charCount: 2, rimeWeight: 9 }],
     level1Shortcuts: [{ key: "q", char: "去" }],
     primaryShortcuts: [
@@ -51,7 +51,7 @@ const ITEMS: TrainingItem[] = ENTRIES.map(charItem);
 
 function noop() {}
 
-function renderPractice(config?: Partial<PracticeConfig>) {
+function renderPractice(config?: Partial<PracticeConfig>, index = fixtureIndex()) {
   const fullConfig: PracticeConfig = {
     mode: "double",
     difficulty: "daily",
@@ -60,7 +60,7 @@ function renderPractice(config?: Partial<PracticeConfig>) {
     ...config,
   };
   return render(
-    <TrainerIndexProvider index={fixtureIndex()}>
+    <TrainerIndexProvider index={index}>
       <PracticeView
         config={fullConfig}
         onExit={noop}
@@ -292,14 +292,70 @@ describe("PracticeView", () => {
     setHidden(false);
   });
 
-  it("提示方式:始终显示时直接显示编码", () => {
-    useTrainerStore.setState({ hintMode: "always" });
+  it("学习延迟提示按题重置，暂停一分钟不触发下一题答案", () => {
+    vi.useFakeTimers();
+    try {
+      useTrainerStore.setState({ practiceIntent: "learn", hintMode: "on-delay" });
+      const { unmount } = renderPractice({ targetLength: 0 });
+      act(() => { vi.advanceTimersByTime(2001); });
+      expect(screen.getByText("xk")).toBeInTheDocument();
+      press("x"); press("k");
+      act(() => { vi.advanceTimersByTime(150); });
+      expect(screen.queryByText("xk")).not.toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(1000); });
+      press("Escape");
+      act(() => { vi.advanceTimersByTime(60000); });
+      expect(screen.queryByText("xk")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "继续练习" }));
+      act(() => { vi.advanceTimersByTime(999); });
+      expect(screen.queryByText("xk")).not.toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(screen.getByText("xk")).toBeInTheDocument();
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["xk", "hh"])("无上下文行字题接受规范等价码 %s，未作答不显示读音", (code) => {
+    const index = fixtureIndex([...ENTRIES, { ...ENTRIES[0], code: "hh" }]);
+    const { container } = renderPractice({ entries: [index.byId.get("行:xk")!] }, index);
+    expect(container.innerHTML).not.toMatch(/xing|hang|xk/);
+    for (const key of code) press(key);
+    expect(useTrainerStore.getState().progress["行:xk"]).toMatchObject({ correct: 1, wrong: 0 });
+  });
+
+  it.each([" ", "Enter", "touch"])("严格前缀简码通过 %s 显式完成，而非提前吞掉全码", (key) => {
+    const index = fixtureIndex();
+    const item = index.pools["shortcut-primary"].find((candidate) => candidate.target === "时间")!;
+    renderPractice({ entries: [item] }, index);
+    for (const letter of "uij") press(letter);
+    expect(useTrainerStore.getState().progress[item.id]).toBeUndefined();
+    if (key === "touch") fireEvent.click(screen.getByRole("button", { name: /确认/ }));
+    else press(key);
+    expect(useTrainerStore.getState().progress[item.id]).toMatchObject({ correct: 1, wrong: 0 });
+  });
+
+  it("备用路线超出简码长度后错键，教学使用全码而不越界", () => {
+    const index = fixtureIndex();
+    const item = index.pools["shortcut-fixed-first"][0];
+    renderPractice({ entries: [item] }, index);
+    for (const key of "favz") press(key);
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog.textContent).not.toContain("FAVJ");
+    fireEvent.click(screen.getAllByRole("button", { name: /查看解析/ })[1]);
+    expect(dialog.textContent).toContain("FAVJ");
+    expect(dialog.textContent).not.toContain("undefined");
+  });
+
+  it("显式学习模式始终显示编码", () => {
+    useTrainerStore.setState({ practiceIntent: "learn", hintMode: "always" });
     renderPractice();
     expect(screen.getByText("xk")).toBeInTheDocument();
   });
 
-  it("提示方式:错误后显示,按错前隐藏、按错后显示", () => {
-    useTrainerStore.setState({ hintMode: "on-error" });
+  it("显式学习模式错误后显示编码", () => {
+    useTrainerStore.setState({ practiceIntent: "learn", hintMode: "on-error" });
     renderPractice();
     expect(screen.queryByText("xk")).not.toBeInTheDocument();
     press("z");
@@ -327,8 +383,6 @@ describe("PracticeView", () => {
     renderPractice();
     press("z");
     expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
-    // 分类讲解:单字第 1 键(声母)出错。
-    expect(screen.getByText(/期望 X,实际输入 Z/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /重试本题/ }));
     expect(screen.getByLabelText("编码 2 键,已输入 0 键")).toBeInTheDocument();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
@@ -341,17 +395,20 @@ describe("PracticeView", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
-  it("答案不泄露:默认提示模式(错误后显示)答错前无高亮,答错后才提示", () => {
-    // quick 教学:错键不暂停,便于单独验证提示(答案)泄露策略。
-    useTrainerStore.setState({ errorTeaching: "quick" });
-    const { container } = renderPractice();
-    expect(container.querySelector("button[data-next]")).toBeNull();
-    press("z");
-    expect(container.querySelector("button[data-next]")).not.toBeNull();
-  });
+  it.each(["always", "on-delay", "on-error", "hidden"] as const)(
+    "盲打/%s 的真实 DOM 与辅助属性在错误前后不泄露答案", (hintMode) => {
+      useTrainerStore.setState({ hintMode, errorTeaching: "quick" });
+      const { container } = renderPractice();
+      for (const key of [null, "z"]) {
+        if (key) press(key);
+        expect(container.innerHTML).not.toMatch(/xing|hang|xk/i);
+        expect(container.querySelector("button[data-next]")).toBeNull();
+      }
+    },
+  );
 
-  it("提示方式:始终显示时键盘高亮下一期待键(抄码模式)", () => {
-    useTrainerStore.setState({ hintMode: "always" });
+  it("显式学习模式允许下一键高亮", () => {
+    useTrainerStore.setState({ practiceIntent: "learn", hintMode: "always" });
     const { container } = renderPractice();
     expect(container.querySelector("button[data-next]")).not.toBeNull();
   });

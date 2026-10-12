@@ -11,6 +11,7 @@
 import type {
   Difficulty,
   HintMode,
+  PracticeIntent,
   ItemProgress,
 } from "@xhup/trainer-core";
 import {
@@ -40,6 +41,7 @@ export const LEGACY_PROGRESS_KEY = "xhup.miniapp.progress.v1";
 export type AppSettings = {
   language: Language;
   hintMode: HintMode;
+  practiceIntent: PracticeIntent;
   keyRefMode: KeyRefMode;
   haptics: HapticsMode;
   errorTeaching: ErrorTeachingMode;
@@ -67,6 +69,7 @@ export type AppState = {
 export const DEFAULT_SETTINGS: AppSettings = {
   language: "zh",
   hintMode: "on-error",
+  practiceIntent: "blind",
   keyRefMode: "contextual",
   haptics: "light",
   errorTeaching: "adaptive",
@@ -226,6 +229,7 @@ function sanitizeSettings(value: unknown): AppSettings {
   return {
     language: pickEnum(value.language, LANGUAGES, defaults.language),
     hintMode: pickEnum(value.hintMode, HINT_MODES, defaults.hintMode),
+    practiceIntent: value.practiceIntent === "learn" ? "learn" : "blind",
     keyRefMode: pickEnum(value.keyRefMode, KEY_REF_MODES, defaults.keyRefMode),
     haptics: pickEnum(value.haptics, HAPTICS_MODES, defaults.haptics),
     errorTeaching: pickEnum(value.errorTeaching, ERROR_TEACHING_MODES, defaults.errorTeaching),

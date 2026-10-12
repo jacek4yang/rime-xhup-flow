@@ -15,12 +15,12 @@ const SLOT_LABELS: readonly I18nKey[] = [
 ];
 
 export function CodeSlots({
-  code,
+  length,
   typed,
   lastWrongKey,
   outcome,
 }: {
-  code: string;
+  length: number;
   typed: string;
   lastWrongKey: string | null;
   outcome: QuestionOutcome | null;
@@ -28,10 +28,10 @@ export function CodeSlots({
   const { t } = useI18n();
   // 长码(词/句)自动缩小槽位,保证一行放得下。
   const sizeClass =
-    code.length <= 4 ? "slot-lg" : code.length <= 8 ? "slot-md" : "slot-sm";
+    length <= 4 ? "slot-lg" : length <= 8 ? "slot-md" : "slot-sm";
   return (
     <View className="slots">
-      {[...code].map((_, index) => {
+      {Array.from({ length }, (_, index) => {
         const filled = index < typed.length;
         const isCurrent = index === typed.length && outcome === null;
         const showError = isCurrent && lastWrongKey !== null;

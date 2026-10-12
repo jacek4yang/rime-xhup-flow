@@ -25,6 +25,10 @@ const CODE_PART_KEYS: readonly I18nKey[] = [
 
 export function ErrorTeachingCard({
   item,
+  code,
+  expected,
+  revealAnswer,
+  onReveal,
   entry,
   wrongKey,
   position,
@@ -33,6 +37,10 @@ export function ErrorTeachingCard({
   onRetry,
 }: {
   item: TrainingItem;
+  code: string;
+  expected: string | null;
+  revealAnswer: boolean;
+  onReveal: () => void;
   /** 单字条目的规范数据(词/句为 null)。 */
   entry: TrainerEntry | null;
   wrongKey: string;
@@ -42,11 +50,22 @@ export function ErrorTeachingCard({
   onRetry: () => void;
 }) {
   const { t } = useI18n();
-  const expected = item.primaryCode[position];
   const isCharSlot = item.kind === "char" || item.kind === "level1";
   const slotLabel = isCharSlot && position < CODE_PART_KEYS.length
     ? t(CODE_PART_KEYS[position])
     : t("practice.teachingSlotN", { n: position + 1 });
+
+  if (!revealAnswer) {
+    return (
+      <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl bg-card p-5"
+        role="alertdialog" aria-label={t("practice.teachingTitle")}>
+        <p>{t("practice.teachingTitle")}</p>
+        <p>{item.target} · {slotLabel} · {wrongKey.toUpperCase()}</p>
+        <Button onClick={onReveal}>{t("practice.revealAnswer")}</Button>
+        <Button onClick={onRetry}>{t("practice.teachingRetry")}</Button>
+      </div>
+    );
+  }
 
   // 同首形高频例字(规范数据聚合;detailed 模式展示)。
   const sameShapeSamples =
@@ -82,7 +101,7 @@ export function ErrorTeachingCard({
 
       <div className="flex flex-col items-center gap-1 rounded-lg border border-border px-4 py-3">
         <div className="flex gap-1 font-mono text-lg">
-          {[...item.primaryCode].map((char, index) => (
+          {[...code].map((char, index) => (
             <span
               key={index}
               className={cn_slot(index === position)}
@@ -92,15 +111,15 @@ export function ErrorTeachingCard({
           ))}
         </div>
         <p className="text-xs text-muted-foreground">
-          {slotLabel}:{t("practice.teachingDivergence", { expected: expected.toUpperCase(), actual: wrongKey.toUpperCase() })}
+          {slotLabel}:{t("practice.teachingDivergence", { expected: expected?.toUpperCase() ?? "—", actual: wrongKey.toUpperCase() })}
         </p>
       </div>
 
       {mode === "detailed" && isCharSlot && position >= 2 && (
         <p className="max-w-xs text-center text-xs text-muted-foreground">
           {t("practice.teachingShapeHint", {
-            first: item.primaryCode[2]?.toUpperCase() ?? "—",
-            second: item.primaryCode[3]?.toUpperCase() ?? "—",
+            first: code[2]?.toUpperCase() ?? "—",
+            second: code[3]?.toUpperCase() ?? "—",
           })}
         </p>
       )}
@@ -133,6 +152,7 @@ function cn_slot(isWrongSlot: boolean): string {
 export function findEntry(
   entries: readonly TrainerEntry[],
   target: string,
+  code: string,
 ): TrainerEntry | null {
-  return entries.find((entry) => entry.char === target) ?? null;
+  return entries.find((entry) => entry.char === target && entry.code === code) ?? null;
 }
