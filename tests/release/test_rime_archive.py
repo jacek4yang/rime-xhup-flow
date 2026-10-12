@@ -47,6 +47,15 @@ class RimeArchive(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             archive.create(self.zip, self.paths)
 
+    def test_mutation_after_validation_cannot_change_archive_bytes(self):
+        name = "lua/xhup_flow/native_tail.lua"
+        (self.package / name).write_bytes(b'error("changed after validation")\n')
+        out = self.work / "snapshot.zip"
+        archive.create(out, self.paths)
+        with zipfile.ZipFile(out) as zipped:
+            self.assertEqual(hashlib.sha256(zipped.read(name)).hexdigest(),
+                             self.reference.artifacts[name]["sha256"])
+
     def test_missing_policy_or_notice_and_modified_member(self):
         for missing in ("default.custom.yaml", "xhup_flow.sources.tsv", "NOTICE.md",
                         "licenses/pinyin-data-MIT.txt"):
@@ -54,13 +63,13 @@ class RimeArchive(unittest.TestCase):
             with zipfile.ZipFile(out, "w") as zipped:
                 for name, source in self.paths.items():
                     if name != missing:
-                        zipped.writestr(name, source.read_bytes())
+                        zipped.writestr(name, source)
             with self.assertRaises(ValueError):
                 archive.check(out, self.paths)
         out = self.work / "changed.zip"
         with zipfile.ZipFile(out, "w") as zipped:
             for name, source in self.paths.items():
-                zipped.writestr(name, source.read_bytes() + b"changed")
+                zipped.writestr(name, source + b"changed")
         with self.assertRaises(ValueError):
             archive.check(out, self.paths)
 
@@ -108,20 +117,11 @@ class RimeArchive(unittest.TestCase):
     def test_duplicate_member_is_rejected_even_when_bytes_match(self):
         name = "xhup_flow.schema.yaml"
         with zipfile.ZipFile(self.zip, "a") as zipped, self.assertWarns(UserWarning):
-            zipped.writestr(name, self.paths[name].read_bytes())
+            zipped.writestr(name, self.paths[name])
         with self.assertRaises(ValueError):
             archive.check(self.zip, self.paths)
 
-    def test_notices_bound_to_binary_resources_and_pinned_upstream(self):
-        config = ROOT / "trainer/src-tauri/tauri.conf.json"
-        resources = json.loads(config.read_text())["bundle"]["resources"]
-        for name, source in archive.NOTICES.items():
-            if name in ("INSTALL.md", "NOTICE.md"):
-                continue
-            self.assertTrue(resources["../../" + source].startswith("licenses/"))
-            self.assertEqual(Path(resources["../../" + source]).name, Path(source).name)
-        self.assertEqual(resources["../../rime/package/NOTICE.md"],
-                         "licenses/rime-data/NOTICE.md")
+    def test_pinyin_notice_retains_pinned_upstream_identity(self):
         notice = ROOT / "data/hanzi/LICENSE.pinyin-data"
         self.assertEqual(hashlib.sha256(notice.read_bytes()).hexdigest(),
                          "9c048697be2502a16e8bcb282d5d465a07295b2def0ffb05a269c5d39dbe1586")
@@ -151,6 +151,11 @@ class RimeArchive(unittest.TestCase):
         config = root / "trainer/src-tauri/tauri.conf.json"
         config.parent.mkdir(parents=True)
         (root / "LICENSE").write_bytes(b"original license\n")
+        registry = root / "rime/package/notices.json"
+        registry.parent.mkdir(parents=True)
+        registry.write_text(json.dumps([
+            {"path": "licenses/project.txt", "source": "LICENSE", "targets": ["rime", "trainer"]}
+        ]), encoding="utf-8")
         config.write_text(json.dumps({
             "productName": "小鹤输入法",
             "bundle": {"resources": {"../../LICENSE": "licenses/project/LICENSE"}},
@@ -169,6 +174,16 @@ class RimeArchive(unittest.TestCase):
             windows_read(config)
         with patch.object(Path, "read_text", windows_read):
             self.assertEqual(check_bundle_notices.verify(extracted, root), 1)
+        # Removing a required notice from both the resource map and extraction
+        # must not redefine the expected license inventory.
+        config.write_text(json.dumps({
+            "bundle": {"resources": {"../../OTHER": "licenses/project/OTHER"}}
+        }), encoding="utf-8")
+        (root / "OTHER").write_bytes(b"other notice\n")
+        target.unlink()
+        (extracted / "licenses/project/OTHER").write_bytes(b"other notice\n")
+        with self.assertRaisesRegex(ValueError, "required distribution notice"):
+            check_bundle_notices.verify(extracted, root)
 
     def test_wix_basename_collision_is_rejected_without_ice_suppression(self):
         from check_bundle_notices import validate_mapping

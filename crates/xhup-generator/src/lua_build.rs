@@ -250,6 +250,13 @@ struct LuaSource {
     source: &'static str,
 }
 
+// Non-code package sources share the build-time source inventory.
+pub(crate) struct NoticeSource {
+    pub filename: &'static str,
+    pub source_path: &'static str,
+    pub source: &'static str,
+}
+
 include!(concat!(env!("OUT_DIR"), "/runtime_sources.rs"));
 
 pub(crate) struct RuntimeLuaModule {

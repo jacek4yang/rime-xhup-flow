@@ -14,7 +14,8 @@
 //! (含 package version)与相同模板下,生成结果字节级一致。
 
 use crate::lua_build::{
-    BUILD_STRATEGY, COMPILER_REVISION, LuaBuildError, build_inputs, compile_runtime, sha256,
+    BUILD_STRATEGY, COMPILER_REVISION, LuaBuildError, NOTICE_SOURCES, build_inputs,
+    compile_runtime, sha256,
 };
 use crate::rime::{RIME_CHAR_DICTIONARY_FILENAME, generate_rime_char_dictionary};
 use crate::rime_fixed_first_shortcuts::{
@@ -101,7 +102,7 @@ impl RimeArtifact {
         self.filename
     }
 
-    /// 产物内容(UTF-8、LF 换行、恰好一个末尾换行)。
+    /// 产物内容；生成代码使用 UTF-8/LF，许可证保留规范来源的原始文本。
     pub fn contents(&self) -> &str {
         &self.contents
     }
@@ -297,6 +298,21 @@ pub fn generate_rime_artifacts() -> Result<Vec<RimeArtifact>, LuaBuildError> {
             source_sha256: None,
         })
         .collect();
+    for notice in NOTICE_SOURCES {
+        identities.push(ArtifactIdentity {
+            path: notice.filename,
+            sha256: sha256(notice.source.as_bytes()),
+            bytes: notice.source.len(),
+            source_inputs: [notice.source_path],
+            dependencies: std::collections::BTreeSet::new(),
+            module: None,
+            source_sha256: None,
+        });
+        artifacts.push(RimeArtifact {
+            filename: notice.filename,
+            contents: notice.source.to_owned(),
+        });
+    }
     for module in lua_modules {
         identities.push(ArtifactIdentity {
             path: module.filename,

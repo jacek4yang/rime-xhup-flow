@@ -14,6 +14,14 @@ struct Registry {
     excluded: BTreeMap<String, String>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Notice {
+    path: String,
+    source: String,
+    targets: Vec<String>,
+}
+
 fn files(directory: &Path, output: &mut BTreeSet<PathBuf>) -> Result<(), Box<dyn Error>> {
     println!("cargo:rerun-if-changed={}", directory.display());
     for entry in fs::read_dir(directory)? {
@@ -100,6 +108,70 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Bind production data and source metadata, not evaluation outputs or
     // redistribution-not-authorized research payloads.
     let mut inputs = BTreeSet::new();
+    let notices: Vec<Notice> =
+        serde_json::from_slice(&fs::read(root.join("rime/package/notices.json"))?)?;
+    let mut notice_names = BTreeSet::new();
+    source.push_str("pub(crate) const NOTICE_SOURCES: &[NoticeSource] = &[\n");
+    for notice in notices {
+        if notice.targets.is_empty()
+            || notice
+                .targets
+                .iter()
+                .any(|target| target != "rime" && target != "trainer")
+        {
+            return Err(format!("invalid notice targets: {}", notice.path).into());
+        }
+        if !notice.targets.iter().any(|target| target == "rime") {
+            continue;
+        }
+        for relative in [&notice.path, &notice.source] {
+            if relative.is_empty()
+                || relative.contains(['\\', ':'])
+                || !Path::new(relative)
+                    .components()
+                    .all(|part| matches!(part, Component::Normal(_)))
+            {
+                return Err(format!("invalid notice path: {relative}").into());
+            }
+        }
+        if !(notice.path == "INSTALL.md"
+            || notice.path == "NOTICE.md"
+            || notice.path.starts_with("licenses/"))
+            || !notice_names.insert(notice.path.clone())
+        {
+            return Err(format!("reserved or duplicate notice output: {}", notice.path).into());
+        }
+        let path = root.join(&notice.source);
+        let metadata = fs::symlink_metadata(&path)?;
+        if !metadata.is_file() || metadata.len() == 0 {
+            return Err(format!(
+                "notice input must be a nonempty regular file: {}",
+                path.display()
+            )
+            .into());
+        }
+        for parent in Path::new(&notice.source).ancestors().skip(1) {
+            if parent.as_os_str().is_empty() {
+                break;
+            }
+            let parent = root.join(parent);
+            if fs::symlink_metadata(&parent)?.file_type().is_symlink() {
+                return Err(format!(
+                    "notice input cannot traverse a symlink: {}",
+                    parent.display()
+                )
+                .into());
+            }
+        }
+        source.push_str(&format!(
+            "NoticeSource {{ filename: {:?}, source_path: {:?}, source: include_str!({:?}) }},\n",
+            notice.path,
+            notice.source,
+            path.to_str().ok_or("non-UTF-8 notice path")?
+        ));
+        inputs.insert(path);
+    }
+    source.push_str("];\n");
     for directory in [
         "crates/xhup-core/src",
         "crates/xhup-generator/src",

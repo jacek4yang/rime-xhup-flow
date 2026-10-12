@@ -11,6 +11,8 @@
 *.toml text eol=lf
 *.lock text eol=lf
 *.json text eol=lf
+*.py text eol=lf
+*.mjs text eol=lf
 .gitattributes text eol=lf
 
 # Unresolved rights: keep local research history, exclude payloads from source archives.
@@ -31,3 +33,7 @@ data/hanzi/LICENSE.pinyin-data -text
 LICENSE.GPL-3.0 -text
 LICENSE -text
 data/words/LICENSE.wanxiang -text
+data/frequency/LICENSE.wanxiang -text
+data/hanzi/UPSTREAM_LICENSE -text
+data/corpus/LICENSE.kdconv -text
+data/corpus/LICENSE.ptt -text

@@ -150,6 +150,17 @@ class RuntimeSourceBinding(unittest.TestCase):
         registry_path.write_text(json.dumps(registry), encoding="utf-8")
         self.assertNotEqual(build_registry().returncode, 0)
 
+    def test_notice_builder_rejects_empty_license(self):
+        source = self.source_snapshot()
+        (source / "LICENSE").write_bytes(b"")
+        output = self.work / "compiler-output"
+        output.mkdir()
+        result = subprocess.run(
+            [str(self.reference.registry_builder)], cwd=source,
+            env=dict(os.environ, CARGO_MANIFEST_DIR=str(source / "crates/xhup-generator"),
+                     OUT_DIR=str(output)), capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

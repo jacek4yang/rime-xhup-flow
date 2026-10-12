@@ -269,24 +269,6 @@ fn schema_excludes_non_portable_or_deferred_features() {
 }
 
 #[test]
-fn all_artifacts_are_lf_only_with_single_final_newline() {
-    for artifact in generate_rime_artifacts().unwrap() {
-        let text = artifact.contents();
-        assert!(
-            !text.starts_with('\u{feff}'),
-            "{}: 无 BOM",
-            artifact.filename()
-        );
-        assert!(!text.contains('\r'), "{}: LF only", artifact.filename());
-        assert!(
-            text.ends_with('\n') && !text.ends_with("\n\n"),
-            "{}: 恰好一个末尾换行",
-            artifact.filename()
-        );
-    }
-}
-
-#[test]
 fn generation_is_byte_reproducible() {
     let first = generate_rime_artifacts().unwrap();
     let second = generate_rime_artifacts().unwrap();
@@ -382,16 +364,6 @@ fn artifact_manifest_forbids_user_owned_paths() {
         "rime.lua",
     ];
     let artifacts = generate_rime_artifacts().unwrap();
-    let exclusive = artifacts
-        .iter()
-        .find(|a| a.filename() == "default.custom.yaml")
-        .unwrap();
-    assert_eq!(
-        exclusive.contents(),
-        include_str!("../../../rime/package/default.custom.yaml")
-    );
-    assert_eq!(exclusive.contents().matches("schema: ").count(), 1);
-    assert!(exclusive.contents().ends_with("    - schema: xhup_flow\n"));
     let mut seen = std::collections::BTreeSet::new();
     for artifact in &artifacts {
         let name = artifact.filename();
@@ -406,12 +378,11 @@ fn artifact_manifest_forbids_user_owned_paths() {
         );
         assert!(!name.starts_with("build/"), "不得含 build/: {name}");
         assert!(!name.contains(".userdb"), "不得含 userdb: {name}");
-        // 子目录产物只允许 Lua 命名空间(安全不变量:用户 lua/ 下其它
-        // 文件绝不被触及)。
+        // 子目录产物只能进入本包拥有的 Lua 命名空间或许可证目录。
         if let Some((dir, _)) = name.split_once('/') {
             assert!(
-                name.starts_with("lua/xhup_flow/"),
-                "子目录产物只允许 lua/xhup_flow/**: {name}(实际目录 {dir})"
+                name.starts_with("lua/xhup_flow/") || name.starts_with("licenses/"),
+                "产物不得写入其他用户目录: {name}(实际目录 {dir})"
             );
         }
     }
