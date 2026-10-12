@@ -229,6 +229,46 @@ Raw evidence is retained under
 These are focused native API observations, not full Static compatibility,
 ranking-quality improvement, mixed-shortcut support, or GUI/platform acceptance.
 
+### Default quick-hint-on measurements
+
+The performance entry point now defaults to `--quick-hint on`, explicitly sets
+the option, and verifies the actual session option in every process. Harness
+`f82e9f73b13a240da357734313b61cb457c70bfb` measured a separate cohort; none of
+the earlier hint-off traces were relabeled. CPU, alternating-order, fresh-user
+state and plugin controls are the same as above.
+
+Each row has five pairs × ten repetitions, 19,800 keys per side. Values are
+keypress / first-page p50,p95,p99 in milliseconds:
+
+| CPU / learning | Baseline keypress | Indexed keypress | Baseline first page | Indexed first page |
+| --- | --- | --- | --- | --- |
+| 0 / off | 3.523,5.167,5.452 | 3.357,3.912,4.062 | 3.531,5.175,5.461 | 3.365,3.921,4.072 |
+| 0 / on | 3.715,5.661,5.984 | 3.534,4.325,4.532 | 3.724,5.671,5.993 | 3.542,4.334,4.542 |
+| 8 / off | 9.456,11.724,12.164 | 9.067,10.158,10.403 | 9.470,11.740,12.178 | 9.081,10.173,10.418 |
+| 8 / on | 9.611,12.150,12.640 | 9.431,10.706,11.012 | 9.626,12.165,12.654 | 9.445,10.722,11.026 |
+
+All four cohorts had zero observable semantic differences. Every workload's
+keypress, first-page and thread-CPU p95/p99 remained within 1.10× baseline.
+First-session median/max and peak RSS also remained within that threshold;
+first-session medians were respectively 41.956→41.768, 56.298→57.645,
+68.395→66.865 and 80.464→79.014 ms. This does not establish faster startup or
+measure learning-commit write latency.
+
+Separate instrumented measurements (11,880 keys) recorded lookup calls
+7,877,280→1,216,170, maximum 2,172→283; native queries remained 42,600.
+Lua allocation calls were 14,655,579→6,789,319 and growth bytes
+1,064,083,645→535,046,550. Incremental GC remained 19,890; generational GC was
+zero. Over 100 continuous rounds, live Lua bytes stayed exactly
+8,467,658→8,491,603 and statm RSS exactly 39,288→39,320 KiB, with no
+round-to-round growth. Instrumented timings are not latency evidence.
+
+The separate CPU0 full-menu cohort matched all 99 candidate counts per side.
+Median enumeration-inclusive work was 2,888.399→2,878.386 ms for `ni`,
+11.541→11.416 ms for `jqu`, and 5.746→4.218 ms for the 128-key case.
+Full-menu text/order and GUI display latency remain unmeasured.
+The evidence directory above contains `default-analysis.json`, its reproducible
+`default-analysis-recipe.py`, and the independent `default-*` traces.
+
 ## Investigation history and corrections
 
 The original final-boundary-only policy passed a narrow matrix but failed
