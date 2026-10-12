@@ -10,5 +10,15 @@
   "scope": "wiki evaluation, not representative conversation; training overlap not yet established",
   "selection": "all eligible contiguous Hanzi runs with unique supplied Translit parsing, 2..64 characters; retain exclusions and failures",
   "partition": "SHA256 of UTF-8 parent sent_id, first byte even development, odd confirmation; never split parent chunks",
-  "status": "frozen source and selection before ranking; confirmation must remain unobserved until parameters freeze"
+  "status": "frozen source and selection before ranking; confirmation must remain unobserved until parameters freeze",
+  "encoder_export_sha256": "cd6aa93d5fcc72459e757aea8736aa0b403e7ac1b7e9532d5f5711bf09504906",
+  "fixture_sha256": "9cb2d5468c63046df23327abf53962ba2744ddc3e2a02bce541c3ec6f56e71be",
+  "development": {
+    "cases": 7388,
+    "sha256": "ae807e7f3a0ab54e20b13a560d67924ffa66a2fabd6bec474ce1d2fb65151a03"
+  },
+  "confirmation": {
+    "cases": 7291,
+    "sha256": "d7f7864efbd88b70c3b90b729783a6d52d3f2a5c7adaf152d9652716207155a0"
+  }
 }

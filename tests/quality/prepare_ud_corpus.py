@@ -141,16 +141,22 @@ def main():
     output, metadata = prepare(raw, inventory)
     metadata.update({"source": manifest, "fixture_sha256": hashlib.sha256(output).hexdigest(),
                      "encoder_export_sha256": hashlib.sha256(args.syllable_codes.read_bytes()).hexdigest()})
+    for field in ("fixture_sha256", "encoder_export_sha256"):
+        if field in manifest and manifest[field] != metadata[field]:
+            raise ValueError(f"frozen {field} mismatch")
     if args.partition_prefix:
         partitions = partition(output, metadata)
         metadata["partition_policy"] = "sha256-parent-utf8-first-byte-even-development-v1"
         metadata["partitions"] = {}
         for name, content in partitions.items():
-            Path(f"{args.partition_prefix}.{name}.tsv").write_bytes(content)
             metadata["partitions"][name] = {
                 "sha256": hashlib.sha256(content).hexdigest(),
                 "cases": len(content.splitlines()),
             }
+            if name in manifest and manifest[name] != metadata["partitions"][name]:
+                raise ValueError(f"frozen {name} partition mismatch")
+        for name, content in partitions.items():
+            Path(f"{args.partition_prefix}.{name}.tsv").write_bytes(content)
     args.output.write_bytes(output)
     args.metadata.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(metadata["counts"], sort_keys=True))
