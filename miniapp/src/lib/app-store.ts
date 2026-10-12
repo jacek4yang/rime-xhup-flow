@@ -39,6 +39,10 @@ export type QuestionResultPayload = {
   chars: number;
   corrections: number;
   practiceMs: number;
+  questionMs: number;
+  usedAnswerHint: boolean;
+  independentRecall: boolean;
+  routeUsed: "primary" | "alternate";
   bestStreak: number;
   now: number;
 };
@@ -139,8 +143,8 @@ export function createAppStore(storage: StorageAdapter, storeKey: string): AppSt
       const previous = state.progress[payload.id] ?? emptyProgress();
       const updated =
         payload.outcome === "perfect"
-          ? applyPerfect(previous, payload.now, payload.practiceMs)
-          : applyImperfect(previous, payload.now, payload.practiceMs);
+          ? applyPerfect(previous, payload.now, payload.questionMs)
+          : applyImperfect(previous, payload.now, payload.questionMs);
       const dateKey = localDateKey(new Date(payload.now));
       const day = state.daily[dateKey] ?? emptyDailyStats();
       const keyErrors = { ...state.keyErrors };

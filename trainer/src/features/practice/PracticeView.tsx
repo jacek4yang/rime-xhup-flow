@@ -31,12 +31,16 @@ import {
   advance,
   backspace,
   createSession,
+  confirmQuestion,
   expectedKey,
   finish,
   pause,
   resume,
   retryCurrent,
   typeKey,
+  hintAccess,
+  revealAnswer,
+  tickQuestion,
   type SessionEvent,
   type SessionState,
   type StepResult,
@@ -47,7 +51,6 @@ import { ErrorTeachingCard, findEntry } from "./ErrorTeachingCard";
 import type { PracticeConfig } from "./PracticeSetupView";
 import {
   DIFFICULTY_LABELS,
-  HINT_DELAY_MS,
   MODE_LABELS,
   MODE_POOL_ROTATION,
 } from "@xhup/trainer-core";
@@ -69,6 +72,9 @@ function dispatchEvents(events: SessionEvent[], chapterId?: string): void {
         corrections: event.corrections,
         practiceMs: event.practiceMs,
         bestStreak: event.bestStreak,
+        questionMs: event.questionMs,
+        usedAnswerHint: event.usedAnswerHint,
+        independentRecall: event.independentRecall,
         now: Date.now(),
       });
       // 章节学习证据:从章节发起的练习按题累计 attempts 与键级准确率
@@ -105,6 +111,7 @@ export function PracticeView({
   const index = useTrainerIndex();
   const { t } = useI18n();
   const hintMode = useTrainerStore((state) => state.hintMode);
+  const practiceIntent = useTrainerStore((state) => state.practiceIntent);
   const keyRefMode = useTrainerStore((state) => state.keyRefMode);
   const hapticsMode = useTrainerStore((state) => state.keyHaptics);
   const storeProgress = useTrainerStore((state) => state.progress);
@@ -132,6 +139,8 @@ export function PracticeView({
     createSession(
       {
         mode: config.entries ? "mixed" : config.mode,
+        intent: practiceIntent,
+        hintMode,
         targetLength: config.targetLength,
         pools,
       },
@@ -171,13 +180,16 @@ export function PracticeView({
     if (session?.phase === "question") inputRef.current?.focus();
   }, [session?.phase, session?.current]);
 
-  // 实况计时:活跃阶段每秒刷新一次显示。
+  // 活跃题目每200ms推进共享提示状态；暂停和反馈不运行迟疑时钟。
   const [, tick] = useReducer((count: number) => count + 1, 0);
   useEffect(() => {
-    if (!session || (session.phase !== "question" && session.phase !== "feedback")) {
+    if (!session || session.phase !== "question") {
       return;
     }
-    const timer = setInterval(tick, 1000);
+    const timer = setInterval(() => {
+      setSession((current) => current ? tickQuestion(current, Date.now()) : current);
+      tick();
+    }, 200);
     return () => clearInterval(timer);
   }, [session?.phase, session]);
 
@@ -379,6 +391,9 @@ export function PracticeView({
     if (/^[a-zA-Z]$/.test(key)) {
       event.preventDefault();
       handleLetter(key.toLowerCase());
+    } else if (key === " " || key === "Enter") {
+      event.preventDefault();
+      commit(confirmQuestion(session, Math.random, Date.now()));
     } else if (key === "Backspace") {
       event.preventDefault();
       setSession(backspace(session));
@@ -403,15 +418,7 @@ export function PracticeView({
       : session.activeMs + (Date.now() - session.lastTickAt);
   const sessionKpm = kpm(session.keystrokes, displayedMs);
   const sessionCpm = cpm(session.charsCompleted, displayedMs);
-  const activeNow =
-    session.phase === "paused"
-      ? session.activeMs
-      : session.activeMs + (Date.now() - session.lastTickAt);
-  const codeHintVisible =
-    hintMode === "always" ||
-    (hintMode === "on-delay" && activeNow >= HINT_DELAY_MS) ||
-    (hintMode === "on-error" && session.hadError) ||
-    session.phase === "feedback";
+  const codeHintVisible = hintAccess(session, Date.now()).revealAnswer;
   const { targetLength } = session.config;
 
   return (
@@ -489,23 +496,36 @@ export function PracticeView({
             >
               {session.current.target}
             </div>
-            <div className="font-mono text-sm text-muted-foreground sm:text-base">
-              {session.current.kind === "sentence" && codeHintVisible
-                ? session.current.components?.join(" · ")
-                : session.current.readings.join(" / ")}
-            </div>
+            {codeHintVisible && (
+              <div className="font-mono text-sm text-muted-foreground sm:text-base">
+                {session.current.kind === "sentence"
+                  ? session.current.components?.join(" · ")
+                  : session.current.readings.join(" / ")}
+              </div>
+            )}
             <div
               aria-live="polite"
               className="flex h-6 items-center font-mono text-base tracking-[0.3em] text-primary"
             >
-              {codeHintVisible ? session.current.primaryCode : ""}
+              {codeHintVisible ? activeCode(session) : ""}
             </div>
             <PracticeCode
-              code={activeCode(session)}
+              length={activeCode(session).length}
               typed={session.typed}
               lastWrongKey={session.lastWrongKey}
               outcome={session.phase === "feedback" ? session.lastOutcome : null}
             />
+            {session.phase === "question" && session.typed.length > 0 &&
+              session.typed === activeCode(session) && (
+              <Button onClick={() => commit(confirmQuestion(session, Math.random, Date.now()))}>
+                {t("practice.confirmCode")}
+              </Button>
+            )}
+            {!codeHintVisible && (
+              <Button variant="outline" onClick={() => setSession(revealAnswer(session))}>
+                {t("practice.revealAnswer")}
+              </Button>
+            )}
           </motion.div>
         </AnimatePresence>
 
@@ -529,7 +549,11 @@ export function PracticeView({
         {teachingVisible && session.lastWrongKey !== null && (
           <ErrorTeachingCard
             item={session.current}
-            entry={findEntry(index.chars, session.current.target)}
+            code={activeCode(session)}
+            expected={expectedKey(session)}
+            revealAnswer={codeHintVisible}
+            onReveal={() => setSession(revealAnswer(session))}
+            entry={findEntry(index.chars, session.current.target, activeCode(session))}
             wrongKey={session.lastWrongKey}
             position={session.typed.length}
             mode={errorTeaching}
@@ -545,7 +569,7 @@ export function PracticeView({
         nextKey={codeHintVisible ? expectedKey(session) : null}
         wrongKey={session.lastWrongKey}
         onKeyPress={handleLetter}
-        refMode={resolvedRefMode}
+        refMode={codeHintVisible ? resolvedRefMode : "none"}
         shapeRef={shapeRef}
         compact
       />

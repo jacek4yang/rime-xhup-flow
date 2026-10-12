@@ -132,6 +132,17 @@ export default function Settings() {
           ))}
         </View>
 
+        <Text className="card-heading">{t("practice.intent.blind")}</Text>
+        <View className="option-row">
+          {(["blind", "learn"] as const).map((practiceIntent) => (
+            <View key={practiceIntent}
+              className={`option-chip ${state.settings.practiceIntent === practiceIntent ? "option-chip-active" : ""}`}
+              onClick={() => update({ practiceIntent })}>
+              <Text className="option-chip-text">{t(`practice.intent.${practiceIntent}`)}</Text>
+            </View>
+          ))}
+        </View>
+
         <Text className="card-heading">{t("practice.hint")}</Text>
         <View className="option-row">
           {HINT_MODES.map((hintMode) => (

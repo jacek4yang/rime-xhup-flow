@@ -27,6 +27,13 @@ overrides:
   qs@>=6.0.0 <6.16.0: 6.16.0
   fast-uri@>=3.0.0 <3.1.8: 3.1.8
   http-cache-semantics@>=4.0.0 <4.3.0: 4.3.0
+  proxy-addr@>=1.1.0 <2.0.8: 2.0.8
+  vm2@<3.12.2: 3.12.2
+  shell-quote@>=1.8.4 <1.11.0: 1.11.0
+  source-map-js@>=1.0.0 <1.2.2: 1.2.2
+  compression@<1.8.2: 1.8.2
+  joi@<17.13.8: 17.13.8
+  postcss-selector-parser@<7.1.6: 7.1.6
 
 patchedDependencies:
   '@tarojs/webpack5-runner@4.2.1': fbb59d154cfdae17b93af92146308bfab8726a8ceadab4282de4970a82678abc
@@ -95,15 +102,27 @@ importers:
       '@tarojs/webpack5-runner':
         specifier: 4.2.1
         version: 4.2.1(patch_hash=fbb59d154cfdae17b93af92146308bfab8726a8ceadab4282de4970a82678abc)(@babel/core@7.29.7(supports-color@8.1.1))(@swc/core@1.3.96)(@tarojs/runtime@4.2.1)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.23))(csso@5.0.5)(debug@4.4.3(supports-color@8.1.1))(html-minifier-terser@7.2.0)(less@4.9.1(supports-color@8.1.1))(postcss@8.5.23)(sass@1.104.0)(stylus@0.64.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.3)(uglify-js@3.19.3)(webpack@5.111.1(@swc/core@1.3.96)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.23))(csso@5.0.5)(esbuild@0.25.12)(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.23)(svgo@3.3.5)(uglify-js@3.19.3))
+      '@testing-library/dom':
+        specifier: 10.4.1
+        version: 10.4.1
+      '@testing-library/react':
+        specifier: 16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@types/react':
         specifier: ^18.3.3
         version: 18.3.31
+      '@types/react-dom':
+        specifier: 18.3.7
+        version: 18.3.7(@types/react@18.3.31)
       '@types/webpack-env':
         specifier: ^1.13.6
         version: 1.18.8
       babel-preset-taro:
         specifier: 4.2.1
         version: 4.2.1(@babel/core@7.29.7(supports-color@8.1.1))(@babel/plugin-transform-typescript@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@babel/preset-react@7.29.7(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(supports-color@8.1.1)
+      jsdom:
+        specifier: 30.0.1
+        version: 30.0.1(@noble/hashes@1.8.0)
       typescript:
         specifier: ~5.8.3
         version: 5.8.3
@@ -2606,6 +2625,11 @@ packages:
   '@types/range-parser@1.2.7':
     resolution: {integrity: sha512-hKormJbkJqzQGhziax5PItDUTMAM9uE2XXQmM37dyd4hVM+5aVl7oVxMVUiVQn2oCQFN/LKCZdvSM0pFRqbSmQ==}
 
+  '@types/react-dom@18.3.7':
+    resolution: {integrity: sha512-MEe3UeoENYVFXzoXEWsvcpg6ZvlrFNlOQ7EOsvhI3CfAXwzPfO8Qwuxd40nepsYKqyyVQnTdEfv68q91yLcKrQ==}
+    peerDependencies:
+      '@types/react': ^18.0.0
+
   '@types/react-dom@19.2.7':
     resolution: {integrity: sha512-I8bPpDLcHBv1qiIiXDCy71Rt8eQDKJP0sMSWJphDdAcdqiJ1sGpZamavoEIRZmYzjia9LuEb2HlYdDpmoENpvQ==}
     peerDependencies:
@@ -3249,8 +3273,8 @@ packages:
     resolution: {integrity: sha512-AF3r7P5dWxL8MxyITRMlORQNaOA2IkAFaTr4k7BUumjPtRpGDTZpl0Pb1XCO6JeDCBdp126Cgs9sMxqSjgYyRg==}
     engines: {node: '>= 0.6'}
 
-  compression@1.8.1:
-    resolution: {integrity: sha512-9mAqGPHLakhCLeNyxPkK4xVo746zQ/czLH1Ky+vkitMnWfWZps8r0qXuwhwizagCRttsL4lfG4pIOvaWLpAP0w==}
+  compression@1.8.2:
+    resolution: {integrity: sha512-o8vI5RE5A6EVVOd9o41jKp41aJom+QTEO/Bx8MYNjexMo/Bv2WOjUfZr+aL0WnYSgymUy6zeguqLTsIhV0gMvQ==}
     engines: {node: '>= 0.8.0'}
 
   concat-map@0.0.1:
@@ -4367,8 +4391,8 @@ packages:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
 
-  joi@17.13.7:
-    resolution: {integrity: sha512-MF80Dm5Y2veNy8QWVx9Bj3ui4mo7+VPSPsR1M+oaHXV0Gx6zGX9a2F+OZG3Blby9tOlzU9Rs5FUimlEhbKtfnQ==}
+  joi@17.13.8:
+    resolution: {integrity: sha512-iPKOGmiRw1jxf/JOPwxmCcUQAOdF359mdzYiP2DJ+TMX0YK2zjK3D+zYOaGjpumWxOFF/l2xVWjRVK5bGSLdEw==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -5334,10 +5358,6 @@ packages:
     peerDependencies:
       postcss: 8.5.23
 
-  postcss-selector-parser@6.1.4:
-    resolution: {integrity: sha512-bIoJLOmjCO1S9XdY/DcnR5hJxvrDir1PbGChrzXG3vw0/FOliy/fA3dmdhQ441kah4gKv+TwckGzex6wNS5cnQ==}
-    engines: {node: '>=4'}
-
   postcss-selector-parser@7.1.6:
     resolution: {integrity: sha512-7qASPzhKF2l2KLboRZux8CCTRMdGiV08vWmyKzPz22qZ7ZjQBOeY7rNzNoCLSUiftJ7HUq0GERHmxw/t0dCdMw==}
     engines: {node: '>=4'}
@@ -5396,8 +5416,8 @@ packages:
   process-nextick-args@2.0.1:
     resolution: {integrity: sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag==}
 
-  proxy-addr@2.0.7:
-    resolution: {integrity: sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg==}
+  proxy-addr@2.0.8:
+    resolution: {integrity: sha512-5nnx0yGyVUcY6t9RnWcARWtwT9F1D8O9rt08htPvnd49W1IgZtmLkhu9WfMzQj1cFxjHIO6connUNVW5k7AVyQ==}
     engines: {node: '>= 0.10'}
 
   proxy-from-env@2.1.0:
@@ -5797,8 +5817,8 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
-  shell-quote@1.10.0:
-    resolution: {integrity: sha512-w1aiOKwKuRgtwAReIIj89puqg+I7GvX4IbLrvmhXbzQsj1+Zwi4VO3+fa6ZF91TWSjIxoEkKnMeHcLEODK5ZXA==}
+  shell-quote@1.11.0:
+    resolution: {integrity: sha512-JdxDPD0DBTyu08pq0kPC0xSNet/qsU07qT6IsX1AS8oO2ICNRY4ldNa8OAI6PuwAH8tG3lxEhbqmyp4Dw4036g==}
     engines: {node: '>= 0.4'}
 
   side-channel-list@1.0.1:
@@ -5842,8 +5862,8 @@ packages:
     resolution: {integrity: sha512-vzn8aSqKgytVik0iwdBEi+zevbTYZogewTUM6dtpmGwEcdzbub/TX4bCzRhebDCRC3QzXgJsLRKB2V/Oof7HXg==}
     engines: {node: '>=0.10.0'}
 
-  source-map-js@1.2.1:
-    resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
+  source-map-js@1.2.2:
+    resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
     engines: {node: '>=0.10.0'}
 
   source-map-support@0.5.21:
@@ -6369,8 +6389,8 @@ packages:
       jsdom:
         optional: true
 
-  vm2@3.12.1:
-    resolution: {integrity: sha512-VMqg/4swWz7lkse95rxPlgtnb7WkHL2wfDtrgcNIaIjvpskjRmEmS+MKoItl4npwtW+u2Kalle4zarf3aEWjGQ==}
+  vm2@3.12.2:
+    resolution: {integrity: sha512-LRHt4xU6eXshlZEcSZVrTehLGxRDjHvjmFPGwEp4xGpZX61QzH6Xm9wK2nU7XAp36V1w2xILAL1LwxVkgD1Ipw==}
     engines: {node: '>=6.0'}
     hasBin: true
 
@@ -8331,7 +8351,7 @@ snapshots:
       jiti: 2.7.0
       lightningcss: 1.32.0
       magic-string: 0.30.21
-      source-map-js: 1.2.1
+      source-map-js: 1.2.2
       tailwindcss: 4.3.3
 
   '@tailwindcss/oxide-android-arm64@4.3.3':
@@ -8592,7 +8612,7 @@ snapshots:
       '@tarojs/helper': 4.2.1(supports-color@8.1.1)
       '@tarojs/runner-utils': 4.2.1(supports-color@8.1.1)
       '@tarojs/shared': 4.2.1
-      joi: 17.13.7
+      joi: 17.13.8
       lodash: 4.18.1
       ora: 5.4.1
       resolve: 1.22.12
@@ -8688,7 +8708,7 @@ snapshots:
       style-loader: 3.3.4(webpack@5.111.1(@swc/core@1.3.96)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.23))(csso@5.0.5)(esbuild@0.25.12)(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.23)(svgo@3.3.5)(uglify-js@3.19.3))
       stylus-loader: 8.1.3(stylus@0.64.0(supports-color@8.1.1))(webpack@5.111.1(@swc/core@1.3.96)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.23))(csso@5.0.5)(esbuild@0.25.12)(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.23)(svgo@3.3.5)(uglify-js@3.19.3))
       terser-webpack-plugin: 5.6.1(@swc/core@1.3.96)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.23))(csso@5.0.5)(esbuild@0.25.12)(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.23)(uglify-js@3.19.3)(webpack@5.111.1(@swc/core@1.3.96)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.23))(csso@5.0.5)(esbuild@0.25.12)(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.23)(svgo@3.3.5)(uglify-js@3.19.3))
-      vm2: 3.12.1
+      vm2: 3.12.2
       webpack: 5.111.1(@swc/core@1.3.96)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.23))(csso@5.0.5)(esbuild@0.25.12)(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.23)(svgo@3.3.5)(uglify-js@3.19.3)
       webpack-chain: 6.5.1
       webpack-dev-server: 5.2.6(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)(webpack@5.111.1(@swc/core@1.3.96)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.23))(csso@5.0.5)(esbuild@0.25.12)(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.23)(svgo@3.3.5)(uglify-js@3.19.3))
@@ -8791,6 +8811,16 @@ snapshots:
       redent: 3.0.0
     optionalDependencies:
       vitest: 4.1.11(@types/node@26.4.1)(jsdom@30.0.1(@noble/hashes@1.8.0))(vite@7.3.6(@types/node@26.4.1)(jiti@2.7.0)(less@4.9.1(supports-color@8.1.1))(lightningcss@1.32.0)(sass@1.104.0)(stylus@0.64.0(supports-color@8.1.1))(terser@5.51.2))
+
+  '@testing-library/react@16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+    dependencies:
+      '@babel/runtime': 7.29.7
+      '@testing-library/dom': 10.4.1
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
+    optionalDependencies:
+      '@types/react': 18.3.31
+      '@types/react-dom': 18.3.7(@types/react@18.3.31)
 
   '@testing-library/react@16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
@@ -8962,6 +8992,10 @@ snapshots:
   '@types/qs@6.15.1': {}
 
   '@types/range-parser@1.2.7': {}
+
+  '@types/react-dom@18.3.7(@types/react@18.3.31)':
+    dependencies:
+      '@types/react': 18.3.31
 
   '@types/react-dom@19.2.7(@types/react@19.2.18)':
     dependencies:
@@ -9724,11 +9758,12 @@ snapshots:
     dependencies:
       mime-db: 1.54.0
 
-  compression@1.8.1(supports-color@8.1.1):
+  compression@1.8.2(supports-color@8.1.1):
     dependencies:
       bytes: 3.1.2
       compressible: 2.0.18
       debug: 2.6.9(supports-color@8.1.1)
+      destroy: 1.2.0
       negotiator: 0.6.4
       on-headers: 1.1.0
       safe-buffer: 5.2.1
@@ -9859,17 +9894,17 @@ snapshots:
   css-tree@2.2.1:
     dependencies:
       mdn-data: 2.0.28
-      source-map-js: 1.2.1
+      source-map-js: 1.2.2
 
   css-tree@2.3.1:
     dependencies:
       mdn-data: 2.0.30
-      source-map-js: 1.2.1
+      source-map-js: 1.2.2
 
   css-tree@3.2.1:
     dependencies:
       mdn-data: 2.27.1
-      source-map-js: 1.2.1
+      source-map-js: 1.2.2
 
   css-what@6.2.2: {}
 
@@ -10364,7 +10399,7 @@ snapshots:
       on-finished: 2.4.1
       parseurl: 1.3.3
       path-to-regexp: 0.1.13
-      proxy-addr: 2.0.7
+      proxy-addr: 2.0.8
       qs: 6.16.0
       range-parser: 1.2.1
       safe-buffer: 5.2.1
@@ -10989,7 +11024,7 @@ snapshots:
 
   jiti@2.7.0: {}
 
-  joi@17.13.7:
+  joi@17.13.8:
     dependencies:
       '@hapi/hoek': 9.3.0
       '@hapi/topo': 5.1.0
@@ -11104,7 +11139,7 @@ snapshots:
   launch-editor@2.14.1:
     dependencies:
       picocolors: 1.1.1
-      shell-quote: 1.10.0
+      shell-quote: 1.11.0
 
   less-loader@12.3.3(less@4.9.1(supports-color@8.1.1))(webpack@5.111.1(@swc/core@1.3.96)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.23))(csso@5.0.5)(esbuild@0.25.12)(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.23)(svgo@3.3.5)(uglify-js@3.19.3)):
     dependencies:
@@ -11688,7 +11723,7 @@ snapshots:
   postcss-calc@9.0.1(postcss@8.5.23):
     dependencies:
       postcss: 8.5.23
-      postcss-selector-parser: 6.1.4
+      postcss-selector-parser: 7.1.6
       postcss-value-parser: 4.2.0
 
   postcss-colormin@6.1.0(postcss@8.5.23):
@@ -11755,7 +11790,7 @@ snapshots:
       caniuse-api: 3.0.0
       cssnano-utils: 4.0.2(postcss@8.5.23)
       postcss: 8.5.23
-      postcss-selector-parser: 6.1.4
+      postcss-selector-parser: 7.1.6
 
   postcss-minify-font-values@6.1.0(postcss@8.5.23):
     dependencies:
@@ -11779,7 +11814,7 @@ snapshots:
   postcss-minify-selectors@6.0.4(postcss@8.5.23):
     dependencies:
       postcss: 8.5.23
-      postcss-selector-parser: 6.1.4
+      postcss-selector-parser: 7.1.6
 
   postcss-modules-extract-imports@3.1.0(postcss@8.5.23):
     dependencies:
@@ -11872,11 +11907,6 @@ snapshots:
       postcss: 8.5.23
       postcss-value-parser: 4.2.0
 
-  postcss-selector-parser@6.1.4:
-    dependencies:
-      cssesc: 3.0.0
-      util-deprecate: 1.0.2
-
   postcss-selector-parser@7.1.6:
     dependencies:
       cssesc: 3.0.0
@@ -11891,7 +11921,7 @@ snapshots:
   postcss-unique-selectors@6.0.4(postcss@8.5.23):
     dependencies:
       postcss: 8.5.23
-      postcss-selector-parser: 6.1.4
+      postcss-selector-parser: 7.1.6
 
   postcss-url@10.1.4(postcss@8.5.23):
     dependencies:
@@ -11907,7 +11937,7 @@ snapshots:
     dependencies:
       nanoid: 3.3.18
       picocolors: 1.1.1
-      source-map-js: 1.2.1
+      source-map-js: 1.2.2
 
   prelude-ls@1.2.1: {}
 
@@ -11944,7 +11974,7 @@ snapshots:
 
   process-nextick-args@2.0.1: {}
 
-  proxy-addr@2.0.7:
+  proxy-addr@2.0.8:
     dependencies:
       forwarded: 0.2.0
       ipaddr.js: 1.9.1
@@ -12247,7 +12277,7 @@ snapshots:
     dependencies:
       chokidar: 5.0.0
       immutable: 5.1.9
-      source-map-js: 1.2.1
+      source-map-js: 1.2.2
     optionalDependencies:
       '@parcel/watcher': 2.6.0
 
@@ -12387,7 +12417,7 @@ snapshots:
 
   shebang-regex@3.0.0: {}
 
-  shell-quote@1.10.0: {}
+  shell-quote@1.11.0: {}
 
   side-channel-list@1.0.1:
     dependencies:
@@ -12439,7 +12469,7 @@ snapshots:
     dependencies:
       is-plain-obj: 1.1.0
 
-  source-map-js@1.2.1: {}
+  source-map-js@1.2.2: {}
 
   source-map-support@0.5.21:
     dependencies:
@@ -12554,7 +12584,7 @@ snapshots:
     dependencies:
       browserslist: 4.28.9
       postcss: 8.5.23
-      postcss-selector-parser: 6.1.4
+      postcss-selector-parser: 7.1.6
 
   stylus-loader@8.1.3(stylus@0.64.0(supports-color@8.1.1))(webpack@5.111.1(@swc/core@1.3.96)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.23))(csso@5.0.5)(esbuild@0.25.12)(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.23)(svgo@3.3.5)(uglify-js@3.19.3)):
     dependencies:
@@ -12875,7 +12905,7 @@ snapshots:
     transitivePeerDependencies:
       - msw
 
-  vm2@3.12.1:
+  vm2@3.12.2:
     dependencies:
       acorn: 8.18.0
       acorn-walk: 8.3.5
@@ -12930,7 +12960,7 @@ snapshots:
       bonjour-service: 1.4.4
       chokidar: 3.6.0
       colorette: 2.0.20
-      compression: 1.8.1(supports-color@8.1.1)
+      compression: 1.8.2(supports-color@8.1.1)
       connect-history-api-fallback: 2.0.0
       express: 4.22.2(supports-color@8.1.1)
       graceful-fs: 4.2.11
