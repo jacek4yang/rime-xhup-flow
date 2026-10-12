@@ -49,7 +49,7 @@ def main():
         "compiler": subprocess.check_output(["cc","--version"], text=True).splitlines()[0],
         "harness_flags": "-O2 -Wall -Wextra -Werror -std=c11",
         "system": platform.system(), "kernel": platform.release(), "architecture": platform.machine(),
-        "load_warning": "concurrent exhaustive native audit and workspace tests; timing is NOT an idle paired performance comparison",
+        "load_warning": "quality-only observation with uncontrolled host load; timing is NOT an idle paired performance comparison",
         "learning": "compiled flow/flow_lookup/flow_readonly user dictionaries verified disabled by native harness",
     }
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2)+"\n")
