@@ -209,6 +209,77 @@ pub fn generate_rime_learn_dictionary() -> String {
     )
 }
 
+/// Conservative prefix/length projection of the exact serialized native tables.
+/// False positives still go through native lookup; no vocabulary is duplicated.
+pub(crate) fn generate_native_edge_index(
+    dictionaries: [&str; 2],
+) -> Result<(String, String), crate::lua_build::LuaBuildError> {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write;
+
+    let mut groups = std::collections::BTreeMap::<[u8; 2], std::collections::BTreeSet<u8>>::new();
+    for dictionary in dictionaries {
+        let (_, rows) = dictionary.split_once("\n...\n").ok_or_else(|| {
+            crate::lua_build::LuaBuildError::new("native_edges", "missing dictionary body")
+        })?;
+        for row in rows.lines() {
+            let code = row.split('\t').nth(1).ok_or_else(|| {
+                crate::lua_build::LuaBuildError::new("native_edges", "missing dictionary code")
+            })?;
+            if code.is_empty() || !code.bytes().all(|byte| byte.is_ascii_lowercase()) {
+                return Err(crate::lua_build::LuaBuildError::new(
+                    "native_edges",
+                    "native spelling must contain only lowercase ASCII keys",
+                ));
+            }
+            if code.len() < 2 {
+                continue; // The native structural planner starts at two keys.
+            }
+            let length = u8::try_from(code.len()).map_err(|_| {
+                crate::lua_build::LuaBuildError::new("native_edges", "spelling exceeds 255 keys")
+            })?;
+            groups
+                .entry([code.as_bytes()[0], code.as_bytes()[1]])
+                .or_default()
+                .insert(length);
+        }
+    }
+    // Bind the schema to this projection, not to a require() cache entry left
+    // over from another deployment. Counts delimit the sorted length sets.
+    let mut hash = Sha256::new();
+    hash.update(b"xhup-native-prefix-length-v1\0");
+    for (prefix, lengths) in &groups {
+        hash.update(prefix);
+        hash.update([u8::try_from(lengths.len()).expect("at most 254 distinct byte lengths")]);
+        for length in lengths {
+            hash.update([*length]);
+        }
+    }
+    let identity = format!("{:x}", hash.finalize());
+    let capacity = 100
+        + groups
+            .values()
+            .map(|lengths| 15 + 4 * lengths.len())
+            .sum::<usize>();
+    let mut out = String::with_capacity(capacity);
+    writeln!(out, "return {{\n  identity = \"{identity}\",").expect("writing a String cannot fail");
+    for (prefix, lengths) in groups {
+        write!(
+            out,
+            "  [\"{}{}\"] = \"",
+            char::from(prefix[0]),
+            char::from(prefix[1])
+        )
+        .expect("writing a String cannot fail");
+        for length in lengths {
+            write!(out, "\\{length:03}").expect("writing a String cannot fail");
+        }
+        out.push_str("\",\n");
+    }
+    out.push_str("}\n");
+    Ok((out, identity))
+}
+
 /// 词典 YAML 渲染共享(确定性；import_tables / encoder 段可选)。
 fn render_dictionary(
     name: &str,

@@ -30,8 +30,10 @@ patch. The first set is now seen regression data; correction needs new evaluatio
 Bounds per invocation:
 
 - ASCII input 3–128 keys; outside this envelope use unmodified native translation.
-- Native exact edges of 2–32 keys, at most one returned entry per lookup, at most
-  `128 * 31` lookups; no corpus scan or corpus copy in Lua.
+- Native exact edges of 2–32 keys, at most one returned entry per lookup.
+  The generated canonical prefix/length index currently limits each reachable
+  start to at most five lookups; unsupported/custom profiles retain the
+  `128 * 31` exhaustive bound. No corpus scan or corpus copy occurs in Lua.
 - At most one full native query plus four boundary/pending-prefix queries,
   at most two candidates inspected per extra query.
 - Preserve five original native candidates, append at most eight proposals, then
@@ -44,6 +46,47 @@ Standalone 2/3/4-key codes do not receive a structural full-path replacement.
 Missing lookup APIs preserve native translation; missing native translation
 leaves the independent Static primary available. Errors remain explicit in the
 module status, not evidence of successful full Flow operation.
+
+## Generated native lookup projection
+
+The compiler projects the actual serialized Flow and learn dictionary rows into
+`xhup_flow.data.native_edges`: first two keys → sorted possible byte lengths.
+The current canonical tables contain only 2/3/4/6/8-key spellings, 414 prefixes
+and four distinct length sets. A four-key projection would need 97,895 records;
+the smaller projection avoids that loading/memory cost. It permits false positives,
+but every remaining edge is still confirmed by the original exact native lookup.
+It does not change predecessor selection, candidate ranking, native objects,
+commit spans, or the single learning writer; it is not joint decoding.
+
+The fixed supported Lua binding's `dictLookup` reads only `dict_`, not `user_dict_`.
+Learned words therefore remain in the unmodified native provider; the projection
+does not attempt to cache or filter that provider's results. There is no
+per-input/global mutable lookup cache. Initialization clears the session's index
+reference, and finalization releases it.
+
+`flow_lookup/enable_compiled_index: true` explicitly opts the generated schema in.
+Missing markers/APIs, another dictionary or prism, or any configured packs
+retain exhaustive lookup. If intentionally replacing the canonical dictionary
+under the same name, regenerate the package/index together or set this flag
+to false in custom configuration. Never hand-edit generated files independently.
+The schema also carries the projection's SHA-256 identity. A missing/mismatched
+identity disables pruning, including when Lua's `require()` cache still holds
+data from a previous deployment. The module identity is derived from sorted
+prefix/length sets, not a hand-maintained version number.
+
+Both source and compiled Lua suites check every eligible serialized dictionary
+spelling against the projection, plus growing prefixes, backspace, raw offsets,
+custom/legacy fallback and session reinitialization. The fixed-plugin Linux
+focused replay, learning/restart and quota checks passed after this change.
+A one-round instrumented 128-key smoke observed 17,801 lookups, maximum 283 per
+key; instrumented timings are not latency evidence.
+
+`tests/librime/compare_runtime.py` alternates baseline/candidate order, copies
+synthetic deployments with empty user state on both sides, and retains all raw
+traces and observable differences. `--require-equivalent` rejects any changed
+candidate page, preedit, selection span or key handling. Uninstrumented runs
+measure API latency; `--profile` is for allocation/GC/lookup counts. Neither is
+GUI acceptance or an independent sentence-quality benchmark.
 
 ## Learning identity and editing
 
@@ -125,4 +168,4 @@ export/reset/import. The local librime 1.16.1 full audit passed all 141,138
 static codes both before and after learning, plus native learning management.
 Other supported Lua/Rime versions and remaining release qualification must pass
 before promotion. Windows/macOS manual acceptance follows
-README. No stable publication is authorized.
+README. These historical results do not qualify a new release.

@@ -126,6 +126,10 @@ translator:
 flow_lookup:
   dictionary: xhup_flow_learn
   enable_user_dict: false
+  # 构建期生成的前两键/码长索引;自定义规范词典内容时关闭或重新生成。
+  # 自定义 dictionary/prism/packs 和旧 Lua API 自动回退到完整查词。
+  enable_compiled_index: true
+  compiled_index_id: "{{NATIVE_EDGE_INDEX_ID}}"
 
 # Old librime-lua cannot intercept native memorization. Keep typing available
 # without constructing a writer; native_tail verifies this explicit false flag.
