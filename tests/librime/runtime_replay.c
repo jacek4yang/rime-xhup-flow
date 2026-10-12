@@ -19,6 +19,7 @@ static int failures, checks, observe;
 static void (*profile_snapshot)(struct XhupRuntimeProfile *);
 static const char *schema_id = "xhup_flow";
 static int page_only;
+static int quick_hint_enabled;
 typedef struct {
   char input[256], preedit[TEXT], menu[HEAD][TEXT];
   int count, target_rank, prefix_rank, sel_start, sel_end, page_size;
@@ -87,9 +88,12 @@ static RimeSessionId start(void) {
   if (!s || !r->select_schema(s, schema_id)) { fputs("schema unavailable\n", stderr); exit(2); }
   r->set_option(s, "context_ranker", 0);
   r->set_option(s, "joint_decoder", 0);
-  r->set_option(s, "quick_hint", 0);
+  r->set_option(s, "quick_hint", quick_hint_enabled);
   r->set_option(s, "user_memory", 0);
   fprintf(stderr, "XHUP_SESSION_START_NS %lld\n", now() - before);
+#ifdef XHUP_MEASURE_THREAD_CPU
+  fprintf(stderr, "XHUP_QUICK_HINT %s\n", r->get_option(s, "quick_hint") ? "on" : "off");
+#endif
   if (!strcmp(schema_id, "xhup_flow")) {
     char status[96] = "unavailable";
     r->get_property(s, "xhup_flow_learning_status", status, sizeof(status));

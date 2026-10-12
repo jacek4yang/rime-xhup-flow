@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--trials", type=int, default=5)
     parser.add_argument("--repetitions", type=int, default=10)
     parser.add_argument("--learning", choices=("on", "off"), default="off")
+    parser.add_argument("--quick-hint", choices=("on", "off"), default="on")
     parser.add_argument("--schema", choices=("xhup_flow", "xhup_flow_static"), default="xhup_flow")
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--complete-menu", action="store_true")
@@ -74,7 +75,8 @@ def main():
             command = [sys.executable, str(root / "measure_runtime.py"),
                        "--deployed", str(output / f"{label}-source"), "--plugin", str(args.plugin),
                        "--output", str(directory), "--trials", "1", "--repetitions", str(args.repetitions),
-                       "--schema", args.schema, "--learning", args.learning]
+                       "--schema", args.schema, "--learning", args.learning,
+                       "--quick-hint", args.quick_hint]
             for enabled, flag in ((args.profile, "--profile"), (args.complete_menu, "--complete-menu"),
                                   (args.sustained, "--sustained")):
                 if enabled:

@@ -33,6 +33,12 @@ static void measure_complete_menu(RimeSessionId s, const char *name) {
 
 int main(int argc, char **argv) {
   complete_menu_mode = getenv("XHUP_MEASURE_COMPLETE_MENU") != NULL;
+  const char *quick_hint = getenv("XHUP_MEASURE_QUICK_HINT");
+  if (!quick_hint) quick_hint = "on";
+  if (strcmp(quick_hint, "on") && strcmp(quick_hint, "off")) {
+    fputs("XHUP_MEASURE_QUICK_HINT must be on or off\n", stderr); return 2;
+  }
+  quick_hint_enabled = !strcmp(quick_hint, "on");
   if (argc != 5) {
     fputs("usage: runtime_performance USER SHARED SCHEMA REPETITIONS\n", stderr);
     return 2;

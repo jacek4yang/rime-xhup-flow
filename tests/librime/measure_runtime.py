@@ -37,6 +37,7 @@ def main():
     parser.add_argument("--shared", type=Path, default=Path("/usr/share/rime-data"))
     parser.add_argument("--schema", choices=("xhup_flow", "xhup_flow_static"), default="xhup_flow")
     parser.add_argument("--learning", choices=("on", "off"), default="off")
+    parser.add_argument("--quick-hint", choices=("on", "off"), default="on")
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--complete-menu", action="store_true", help="separate final-state full enumeration, capped at 100000 candidates")
     parser.add_argument("--sustained", action="store_true", help="retain one native session across all cases/rounds")
@@ -66,6 +67,7 @@ def main():
         "rss_source": "Linux /proc/self/status VmHWM; /proc/self/statm round snapshots",
         "harness_commit": revision,
         "schema": args.schema, "learning": args.learning,
+        "quick_hint": args.quick_hint,
         "trials": args.trials, "repetitions": args.repetitions,
         "platform": platform.platform(),
         "cpu_affinity": sorted(os.sched_getaffinity(0)),
@@ -85,6 +87,7 @@ def main():
     executable = output / "runtime_performance"
     subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", str(root / "runtime_performance.c"), *flags, "-ldl", "-o", str(executable)], check=True)
     env = dict(os.environ, LD_PRELOAD=str(plugin), XHUP_LUA_LIBRARY=str(plugin))
+    env["XHUP_MEASURE_QUICK_HINT"] = args.quick_hint
     if args.profile:
         env["XHUP_REQUIRE_PROFILE"] = "1"
     else:
@@ -151,6 +154,9 @@ def main():
             expected_status = "ready" if args.learning == "on" else "off"
             if statuses != [expected_status] * len(sessions):
                 raise ValueError(f"runtime did not enter requested learning state {expected_status}")
+        hint_statuses = [line.split()[-1] for line in stderr if line.startswith("XHUP_QUICK_HINT ")]
+        if hint_statuses != [args.quick_hint] * len(sessions):
+            raise ValueError("runtime did not enter requested quick-hint state")
         cases = {}
         for name in sorted({row["case"] for row in rows}):
             selected = [row for row in rows if row["case"] == name]
