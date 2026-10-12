@@ -38,6 +38,8 @@ def main():
     parser.add_argument("--schema", choices=("xhup_flow", "xhup_flow_static"), default="xhup_flow")
     parser.add_argument("--learning", choices=("on", "off"), default="off")
     parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--complete-menu", action="store_true", help="separate final-state full enumeration, capped at 100000 candidates")
+    parser.add_argument("--sustained", action="store_true", help="retain one native session across all cases/rounds")
     parser.add_argument("--trials", type=int, default=5)
     parser.add_argument("--repetitions", type=int, default=10)
     args = parser.parse_args()
@@ -57,8 +59,11 @@ def main():
             raise ValueError(f"commit measurement sources first: {path}")
     output.mkdir()
     provenance = {
-        "scope": "native-api-visible-page; not GUI or full regression",
+        "scope": "native-api-complete-menu" if args.complete_menu else "native-api-visible-page",
         "instrumented": args.profile,
+        "gui_acceptance": False,
+        "session_lifetime": "process" if args.sustained else "case",
+        "rss_source": "Linux /proc/self/status VmHWM; /proc/self/statm round snapshots",
         "harness_commit": revision,
         "schema": args.schema, "learning": args.learning,
         "trials": args.trials, "repetitions": args.repetitions,
@@ -83,6 +88,14 @@ def main():
         env["XHUP_REQUIRE_PROFILE"] = "1"
     else:
         env.pop("XHUP_REQUIRE_PROFILE", None)
+    if args.complete_menu:
+        env["XHUP_MEASURE_COMPLETE_MENU"] = "1"
+    else:
+        env.pop("XHUP_MEASURE_COMPLETE_MENU", None)
+    if args.sustained:
+        env["XHUP_MEASURE_SUSTAINED"] = "1"
+    else:
+        env.pop("XHUP_MEASURE_SUSTAINED", None)
     summaries = []
     for trial in range(args.trials):
         directory = output / f"trial-{trial}"
@@ -95,14 +108,43 @@ def main():
         with (output / f"trial-{trial}.jsonl").open("w") as out, (output / f"trial-{trial}.stderr").open("w") as err:
             subprocess.run([str(executable), str(directory), str(args.shared), args.schema, str(args.repetitions)], env=env, stdout=out, stderr=err, check=True)
         elapsed = time.monotonic_ns() - started
-        rows = [json.loads(line) for line in (output / f"trial-{trial}.jsonl").read_text().splitlines()]
+        events = [json.loads(line) for line in (output / f"trial-{trial}.jsonl").read_text().splitlines()]
+        rows, menus, last_key = [], [], None
+        for event in events:
+            if "key" in event:
+                rows.append(event)
+                last_key = event
+            elif event.get("event") == "complete_menu":
+                if not args.complete_menu or last_key is None or last_key["case"] != event["case"]:
+                    raise ValueError("complete-menu event is not bound to its final key")
+                if not event["exhausted"]:
+                    raise ValueError("complete-menu cap reached; preserved trace is not a complete measurement")
+                event["key_to_complete_menu_work_ns"] = last_key["key_to_menu_ns"] + event["enumeration_ns"]
+                menus.append(event)
+            else:
+                raise ValueError("unknown measurement event")
+        if len(menus) != (11 * args.repetitions if args.complete_menu else 0):
+            raise ValueError("incomplete final-state menu measurements")
         if not rows or any(("profile_to_first_page" in row) != args.profile for row in rows):
             raise ValueError("instrumentation identity disagrees with requested run")
         stderr = (output / f"trial-{trial}.stderr").read_text().splitlines()
         sessions = [int(line.split()[-1]) for line in stderr if line.startswith("XHUP_SESSION_START_NS ")]
         rss = [int(line.split()[-1]) for line in stderr if line.startswith("XHUP_PEAK_RSS_KIB ")]
-        if len(sessions) != args.repetitions * 9 or len(rss) != 1:
+        expected_sessions = 1 if args.sustained else args.repetitions * 9
+        if len(sessions) != expected_sessions or len(rss) != 1:
             raise ValueError("incomplete process/session measurements")
+        memory_rounds = [
+            [int(value) for value in line.split()[1:]]
+            for line in stderr if line.startswith("XHUP_ROUND_RSS_KIB ")
+        ]
+        lua_rounds = [
+            [int(value) for value in line.split()[1:]]
+            for line in stderr if line.startswith("XHUP_ROUND_LUA_BYTES ")
+        ]
+        if [row[0] for row in memory_rounds] != list(range(args.repetitions)):
+            raise ValueError("missing resident-memory round")
+        if [row[0] for row in lua_rounds] != (list(range(args.repetitions)) if args.profile else []):
+            raise ValueError("missing Lua-memory round")
         if args.schema == "xhup_flow":
             statuses = [line.split()[-1] for line in stderr if line.startswith("XHUP_LEARNING_STATUS ")]
             expected_status = "ready" if args.learning == "on" else "off"
@@ -118,8 +160,19 @@ def main():
                 for field in ("dict_lookups", "native_queries", "allocation_calls", "growth_bytes", "incremental_collections", "generational_collections"):
                     values = [row["profile_to_first_page"][field] for row in selected]
                     result[field] = {"sum": sum(values), "max": max(values), **percentiles(values)}
+            if args.complete_menu:
+                complete = [event for event in menus if event["case"] == name]
+                result["complete_samples"] = len(complete)
+                result["key_to_complete_menu_work_ns"] = percentiles([event["key_to_complete_menu_work_ns"] for event in complete])
+                result["complete_candidates"] = percentiles([event["candidates"] for event in complete])
             cases[name] = result
-        summaries.append({"trial": trial, "elapsed_ns": elapsed, "peak_rss_kib": rss[0], "first_session_ns": sessions[0], "subsequent_session_ns": percentiles(sessions[1:]), "cases": cases})
+        summaries.append({
+            "trial": trial, "elapsed_ns": elapsed, "peak_rss_kib": rss[0],
+            "first_session_ns": sessions[0],
+            "subsequent_session_ns": percentiles(sessions[1:]) if len(sessions) > 1 else None,
+            "rss_kib_by_round": memory_rounds, "lua_bytes_by_round": lua_rounds,
+            "cases": cases,
+        })
     if any(sha256(path) != provenance["source_sha256"][path.name] for path in source_files):
         raise ValueError("measurement source changed during run")
     (output / "summary.json").write_text(json.dumps(summaries, indent=2) + "\n")
