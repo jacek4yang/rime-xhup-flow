@@ -293,7 +293,10 @@ fn visit_module(
     Ok(())
 }
 
-pub(crate) fn compile_runtime(schemas: &[&str]) -> Result<Vec<RuntimeLuaModule>, LuaBuildError> {
+pub(crate) fn compile_runtime(
+    schemas: &[&str],
+    native_edges: &str,
+) -> Result<Vec<RuntimeLuaModule>, LuaBuildError> {
     let mut modules = BTreeMap::new();
     let mut insert = |module, filename, source_path, source: &str| {
         let std::collections::btree_map::Entry::Vacant(slot) = modules.entry(module) else {
@@ -322,6 +325,12 @@ pub(crate) fn compile_runtime(schemas: &[&str]) -> Result<Vec<RuntimeLuaModule>,
         crate::lua_hints::LUA_QUICK_HINT_DATA_FILENAME,
         "crates/xhup-generator/src/lua_hints.rs",
         &crate::lua_hints::generate_lua_quick_hints_data(),
+    )?;
+    insert(
+        "xhup_flow.data.native_edges",
+        "lua/xhup_flow/data/native_edges.lua",
+        "crates/xhup-generator/src/rime_flow.rs",
+        native_edges,
     )?;
     insert(
         "xhup_flow.data.build_info",

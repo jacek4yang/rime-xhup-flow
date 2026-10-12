@@ -112,11 +112,13 @@ fn render_template(
     template: &str,
     name: &str,
     schema_id: Option<&str>,
+    index_id: Option<&str>,
 ) -> Result<String, LuaBuildError> {
     let mut rendered = String::with_capacity(template.len());
     let mut rest = template;
     let mut versions = 0;
     let mut schemas = 0;
+    let mut indexes = 0;
     while let Some(start) = rest.find("{{") {
         rendered.push_str(&rest[..start]);
         rest = &rest[start + 2..];
@@ -132,6 +134,10 @@ fn render_template(
                 schemas += 1;
                 rendered.push_str(schema_id.expect("matched schema placeholder"));
             }
+            "NATIVE_EDGE_INDEX_ID" if index_id.is_some() => {
+                indexes += 1;
+                rendered.push_str(index_id.expect("matched index placeholder"));
+            }
             unknown => {
                 return Err(LuaBuildError::new(
                     name,
@@ -142,7 +148,11 @@ fn render_template(
         rest = &rest[end + 2..];
     }
     rendered.push_str(rest);
-    if versions != 1 || schema_id.is_some() != (schemas > 0) || rendered.contains("}}") {
+    if versions != 1
+        || schema_id.is_some() != (schemas > 0)
+        || indexes != usize::from(index_id.is_some())
+        || rendered.contains("}}")
+    {
         return Err(LuaBuildError::new(
             name,
             "missing, repeated, or malformed template placeholders",
@@ -192,20 +202,31 @@ struct RuntimeManifest {
 /// The manifest lists direct recipes and registered repository input identities;
 /// it does not hash itself. Release provenance binds the manifest's final bytes.
 pub fn generate_rime_artifacts() -> Result<Vec<RimeArtifact>, LuaBuildError> {
-    let schema = render_template(SCHEMA_TEMPLATE, RIME_SCHEMA_FILENAME, None)?;
-    let static_schema = render_template(STATIC_SCHEMA_TEMPLATE, RIME_STATIC_SCHEMA_FILENAME, None)?;
-    let dictionary = render_template(DICTIONARY_TEMPLATE, RIME_DICTIONARY_FILENAME, None)?;
+    let flow_dictionary = generate_rime_flow_dictionary();
+    let learn_dictionary = generate_rime_learn_dictionary();
+    let (native_edges, index_id) =
+        crate::rime_flow::generate_native_edge_index([&flow_dictionary, &learn_dictionary])?;
+    let schema = render_template(SCHEMA_TEMPLATE, RIME_SCHEMA_FILENAME, None, Some(&index_id))?;
+    let static_schema = render_template(
+        STATIC_SCHEMA_TEMPLATE,
+        RIME_STATIC_SCHEMA_FILENAME,
+        None,
+        None,
+    )?;
+    let dictionary = render_template(DICTIONARY_TEMPLATE, RIME_DICTIONARY_FILENAME, None, None)?;
     let flow_wrapper = render_template(
         DICT_COMPILE_WRAPPER_TEMPLATE,
         RIME_FLOW_WRAPPER_SCHEMA_FILENAME,
         Some("xhup_flow_flow"),
+        None,
     )?;
     let learn_wrapper = render_template(
         DICT_COMPILE_WRAPPER_TEMPLATE,
         RIME_LEARN_WRAPPER_SCHEMA_FILENAME,
         Some("xhup_flow_learn"),
+        None,
     )?;
-    let lua_modules = compile_runtime(&[&schema, &static_schema])?;
+    let lua_modules = compile_runtime(&[&schema, &static_schema], &native_edges)?;
     let mut artifacts = vec![
         RimeArtifact {
             filename: "default.custom.yaml",
@@ -244,11 +265,11 @@ pub fn generate_rime_artifacts() -> Result<Vec<RimeArtifact>, LuaBuildError> {
         },
         RimeArtifact {
             filename: RIME_FLOW_DICTIONARY_FILENAME,
-            contents: generate_rime_flow_dictionary(),
+            contents: flow_dictionary,
         },
         RimeArtifact {
             filename: RIME_LEARN_DICTIONARY_FILENAME,
-            contents: generate_rime_learn_dictionary(),
+            contents: learn_dictionary,
         },
         RimeArtifact {
             filename: RIME_FLOW_WRAPPER_SCHEMA_FILENAME,
@@ -383,7 +404,7 @@ mod tests {
             ("version: {{VERSION}}\nschema: {{SCHEMA_ID}}", None),
             ("version: {{VERSION}}", Some("xhup_flow")),
         ] {
-            assert!(render_template(source, "fixture.yaml", schema).is_err());
+            assert!(render_template(source, "fixture.yaml", schema, None).is_err());
         }
     }
 }

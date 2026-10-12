@@ -1,6 +1,7 @@
 /* Observational performance driver; correctness remains in replay/extended.
  * By default only materializes the visible page; complete-menu mode is separate.
  * Use a new isolated deployment for each process, never a real user directory. */
+#define XHUP_MEASURE_THREAD_CPU 1
 #define main original_replay_main
 #include "runtime_replay.c"
 #undef main
@@ -32,6 +33,12 @@ static void measure_complete_menu(RimeSessionId s, const char *name) {
 
 int main(int argc, char **argv) {
   complete_menu_mode = getenv("XHUP_MEASURE_COMPLETE_MENU") != NULL;
+  const char *quick_hint = getenv("XHUP_MEASURE_QUICK_HINT");
+  if (!quick_hint) quick_hint = "on";
+  if (strcmp(quick_hint, "on") && strcmp(quick_hint, "off")) {
+    fputs("XHUP_MEASURE_QUICK_HINT must be on or off\n", stderr); return 2;
+  }
+  quick_hint_enabled = !strcmp(quick_hint, "on");
   if (argc != 5) {
     fputs("usage: runtime_performance USER SHARED SCHEMA REPETITIONS\n", stderr);
     return 2;

@@ -19,7 +19,7 @@ from check_generated_runtime_sources import MANIFEST, verify
 PRODUCTION_TESTS = (
     "test_contract.lua", "test_quick_hint.lua", "test_context_ranker.lua",
     "test_ranker_stream.lua", "test_native_tail.lua", "test_full_span.lua",
-    "test_session_memory.lua",
+    "test_session_memory.lua", "test_native_edge_index.lua",
 )
 
 
@@ -55,7 +55,7 @@ def main():
             environment["XHUP_LUA_ROOT"] = str(package / "lua")
         for name in PRODUCTION_TESTS:
             print(f"== {profile}: {name} ==", flush=True)
-            subprocess.run([args.lua, str(ROOT / "tests/lua" / name)], cwd=ROOT,
+            subprocess.run([args.lua, str(ROOT / "tests/lua" / name), str(package)], cwd=ROOT,
                            env=environment, check=True)
     print("PASS source/compiled behavioral suites; native and platform gates remain separate")
 

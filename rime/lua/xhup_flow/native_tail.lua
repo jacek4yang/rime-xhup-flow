@@ -71,7 +71,7 @@ local function bound_learning(env)
 end
 
 function M.init(env)
-  env.native, env.memory, env.native_error = nil, nil, nil
+  env.native, env.memory, env.native_error, env.edge_lengths = nil, nil, nil, nil
   if not Component or not Component.Translator then
     env.native_error = "native translator API unavailable"
     return
@@ -123,7 +123,22 @@ function M.init(env)
   end
   if not Memory then env.native_error = "dictionary lookup API unavailable"; return end
   local ready, memory = pcall(Memory, env.engine, env.engine.schema, "flow_lookup")
-  if ready and memory then env.memory = memory
+  if ready and memory then
+    env.memory = memory
+    -- Only the generated, unmodified dictionary/prism profile may prune edges.
+    -- Old schemas/APIs and custom dictionaries/packs retain exhaustive lookup.
+    local indexed, lengths = pcall(function()
+      if config:get_bool("flow_lookup/enable_compiled_index") ~= true
+        or config:get_string("flow_lookup/dictionary") ~= "xhup_flow_learn"
+        or config:get_list("flow_lookup/packs") then return nil end
+      local prism = config:get_string("flow_lookup/prism")
+      if prism and prism ~= "xhup_flow_learn" then return nil end
+      local identity = config:get_string("flow_lookup/compiled_index_id")
+      if not identity then return nil end
+      local index = require("xhup_flow.data.native_edges")
+      if index.identity == identity then return index end
+    end)
+    if indexed then env.edge_lengths = lengths end
   else env.native_error = "dictionary lookup construction failed" end
 end
 
@@ -133,7 +148,7 @@ function M.fini(env)
     if env.native.disconnect then pcall(env.native.disconnect, env.native) end
     pcall(function() env.native.memorize_callback = nil end)
   end
-  env.memory, env.native = nil, nil
+  env.memory, env.native, env.edge_lengths = nil, nil, nil
 end
 
 local function plans(input, env)
@@ -142,7 +157,12 @@ local function plans(input, env)
   env.lookup_count = 0
   for start = 0, n - 2 do
     if best[start] then
-      for length = 2, math.min(M.MAX_EDGE, n - start) do
+      local limit = math.min(M.MAX_EDGE, n - start)
+      local lengths = env.edge_lengths and env.edge_lengths[input:sub(start + 1, start + 2)]
+      local count = env.edge_lengths and (lengths and #lengths or 0) or (limit - 1)
+      for index = 1, count do
+        local length = lengths and lengths:byte(index) or (index + 1)
+        if length > limit then break end
         -- Return type differs across librime-lua versions. Always inspect the
         -- iterator; consume at most one entry, never a corpus-wide enumeration.
         env.lookup_count = env.lookup_count + 1
