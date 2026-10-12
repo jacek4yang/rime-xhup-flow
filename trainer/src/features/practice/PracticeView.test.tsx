@@ -2,7 +2,7 @@
  * 练习流程的组件级测试:以用户可见行为为准(码位格、提示、暂停、小结)。
  */
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { TrainerEntry } from "@xhup/trainer-core";
@@ -290,6 +290,31 @@ describe("PracticeView", () => {
     );
     // 还原可见性,避免串扰后续用例。
     setHidden(false);
+  });
+
+  it("学习延迟提示按题重置，暂停一分钟不触发下一题答案", () => {
+    vi.useFakeTimers();
+    try {
+      useTrainerStore.setState({ practiceIntent: "learn", hintMode: "on-delay" });
+      const { unmount } = renderPractice({ targetLength: 0 });
+      act(() => { vi.advanceTimersByTime(2001); });
+      expect(screen.getByText("xk")).toBeInTheDocument();
+      press("x"); press("k");
+      act(() => { vi.advanceTimersByTime(150); });
+      expect(screen.queryByText("xk")).not.toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(1000); });
+      press("Escape");
+      act(() => { vi.advanceTimersByTime(60000); });
+      expect(screen.queryByText("xk")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "继续练习" }));
+      act(() => { vi.advanceTimersByTime(999); });
+      expect(screen.queryByText("xk")).not.toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(screen.getByText("xk")).toBeInTheDocument();
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each(["xk", "hh"])("无上下文行字题接受规范等价码 %s，未作答不显示读音", (code) => {

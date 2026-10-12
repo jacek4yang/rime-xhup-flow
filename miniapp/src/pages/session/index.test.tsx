@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
 import type { HTMLAttributes } from "react";
 import { createElement } from "react";
 
@@ -74,4 +74,23 @@ describe("真实小程序页面的答案授权", () => {
       expect(progress?.wrong).toBe(1);
     },
   );
+  it("学习模式迟疑时钟按题重置，后台和手动恢复不累计暂停时间", () => {
+    appStore.updateSettings({ practiceIntent: "learn", hintMode: "on-delay" });
+    const { container, getByText } = render(<Session />);
+    const target = container.querySelector(".session-target")!.textContent;
+    const item = trainerIndex.pools["char-2"].find((candidate) => candidate.target === target)!;
+    act(() => { vi.advanceTimersByTime(2001); });
+    expect(container.querySelector(".session-code-hint")?.textContent).toBe(item.primaryCode);
+    for (const key of item.primaryCode) fireEvent.click(getByText(key.toUpperCase()));
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(container.querySelector(".session-code-hint")).toBeNull();
+    act(() => { vi.advanceTimersByTime(1000); host.hide(); });
+    act(() => { vi.advanceTimersByTime(60000); });
+    expect(container.querySelector(".session-code-hint")).toBeNull();
+    fireEvent.click(within(container.querySelector(".pause-overlay") as HTMLElement).getByText("继续练习"));
+    act(() => { vi.advanceTimersByTime(999); });
+    expect(container.querySelector(".session-code-hint")).toBeNull();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(container.querySelector(".session-code-hint")).not.toBeNull();
+  });
 });
