@@ -1,7 +1,6 @@
 -- Stub contracts only. Real session/privacy checks also run through librime.
 local lua_root = dofile("tests/lua/runtime_path.lua")
 local m = dofile(lua_root .. "/xhup_flow/user_memory.lua")
-local shim = dofile(lua_root .. "/xhup_flow/joint_decoder.lua")
 local passed = 0
 local function check(value, label) assert(value, label); passed = passed + 1 end
 local function notifier()
@@ -76,18 +75,5 @@ check(m.get_state(ac) == nil, "fini erases session state")
 ac:commit("after fini")
 check(ac.reads == reads, "fini disconnects observer")
 m.fini(b)
-check(shim.available == false, "legacy joint decoder explicitly unavailable")
-shim.init(a)
-check(ac:get_property("xhup_flow_joint_decoder_status") == "unavailable", "shim diagnostic")
-local visited, emitted = 0, 0
-yield = function(candidate)
-  emitted = emitted + 1
-  check(candidate == emitted and visited == emitted, "shim streams without buffering or reorder")
-end
-shim.func({iter = function() return function()
-  visited = visited + 1
-  if visited <= 1000 then return visited end
-end end}, a)
-check(emitted == 1000, "shim preserves full stream")
 io.open, os.remove, os.rename = open, remove, rename
-print("PASS session privacy/bounds/isolation + compatibility shim: " .. passed .. " stub assertions")
+print("PASS session privacy/bounds/isolation: " .. passed .. " stub assertions")

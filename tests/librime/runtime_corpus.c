@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
   check(r->find_module("lua") != NULL, "Lua module registered");
   RimeConfig config = {0};
   if (!r->schema_open("xhup_flow", &config)) return 2;
-  const char *settings[] = {"flow/enable_user_dict", "learn/enable_user_dict", "flow_readonly/enable_user_dict"};
+  const char *settings[] = {"flow/enable_user_dict", "flow_lookup/enable_user_dict", "flow_readonly/enable_user_dict"};
   for (int i=0;i<3;i++) {
     Bool enabled = True;
     check(r->config_get_bool(&config, settings[i], &enabled) && !enabled,
@@ -58,6 +58,12 @@ int main(int argc, char **argv) {
     }
     check(raw_ok,"corpus keeps every raw key");
     check(early_ok,"corpus never commits automatically");
+    int joint = r->get_option(s, "joint_decoder");
+    char joint_status[96] = "";
+    r->get_property(s, "xhup_flow_joint_decoder_status", joint_status, sizeof(joint_status));
+    if (joint && !ablation)
+      check(!strcmp(joint_status, "ready") || !strcmp(joint_status, "bounded"),
+            "joint evaluation ran the requested decoder without silent fallback");
     State undone=step(s,name,0xff08,target,NULL);
     int undo_equal=equal(&previous,&undone);
     check(undo_equal,"corpus backspace restores captured prefix");
@@ -77,6 +83,7 @@ int main(int argc, char **argv) {
     }
     printf("{\"case\":"); json(name);
     printf(",\"event\":\"corpus_result\",\"mode\":"); json(argv[4]);
+    printf(",\"joint_decoder\":%s,\"joint_status\":", joint ? "true" : "false"); json(joint_status);
     printf(",\"keys\":%zu,\"rank\":%d,\"top1\":%s,\"top3\":%s,\"first_page\":%s,\"page_size\":%d,\"pending_reachable\":%s,\"commit_exact\":%s,\"contract_failures\":%d}\n",
       length,state.target_rank,state.target_rank==0?"true":"false",
       state.target_rank>=0 && state.target_rank<3?"true":"false",

@@ -93,7 +93,7 @@ compile_dict_isolated() {
   local d="$work/compile-$dict"
   mkdir -p "$d"
   cp "$PACKAGE_DIR/$dict.dict.yaml" "$d/"
-  if [[ "$dict" == xhup_flow_learn ]]; then
+  if [[ "$dict" == xhup_flow_user ]]; then
     cp "$PACKAGE_DIR/xhup_flow_flow.dict.yaml" "$d/"
   fi
   cat > "$d/dc.schema.yaml" <<EOF
@@ -135,7 +135,7 @@ patch:
   menu/page_size: 500
 EOF
   if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
-    printf 'patch:\n  flow/enable_user_dict: false\n  learn/enable_user_dict: false\n' > "$dir/xhup_flow.custom.yaml"
+    printf 'patch:\n  flow/enable_user_dict: false\n' > "$dir/xhup_flow.custom.yaml"
     printf 'patch:\n  schema_list/+ :\n    - schema: xhup_flow\n  menu/page_size: 5\n' > "$dir/default.custom.yaml"
     if [[ "${XHUP_CORPUS_MODE:-planner}" == native-only ]]; then
       [[ -n "${XHUP_REPLAY_CORPUS:-}" ]] || { echo "ablation requires corpus mode" >&2; exit 2; }
@@ -163,9 +163,13 @@ exported_codes_for() {
   awk -F'\t' -v text="$2" '$1 == text { print $2 }' "$1"
 }
 
-# 导出文件中的全部「词形<TAB>码」行(跳过 #@ 元数据行)。
+# 全部词条的可输入码；UnityTableEncoder 的 \177enc\037 是内部存储前缀，
+# 不是用户按键。保留每条记录，原始备份/恢复仍比较完整数据库状态。
 exported_entries() {
-  awk -F'\t' '$1 != "" && $2 != "" && $1 !~ /^#/ { print $1 "\t" $2 }' "$1"
+  awk -F'\t' '$1 != "" && $2 != "" && $1 !~ /^#/ {
+    code=$2; sub(/^\177enc\037/, "", code); gsub(/ /, "", code)
+    print $1 "\t" code
+  }' "$1"
 }
 
 # ---------- 1. 全静态等值审计(干净 userdb,两趟独立进程) ----------
@@ -177,9 +181,16 @@ fi
 
 flow_dir=$work/flow
 prepare_deploy "$flow_dir" xhup_flow
-for dict in xhup_flow_learn; do
+for dict in xhup_flow_user; do
   compile_dict_isolated "$dict" "$flow_dir"
 done
+
+# Legacy-binding qualification proves safe fallback, not new Phrase APIs.
+if [[ "${XHUP_REPLAY_VERIFY_READONLY:-0}" != 1 ]]; then
+  joint_args=(--deployed "$flow_dir" --output "$work/joint-regression" --shared-data-dir "$SHARED_DATA_DIR")
+  if [[ -n "$XHUP_CLI" ]]; then joint_args+=(--cli "$XHUP_CLI"); fi
+  python3 "$SCRIPT_DIR/run_joint_regression.py" "${joint_args[@]}"
+fi
 
 if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
   if [[ -n "${XHUP_REPLAY_CORPUS:-}" ]]; then
@@ -194,7 +205,7 @@ if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
   if [[ "${XHUP_REPLAY_VERIFY_READONLY:-0}" == 1 ]]; then
     # Intentionally request learning on the OLD binding. Partial API backports
     # may initialize empty metadata, but must disconnect before any user update.
-    printf 'patch:\n  flow/enable_user_dict: true\n  learn/enable_user_dict: true\n' > "$flow_dir/xhup_flow.custom.yaml"
+    printf 'patch:\n  flow/enable_user_dict: true\n' > "$flow_dir/xhup_flow.custom.yaml"
     rime_deployer --compile "$flow_dir/xhup_flow.schema.yaml" "$flow_dir" "$SHARED_DATA_DIR" >/dev/null
     for restart in 1 2; do
       "$work/extended" "$flow_dir" "$SHARED_DATA_DIR" --learn-unavailable
@@ -215,7 +226,7 @@ if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
       (cd "$flow_dir" && rime_dict_manager -e xhup_flow_user "$work/off.tsv")
       [[ -z "$(exported_entries "$work/off.tsv")" ]] || { echo "FAIL learning-off wrote records" >&2; exit 1; }
     fi
-    printf 'patch:\n  flow/enable_user_dict: true\n  learn/enable_user_dict: true\n' > "$flow_dir/xhup_flow.custom.yaml"
+    printf 'patch:\n  flow/enable_user_dict: true\n' > "$flow_dir/xhup_flow.custom.yaml"
     rime_deployer --compile "$flow_dir/xhup_flow.schema.yaml" "$flow_dir" "$SHARED_DATA_DIR" >/dev/null
     for count in 1 2; do
       "$work/extended" "$flow_dir" "$SHARED_DATA_DIR" --learn-once
@@ -245,7 +256,7 @@ PY
     "$work/replay" "$flow_dir" "$SHARED_DATA_DIR" --learn
     echo 'PASS native genuine identity, variant code persistence and process restart' >&2
     # Refuse updates using the native persisted tick, without a second Lua ledger.
-    printf 'patch:\n  flow/enable_user_dict: true\n  flow/learning_max_updates: 0\n  learn/enable_user_dict: true\n' > "$flow_dir/xhup_flow.custom.yaml"
+    printf 'patch:\n  flow/enable_user_dict: true\n  flow/learning_max_updates: 0\n' > "$flow_dir/xhup_flow.custom.yaml"
     rime_deployer --compile "$flow_dir/xhup_flow.schema.yaml" "$flow_dir" "$SHARED_DATA_DIR" >/dev/null
     (cd "$flow_dir" && rime_dict_manager -e xhup_flow_user "$work/quota-before.tsv")
     "$work/extended" "$flow_dir" "$SHARED_DATA_DIR" --learn-blocked

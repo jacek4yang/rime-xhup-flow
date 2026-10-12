@@ -4,7 +4,7 @@
 //! 1. 用户数据目录存在性
 //! 2. 方案文件存在性与格式 (xhup_flow.schema.yaml, xhup_flow_static.schema.yaml)
 //! 3. 核心词典文件完整性
-//! 4. Lua 运行时模块完整性 (annotation.lua, quick_hint.lua, init.lua, data/quick_hints.lua)
+//! 4. Lua 运行时模块及构建期生成数据完整性
 //! 5. 平台 librime-lua 支持探测与 2.0 mandatory Lua 合同判定
 
 use std::error::Error;
@@ -23,8 +23,8 @@ pub const CORE_RIME_FILES: &[&str] = &[
     "xhup_flow_fixed_first_shortcuts.dict.yaml",
     "xhup_flow_flow.schema.yaml",
     "xhup_flow_flow.dict.yaml",
-    "xhup_flow_learn.schema.yaml",
-    "xhup_flow_learn.dict.yaml",
+    "xhup_flow_user.schema.yaml",
+    "xhup_flow_user.dict.yaml",
 ];
 
 /// XHUP Flow Lua 运行时模块清单。
@@ -34,8 +34,13 @@ pub const LUA_RUNTIME_FILES: &[&str] = &[
     "lua/xhup_flow/context_ranker.lua",
     "lua/xhup_flow/user_memory.lua",
     "lua/xhup_flow/joint_decoder.lua",
+    "lua/xhup_flow/native_tail.lua",
+    "lua/xhup_flow/full_span.lua",
     "lua/xhup_flow/init.lua",
     "lua/xhup_flow/data/quick_hints.lua",
+    "lua/xhup_flow/data/native_edges.lua",
+    "lua/xhup_flow/data/joint_scores.lua",
+    "lua/xhup_flow/data/build_info.lua",
 ];
 
 /// 诊断过程错误。

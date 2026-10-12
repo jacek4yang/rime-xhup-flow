@@ -1,11 +1,272 @@
--- Legacy customization shim, not a joint decoder or an evidence provider.
--- Kept at the owned package path so upgrades replace the old research hook.
--- The supported schema does not register this module or offer an enable switch.
-local M = { available = false, reason = "research joint decoder is not integrated" }
-function M.init(env)
-  env.engine.context:set_property("xhup_flow_joint_decoder_status", "unavailable")
+-- Bounded key/text search. Nodes retain backpointers, not copied prefix strings.
+-- Native storage and candidate construction remain outside this pure search.
+local M = { max_input = 128, beam_width = 8,
+  max_edge = 32, max_edges = 256, max_pending = 7 }
+local LOG_Q10 = 1024 / math.log(2)
+
+function M.scorer(data, identity)
+  data = data or require("xhup_flow.data.joint_scores")
+  assert(data.policy == "joint-frequency-context-v1", "unsupported joint scoring policy")
+  assert(type(identity) == "string" and data.identity == identity, "stale joint scoring model")
+  local scale = LOG_Q10
+  local offset = math.log(100000000) * scale - data.total_reward
+  return function(text, weight)
+    local character = data.characters[text]
+    if character then return character end
+    return math.floor(weight * scale + offset)
+  end, function(previous, edge)
+    local row = data.transitions[previous and previous.text or "<s>"]
+    return row and row[edge.text] or 0
+  end
 end
-function M.func(translation, _env)
-  for candidate in translation:iter() do yield(candidate) end
+
+local function better(score, count, serial, other)
+  return score > other.score or (score == other.score and
+    (count < other.count or (count == other.count and serial < other.serial)))
 end
+
+local function finite(value)
+  return type(value) == "number" and value == value
+    and value ~= math.huge and value ~= -math.huge
+end
+
+-- edges_at(start) returns bounded lexical alternatives, in deterministic order.
+-- Each edge owns keys/text/source/codes/lexical; transition(previous, edge)
+-- supplies a contextual score. Neither callback may mutate retained edges.
+-- start/finish are zero-based raw-key offsets, never virtual query offsets.
+function M.search(raw, edges_at, transition)
+  if #raw == 0 or #raw > M.max_input or raw:find("[^a-z]") then
+    return { paths = {}, reason = "unsupported_input", truncated_edges = 0 }
+  end
+  local root = { finish = 0, score = 0, lexical = 0, context = 0,
+    count = 0, serial = 0 }
+  local beams = { [0] = { root } }
+  local serial, truncated = 0, 0
+  for start = 0, #raw - 1 do
+    local beam = beams[start]
+    if beam then
+      local edges = edges_at(start)
+      truncated = truncated + math.max(0, #edges - M.max_edges)
+      for i = 1, math.min(#edges, M.max_edges) do
+        local edge = edges[i]
+        local finish = start + #edge.keys
+        if #edge.keys > 0 and #edge.keys <= M.max_edge and finish <= #raw
+          and raw:sub(start + 1, finish) == edge.keys and finite(edge.lexical) then
+          local target = beams[finish]
+          if not target then target = {}; beams[finish] = target end
+          for j = 1, #beam do
+            local previous = beam[j]
+            local context = transition and transition(previous.edge, edge) or 0
+            if finite(context) then
+              local score, count = previous.score + edge.lexical + context, previous.count + 1
+              serial = serial + 1
+              if finite(score) and (#target < M.beam_width
+                or better(score, count, serial, target[#target])) then
+                local node = { previous = previous, edge = edge, finish = finish,
+                  score = score, count = count, serial = serial,
+                  lexical = previous.lexical + edge.lexical,
+                  context = previous.context + context }
+                local position = #target + 1
+                while position > 1 and better(score, count, serial, target[position - 1]) do
+                  position = position - 1
+                end
+                table.insert(target, position, node)
+                if #target > M.beam_width then target[#target] = nil end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  local paths = {}
+  -- Keep each recent complete frontier, even when another path consumes a new
+  -- ambiguous tail key. A valid prefix is not an implicit commit boundary.
+  for finish = #raw, math.max(1, #raw - M.max_pending), -1 do
+    local beam = beams[finish]
+    if beam then
+      for rank = 1, #beam do paths[#paths + 1] = beam[rank] end
+    end
+  end
+  return { paths = paths, truncated_edges = truncated }
+end
+
+function M.describe(raw, node, start)
+  local edges, keys, texts, sources, spans, codes = {}, {}, {}, {}, {}, {}
+  local current = node
+  while current.edge do
+    edges[#edges + 1] = current.edge
+    current = current.previous
+  end
+  local offset = start or 0
+  for i = #edges, 1, -1 do
+    local edge = edges[i]
+    keys[#keys + 1], texts[#texts + 1], sources[#sources + 1] = edge.keys, edge.text, edge.source
+    spans[#spans + 1] = { start = offset, finish = offset + #edge.keys }
+    offset = offset + #edge.keys
+    for _, code in ipairs(edge.codes or {}) do codes[#codes + 1] = code end
+  end
+  return { start = start or 0, finish = offset, remaining = raw:sub(node.finish + 1),
+    keys = keys, words = texts, sources = sources, spans = spans, codes = codes,
+    text = table.concat(texts), preedit = table.concat(keys, " "),
+    lexical = node.lexical, context = node.context, score = node.score,
+    tie = node.serial, node = node }
+end
+
+-- Per-query read-only lexical memoization. No candidates or user-dictionary
+-- results survive the call, so edits/selection/learning cannot stale this cache.
+function M.lexicon(raw, memory, aliases, reverse, lengths, score)
+  assert(memory.user_dict == nil and aliases.user_dict == nil, "lexical lookup must be read-only")
+  local canonical, static, normalized = {}, {}, {}
+  local stats = { lookups = 0, reverse = 0, rows = 0, normalization_budget = 0 }
+  local normalization_left = 0
+  local function lookup(owner, cache, code, bound)
+    local cached = cache[code]
+    if cached then return cached end
+    local items, examined = {}, 0
+    owner:dict_lookup(code, false, bound)
+    stats.lookups = stats.lookups + 1
+    for entry in owner:iter_dict() do
+      examined = examined + 1
+      stats.rows = stats.rows + 1
+      local id = owner == memory and entry.code:print() or nil
+      if owner ~= memory or id:match("^%d+$") then
+        items[#items + 1] = { text = entry.text, weight = entry.weight,
+          id = id and tonumber(id) or nil }
+      end
+      if examined >= bound then break end
+    end
+    cache[code] = items
+    return items
+  end
+  local function exact_text(text)
+    local cached = normalized[text]
+    if cached ~= nil then return cached or nil end
+    stats.reverse = stats.reverse + 1
+    local best, visited = nil, 0
+    for code in reverse:lookup(text):gmatch("[a-z]+") do
+      visited = visited + 1
+      if visited > 8 then break end
+      if not canonical[code] then
+        if normalization_left == 0 then
+          stats.normalization_budget = stats.normalization_budget + 1
+          return nil -- A budget miss is not a dictionary miss; do not cache it.
+        end
+        normalization_left = normalization_left - 1
+      end
+      for _, item in ipairs(lookup(memory, canonical, code, 64)) do
+        if item.text == text and finite(item.weight)
+          and (not best or item.weight > best.weight) then best = item end
+      end
+    end
+    normalized[text] = best or false
+    return best
+  end
+  return function(start)
+    normalization_left = 32
+    local edges = {}
+    local remaining = #raw - start
+    local native_lengths = lengths[raw:sub(start + 1, start + 2)] or ""
+    local seen = {}
+    local function add(code, text, codes, weight, source, fallback_score)
+      local key = code .. "\0" .. text
+      if seen[key] then return end
+      local lexical = fallback_score or score(text, weight, source, code)
+      if not finite(lexical) then return end
+      seen[key] = true
+      edges[#edges + 1] = { keys = code, text = text, codes = codes,
+        lexical = lexical, source = source }
+    end
+    -- Native edges come first, preserving their exact canonical syllable IDs
+    -- when a static spelling denotes the same text.
+    for i = 1, #native_lengths do
+      local length = native_lengths:byte(i)
+      if length <= remaining and length <= M.max_edge then
+        local code = raw:sub(start + 1, start + length)
+        local items = lookup(memory, canonical, code, 64)
+        for j = 1, math.min(8, #items) do
+          local item = items[j]
+          add(code, item.text, { item.id }, item.weight, "canonical")
+        end
+      end
+    end
+    -- The frozen static dictionary is the authoritative read-only alias index.
+    -- PRIMARY includes five-key spellings; it is not restricted to four keys.
+    for length = 1, math.min(5, remaining) do
+      local code = raw:sub(start + 1, start + length)
+      for _, item in ipairs(lookup(aliases, static, code, 8)) do
+        if not seen[code .. "\0" .. item.text] then
+          local canonical_item = exact_text(item.text)
+          if canonical_item then
+            add(code, item.text, { canonical_item.id }, canonical_item.weight, "static_alias")
+          elseif #item.text <= 128 then
+            local codes, lexical, characters = {}, 0, {}
+            for character in item.text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+              local primitive = exact_text(character)
+              if not primitive or #codes == 32 then codes = {}; break end
+              codes[#codes + 1] = primitive.id
+              characters[#characters + 1] = character
+              lexical = lexical + score(character, primitive.weight, "alias_character", code)
+            end
+            if #codes > 0 and table.concat(characters) == item.text then
+              add(code, item.text, codes, nil, "spelled_alias", lexical)
+            end
+          end
+        end
+      end
+    end
+    return edges
+  end, stats
+end
+
+local function native_entry(path)
+  if path.native_entry then return path.native_entry end
+  assert(#path.codes > 0 and #path.codes <= 1024, "native code budget exceeded")
+  local entry = DictEntry()
+  -- Code() returns a shared-pointer wrapper. This getter supplies the Code
+  -- value required by DictEntry.code on supported native bindings.
+  local code = entry.code
+  for _, id in ipairs(path.codes) do
+    assert(id >= 0 and id % 1 == 0, "invalid native syllable")
+    code:push(id)
+  end
+  entry.text, entry.code, entry.weight = path.text, code, path.score
+  path.native_entry = entry
+  return entry
+end
+
+-- Query the native serialized key prefix, not an unbounded homophone bucket.
+-- A trailing space + TAB separates canonical syllables from the target text.
+-- Predictive mode makes the native limit apply even to exact code matches.
+-- Only a byte-exact code/text record with an actual commit can affect ranking.
+function M.user_reward(path, memory, dictionary)
+  if not dictionary then return 0 end
+  local entry = native_entry(path)
+  local code = table.concat(memory.dict:decode(entry.code), " ") .. " "
+  local found = dictionary:lookup_words(code .. "\t" .. path.text, true, 1)
+  for learned in found:iter() do
+    if learned.text == path.text and learned.custom_code == code
+      and learned.remaining_code_length == 0 and learned.commit_count > 0
+      and finite(learned.weight) then
+      -- Reuse librime's decayed user probability, including its native exact
+      -- credibility. No second persistence ledger or invented commit counter.
+      return math.max(0, math.floor(learned.weight * LOG_Q10) - path.score)
+    end
+    break
+  end
+  return 0
+end
+
+-- Real Phrase identity; the sole writer receives the ordinary native commit.
+function M.candidate(path, memory, language, quality)
+  assert(memory.user_dict == nil and memory.lang_name == language, "native language/readonly mismatch")
+  local entry = native_entry(path)
+  entry.weight = path.score
+  local phrase = Phrase(memory, "phrase", path.start, path.finish, entry)
+  phrase.preedit, phrase.quality = path.preedit, quality
+  local candidate = phrase:toCandidate()
+  path.native_candidate, path.native_language = candidate, language
+  return candidate
+end
+
 return M

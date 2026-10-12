@@ -1,13 +1,15 @@
 # Bounded native boundary planning
 
-## Current proposal
+## Default fallback policy
 
 The Flow schema has one native translation/learning provider, created by
 `lua_translator@*xhup_flow.native_tail`. Static primary remains separate and
 learning-disabled. `flow_lookup` is a **read-only** native dictionary binding;
-it has no user database or memorization callback. The old `learn` configuration
-is retained for migration, but is no longer a second registered translator.
-The one native provider uses the encoder-capable `xhup_flow_learn` dictionary.
+it has no user database or memorization callback. The one native provider and
+read-only Phrase factory use the encoder-capable `xhup_flow_user` dictionary.
+The persisted `xhup_flow_user.userdb` name and spelled keys remain unchanged.
+The unused `learn` configuration is removed; learning customization belongs
+under `flow`, never under either read-only lookup namespace.
 
 The planner obtains exact native lexical edges and minimizes their count with a
 scalar dynamic program and deterministic tie order. **This is structural policy,
@@ -46,6 +48,84 @@ Standalone 2/3/4-key codes do not receive a structural full-path replacement.
 Missing lookup APIs preserve native translation; missing native translation
 leaves the independent Static primary available. Errors remain explicit in the
 module status, not evidence of successful full Flow operation.
+
+## Opt-in bounded joint key/text search
+
+`joint_decoder` remains **off by default** until independent quality and complete
+compatibility qualification. Enabling it selects the implementation in
+`joint_decoder.lua`, not the former inert compatibility module. The fallback
+above remains available for unsupported bindings or customized dictionaries.
+
+The search retains eight deterministic backpointer paths at each raw-key end,
+rather than one minimum-edge predecessor. It accepts ASCII input up to 128 keys,
+edges up to 32 keys, at most 256 offered edges per start, and the complete paths
+plus each of the last seven completed frontiers. A completed prefix is not a
+commit boundary. Each described path records raw start/end, remaining keys,
+key/word segments, sources, lexical/context/user scores, deterministic tie order,
+and its genuine native Candidate. Display separators never change raw spans.
+
+`flow_aliases` reads the existing compiled Static dictionary without a user
+database. Accepted one-level, PRIMARY and FIXED_FIRST spellings therefore become
+search edges without adding aliases to the learning syllabary. Canonical matches
+retain their original native IDs. Alias text is normalized through the generated
+canonical reverse dictionary; a word absent as a single canonical entry can use
+its canonical characters. Exact native rows confirm every edge. Per-query caches
+hold lexical data only, disappear after translation, and never retain learned
+results across append, backspace, cursor edits, selection or schema changes.
+Normalization has an additional per-start lookup budget; budget misses are not
+cached as dictionary absence.
+
+The compiler emits `data/joint_scores.lua` from canonical character frequencies,
+the actual generated Flow word frequencies, and the existing Apache-2.0 KDConv
+bigram source. It reuses the Rust decoder's deterministic Q10 frequency reward.
+The 16,384 highest-count context pairs use a capped reward; this is a small
+frequency/context model, **not a calibrated language model or a quality claim**.
+No research-only data or online inference is used.
+The schema also binds the generated model identity. A stale `require` cache or
+missing binding cannot silently score using a different deployment's data.
+
+For completed retained paths, personalization reads the existing native writer's
+dictionary using the canonical spelled key and exact candidate text. It uses
+librime's own decayed weight only for an actual committed, byte-exact record.
+It does not introduce a second writer, a commit counter or a persistent cache.
+The native key layout and predictive lookup were inspected at librime commits
+`295cb2ab68f89ee9d3237c7d4b8033bda3f3b635` and
+`7bc3fb0005a03aff1c086611e4d52bb7f6444fdd`. An exact stored-key hit is limited to
+one result; native traversal of deleted records or longer text prefixes is not
+a constant-time guarantee. A personalization exception discards all user rewards
+for that query while retaining lexical search.
+
+Every emitted path constructs a real `DictEntry`/`Phrase` owned by the read-only
+Memory whose dictionary **and Language** match the sole writer. The Code value
+comes from `DictEntry.code`; the `Code()` shared-pointer wrapper is not a valid
+replacement on the supported binding. No ShadowCandidate is added. Complete
+joint paths precede ordinary dynamic candidates, except that an explicitly
+learned, exact, full-span native first word retains first place. User-created
+codes need not occur in the immutable beam lexicon. This protection keeps the
+original native object, not a reconstructed text candidate. Pending paths follow
+the native first page. The primary Static translator and its quality remain
+unchanged; full Static compatibility must still be checked before default-on.
+
+`tests/librime/run_joint_regression.py` runs in separate copied deployments,
+never in the clean Static audit's database. Actual librime selection verifies
+seven mixed-code sequences, middle-cursor edits, pending-tail continuation,
+no dropped/duplicate commit, default quick hints, and no database creation with
+learning off. Selecting the initially non-first `就是拟好` under `jqunihc`
+promotes it on the next query and after process restart. Exports contain exactly
+one correctly encoded `jqui nihc` record, with commits/tick 1 then 2. Quota zero
+preserves typing, rejects the write, and leaves ranking and export unlearned.
+Restoring a public synthetic 16-record old snapshot preserves its codes/counts
+and tick 112 before new learning advances it to 113 and 114.
+
+Native sentence selection of `你好你好去` now creates `nhnhq`; both decoder
+policies recall it first after restart and commit it completely. CLI backup and
+restore preserve all native keys, counts and quota. Native `UserDbMerger`
+normalizes `d/t` to the snapshot clock, so the test compares effective decayed
+probability within native six-significant-digit serialization precision, not
+identical timestamp representations. These focused Linux checks passed; they
+do not replace independent ranking, full Static traversal, paired performance
+or GUI platform acceptance.
+
 
 ## Generated native lookup projection
 
@@ -104,10 +184,26 @@ that some older dictionary entry exists.
 There is one native writer, not a parallel Lua TSV store. Its memorization callback
 checks the persisted native user-dictionary tick before delegating to native
 `memorize`. The hard limit is 65,536 logical updates (a custom configuration may
-lower it), with at most 64 committed elements of at most 256 bytes each. The native
-encoder is limited to 20 elements and one homograph. Preflight conservatively
-reserves `(elements + 1) * (encoder_window + 1)` updates for direct entries and
-commit-history encoding. An excessive imported tick also pauses new learning.
+lower it), with at most 64 committed elements and 64 total canonical/custom-code
+units, 256 total text bytes, and 4,096 total serialized code bytes. An atomic
+Phrase cannot bypass the aggregate bounds by containing many syllables in one
+element. Native phrase encoding covers at most 20 characters. Preflight reserves
+one update per direct element plus up to 32 native encoder DFS paths for a
+multi-element commit; `max_homographs` does not bound those DFS paths.
+Cross-commit history encoding is explicitly disabled: it can create zero-commit
+records without advancing the positive native tick. Missing/enabled history
+configuration fails closed before any memorization. Actual selections still
+use the single native writer. An excessive imported tick pauses new learning.
+
+The generator uses librime's `length_equal` rule field, not the previously
+ineffective `length`. Initial-only native `stem` values are generated from the
+same canonical codes and deduplicated by librime; they do not add syllables.
+For the five-character regression above, rule correction alone produced 37
+positive updates because multiple full-code variants encoded the same initials.
+Generated stems reduced this to six (five components plus one encoded phrase),
+with one learned encoded record. This is a measured update-count reduction,
+not a typing-latency claim. Native encoder storage prefixes are decoded only
+when producing replay keystrokes; backups preserve the original keys.
 
 Quota/API/storage refusal keeps typing available and reports
 `xhup_flow_learning_status`; the first Flow candidate carries a learning-paused

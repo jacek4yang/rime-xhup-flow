@@ -1,10 +1,10 @@
--- One native translation/learning provider plus bounded boundary planning.
--- The planner minimizes lexical-unit count (not a frequency estimate). Native
--- lookup supplies every edge; native Rime constructs and learns every candidate.
--- Preserve the native first five candidates (the default visible page). Plans
--- provide bounded alternatives, never an invented lexical-score override.
+-- One native learning owner; read-only lexical providers share its syllable IDs.
+-- Opt-in joint search preserves overlapping key/text paths and native Phrase
+-- identity. Unsupported APIs/configuration retain the bounded legacy planner.
+-- Static exact-code priority is enforced by the unchanged primary translator.
 local M = { MAX_INPUT = 128, MAX_EDGE = 32, HEAD = 5, CANDIDATES_PER_QUERY = 2,
-  MAX_LEARNING_UPDATES = 65536, MAX_LEARNING_ELEMENTS = 64, MAX_LEARNING_TEXT_BYTES = 256 }
+  MAX_LEARNING_UPDATES = 65536, MAX_LEARNING_ELEMENTS = 64, MAX_ENCODER_PATHS = 32,
+  MAX_LEARNING_TEXT_BYTES = 256, MAX_LEARNING_CODE_BYTES = 4096 }
 
 local function learning_status(env, status)
   env.learning_status = status
@@ -35,7 +35,8 @@ local function bound_learning(env)
   limit = math.max(0, math.min(limit, M.MAX_LEARNING_UPDATES))
   local phrase_length = config:get_int("flow/max_phrase_length") or 20
   local homographs = config:get_int("flow/max_homographs") or 1
-  if not env.native.memorize or phrase_length > 20 or phrase_length < 1 or homographs ~= 1 then
+  if not env.native.memorize or phrase_length > 20 or phrase_length < 1 or homographs ~= 1
+    or config:get_bool("flow/encode_commit_history") ~= false then
     error("unsupported bounded native learning API/configuration")
   end
   env.native.memorize_callback = function(native, entry)
@@ -48,14 +49,33 @@ local function bound_learning(env)
       if #elements > M.MAX_LEARNING_ELEMENTS then
         learning_status(env, "commit_limit"); return false
       end
+      local text_bytes, code_bytes, code_units = 0, 0, 0
       for _, element in ipairs(elements) do
-        if #element.text > M.MAX_LEARNING_TEXT_BYTES then
+        text_bytes = text_bytes + #element.text
+        if text_bytes > M.MAX_LEARNING_TEXT_BYTES then
+          learning_status(env, "commit_limit"); return false
+        end
+        local code, custom = element.code:print(), element.custom_code or ""
+        code_bytes = code_bytes + #code + #custom
+        if code_bytes > M.MAX_LEARNING_CODE_BYTES then
+          learning_status(env, "commit_limit"); return false
+        end
+        if code:find("[^%d,]") or code:find(",,", 1, true)
+          or code:sub(1, 1) == "," or code:sub(-1) == "," then
+          learning_status(env, "storage_unverified"); return false
+        end
+        local numeric, spelled = 0, 0
+        for _ in code:gmatch("%d+") do numeric = numeric + 1 end
+        for _ in custom:gmatch("%S+") do spelled = spelled + 1 end
+        local units = math.max(numeric, spelled)
+        code_units = code_units + units
+        if units == 0 or code_units > M.MAX_LEARNING_ELEMENTS then
           learning_status(env, "commit_limit"); return false
         end
       end
-      -- Reserve direct updates plus every possible commit-history phrase in
-      -- the configured <=20-element encoder window, with one homograph.
-      local reserve = (#elements + 1) * (phrase_length + 1)
+      -- Native TableEncoder's DFS visits at most 32 complete paths, regardless
+      -- of max_homographs/max_phrase_length. History's zero-tick writes are off.
+      local reserve = #elements + (#elements > 1 and M.MAX_ENCODER_PATHS or 0)
       if tick + reserve > limit then
         learning_status(env, "quota_exhausted"); return false
       end
@@ -72,6 +92,8 @@ end
 
 function M.init(env)
   env.native, env.memory, env.native_error, env.edge_lengths = nil, nil, nil, nil
+  env.joint_ready, env.aliases, env.reverse = nil, nil, nil
+  env.lexical_score, env.transition_score = nil, nil
   if not Component or not Component.Translator then
     env.native_error = "native translator API unavailable"
     return
@@ -122,6 +144,9 @@ function M.init(env)
     end
   end
   if not Memory then env.native_error = "dictionary lookup API unavailable"; return end
+  if config:get_bool("flow_lookup/enable_user_dict") ~= false then
+    env.native_error = "read-only lookup configuration unavailable"; return
+  end
   local ready, memory = pcall(Memory, env.engine, env.engine.schema, "flow_lookup")
   if ready and memory then
     env.memory = memory
@@ -129,10 +154,10 @@ function M.init(env)
     -- Old schemas/APIs and custom dictionaries/packs retain exhaustive lookup.
     local indexed, lengths = pcall(function()
       if config:get_bool("flow_lookup/enable_compiled_index") ~= true
-        or config:get_string("flow_lookup/dictionary") ~= "xhup_flow_learn"
+        or config:get_string("flow_lookup/dictionary") ~= "xhup_flow_user"
         or config:get_list("flow_lookup/packs") then return nil end
       local prism = config:get_string("flow_lookup/prism")
-      if prism and prism ~= "xhup_flow_learn" then return nil end
+      if prism and prism ~= "xhup_flow_user" then return nil end
       local identity = config:get_string("flow_lookup/compiled_index_id")
       if not identity then return nil end
       local index = require("xhup_flow.data.native_edges")
@@ -149,6 +174,8 @@ function M.fini(env)
     pcall(function() env.native.memorize_callback = nil end)
   end
   env.memory, env.native, env.edge_lengths = nil, nil, nil
+  env.aliases, env.reverse, env.lexical_score, env.transition_score = nil, nil, nil, nil
+  env.joint_ready = nil
 end
 
 local function plans(input, env)
@@ -230,8 +257,104 @@ local function alternatives(input, segment, env)
   return result
 end
 
+local function joint_status(env, status)
+  env.engine.context:set_property("xhup_flow_joint_decoder_status", status)
+end
+
+local function prepare_joint(env)
+  if env.joint_ready ~= nil then return env.joint_ready end
+  env.joint_ready = false
+  local ready = pcall(function()
+    local config = env.engine.schema.config
+    assert(env.edge_lengths and env.memory and env.memory.user_dict == nil and env.memory.dict.loaded)
+    assert(config:get_bool("flow_aliases/enable_user_dict") == false)
+    assert(config:get_string("flow_aliases/dictionary") == "xhup_flow")
+    assert(not config:get_list("flow_aliases/packs"))
+    local prism = config:get_string("flow_aliases/prism")
+    assert(not prism or prism == "xhup_flow")
+    assert(type(DictEntry) == "function" and type(Phrase) == "function"
+      and type(ReverseDb) == "function")
+    assert(type(env.memory.lang_name) == "string" and env.memory.lang_name ~= ""
+      and env.native.lang_name == env.memory.lang_name)
+    assert(type(env.memory.dict.name) == "string"
+      and env.native.dict.name == env.memory.dict.name and env.native.dict.loaded)
+    local joint = require("xhup_flow.joint_decoder")
+    local lexical, transition = joint.scorer(nil, config:get_string("flow/joint_model_id"))
+    local aliases = Memory(env.engine, env.engine.schema, "flow_aliases")
+    assert(aliases.user_dict == nil and aliases.dict.loaded)
+    env.aliases = aliases
+    env.reverse = ReverseDb("build/xhup_flow_user.reverse.bin")
+    env.lexical_score, env.transition_score = lexical, transition
+  end)
+  if ready then
+    env.joint_ready = true
+    joint_status(env, "ready")
+  else
+    env.aliases, env.reverse = nil, nil
+    joint_status(env, "configuration_or_api_unavailable")
+  end
+  return env.joint_ready
+end
+
+local function joint_candidates(input, segment, env)
+  local joint = require("xhup_flow.joint_decoder")
+  local provider, stats = joint.lexicon(input, env.memory, env.aliases, env.reverse,
+    env.edge_lengths, env.lexical_score)
+  local result = joint.search(input, provider, env.transition_score)
+  local full, pending, seen, paths = {}, {}, {}, {}
+  local personalization = true
+  env.user_lookup_count = 0
+  for _, node in ipairs(result.paths) do
+    local path = joint.describe(input, node, segment.start)
+    path.user = 0
+    if personalization and env.native.user_dict then
+      env.user_lookup_count = env.user_lookup_count + 1
+      local ok, reward = pcall(joint.user_reward, path, env.memory, env.native.user_dict)
+      if ok then path.user = reward
+      else personalization = false end
+    end
+    path.score = path.score + path.user
+    paths[#paths + 1] = path
+  end
+  if not personalization then
+    for _, path in ipairs(paths) do path.score, path.user = path.score - path.user, 0 end
+  end
+  table.sort(paths, function(a, b)
+    if a.finish ~= b.finish then return a.finish > b.finish end
+    if a.score ~= b.score then return a.score > b.score end
+    if a.node.count ~= b.node.count then return a.node.count < b.node.count end
+    return a.tie < b.tie
+  end)
+  for rank, path in ipairs(paths) do
+    local key = path.finish .. "\0" .. path.text
+    if not seen[key] then
+      seen[key], path.rank = true, rank - 1
+      local candidate = joint.candidate(path, env.memory, env.native.lang_name, 1000 - rank)
+      local target = path.finish == segment._end and full or pending
+      target[#target + 1] = candidate
+    end
+  end
+  env.lookup_count = stats.lookups
+  joint_status(env, not personalization and "personalization_unavailable"
+    or (stats.normalization_budget > 0 and "bounded" or "ready"))
+  return full, pending
+end
+
+-- An explicitly learned exact native word may have a user-created code absent
+-- from the immutable beam lexicon. Do not demote that native first choice.
+local function learned_exact(candidate, segment)
+  if candidate.type ~= "user_table" or candidate.start ~= segment.start
+    or candidate._end ~= segment._end then return false end
+  local ok, learned = pcall(function()
+    local phrase = candidate:to_phrase()
+    local entry = phrase and phrase.entry
+    return entry and entry.commit_count > 0 and entry.remaining_code_length == 0
+  end)
+  return ok and learned
+end
+
 function M.func(input, segment, env)
-  env.lookup_count, env.query_count = 0, 0
+  env.lookup_count, env.query_count, env.user_lookup_count = 0, 0, 0
   if not env.native then return end -- static primary remains available
   local first = true
   local function emit(candidate)
@@ -244,17 +367,33 @@ function M.func(input, segment, env)
   env.query_count = 1
   local ok, base = pcall(env.native.query, env.native, input, segment)
   if not ok then env.native_error = "native query failed"; return end
-  local supported = #input >= 3 and #input <= M.MAX_INPUT and env.memory
+  local supported = #input >= 2 and #input <= M.MAX_INPUT and env.memory
     and not input:find("[^a-z]") and segment._end - segment.start == #input
-  local extra = {}
-  if supported then
+  local extra, full, used_joint = {}, {}, false
+  local context = env.engine.context
+  if supported and context and context.get_option and context:get_option("joint_decoder")
+    and prepare_joint(env) then
+    local ready, complete, pending = pcall(joint_candidates, input, segment, env)
+    if ready then
+      full, extra, used_joint = complete, pending, true
+    else
+      joint_status(env, "query_failed")
+    end
+  end
+  if supported and not used_joint and #input >= 3 then
     local ready, candidates = pcall(alternatives, input, segment, env)
     if ready then extra = candidates
     else env.native_error = "boundary lookup failed" end
   end
-  if #extra == 0 then
+  if #full == 0 and #extra == 0 then
     if base then for candidate in base:iter() do emit(candidate) end end
     return
+  end
+  local full_appended = false
+  local function append_full()
+    if full_appended then return end
+    for _, candidate in ipairs(full) do emit(candidate) end
+    full_appended = true
   end
   local collected, appended = 0, false
   local function append_alternatives()
@@ -264,11 +403,18 @@ function M.func(input, segment, env)
   end
   if base then
     for candidate in base:iter() do
-      emit(candidate)
+      if collected == 0 and used_joint and learned_exact(candidate, segment) then
+        emit(candidate)
+        append_full()
+      else
+        append_full()
+        emit(candidate)
+      end
       collected = collected + 1
       if collected == M.HEAD then append_alternatives() end
     end
   end
+  append_full()
   append_alternatives()
 end
 return M

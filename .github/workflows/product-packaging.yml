@@ -192,7 +192,7 @@ jobs:
           cp -r build/rime-package/lua "$work/"
           for dict in xhup_flow_chars xhup_flow_words xhup_flow_shortcuts \
                       xhup_flow_word_shortcuts xhup_flow_fixed_first_shortcuts \
-                      xhup_flow_flow xhup_flow_learn; do
+                      xhup_flow_flow xhup_flow_user; do
             compile_dict_via_wrapper "$work" "$dict"
           done
           rime_deployer --compile "$work/xhup_flow.schema.yaml" "$work" "$shared"

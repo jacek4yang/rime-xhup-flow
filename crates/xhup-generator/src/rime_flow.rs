@@ -2,7 +2,7 @@
 //!
 //! - **组句源词典 `xhup_flow_flow`**:包含 hot / extended 词汇证据与
 //!   单字音码/全码原语,由学习词典 import;默认部署不再单独编译重复表。
-//! - **运行时词典 `xhup_flow_learn`**:通过 `import_tables` 复用完整
+//! - **运行时词典 `xhup_flow_user`**:通过 `import_tables` 复用完整
 //!   组句源词典,保留 encoder 与全码补充。一个原生提供者同时承担组句和
 //!   有界学习;只读探测与旧 API 降级也用此表。primary 静态 translator
 //!   的质量栅栏保护冻结菜单。逻辑词条/编码不变,仅移除未使用的物理副本。
@@ -39,11 +39,11 @@ const DICTIONARY_NAME: &str = "xhup_flow_flow";
 /// 生成的 Flow 组句词典文件名(生成器拥有的产物标识,调用方不得自行命名)。
 pub const RIME_FLOW_DICTIONARY_FILENAME: &str = "xhup_flow_flow.dict.yaml";
 
-/// 学习词典名称(导入 Flow 关系 + 全码单字补充,encoder 用)。
-const LEARN_DICTIONARY_NAME: &str = "xhup_flow_learn";
+/// 与既有用户库同名的规范词典；只读 Phrase 工厂与唯一 writer 共享语言身份。
+pub(crate) const LEARN_DICTIONARY_NAME: &str = "xhup_flow_user";
 
 /// 生成的 Flow 学习词典文件名。
-pub const RIME_LEARN_DICTIONARY_FILENAME: &str = "xhup_flow_learn.dict.yaml";
+pub const RIME_LEARN_DICTIONARY_FILENAME: &str = "xhup_flow_user.dict.yaml";
 
 /// 词典内 encoder rules(组句/学习短语的确定性编码规则)。
 ///
@@ -90,7 +90,7 @@ pub fn flow_encoder_yaml() -> String {
             })
             .collect();
         out.push_str(&format!(
-            "    - length: {length}\n      formula: \"{formula}\"\n"
+            "    - length_equal: {length}\n      formula: \"{formula}\"\n"
         ));
     }
     out
@@ -182,13 +182,10 @@ pub fn generate_rime_flow_dictionary() -> String {
 
 /// 生成 Flow 学习 Rime 源词典文本(导入组句词典 + encoder)。
 ///
-/// 供 `table_translator@learn`(enable_sentence **false**, user_dict,
-/// enable_encoder)使用。它导入 `xhup_flow_flow` 的完整关系而不复制数据行，
-/// 使两个 translator 的 Flow 关系 syllable-id 空间严格一致；本地数据行
-/// 只追加 Flow 未收录的 3/4 键单字全码，不复制百万行词汇。否则 extended
-/// 词汇加入 Flow 后，共享 userdb 会把一方的 id 交给另一方，导致学习静默失效。
-/// 单字不会造成退化句子，因为 learn translator 关闭组句；其 exact 查询
-/// 与 flow 重合，经 uniquifier 去重后不可见。
+/// 单一原生提供者及只读 Phrase 工厂使用同一张规范表。物理词典名称与
+/// 既有 `xhup_flow_user` 用户库相同，因此原生 Language 身份一致；用户库
+/// 不改名、不清空。导入关系和本地数据行保持不变，不把简码加入此音节空间。
+/// 本地 3/4 键单字行及 encoder 继续保留，避免改变旧学习条目的规范编码。
 pub fn generate_rime_learn_dictionary() -> String {
     let rows: Vec<_> = canonical_input_char_code_entries()
         .into_iter()
@@ -305,6 +302,9 @@ fn render_dictionary(
         }
     }
     if let Some(encoder) = encoder_yaml {
+        // The encoder only consumes initials. Deduplicated native stems avoid
+        // enumerating 2/3/4-key variants that encode the same learned phrase.
+        out.push_str("columns: [text, code, weight, stem]\n");
         out.push_str(encoder);
     }
     out.push_str("...\n");
@@ -314,6 +314,10 @@ fn render_dictionary(
         out.push_str(code);
         out.push('\t');
         out.push_str(&weight.to_string());
+        if encoder_yaml.is_some() {
+            out.push('\t');
+            out.push(char::from(code.as_bytes()[0]));
+        }
         out.push('\n');
     }
     out
@@ -626,31 +630,6 @@ mod tests {
                 .nth(1)
                 .is_some_and(|code| matches!(code.len(), 3 | 4))
         }));
-        // encoder 段存在。
-        assert!(dict.contains("encoder:"), "学习词典应含 encoder 段");
-        assert!(dict.contains("formula: \"AaBaCaDaZa\""));
         assert!(dict.len() < 500_000, "学习词典不得复制百万行词汇数据");
-    }
-
-    /// encoder 规则:逐字声码首键,公式坐标正确。
-    #[test]
-    fn encoder_rules_are_per_char_initials() {
-        let yaml = flow_encoder_yaml();
-        // 4 字规则:AaBaCaZa(组合词,如 我们时间 → 四字首键)。
-        assert!(yaml.contains("length: 4\n      formula: \"AaBaCaZa\""));
-        // 5 字规则:AaBaCaDaZa。
-        assert!(yaml.contains("length: 5\n      formula: \"AaBaCaDaZa\""));
-        // 20 字规则以 Za 结尾。
-        assert!(
-            yaml.contains(
-                "length: 20\n      formula: \"AaBaCaDaEaFaGaHaIaJaKaLaMaNaOaPaQaRaSaZa\""
-            )
-        );
-        // 规则条数 = 4..=20。
-        let count = yaml.matches("    - length: ").count();
-        assert_eq!(
-            count,
-            FLOW_ENCODER_MAX_PHRASE_LENGTH - FLOW_ENCODER_MIN_PHRASE_LENGTH + 1
-        );
     }
 }

@@ -105,7 +105,7 @@ def main():
         directory = output / f"trial-{trial}"
         shutil.copytree(deployed, directory)
         enabled = "true" if args.learning == "on" else "false"
-        (directory / "xhup_flow.custom.yaml").write_text(f"patch:\n  flow/enable_user_dict: {enabled}\n  learn/enable_user_dict: {enabled}\n")
+        (directory / "xhup_flow.custom.yaml").write_text(f"patch:\n  flow/enable_user_dict: {enabled}\n")
         with (output / f"deploy-{trial}.log").open("w") as log:
             subprocess.run(["rime_deployer", "--compile", str(directory / f"{args.schema}.schema.yaml"), str(directory), str(args.shared)], env=env, stdout=log, stderr=log, check=True)
         started = time.monotonic_ns()

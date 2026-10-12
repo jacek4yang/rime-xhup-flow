@@ -8,8 +8,8 @@ bounded top-256 probe time. The replay fixture uses a five-candidate page. Searc
 16 menu entries are captured. Absence within that bound is not proof of absence
 from every possible native path. Fixed public regression strings are not user
 corpus data. No runtime telemetry is added. The isolated replay fixture disables
-native learning in compiled `flow/enable_user_dict` and `learn/enable_user_dict`
-configuration and asserts those values through the actual Rime API; a similarly
+native learning in compiled `flow/enable_user_dict`, and verifies that
+`flow_lookup/enable_user_dict` remains false through the actual Rime API; a similarly
 named context switch does NOT turn native learning off. `XHUP_REPLAY_VERIFY_LEARNING=1` additionally checks learning-off export,
 recompiles with native learning enabled, checks native code identities in exported
 records, verifies exact once-per-component update counts across two fresh

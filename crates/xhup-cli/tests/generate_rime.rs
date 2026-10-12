@@ -165,7 +165,7 @@ fn generated_dictionary_layers_preserve_static_and_learning_boundaries() {
         "PRIMARY 已包含二码简码,不得保留旧二码零冲突词典"
     );
     assert!(
-        !top.contains("xhup_flow_flow") && !top.contains("xhup_flow_learn"),
+        !top.contains("xhup_flow_flow") && !top.contains("xhup_flow_user"),
         "顶层词典不得导入 Flow 组句/学习词典(由独立 table_translator 加载)"
     );
     let schema = fs::read_to_string(output.join("xhup_flow.schema.yaml")).unwrap();

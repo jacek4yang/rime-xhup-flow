@@ -116,13 +116,19 @@ Component=nil; policy.init(e)
 check(not e.native and e.native_error=="native translator API unavailable","missing API explicit")
 policy.fini(e); check(not e.native and not e.memory,"native resources released")
 -- Budget enforcement happens inside the one native memorization callback.
-local function learning_fixture(tick, limit)
+local function learning_fixture(tick, limit, history)
   local native = { user_dict={tick=tick}, writes=0,
     memorize=function(self, entry) self.writes=self.writes+1; self.user_dict.tick=self.user_dict.tick+#entry:get(); return true end,
     disconnect=function(self) self.user_dict=nil end }
   local status
   local engine={ context={set_property=function(_,name,value) check(name=="xhup_flow_learning_status","status property"); status=value end},
-    schema={config={get_bool=function(_,name) return name~="flow_readonly/enable_user_dict" end, get_int=function(_,name)
+    schema={config={get_bool=function(_,name)
+      if name=="flow/encode_commit_history" then
+        if history=="missing" then return nil end
+        return history==true
+      end
+      return name~="flow_readonly/enable_user_dict" and name~="flow_lookup/enable_user_dict"
+    end, get_int=function(_,name)
       if name=="flow/learning_max_updates" then return limit end
       if name=="flow/max_phrase_length" then return 20 end
       if name=="flow/max_homographs" then return 1 end
@@ -139,10 +145,21 @@ local function learning_fixture(tick, limit)
   local e={engine=engine};policy.init(e)
   return e,native,function() return status end
 end
-local entry={get=function() return {{text="你"},{text="好"},{text="去"}} end}
-local le,native,status=learning_fixture(0,85)
+local function learned_element(text, count, custom)
+  local printed = count > 0 and (string.rep("1,", count - 1) .. "1") or ""
+  return {text=text, custom_code=custom or "", code={print=function() return printed end}}
+end
+local entry={get=function() return {
+  learned_element("你",1),learned_element("好",1),learned_element("去",1)} end}
+local le,native,status=learning_fixture(0,35)
 check(native.memorize_callback(native,entry) and native.writes==1,"one allowed native update")
 check(not native.memorize_callback(native,entry) and native.writes==1,"quota refuses before native writes")
+for _, history in ipairs({true, "missing"}) do
+  local guarded, writer, guarded_status = learning_fixture(0,65536,history)
+  check(guarded.native~=writer and writer.user_dict==nil and writer.writes==0,
+    "unbudgeted history writer is disconnected before any commit")
+  check(guarded_status()=="bounded_api_unavailable", "unverified history policy is visible")
+end
 check(status()=="quota_exhausted","quota refusal visible")
 le,native,status=learning_fixture(1000000000,65536)
 check(not native.memorize_callback(native,entry) and native.writes==0,"oversize imported tick fails closed")
@@ -152,6 +169,30 @@ check(not native.memorize_callback(native,huge) and native.writes==0,"unbounded 
 local corrupt={get=function() error("unverified commit") end}
 check(not native.memorize_callback(native,corrupt) and status()=="storage_unverified","callback errors cannot bypass bounds")
 policy.fini(le);check(native.memorize_callback==nil,"callback cycle released on fini")
+-- One atomic Phrase must not bypass the old multi-element storage budget.
+le,native,status=learning_fixture(0,65536)
+local bounded={get=function() return {learned_element("你好",64)} end}
+check(native.memorize_callback(native,bounded) and native.writes==1,"64 canonical units can learn")
+local oversized={get=function() return {learned_element("你好",65)} end}
+check(not native.memorize_callback(native,oversized) and native.writes==1
+  and status()=="commit_limit","atomic Phrase cannot hide 65 canonical units")
+local combined={get=function() return {learned_element("你",33),learned_element("好",32)} end}
+check(not native.memorize_callback(native,combined) and native.writes==1,
+  "canonical unit budget is shared across elements")
+local text_total={get=function() return {
+  learned_element(string.rep("a",129),1),learned_element(string.rep("b",129),1)} end}
+check(not native.memorize_callback(native,text_total) and native.writes==1,
+  "text byte budget is shared across elements")
+local custom_huge={get=function() return {learned_element("你",0,string.rep("n",4097))} end}
+check(not native.memorize_callback(native,custom_huge) and native.writes==1,
+  "custom codes cannot bypass the byte budget")
+local custom_valid={get=function() return {learned_element("你好",0,"ni hc ")} end}
+check(native.memorize_callback(native,custom_valid) and native.writes==2,
+  "native custom-code entries retain bounded learning")
+local empty_code={get=function() return {learned_element("你好",0)} end}
+check(not native.memorize_callback(native,empty_code) and native.writes==2,
+  "unaddressable entries never enter the user dictionary")
+policy.fini(le)
 -- Old Lua must never even construct the learning-enabled namespace.
 local legacy_calls = {}
 Component = {Translator=function(_, _, name)
@@ -167,13 +208,30 @@ policy.init(legacy)
 check(#legacy_calls==1 and legacy.native and legacy.learning_status=="bounded_api_unavailable",
   "old API degrades visibly while retaining native typing")
 policy.fini(legacy)
+-- A custom lookup namespace must never open a user dictionary implicitly.
+local memory_calls = 0
+Memory = function() memory_calls = memory_calls + 1; return {} end
+for _, flag in ipairs({true, "missing"}) do
+  legacy.engine.schema.config.get_bool = function(_, key)
+    if key == "flow_readonly/enable_user_dict" then return false end
+    if key == "flow_lookup/enable_user_dict" then
+      if flag == "missing" then return nil end
+      return flag
+    end
+    return true
+  end
+  policy.init(legacy)
+  check(memory_calls == 0 and legacy.memory == nil and legacy.native ~= nil,
+    "unverified lookup cannot open storage; read-only native typing survives")
+  policy.fini(legacy)
+end
 legacy.engine.schema.config.get_bool=function() return nil end
 policy.init(legacy)
-check(#legacy_calls==1 and not legacy.native and legacy.learning_status=="readonly_config_unverified",
+check(#legacy_calls==3 and not legacy.native and legacy.learning_status=="readonly_config_unverified",
   "missing readonly flag fails before constructing any provider")
 legacy.engine.schema.config.get_bool=function() return true end
 policy.init(legacy)
-check(#legacy_calls==1 and not legacy.native,"customized writable fallback rejected")
+check(#legacy_calls==3 and not legacy.native,"customized writable fallback rejected")
 local legacy_tick,old_writer,old_status=learning_fixture(nil,65536)
 check(legacy_tick.native~=old_writer and old_status()=="bounded_api_unavailable",
   "backported TableTranslator without tick disconnects writer and keeps readonly typing")

@@ -14,6 +14,7 @@ sha2 = "=0.10.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 xhup-core = { path = "../xhup-core" }
+xhup-decoder = { path = "../xhup-decoder" }
 
 [build-dependencies]
 serde = { version = "1", features = ["derive"] }

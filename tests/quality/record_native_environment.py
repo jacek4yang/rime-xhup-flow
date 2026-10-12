@@ -45,12 +45,12 @@ def main():
         "librime_pkg_config_version": subprocess.check_output(["pkg-config","--modversion","rime"], text=True).strip(),
         "lua_plugin_source_commit": "68f9c364a2d25a04c7d4794981d7c796b05ab627",
         "lua_plugin_binary_sha256": digest(args.lua_plugin),
-        "lua_plugin_installation": "bwrap private replacement of system plugin; NOT concurrent LD_PRELOAD",
+        "lua_plugin_installation": "explicit XHUP_LUA_LIBRARY; native harness verifies the registered module belongs to the requested shared object",
         "compiler": subprocess.check_output(["cc","--version"], text=True).splitlines()[0],
         "harness_flags": "-O2 -Wall -Wextra -Werror -std=c11",
         "system": platform.system(), "kernel": platform.release(), "architecture": platform.machine(),
         "load_warning": "concurrent exhaustive native audit and workspace tests; timing is NOT an idle paired performance comparison",
-        "learning": "compiled flow/learn/flow_readonly user dictionaries verified disabled by native harness",
+        "learning": "compiled flow/flow_lookup/flow_readonly user dictionaries verified disabled by native harness",
     }
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2)+"\n")
 

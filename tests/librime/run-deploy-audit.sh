@@ -94,7 +94,7 @@ echo "rime_deployer --build 峰值 RSS: ${deploy_peak} KiB"
 fail=0
 for dict in \
   xhup_flow \
-  xhup_flow_learn; do
+  xhup_flow_user; do
   if [[ -f "$deploy_dir/build/$dict.table.bin" ]]; then
     echo "PASS  --build 产出 $dict.table.bin"
   else
