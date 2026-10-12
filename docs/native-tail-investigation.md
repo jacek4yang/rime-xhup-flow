@@ -147,6 +147,9 @@ starts each side with empty synthetic user state, and retains all traces and
 observable candidate/preedit/input differences. Both deployments remain intact.
 Use an output directory and `TMPDIR` with sufficient quota; every trial copies a
 deployment. A failed copy or compilation is a failed run, not a runtime result.
+`--quick-hint on|off` is explicit in provenance and verified against each actual
+session. The default is `on`, matching the generated Flow schema; context ranking
+and session memory remain off. Static has no Lua quick-hint component.
 
 The performance driver records both monotonic wall time to first-page
 materialization and `CLOCK_THREAD_CPUTIME_ID` over that work. CPU time excludes
@@ -158,7 +161,7 @@ compare both versions on the same CPU class, for example with `taskset -c 0`,
 and retain unpinned results separately rather than silently discarding outliers.
 None of these native API measurements establishes GUI rendering latency.
 
-### v2.1 prefix-index measurements
+### v2.1 prefix-index measurements with quick hints off
 
 Runtime implementation `bff0e4e`, measurement harness `9e6a594`, compared with the
 fixed v2.0.0 deployment on librime 1.16.1 / Lua 5.4.8. The i5-1240P has two CPU
@@ -166,6 +169,9 @@ classes: CPU0 is a 4.4 GHz maximum-frequency core thread; CPU8 is a 3.3 GHz
 maximum-frequency core. Each row below uses five alternating process pairs,
 10 repetitions, and 19,800 key events per side. No runtime parameters were tuned
 between cohorts. Values are p50 / p95 / p99 in milliseconds:
+These cohorts inherited the old harness's forced `quick_hint=off`; they do not
+measure the default enabled hint filter. Both hint modes are now selectable,
+and their results must not be pooled as if they were the same workload.
 
 | CPU / learning | Key processing, old → indexed | Key to first page, old → indexed |
 | --- | --- | --- |
