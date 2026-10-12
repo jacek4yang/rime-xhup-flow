@@ -1,0 +1,28 @@
+diff --git a/src/table_translator.cc b/src/table_translator.cc
+index 155d15c..a12803b 100644
+--- a/src/table_translator.cc
++++ b/src/table_translator.cc
+@@ -26,6 +26,11 @@ namespace TableTranslatorReg {
+     public:
+       LTableTranslator(const Ticket& ticket, Lua* lua)
+         : TableTranslator(ticket), lua_(lua) {};
++      an<Translation> Query(const string& input,
++                            const Segment& segment) override {
++        xhup_profile_native_query();
++        return TableTranslator::Query(input, segment);
++      }
+ 
+       virtual bool Memorize(const CommitEntry& commit_entry);
+       bool memorize(const CommitEntry& commit_entry);
+diff --git a/src/types.cc b/src/types.cc
+index 8a2db84..229afb3 100644
+--- a/src/types.cc
++++ b/src/types.cc
+@@ -1955,6 +1955,7 @@ namespace MemoryReg {
+   }
+ 
+   bool LuaMemory::dictLookup(const string& input, const bool isExpand, size_t limit) {
++    xhup_profile_lookup();
+     iter = New<DictEntryIterator>();// t= New<DictEntryIterator>();
+     limit = limit == 0 ? 0xffffffffffffffff : limit;
+     if (dict_ && dict_->loaded()) {

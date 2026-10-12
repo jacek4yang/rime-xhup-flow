@@ -2,21 +2,28 @@
  * No user corpus: isolated deployment, fixed public regression strings, learning off.
  */
 #define _POSIX_C_SOURCE 200809L
+#include "runtime_module.h"
 #include <rime_api.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <dlfcn.h>
+#include "profile_runtime.h"
 
 #define LOOKUP 256
 #define HEAD 16
 #define TEXT 2048
 static RimeApi *r;
 static int failures, checks, observe;
+static void (*profile_snapshot)(struct XhupRuntimeProfile *);
+static const char *schema_id = "xhup_flow";
+static int page_only;
 typedef struct {
   char input[256], preedit[TEXT], menu[HEAD][TEXT];
   int count, target_rank, prefix_rank, sel_start, sel_end, page_size;
   long long menu_ready_ns;
+  struct XhupRuntimeProfile menu_profile;
 } State;
 
 static void copy(char *dst, size_t size, const char *src) {
@@ -42,13 +49,40 @@ static void check(int ok, const char *contract) {
   ++checks; if (!ok) ++failures;
   fprintf(stderr, "%s %s\n", ok ? "PASS" : "FAIL", contract);
 }
+static void init_profile(void) {
+  profile_snapshot = (void (*)(struct XhupRuntimeProfile *))
+      dlsym(RTLD_DEFAULT, "xhup_profile_snapshot");
+  if (getenv("XHUP_REQUIRE_PROFILE") && !profile_snapshot) {
+    fputs("required instrumented Lua VM unavailable\n", stderr);
+    exit(2);
+  }
+}
+static void print_profile_delta(const char *name,
+    const struct XhupRuntimeProfile *before, const struct XhupRuntimeProfile *after) {
+  printf(",\"%s\":{", name);
+#define DELTA(field) printf("\"" #field "\":%llu,", \
+    (unsigned long long)(after->field - before->field))
+  DELTA(allocation_calls); DELTA(requested_bytes); DELTA(growth_bytes);
+  DELTA(free_calls); DELTA(incremental_collections); DELTA(generational_collections);
+  DELTA(dict_lookups); DELTA(native_queries);
+#undef DELTA
+  printf("\"live_bytes\":%llu,\"peak_bytes\":%llu}",
+      (unsigned long long)after->live_bytes, (unsigned long long)after->peak_bytes);
+}
 static RimeSessionId start(void) {
+  long long before = now();
   RimeSessionId s = r->create_session();
-  if (!s || !r->select_schema(s, "xhup_flow")) { fputs("Flow unavailable\n", stderr); exit(2); }
+  if (!s || !r->select_schema(s, schema_id)) { fputs("schema unavailable\n", stderr); exit(2); }
   r->set_option(s, "context_ranker", 0);
   r->set_option(s, "joint_decoder", 0);
   r->set_option(s, "quick_hint", 0);
   r->set_option(s, "user_memory", 0);
+  fprintf(stderr, "XHUP_SESSION_START_NS %lld\n", now() - before);
+  if (!strcmp(schema_id, "xhup_flow")) {
+    char status[96] = "unavailable";
+    r->get_property(s, "xhup_flow_learning_status", status, sizeof(status));
+    fprintf(stderr, "XHUP_LEARNING_STATUS %s\n", status);
+  }
   return s;
 }
 static State snapshot(RimeSessionId s, const char *target, const char *prefix) {
@@ -62,9 +96,10 @@ static State snapshot(RimeSessionId s, const char *target, const char *prefix) {
     r->free_context(&ctx);
   }
   out.menu_ready_ns = now(); /* Includes actual first-page materialization. */
+  if (profile_snapshot) profile_snapshot(&out.menu_profile);
   RimeCandidateListIterator it = {0};
   if (r->candidate_list_begin(s, &it)) {
-    for (int i = 0; i < LOOKUP && r->candidate_list_next(&it); ++i) {
+    for (int i = 0; i < (page_only ? out.page_size : LOOKUP) && r->candidate_list_next(&it); ++i) {
       const char *text = it.candidate.text ? it.candidate.text : "";
       if (i < HEAD) { copy(out.menu[i], TEXT, text); ++out.count; }
       if (target && !strcmp(text, target) && out.target_rank < 0) out.target_rank = i;
@@ -75,10 +110,13 @@ static State snapshot(RimeSessionId s, const char *target, const char *prefix) {
   return out;
 }
 static State step(RimeSessionId s, const char *name, int key, const char *target, const char *prefix) {
+  struct XhupRuntimeProfile before_profile = {0}, after_profile = {0};
+  if (profile_snapshot) profile_snapshot(&before_profile);
   long long before = now(); int handled = r->process_key(s, key, 0);
   long long elapsed = now() - before;
   State state = snapshot(s, target, prefix);
   long long probe_end = now();
+  if (profile_snapshot) profile_snapshot(&after_profile);
   printf("{\"case\":"); json(name);
   printf(",\"key\":%d,\"handled\":%d,\"keypress_ns\":%lld,\"key_to_menu_ns\":%lld,\"first_page_ns\":%lld,\"bounded_probe_ns\":%lld,\"probe_only_ns\":%lld,\"page_size\":%d,\"raw\":",
       key, handled, elapsed, state.menu_ready_ns - before,
@@ -88,7 +126,12 @@ static State step(RimeSessionId s, const char *name, int key, const char *target
   printf(",\"selection\":[%d,%d],\"target_rank\":%d,\"prefix_rank\":%d,\"head\":[",
       state.sel_start, state.sel_end, state.target_rank, state.prefix_rank);
   for (int i = 0; i < state.count; ++i) { if (i) putchar(','); json(state.menu[i]); }
-  puts("]}");
+  putchar(']');
+  if (profile_snapshot) {
+    print_profile_delta("profile_to_first_page", &before_profile, &state.menu_profile);
+    print_profile_delta("profile_probe", &state.menu_profile, &after_profile);
+  }
+  puts("}");
   return state;
 }
 static int equal(const State *a, const State *b) {
@@ -129,11 +172,12 @@ int main(int argc, char **argv) {
   observe = !strcmp(argv[3], "--observe");
   int learning = !strcmp(argv[3], "--learn");
   if (!observe && !learning && strcmp(argv[3], "--qualify")) return 2;
+  init_profile();
   r = rime_get_api();
   RIME_STRUCT(RimeTraits, traits);
   traits.user_data_dir = argv[1]; traits.shared_data_dir = argv[2];
   traits.app_name = "xhup.native-replay"; traits.min_log_level = 2; traits.log_dir = "";
-  r->setup(&traits); r->initialize(&traits);
+  xhup_initialize(r, &traits);
   check(r->find_module("lua") != NULL, "librime Lua module registered");
   RimeConfig config = {0};
   if (!r->schema_open("xhup_flow", &config)) return 2;

@@ -4,11 +4,12 @@
 
 int main(int argc, char **argv) {
   if (argc != 4) return 2;
+  init_profile();
   r = rime_get_api();
   RIME_STRUCT(RimeTraits, traits);
   traits.user_data_dir = argv[1]; traits.shared_data_dir = argv[2];
   traits.app_name = "rime.xhup-extended-public-test";
-  traits.min_log_level = 2; r->setup(&traits); r->initialize(&traits);
+  traits.min_log_level = 2; xhup_initialize(r, &traits);
   RimeSessionId s;
   if (!strcmp(argv[3], "--learn-once") || !strcmp(argv[3], "--learn-blocked") || !strcmp(argv[3], "--learn-unavailable")) {
     s=start(); State state=type(s,"single-native-writer","nihcnzqu","你好去",NULL);
