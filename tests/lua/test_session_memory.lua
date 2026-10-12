@@ -1,6 +1,7 @@
 -- Stub contracts only. Real session/privacy checks also run through librime.
-local m = dofile("rime/lua/xhup_flow/user_memory.lua")
-local shim = dofile("rime/lua/xhup_flow/joint_decoder.lua")
+local lua_root = dofile("tests/lua/runtime_path.lua")
+local m = dofile(lua_root .. "/xhup_flow/user_memory.lua")
+local shim = dofile(lua_root .. "/xhup_flow/joint_decoder.lua")
 local passed = 0
 local function check(value, label) assert(value, label); passed = passed + 1 end
 local function notifier()

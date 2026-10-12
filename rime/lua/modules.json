@@ -1,0 +1,15 @@
+{
+  "production": [
+    "xhup_flow/annotation.lua",
+    "xhup_flow/context_ranker.lua",
+    "xhup_flow/full_span.lua",
+    "xhup_flow/init.lua",
+    "xhup_flow/joint_decoder.lua",
+    "xhup_flow/native_tail.lua",
+    "xhup_flow/quick_hint.lua",
+    "xhup_flow/user_memory.lua"
+  ],
+  "excluded": {
+    "xhup_flow/native_lookup.lua": "Research-only implementation; not a production component or dependency."
+  }
+}

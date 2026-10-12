@@ -35,8 +35,9 @@ def main():
                 "bytes": path.stat().st_size, "sha256": digest(path)}
     report = {
         "schema": 1, "declared_package_generation_source_commit": commit,
-        "source_claim_limit": "caller-declared generation revision; byte gate binds current runtime sources, not an independent full rebuild proof",
-        "runtime_source_binding": "8 Lua modules and 2 schemas match the evaluating checkout",
+        "source_claim_limit": "original generation revision is caller-declared; an independent locked compiler rebuild binds every package byte to the evaluating checkout",
+        "runtime_source_binding": "all compiler-manifest artifacts, embedded input hashes, and rustc dependency coverage verified",
+        "runtime_manifest_sha256": digest(args.package / "xhup_flow.runtime-manifest.json"),
         "artifacts": artifacts,
         "harness_sources": {name: digest(ROOT/name) for name in (
             "tests/librime/runtime_corpus.c", "tests/librime/runtime_replay.c",

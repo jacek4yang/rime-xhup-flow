@@ -55,3 +55,5 @@ Tauri 构建所需的平台依赖随操作系统而异,相关脚本与工作流�
 ### Rime、Lua 与发布验证
 
 `tests/` 和 `.github/workflows/` 提供 Rime 运行时、Lua、包与发布验证的具体入口。命令、环境依赖及覆盖范围可从对应脚本和工作流查阅。
+
+Lua/Rime 的源码、生产产物、独立重建、语义回归与体积/加载测量见 [Lua 与 Rime 生产构建](docs/lua-production-build.md)。

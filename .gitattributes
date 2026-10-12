@@ -1,4 +1,4 @@
-# 经 include_str! 字节级嵌入与字节复现校验的源文件必须保持 LF;
+# 编译输入与字节复现校验的文本源文件必须保持 LF;
 # Windows core.autocrlf=true 的 checkout 不得转换(否则本地测试失败)。
 *.tsv text eol=lf
 *.txt text eol=lf
@@ -7,6 +7,13 @@
 *.in text eol=lf
 *.md text eol=lf
 *.lua text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.mjs text eol=lf
+.gitattributes text eol=lf
 
 # Unresolved rights: keep local research history, exclude payloads from source archives.
 data/words/sogou/* export-ignore
@@ -21,5 +28,12 @@ vendor/glib-macros/** -text
 vendor/gtk3-macros/** -text
 vendor/urlpattern/** -text
 vendor/proc-macro-error2/** -text
+vendor/full_moon/** -text linguist-vendored
 data/hanzi/LICENSE.pinyin-data -text
 LICENSE.GPL-3.0 -text
+LICENSE -text
+data/words/LICENSE.wanxiang -text
+data/frequency/LICENSE.wanxiang -text
+data/hanzi/UPSTREAM_LICENSE -text
+data/corpus/LICENSE.kdconv -text
+data/corpus/LICENSE.ptt -text

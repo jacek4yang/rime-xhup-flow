@@ -1,4 +1,4 @@
-package.path = "rime/lua/?.lua;" .. package.path
+dofile("tests/lua/runtime_path.lua")
 local filter = require("xhup_flow.full_span")
 local checks = 0
 local function check(value, message) assert(value, message); checks = checks + 1 end

@@ -16,6 +16,14 @@ MACRO_PATCHES = {
     "src/lib.rs": [(PREFIX, PREFIX + "\n// Attribute expansions use the maintained crate's canonical name.\nextern crate proc_macro_error as proc_macro_error2;\n")],
 }
 PATCHES = {
+    "full_moon": {
+        "Cargo.toml": [('[dependencies.paste]\nversion = "1.0"',
+                        '[dependencies.paste]\nversion = "=0.2.3"\npackage = "pastey"')],
+        "Cargo.toml.orig": [('paste = "1.0"',
+                             'paste = { version = "=0.2.3", package = "pastey" }')],
+        "src/tokenizer/structs.rs": [('// Used by serde\nfn is_usize_zero',
+                                     '// Used by serde\n#[cfg(feature = "serde")]\nfn is_usize_zero')],
+    },
     "glib-macros": MACRO_PATCHES,
     "gtk3-macros": MACRO_PATCHES,
     "urlpattern": {
@@ -82,7 +90,7 @@ def check(root=ROOT):
         packages = [p for p in lock["package"] if p["name"] == name]
         assert len(packages) == 1 and "source" not in packages[0], f"{name}: lockfile not local"
     retired = {"proc-macro-error", "proc-macro-error-attr", "unic-char-property",
-               "unic-char-range", "unic-common", "unic-ucd-ident", "unic-ucd-version"}
+               "unic-char-range", "unic-common", "unic-ucd-ident", "unic-ucd-version", "paste"}
     assert not retired.intersection(p["name"] for p in lock["package"]), "retired chain reintroduced"
     return count
 

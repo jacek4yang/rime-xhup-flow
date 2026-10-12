@@ -25,6 +25,7 @@ mod char_codes;
 mod fixed_first_shortcuts;
 mod frequency;
 pub mod knowledge;
+mod lua_build;
 mod lua_hints;
 mod merged_ranking;
 mod package;
@@ -77,9 +78,10 @@ pub use fixed_first_shortcuts::{
     CanonicalFixedFirstShortcutEntry, canonical_fixed_first_shortcut_entries,
     legacy_v1_fixed_first_shortcut_entries,
 };
+pub use lua_build::LuaBuildError;
 pub use lua_hints::{
-    LUA_QUICK_HINT_DATA_FILENAME, LUA_QUICK_HINT_FILENAME, generate_lua_quick_hints_data,
-    lua_hints_view, lua_hints_view_with_full_lens, lua_quick_hint_source,
+    LUA_QUICK_HINT_DATA_FILENAME, generate_lua_quick_hints_data, lua_hints_view,
+    lua_hints_view_with_full_lens,
 };
 pub use package::{RimeArtifact, generate_rime_artifacts};
 pub use primary_shortcuts::{CanonicalPrimaryShortcutEntry, canonical_primary_shortcut_entries};

@@ -28,6 +28,10 @@ def verify(resources, root):
               for source, target in mapping.items() if target.startswith("licenses/")}
     if not wanted or len(wanted) != len(mapping):
         raise ValueError("unexpected or duplicate notice resource destinations")
+    notices = json.loads((root / "rime/package/notices.json").read_text(encoding="utf-8"))
+    required = {(root / item["source"]).resolve() for item in notices if "trainer" in item["targets"]}
+    if not required.issubset(wanted.values()):
+        raise ValueError("installer resource map omits a required distribution notice")
     actual = set()
     for path in (resources / "licenses").rglob("*"):
         if path.is_symlink():

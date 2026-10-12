@@ -2,7 +2,7 @@ use xhup_generator::generate_rime_artifacts;
 
 #[test]
 fn package_binds_source_policy_as_an_owned_hashed_artifact() {
-    let package = generate_rime_artifacts();
+    let package = generate_rime_artifacts().unwrap();
     let policy = package
         .iter()
         .find(|a| a.filename() == "xhup_flow.sources.tsv")

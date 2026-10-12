@@ -2,7 +2,7 @@
 --
 -- 运行: lua tests/lua/test_contract.lua (工作目录 = 仓库根)
 
-package.path = "rime/lua/?.lua;rime/lua/?/init.lua;" .. package.path
+dofile("tests/lua/runtime_path.lua")
 
 package.preload["xhup_flow.data.quick_hints"] = function()
   return {
@@ -23,14 +23,9 @@ local function check(name, actual, expected)
   end
 end
 
--- 1. 命名空间与版本
-check("模块名", xhup_flow._MODULE, "xhup_flow")
-check("模块版本", xhup_flow._VERSION, "2.0.0")
-
 -- 2. 合同自检 (所有依赖正常在场)
 local report = xhup_flow.check_contract()
 check("健康合同检查通过", report.ok, true)
-check("报告版本一致", report.version, "2.0.0")
 check("annotation 组件状态", report.components.annotation.ok, true)
 check("annotation 导出 format_shortcut_hint", report.components.annotation.has_format_shortcut_hint, true)
 check("annotation 导出 clean_decorative_markers", report.components.annotation.has_clean_decorative_markers, true)

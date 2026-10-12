@@ -1,5 +1,5 @@
 -- Stub stream boundary tests, not native librime acceptance.
-package.path = "rime/lua/?.lua;" .. package.path
+dofile("tests/lua/runtime_path.lua")
 local ranker = require("xhup_flow.context_ranker")
 local memory = require("xhup_flow.user_memory")
 local assertions = 0

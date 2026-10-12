@@ -2,9 +2,9 @@
 --
 -- 运行: lua tests/lua/test_context_ranker.lua (工作目录 = 仓库根)
 
-package.path = "rime/lua/?.lua;rime/lua/?/init.lua;" .. package.path
+local lua_root = dofile("tests/lua/runtime_path.lua")
 
-local ranker = dofile("rime/lua/xhup_flow/context_ranker.lua")
+local ranker = dofile(lua_root .. "/xhup_flow/context_ranker.lua")
 
 local passed, failed = 0, 0
 local function check(name, actual, expected)

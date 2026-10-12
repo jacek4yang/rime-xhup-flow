@@ -1,0 +1,10 @@
+[
+  {"path":"INSTALL.md","source":"rime/package/INSTALL.md","targets":["rime"]},
+  {"path":"NOTICE.md","source":"rime/package/NOTICE.md","targets":["rime","trainer"]},
+  {"path":"licenses/project-LGPL-3.0.txt","source":"LICENSE","targets":["rime","trainer"]},
+  {"path":"licenses/GPL-3.0.txt","source":"LICENSE.GPL-3.0","targets":["rime","trainer"]},
+  {"path":"licenses/wanxiang-CC-BY-4.0.txt","source":"data/words/LICENSE.wanxiang","targets":["rime","trainer"]},
+  {"path":"licenses/pinyin-data-MIT.txt","source":"data/hanzi/LICENSE.pinyin-data","targets":["rime","trainer"]},
+  {"path":"licenses/kdconv-Apache-2.0.txt","source":"data/corpus/LICENSE.kdconv","targets":["rime","trainer"]},
+  {"path":"licenses/ptt-Apache-2.0.txt","source":"data/corpus/LICENSE.ptt","targets":["rime","trainer"]}
+]

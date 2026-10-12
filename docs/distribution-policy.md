@@ -53,13 +53,17 @@ policy; old RC.2 artifacts are NOT made clean merely by editing repository polic
 
 ## Archive and data notices
 
-Packaging previously copied only YAML and Lua and silently omitted the generated
-source-policy TSV. `tests/release/rime_archive.py` now requires the complete
-22-file generated inventory, exact runtime/source-registry bytes, and eight
-installation/attribution/license files. It creates a deterministic ZIP, reopens
-it and compares every member byte-for-byte; missing, extra, private, duplicate,
-changed or symlinked inputs fail. The same data notice/license texts are bound
-into Trainer resources (separate from the vendored dependency notices).
+`rime/package/notices.json` registers the installation, attribution, and license
+sources and their Rime/Trainer targets. The generator includes the eight Rime
+notice files in the same complete artifact manifest as Lua, YAML, and dictionaries;
+empty or symlinked notice sources fail the build.
+`tests/release/rime_archive.py` verifies against an independent trusted compiler,
+then archives an immutable snapshot of that compiler's bytes rather than reopening
+caller-controlled files. See [the production build contract](lua-production-build.md).
+Its deterministic ZIP checks reject missing, extra, private, duplicate, changed
+or symlinked inputs and unsafe member metadata. Trainer resource checks require
+every Trainer-targeted notice even if both a resource mapping and extracted file
+are removed. These data notices are separate from vendored dependency notices.
 
 The pinyin-data MIT notice is copied from the same pinned source revision
 `923b108dc5d45dee061324c011b478fb649f8b73`, upstream `LICENSE` SHA-256
