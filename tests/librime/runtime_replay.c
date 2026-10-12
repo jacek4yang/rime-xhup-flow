@@ -15,7 +15,7 @@ static RimeApi *r;
 static int failures, checks, observe;
 typedef struct {
   char input[256], preedit[TEXT], menu[HEAD][TEXT];
-  int count, target_rank, prefix_rank, sel_start, sel_end;
+  int count, target_rank, prefix_rank, sel_start, sel_end, page_size;
   long long menu_ready_ns;
 } State;
 
@@ -58,6 +58,7 @@ static State snapshot(RimeSessionId s, const char *target, const char *prefix) {
   if (r->get_context(s, &ctx)) {
     copy(out.preedit, sizeof(out.preedit), ctx.composition.preedit);
     out.sel_start = ctx.composition.sel_start; out.sel_end = ctx.composition.sel_end;
+    out.page_size = ctx.menu.page_size;
     r->free_context(&ctx);
   }
   out.menu_ready_ns = now(); /* Includes actual first-page materialization. */
@@ -77,9 +78,12 @@ static State step(RimeSessionId s, const char *name, int key, const char *target
   long long before = now(); int handled = r->process_key(s, key, 0);
   long long elapsed = now() - before;
   State state = snapshot(s, target, prefix);
+  long long probe_end = now();
   printf("{\"case\":"); json(name);
-  printf(",\"key\":%d,\"handled\":%d,\"keypress_ns\":%lld,\"key_to_menu_ns\":%lld,\"bounded_probe_ns\":%lld,\"raw\":",
-      key, handled, elapsed, state.menu_ready_ns - before, now() - before); json(state.input);
+  printf(",\"key\":%d,\"handled\":%d,\"keypress_ns\":%lld,\"key_to_menu_ns\":%lld,\"first_page_ns\":%lld,\"bounded_probe_ns\":%lld,\"probe_only_ns\":%lld,\"page_size\":%d,\"raw\":",
+      key, handled, elapsed, state.menu_ready_ns - before,
+      state.menu_ready_ns - before - elapsed, probe_end - before,
+      probe_end - state.menu_ready_ns, state.page_size); json(state.input);
   printf(",\"preedit\":"); json(state.preedit);
   printf(",\"selection\":[%d,%d],\"target_rank\":%d,\"prefix_rank\":%d,\"head\":[",
       state.sel_start, state.sel_end, state.target_rank, state.prefix_rank);

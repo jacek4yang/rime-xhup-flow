@@ -76,8 +76,11 @@ int main(int argc, char **argv) {
     }
     printf("{\"case\":"); json(name);
     printf(",\"event\":\"corpus_result\",\"mode\":"); json(argv[4]);
-    printf(",\"keys\":%zu,\"rank\":%d,\"pending_reachable\":%s,\"commit_exact\":%s,\"contract_failures\":%d}\n",
-      length,state.target_rank,pending_reachable?"true":"false",
+    printf(",\"keys\":%zu,\"rank\":%d,\"top1\":%s,\"top3\":%s,\"first_page\":%s,\"page_size\":%d,\"pending_reachable\":%s,\"commit_exact\":%s,\"contract_failures\":%d}\n",
+      length,state.target_rank,state.target_rank==0?"true":"false",
+      state.target_rank>=0 && state.target_rank<3?"true":"false",
+      state.target_rank>=0 && state.target_rank<state.page_size?"true":"false",
+      state.page_size,pending_reachable?"true":"false",
       state.target_rank>=0 && failures==commit_before ? "true":"false",failures-before);
     r->destroy_session(s); cases++;
   }

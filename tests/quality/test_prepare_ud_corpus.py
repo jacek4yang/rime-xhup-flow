@@ -1,5 +1,5 @@
 import unittest
-from prepare_ud_corpus import normalize, parse_syllables, prepare
+from prepare_ud_corpus import normalize, parse_syllables, prepare, partition
 
 
 class PreparationTests(unittest.TestCase):
@@ -48,6 +48,26 @@ class PreparationTests(unittest.TestCase):
         output, meta = prepare(source.encode(), {"a": "aa", "aa": "bb"})
         self.assertEqual(output, b"\n")
         self.assertEqual(meta["counts"]["ambiguous_transliteration_tokens"], 1)
+
+    def test_partition_keeps_parent_chunks_and_all_failures_in_denominator(self):
+        rows = b"a-1\taa\tA\nb-1\tbb\tB\na-2\tcc\tC\n"
+        metadata = {"cases": [
+            {"id": "a-1", "sentence": "a"},
+            {"id": "b-1", "sentence": "e"},
+            {"id": "a-2", "sentence": "a"},
+        ]}
+        groups = partition(rows, metadata)
+        self.assertEqual(groups["development"], b"a-1\taa\tA\na-2\tcc\tC\n")
+        self.assertEqual(groups["confirmation"], b"b-1\tbb\tB\n")
+        self.assertEqual(partition(rows, metadata), groups)
+        self.assertEqual([case["partition"] for case in metadata["cases"]],
+                         ["development", "confirmation", "development"])
+
+    def test_partition_rejects_unbound_metadata(self):
+        for cases in [[], [{"id": "other", "sentence": "a"}],
+                      [{"id": "a", "sentence": ""}]]:
+            with self.assertRaises(ValueError):
+                partition(b"a\taa\tA\n", {"cases": cases})
 
 
 if __name__ == "__main__":
