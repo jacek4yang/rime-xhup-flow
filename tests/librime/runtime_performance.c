@@ -1,6 +1,7 @@
 /* Observational performance driver; correctness remains in replay/extended.
  * By default only materializes the visible page; complete-menu mode is separate.
  * Use a new isolated deployment for each process, never a real user directory. */
+#define XHUP_MEASURE_THREAD_CPU 1
 #define main original_replay_main
 #include "runtime_replay.c"
 #undef main

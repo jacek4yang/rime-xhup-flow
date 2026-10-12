@@ -154,7 +154,7 @@ def main():
         for name in sorted({row["case"] for row in rows}):
             selected = [row for row in rows if row["case"] == name]
             result = {"key_events": len(selected)}
-            for field in ("keypress_ns", "key_to_menu_ns", "first_page_ns"):
+            for field in ("keypress_ns", "key_to_menu_ns", "first_page_ns", "key_to_menu_cpu_ns"):
                 result[field] = percentiles([row[field] for row in selected])
             if args.profile:
                 for field in ("dict_lookups", "native_queries", "allocation_calls", "growth_bytes", "incremental_collections", "generational_collections"):

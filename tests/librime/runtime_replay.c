@@ -23,6 +23,9 @@ typedef struct {
   char input[256], preedit[TEXT], menu[HEAD][TEXT];
   int count, target_rank, prefix_rank, sel_start, sel_end, page_size;
   long long menu_ready_ns;
+#ifdef XHUP_MEASURE_THREAD_CPU
+  long long menu_cpu_ns;
+#endif
   struct XhupRuntimeProfile menu_profile;
 } State;
 
@@ -45,6 +48,15 @@ static long long now(void) {
   struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
   return (long long)t.tv_sec * 1000000000LL + t.tv_nsec;
 }
+#ifdef XHUP_MEASURE_THREAD_CPU
+static long long thread_now(void) {
+  struct timespec t;
+  if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t)) {
+    perror("CLOCK_THREAD_CPUTIME_ID"); exit(2);
+  }
+  return (long long)t.tv_sec * 1000000000LL + t.tv_nsec;
+}
+#endif
 static void check(int ok, const char *contract) {
   ++checks; if (!ok) ++failures;
   fprintf(stderr, "%s %s\n", ok ? "PASS" : "FAIL", contract);
@@ -96,6 +108,9 @@ static State snapshot(RimeSessionId s, const char *target, const char *prefix) {
     r->free_context(&ctx);
   }
   out.menu_ready_ns = now(); /* Includes actual first-page materialization. */
+#ifdef XHUP_MEASURE_THREAD_CPU
+  out.menu_cpu_ns = thread_now();
+#endif
   if (profile_snapshot) profile_snapshot(&out.menu_profile);
   RimeCandidateListIterator it = {0};
   if (r->candidate_list_begin(s, &it)) {
@@ -112,6 +127,9 @@ static State snapshot(RimeSessionId s, const char *target, const char *prefix) {
 static State step(RimeSessionId s, const char *name, int key, const char *target, const char *prefix) {
   struct XhupRuntimeProfile before_profile = {0}, after_profile = {0};
   if (profile_snapshot) profile_snapshot(&before_profile);
+#ifdef XHUP_MEASURE_THREAD_CPU
+  long long cpu_before = thread_now();
+#endif
   long long before = now(); int handled = r->process_key(s, key, 0);
   long long elapsed = now() - before;
   State state = snapshot(s, target, prefix);
@@ -127,6 +145,9 @@ static State step(RimeSessionId s, const char *name, int key, const char *target
       state.sel_start, state.sel_end, state.target_rank, state.prefix_rank);
   for (int i = 0; i < state.count; ++i) { if (i) putchar(','); json(state.menu[i]); }
   putchar(']');
+#ifdef XHUP_MEASURE_THREAD_CPU
+  printf(",\"key_to_menu_cpu_ns\":%lld", state.menu_cpu_ns - cpu_before);
+#endif
   if (profile_snapshot) {
     print_profile_delta("profile_to_first_page", &before_profile, &state.menu_profile);
     print_profile_delta("profile_probe", &state.menu_profile, &after_profile);

@@ -104,7 +104,7 @@ def main():
                     values = [row["profile_to_first_page"][field] for row in selected]
                     result[field] = {"sum": sum(values), "max": max(values)}
             else:
-                for field in ("keypress_ns", "key_to_menu_ns", "first_page_ns"):
+                for field in ("keypress_ns", "key_to_menu_ns", "first_page_ns", "key_to_menu_cpu_ns"):
                     result[field] = percentiles([row[field] for row in selected])
             cases[name] = result
         metrics[label] = {"cases": cases, "processes": process_summaries[label]}
