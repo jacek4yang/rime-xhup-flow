@@ -136,19 +136,11 @@ jobs:
           set -euo pipefail
           cargo run -p xhup-cli --locked -- generate rime --output build/rime-package
           python3 tests/release/check_distribution_sources.py --depfile target/debug/xhup-cli.d
-          python3 tests/release/check_generated_runtime_sources.py build/rime-package
+          python3 tests/release/check_generated_runtime_sources.py build/rime-package \
+            --target-dir /tmp/xhup-package-reference-target \
+            --evidence /tmp/xhup-package-compiler.json --require-clean
           # 与归档使用同一精确清单：新增独占配置不会与另一份硬编码计数漂移。
           python3 tests/release/rime_archive.py verify build/rime-package
-          [[ -s build/rime-package/xhup_flow.sources.tsv ]]
-          for f in build/rime-package/*.yaml \
-                   build/rime-package/lua/xhup_flow/quick_hint.lua \
-                   build/rime-package/lua/xhup_flow/data/quick_hints.lua; do
-            [[ -s "$f" ]] || { echo "::error::产物为空: $f"; exit 1; }
-          done
-          grep -q 'schema_id: xhup_flow$' build/rime-package/xhup_flow.schema.yaml \
-            || { echo "::error::主方案 schema_id 不符"; exit 1; }
-          [[ -f build/rime-package/xhup_flow_static.schema.yaml ]] \
-            || { echo "::error::缺少静态回退方案"; exit 1; }
           rime_version="$(grep -m1 'version:' build/rime-package/xhup_flow.schema.yaml | sed 's/.*version:[[:space:]]*"\([^"]*\)".*/\1/')"
           [[ -n "$rime_version" ]] || { echo "::error::无法解析 Rime 包版本"; exit 1; }
           echo "rime_version=$rime_version" >> "$GITHUB_OUTPUT"
@@ -159,12 +151,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             librime-bin librime-dev librime-plugin-lua rime-prelude pkg-config \
-            liblua5.4-dev libopencc-dev libgoogle-glog-dev libboost-dev \
+            lua5.4 liblua5.4-dev libopencc-dev libgoogle-glog-dev libboost-dev \
             libmarisa-dev libyaml-cpp-dev libx11-dev darts
           bash tests/librime/build-supported-lua.sh /tmp/xhup-package-lua
           plugin=$(dpkg -L librime-plugin-lua | grep '/librime-lua.so$')
           test -n "$plugin"
           sudo install -m 755 /tmp/xhup-package-lua/librime-lua.so "$plugin"
+
+      - name: 生产 Lua 模块加载、源码语义回归与冻结数据全表比较
+        run: python3 tests/lua/run_runtime_suite.py build/rime-package
 
       - name: librime 编译校验(临时目录部署两套方案)
         run: |
@@ -232,6 +227,14 @@ jobs:
           name: product-packaging-rime
           path: artifacts/
           retention-days: 7
+
+      - name: 上传独立编译来源证据（不混入可复现 Rime ZIP）
+        uses: actions/upload-artifact@v7
+        with:
+          name: rime-compiler-evidence
+          path: /tmp/xhup-package-compiler.json
+          if-no-files-found: error
+          retention-days: 14
 
   # ---------- Windows:NSIS + MSI ----------
   windows:

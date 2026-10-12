@@ -8,6 +8,7 @@
 pub mod acceptance;
 pub mod doctor;
 pub mod learning;
+mod output_path;
 pub mod runtime_capabilities;
 pub mod user_state;
 
@@ -228,6 +229,20 @@ struct OutputArgs {
 /// 命令执行错误。
 #[derive(Debug)]
 pub enum CliError {
+    /// 生产模块、模板或来源清单编译失败；不会发布旧生成文件。
+    RuntimeBuild(xhup_generator::LuaBuildError),
+    /// 输出目录会覆盖人类维护的 Rime 源码。
+    SourceOutput {
+        /// 被拒绝的输出路径。
+        path: PathBuf,
+    },
+    /// 无法解析输出路径及其符号链接。
+    OutputResolution {
+        /// 无法解析的路径。
+        path: PathBuf,
+        /// 底层 I/O 错误。
+        source: io::Error,
+    },
     /// 无法创建输出目录。
     CreateDirectory {
         /// 输出目录路径。
@@ -291,6 +306,15 @@ pub enum CliError {
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::RuntimeBuild(source) => write!(f, "Rime 生产构建失败: {source}"),
+            Self::SourceOutput { path } => write!(
+                f,
+                "拒绝向 Rime 源码树生成产物 {}：请使用独立构建目录",
+                path.display()
+            ),
+            Self::OutputResolution { path, source } => {
+                write!(f, "无法解析生成路径 {}: {source}", path.display())
+            }
             Self::CreateDirectory { path, source } => {
                 write!(f, "无法创建输出目录 {}: {source}", path.display())
             }
@@ -299,7 +323,7 @@ impl fmt::Display for CliError {
             }
             Self::SharedConfigurationConflict { path } => write!(
                 f,
-                "拒绝覆盖共享配置 {}：请生成到单独目录，再按 INSTALL.md 备份安装，或使用 Trainer",
+                "拒绝覆盖共享配置 {}：请生成到单独目录，再按 INSTALL.md 备份安装",
                 path.display()
             ),
             Self::WriteTemporaryFile { path, source } => {
@@ -330,7 +354,9 @@ impl fmt::Display for CliError {
 impl Error for CliError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::RuntimeBuild(source) => Some(source),
             Self::CreateDirectory { source, .. }
+            | Self::OutputResolution { source, .. }
             | Self::WriteTemporaryFile { source, .. }
             | Self::ReplaceArtifact { source, .. }
             | Self::AcceptanceRead { source, .. } => Some(source),
@@ -338,6 +364,7 @@ impl Error for CliError {
             Self::UserState(source) => Some(source),
             Self::Doctor(source) => Some(source),
             Self::OutputNotDirectory { .. }
+            | Self::SourceOutput { .. }
             | Self::SharedConfigurationConflict { .. }
             | Self::AcceptanceInvalid { .. }
             | Self::AcceptanceViolations { .. } => None,
@@ -371,6 +398,12 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
         Command::Generate(args) => match args.target {
             GenerateTarget::Rime(args) => {
                 use std::io::Read as _;
+                let source_tree = Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .ancestors()
+                    .nth(2)
+                    .expect("workspace root")
+                    .join("rime");
+                output_path::protect_source_tree(&args.output, &source_tree)?;
                 let path = args.output.join("default.custom.yaml");
                 let expected = include_bytes!("../../../rime/package/default.custom.yaml");
                 let conflict = || CliError::SharedConfigurationConflict { path: path.clone() };
@@ -399,7 +432,7 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                         ) => {}
                     Err(_) => return Err(conflict()),
                 }
-                let artifacts = generate_rime_artifacts();
+                let artifacts = generate_rime_artifacts().map_err(CliError::RuntimeBuild)?;
                 let files: Vec<(&str, &str)> = artifacts
                     .iter()
                     .map(|artifact| (artifact.filename(), artifact.contents()))

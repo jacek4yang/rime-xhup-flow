@@ -3,14 +3,14 @@
 -- 运行: lua tests/lua/test_quick_hint.lua (工作目录 = 仓库根)
 -- 通过 package.preload 注入提示表桩件,隔离生成数据细节。
 
-package.path = "rime/lua/?.lua;rime/lua/?/init.lua;" .. package.path
+local lua_root = dofile("tests/lua/runtime_path.lua")
 
 package.preload["xhup_flow.data.quick_hints"] = function()
   return {}
 end
 
 local annotation = require("xhup_flow.annotation")
-local quick_hint = dofile("rime/lua/xhup_flow/quick_hint.lua")
+local quick_hint = dofile(lua_root .. "/xhup_flow/quick_hint.lua")
 local decorate = quick_hint.decorate
 
 local passed, failed = 0, 0

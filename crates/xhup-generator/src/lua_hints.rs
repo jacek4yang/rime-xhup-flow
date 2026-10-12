@@ -3,80 +3,13 @@
 //! 提示视图 = canonical v2 简码映射(PRIMARY + FIXED_FIRST)按词聚合:
 //! 每词保留最简码(键数最小,平手取字典序最小,
 //! 确定性)。只收录**严格短于该词全码**的简码 —— 不省键的「简码」没有
-//! 提示价值。模块源文件(quick_hint.lua)是入库源码,经 include_str!
-//! 嵌入;数据文件由本模块生成。两者都由生成器拥有产物身份。
+//! 提示价值。本模块只生成规范数据；生产模块编译与依赖校验由 lua_build 负责。
 
 use crate::fixed_first_shortcuts::canonical_fixed_first_shortcut_entries;
 use crate::primary_shortcuts::canonical_primary_shortcut_entries;
 
-/// 候选注释模块产物文件名(入库源码,相对包根)。
-pub const LUA_ANNOTATION_FILENAME: &str = "lua/xhup_flow/annotation.lua";
-
-/// 简码提示模块产物文件名(入库源码,相对包根)。
-pub const LUA_QUICK_HINT_FILENAME: &str = "lua/xhup_flow/quick_hint.lua";
-
-/// Lua 命名空间入口与合同诊断模块产物文件名(入库源码,相对包根)。
-pub const LUA_INIT_FILENAME: &str = "lua/xhup_flow/init.lua";
-
 /// 简码提示数据产物文件名(生成器产出,相对包根)。
 pub const LUA_QUICK_HINT_DATA_FILENAME: &str = "lua/xhup_flow/data/quick_hints.lua";
-
-/// 候选注释模块源(入库源码,与模板同法嵌入)。
-const ANNOTATION_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/annotation.lua");
-
-/// 简码提示模块源(入库源码,与模板同法嵌入)。
-const QUICK_HINT_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/quick_hint.lua");
-
-/// Lua 命名空间入口与合同诊断模块源(入库源码,与模板同法嵌入)。
-const INIT_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/init.lua");
-
-/// 有界上下文调序模块源(§4.3;入库源码,与模板同法嵌入)。
-const CONTEXT_RANKER_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/context_ranker.lua");
-
-/// 本地用户记忆观察组件源(#83 R4;入库源码,同法嵌入)。
-const USER_MEMORY_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/user_memory.lua");
-
-/// joint lattice 守护诊断组件源(#83 R3;入库源码,同法嵌入)。
-const JOINT_DECODER_SOURCE: &str = include_str!("../../../rime/lua/xhup_flow/joint_decoder.lua");
-
-/// joint_decoder 模块产物文件名(打包进 Rime 包 lua/xhup_flow/)。
-pub const LUA_JOINT_DECODER_FILENAME: &str = "lua/xhup_flow/joint_decoder.lua";
-
-/// user_memory 模块产物文件名(打包进 Rime 包 lua/xhup_flow/)。
-pub const LUA_USER_MEMORY_FILENAME: &str = "lua/xhup_flow/user_memory.lua";
-
-/// context_ranker 模块产物文件名(打包进 Rime 包 lua/xhup_flow/)。
-pub const LUA_CONTEXT_RANKER_FILENAME: &str = "lua/xhup_flow/context_ranker.lua";
-
-/// 候选注释模块源文本(逐字嵌入,未经任何改写)。
-pub fn lua_annotation_source() -> &'static str {
-    ANNOTATION_SOURCE
-}
-
-/// 简码提示模块源文本(逐字嵌入,未经任何改写)。
-pub fn lua_quick_hint_source() -> &'static str {
-    QUICK_HINT_SOURCE
-}
-
-/// Lua 命名空间入口与合同诊断模块源文本(逐字嵌入,未经任何改写)。
-pub fn lua_init_source() -> &'static str {
-    INIT_SOURCE
-}
-
-/// 有界上下文调序模块源文本(逐字嵌入,未经任何改写)。
-pub fn lua_context_ranker_source() -> &'static str {
-    CONTEXT_RANKER_SOURCE
-}
-
-/// 本地用户记忆观察组件源文本(逐字嵌入,未经任何改写)。
-pub fn lua_user_memory_source() -> &'static str {
-    USER_MEMORY_SOURCE
-}
-
-/// joint lattice 守护诊断组件源文本(逐字嵌入,未经任何改写)。
-pub fn lua_joint_decoder_source() -> &'static str {
-    JOINT_DECODER_SOURCE
-}
 
 /// 生成简码提示数据模块文本(Lua table,词 → 最简码)。
 ///
@@ -172,21 +105,6 @@ fn quick_hints_view_with_full_lens() -> (
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn source_is_embedded_verbatim() {
-        // 注释模块:包含纯 ASCII 格式化与清洗装饰标记核心逻辑。
-        assert!(lua_annotation_source().contains("clean_decorative_markers"));
-        assert!(lua_annotation_source().contains("format_shortcut_hint"));
-        assert!(lua_annotation_source().contains("debug_tag_for_type"));
-        assert!(lua_annotation_source().contains("format_candidate_comment"));
-
-        // 源文件是完整模块本体:命名空间数据引用与组件三要素俱在。
-        assert!(lua_quick_hint_source().contains("xhup_flow.data.quick_hints"));
-        assert!(lua_quick_hint_source().contains("xhup_flow.annotation"));
-        assert!(lua_quick_hint_source().contains("init = init"));
-        assert!(lua_quick_hint_source().contains("func = func"));
-    }
 
     #[test]
     fn data_is_deterministic() {

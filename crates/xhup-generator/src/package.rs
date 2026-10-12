@@ -1,10 +1,8 @@
 //! 跨平台便携 Rime 源包的模板渲染与多产物生成。
 //!
-//! 便携核心的输入行为只使用标准 librime 核心组件;Lua 简码提示
-//! (`lua_filter@*xhup_flow.quick_hint`)是**可选增强**:librime-lua
-//! 缺失时 librime 跳过该组件,方案保持完整静态功能(docs/lua-runtime.md
-//! §2 降级语义)。同一份生成包面向 ibus-rime、fcitx5-rime、Weasel、
-//! Squirrel、fcitx5-macos、fcitx5-android 等主流前端。
+//! 主方案依赖 librime-lua；独立 Static 方案保留无 Lua 的兼容回退。
+//! 人类维护模板与 Lua 源码，生成器验证并构建可移植模块、词典和来源清单。
+//! 不发布平台专用 Lua 字节码或构建主机的 Rime 部署二进制。
 //!
 //! 方案把冻结精确编码层与低质量 Flow translator 隔离：前者直接精确查表，
 //! 后者以完整 pinned 词汇证据 + 逐字两键音码原语完成开放组句和本地学习。
@@ -15,12 +13,8 @@
 //! (渲染为 crate 的 package version)。在相同规范数据、相同生成器源码
 //! (含 package version)与相同模板下,生成结果字节级一致。
 
-use crate::lua_hints::{
-    LUA_ANNOTATION_FILENAME, LUA_CONTEXT_RANKER_FILENAME, LUA_INIT_FILENAME,
-    LUA_JOINT_DECODER_FILENAME, LUA_QUICK_HINT_DATA_FILENAME, LUA_QUICK_HINT_FILENAME,
-    LUA_USER_MEMORY_FILENAME, generate_lua_quick_hints_data, lua_annotation_source,
-    lua_context_ranker_source, lua_init_source, lua_joint_decoder_source, lua_quick_hint_source,
-    lua_user_memory_source,
+use crate::lua_build::{
+    BUILD_STRATEGY, COMPILER_REVISION, LuaBuildError, build_inputs, compile_runtime, sha256,
 };
 use crate::rime::{RIME_CHAR_DICTIONARY_FILENAME, generate_rime_char_dictionary};
 use crate::rime_fixed_first_shortcuts::{
@@ -35,6 +29,7 @@ use crate::rime_word_shortcuts::{
     RIME_WORD_SHORTCUT_DICTIONARY_FILENAME, generate_rime_word_shortcut_dictionary,
 };
 use crate::rime_words::{RIME_WORD_DICTIONARY_FILENAME, generate_rime_word_dictionary};
+use serde::Serialize;
 
 /// 顶层词典产物文件名。
 const RIME_DICTIONARY_FILENAME: &str = "xhup_flow.dict.yaml";
@@ -88,8 +83,7 @@ translator:
   enable_user_dict: false
 "#;
 
-/// 模板中唯一的占位符。
-const VERSION_PLACEHOLDER: &str = "{{VERSION}}";
+const RUNTIME_MANIFEST_FILENAME: &str = "xhup_flow.runtime-manifest.json";
 
 /// 便携 Rime 源包中的一个生成产物。
 ///
@@ -113,42 +107,105 @@ impl RimeArtifact {
     }
 }
 
-/// 渲染模板:把恰好一次的 `{{VERSION}}` 替换为 package version。
-///
-/// 模板是入库源文件,占位符缺失/多余或渲染后残留 `{{` 均属源码级错误,
-/// 直接断言失败。
-fn render_template(template: &str, name: &str) -> String {
-    let count = template.matches(VERSION_PLACEHOLDER).count();
-    assert_eq!(
-        count, 1,
-        "{name}: 模板应恰含一个 {VERSION_PLACEHOLDER} 占位符"
-    );
-    let rendered = template.replace(VERSION_PLACEHOLDER, env!("CARGO_PKG_VERSION"));
-    assert!(!rendered.contains("{{"), "{name}: 渲染后存在未解析占位符");
-    rendered
+fn render_template(
+    template: &str,
+    name: &str,
+    schema_id: Option<&str>,
+) -> Result<String, LuaBuildError> {
+    let mut rendered = String::with_capacity(template.len());
+    let mut rest = template;
+    let mut versions = 0;
+    let mut schemas = 0;
+    while let Some(start) = rest.find("{{") {
+        rendered.push_str(&rest[..start]);
+        rest = &rest[start + 2..];
+        let end = rest
+            .find("}}")
+            .ok_or_else(|| LuaBuildError::new(name, "unclosed template placeholder"))?;
+        match &rest[..end] {
+            "VERSION" => {
+                versions += 1;
+                rendered.push_str(env!("CARGO_PKG_VERSION"));
+            }
+            "SCHEMA_ID" if schema_id.is_some() => {
+                schemas += 1;
+                rendered.push_str(schema_id.expect("matched schema placeholder"));
+            }
+            unknown => {
+                return Err(LuaBuildError::new(
+                    name,
+                    format!("unknown placeholder {unknown}"),
+                ));
+            }
+        }
+        rest = &rest[end + 2..];
+    }
+    rendered.push_str(rest);
+    if versions != 1 || schema_id.is_some() != (schemas > 0) || rendered.contains("}}") {
+        return Err(LuaBuildError::new(
+            name,
+            "missing, repeated, or malformed template placeholders",
+        ));
+    }
+    Ok(rendered)
 }
 
-/// 生成完整的便携 Rime 源包产物集合。
-///
-/// 产物顺序固定且面向输入层级:一级简码词典(1 键)→ 单字全码词典
-/// (2/3/4 码)→ PRIMARY 词语简码词典(2~5 键)→ FIXED_FIRST 词语简码
-/// 词典(3~5 键)→ 固定层词语词典(4/6/8 键)→ 顶层词典(导入前五者)→
-/// Flow 词典(组句专用,完整词汇关系 + 单字音码原语,无简码别名,由
-/// table_translator@flow 加载,不被顶层词典导入)→ 两个辅助词典的编译
-/// wrapper schema → Lua 候选注释模块、简码提示模块与数据(librime-lua `*module` 组件,
-/// 可选增强,缺失时主方案降级为纯静态行为)→ 主方案(Flow 引擎)→
-/// 静态兼容方案(无 Flow translator 的回退)。同一规范数据、生成器
-/// 源码与模板产生同一顺序、字节级一致的产物集合。
-/// 渲染辅助词典的编译 wrapper schema。
-fn render_dict_compile_wrapper(schema_id: &str) -> String {
-    let version = env!("CARGO_PKG_VERSION");
-    DICT_COMPILE_WRAPPER_TEMPLATE
-        .replace("{{SCHEMA_ID}}", schema_id)
-        .replace("{{VERSION}}", version)
+#[derive(Serialize)]
+struct InputIdentity {
+    path: &'static str,
+    sha256: &'static str,
+    bytes: u64,
 }
 
-pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
-    vec![
+#[derive(Serialize)]
+struct ArtifactIdentity {
+    path: &'static str,
+    sha256: String,
+    bytes: usize,
+    source_inputs: [&'static str; 1],
+    dependencies: std::collections::BTreeSet<String>,
+    module: Option<&'static str>,
+    source_sha256: Option<String>,
+}
+
+#[derive(Serialize)]
+struct CompilerIdentity {
+    strategy: &'static str,
+    full_moon_revision: &'static str,
+    lua_syntax: &'static str,
+    bytecode: bool,
+    source_line_offset: u8,
+    generator_version: &'static str,
+    cargo_lock_sha256: &'static str,
+}
+
+#[derive(Serialize)]
+struct RuntimeManifest {
+    schema_version: u8,
+    compiler: CompilerIdentity,
+    inputs: Vec<InputIdentity>,
+    artifacts: Vec<ArtifactIdentity>,
+}
+
+/// Build the complete portable package before exposing any output to a writer.
+/// The manifest lists direct recipes and registered repository input identities;
+/// it does not hash itself. Release provenance binds the manifest's final bytes.
+pub fn generate_rime_artifacts() -> Result<Vec<RimeArtifact>, LuaBuildError> {
+    let schema = render_template(SCHEMA_TEMPLATE, RIME_SCHEMA_FILENAME, None)?;
+    let static_schema = render_template(STATIC_SCHEMA_TEMPLATE, RIME_STATIC_SCHEMA_FILENAME, None)?;
+    let dictionary = render_template(DICTIONARY_TEMPLATE, RIME_DICTIONARY_FILENAME, None)?;
+    let flow_wrapper = render_template(
+        DICT_COMPILE_WRAPPER_TEMPLATE,
+        RIME_FLOW_WRAPPER_SCHEMA_FILENAME,
+        Some("xhup_flow_flow"),
+    )?;
+    let learn_wrapper = render_template(
+        DICT_COMPILE_WRAPPER_TEMPLATE,
+        RIME_LEARN_WRAPPER_SCHEMA_FILENAME,
+        Some("xhup_flow_learn"),
+    )?;
+    let lua_modules = compile_runtime(&[&schema, &static_schema])?;
+    let mut artifacts = vec![
         RimeArtifact {
             filename: "default.custom.yaml",
             contents: include_str!("../../../rime/package/default.custom.yaml").to_owned(),
@@ -178,7 +235,7 @@ pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
         },
         RimeArtifact {
             filename: RIME_DICTIONARY_FILENAME,
-            contents: render_template(DICTIONARY_TEMPLATE, RIME_DICTIONARY_FILENAME),
+            contents: dictionary,
         },
         RimeArtifact {
             filename: RIME_FIXED_FIRST_SHORTCUT_DICTIONARY_FILENAME,
@@ -194,55 +251,123 @@ pub fn generate_rime_artifacts() -> Vec<RimeArtifact> {
         },
         RimeArtifact {
             filename: RIME_FLOW_WRAPPER_SCHEMA_FILENAME,
-            contents: render_dict_compile_wrapper("xhup_flow_flow"),
+            contents: flow_wrapper,
         },
         RimeArtifact {
             filename: RIME_LEARN_WRAPPER_SCHEMA_FILENAME,
-            contents: render_dict_compile_wrapper("xhup_flow_learn"),
-        },
-        RimeArtifact {
-            filename: LUA_ANNOTATION_FILENAME,
-            contents: lua_annotation_source().to_string(),
-        },
-        RimeArtifact {
-            filename: LUA_QUICK_HINT_FILENAME,
-            contents: lua_quick_hint_source().to_string(),
-        },
-        RimeArtifact {
-            filename: LUA_CONTEXT_RANKER_FILENAME,
-            contents: lua_context_ranker_source().to_string(),
-        },
-        RimeArtifact {
-            filename: LUA_USER_MEMORY_FILENAME,
-            contents: lua_user_memory_source().to_string(),
-        },
-        RimeArtifact {
-            filename: LUA_JOINT_DECODER_FILENAME,
-            contents: lua_joint_decoder_source().to_string(),
-        },
-        RimeArtifact {
-            filename: "lua/xhup_flow/native_tail.lua",
-            contents: include_str!("../../../rime/lua/xhup_flow/native_tail.lua").to_owned(),
-        },
-        RimeArtifact {
-            filename: "lua/xhup_flow/full_span.lua",
-            contents: include_str!("../../../rime/lua/xhup_flow/full_span.lua").to_owned(),
-        },
-        RimeArtifact {
-            filename: LUA_INIT_FILENAME,
-            contents: lua_init_source().to_string(),
-        },
-        RimeArtifact {
-            filename: LUA_QUICK_HINT_DATA_FILENAME,
-            contents: generate_lua_quick_hints_data(),
+            contents: learn_wrapper,
         },
         RimeArtifact {
             filename: RIME_SCHEMA_FILENAME,
-            contents: render_template(SCHEMA_TEMPLATE, RIME_SCHEMA_FILENAME),
+            contents: schema,
         },
         RimeArtifact {
             filename: RIME_STATIC_SCHEMA_FILENAME,
-            contents: render_template(STATIC_SCHEMA_TEMPLATE, RIME_STATIC_SCHEMA_FILENAME),
+            contents: static_schema,
         },
-    ]
+    ];
+    let mut identities: Vec<_> = artifacts
+        .iter()
+        .map(|artifact| ArtifactIdentity {
+            path: artifact.filename,
+            sha256: sha256(artifact.contents.as_bytes()),
+            bytes: artifact.contents.len(),
+            source_inputs: [match artifact.filename {
+                "default.custom.yaml" => "rime/package/default.custom.yaml",
+                "xhup_flow.sources.tsv" => "data/xhup/sources.tsv",
+                RIME_SCHEMA_FILENAME => "rime/templates/xhup_flow.schema.yaml.in",
+                RIME_STATIC_SCHEMA_FILENAME => "rime/templates/xhup_flow_static.schema.yaml.in",
+                RIME_DICTIONARY_FILENAME => "rime/templates/xhup_flow.dict.yaml.in",
+                RIME_SHORTCUT_DICTIONARY_FILENAME => "crates/xhup-generator/src/rime_shortcuts.rs",
+                RIME_CHAR_DICTIONARY_FILENAME => "crates/xhup-generator/src/rime.rs",
+                RIME_WORD_SHORTCUT_DICTIONARY_FILENAME => {
+                    "crates/xhup-generator/src/rime_word_shortcuts.rs"
+                }
+                RIME_WORD_DICTIONARY_FILENAME => "crates/xhup-generator/src/rime_words.rs",
+                RIME_FIXED_FIRST_SHORTCUT_DICTIONARY_FILENAME => {
+                    "crates/xhup-generator/src/rime_fixed_first_shortcuts.rs"
+                }
+                RIME_FLOW_DICTIONARY_FILENAME | RIME_LEARN_DICTIONARY_FILENAME => {
+                    "crates/xhup-generator/src/rime_flow.rs"
+                }
+                _ => "crates/xhup-generator/src/package.rs",
+            }],
+            dependencies: std::collections::BTreeSet::new(),
+            module: None,
+            source_sha256: None,
+        })
+        .collect();
+    for module in lua_modules {
+        identities.push(ArtifactIdentity {
+            path: module.filename,
+            sha256: sha256(module.compiled.contents.as_bytes()),
+            bytes: module.compiled.contents.len(),
+            source_inputs: [module.source_path],
+            dependencies: module.compiled.dependencies,
+            module: Some(module.module),
+            source_sha256: Some(module.compiled.source_sha256),
+        });
+        artifacts.push(RimeArtifact {
+            filename: module.filename,
+            contents: module.compiled.contents,
+        });
+    }
+    identities.sort_unstable_by_key(|identity| identity.path);
+    let mut inputs: Vec<_> = build_inputs()
+        .map(|(path, sha256, bytes)| InputIdentity {
+            path,
+            sha256,
+            bytes,
+        })
+        .collect();
+    inputs.sort_unstable_by_key(|identity| identity.path);
+    let cargo_lock_sha256 = inputs
+        .iter()
+        .find(|input| input.path == "Cargo.lock")
+        .ok_or_else(|| {
+            LuaBuildError::new(RUNTIME_MANIFEST_FILENAME, "missing Cargo.lock identity")
+        })?
+        .sha256;
+    let manifest = RuntimeManifest {
+        schema_version: 1,
+        compiler: CompilerIdentity {
+            strategy: BUILD_STRATEGY,
+            full_moon_revision: COMPILER_REVISION,
+            lua_syntax: "5.1",
+            bytecode: false,
+            source_line_offset: 1,
+            generator_version: env!("CARGO_PKG_VERSION"),
+            cargo_lock_sha256,
+        },
+        inputs,
+        artifacts: identities,
+    };
+    let mut contents = serde_json::to_string_pretty(&manifest)
+        .map_err(|error| LuaBuildError::new(RUNTIME_MANIFEST_FILENAME, error.to_string()))?;
+    contents.push('\n');
+    artifacts.push(RimeArtifact {
+        filename: RUNTIME_MANIFEST_FILENAME,
+        contents,
+    });
+    Ok(artifacts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_template;
+
+    #[test]
+    fn incomplete_or_unknown_template_contracts_fail_closed() {
+        for (source, schema) in [
+            ("version: {{VERSOIN}}", None),
+            ("version: {{VERSION", None),
+            ("version: {{VERSION}} {{VERSION}}", None),
+            ("version: 1", None),
+            ("version: {{VERSION}} }}", None),
+            ("version: {{VERSION}}\nschema: {{SCHEMA_ID}}", None),
+            ("version: {{VERSION}}", Some("xhup_flow")),
+        ] {
+            assert!(render_template(source, "fixture.yaml", schema).is_err());
+        }
+    }
 }

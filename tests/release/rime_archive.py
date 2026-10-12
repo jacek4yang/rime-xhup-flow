@@ -4,20 +4,7 @@ import argparse
 from pathlib import Path
 import stat
 import zipfile
-from check_generated_runtime_sources import MODULES, verify as verify_runtime
-
-YAML = (
-    "xhup_flow", "xhup_flow_static", "xhup_flow_flow", "xhup_flow_learn",
-)
-DICTIONARIES = (
-    "xhup_flow", "xhup_flow_chars", "xhup_flow_words", "xhup_flow_shortcuts",
-    "xhup_flow_word_shortcuts", "xhup_flow_fixed_first_shortcuts",
-    "xhup_flow_flow", "xhup_flow_learn",
-)
-GENERATED = ({f"{name}.schema.yaml" for name in YAML}
-             | {f"{name}.dict.yaml" for name in DICTIONARIES}
-             | {f"lua/xhup_flow/{name}.lua" for name in MODULES}
-             | {"lua/xhup_flow/data/quick_hints.lua", "xhup_flow.sources.tsv", "default.custom.yaml"})
+from check_generated_runtime_sources import compile_reference, verify as verify_runtime
 NOTICES = {
     "INSTALL.md": "rime/package/INSTALL.md",
     "NOTICE.md": "rime/package/NOTICE.md",
@@ -30,24 +17,12 @@ NOTICES = {
 }
 
 
-def payloads(package, root):
-    actual = set()
-    for path in package.rglob("*"):
-        if path.is_symlink():
-            raise ValueError(f"symlink in generated package: {path}")
-        if path.is_file():
-            actual.add(path.relative_to(package).as_posix())
-    if actual != GENERATED:
-        raise ValueError(f"generated inventory mismatch: missing={GENERATED-actual}, extra={actual-GENERATED}")
-    verify_runtime(package, root)
-    if (package / "default.custom.yaml").read_bytes() != (root / "rime/package/default.custom.yaml").read_bytes():
-        raise ValueError("exclusive schema configuration differs from canonical source")
-    policy = (b"# distribution-policy=clean-v1\n"
-              b"# research-only sources are metadata only; their payloads are excluded\n"
-              + (root / "data/xhup/sources.tsv").read_bytes())
-    if (package / "xhup_flow.sources.tsv").read_bytes() != policy:
-        raise ValueError("source policy bytes do not match registry")
-    paths = {name: package / name for name in GENERATED}
+def payloads(package, root, reference=None):
+    if reference is None:
+        with compile_reference(root) as compiled:
+            return payloads(package, root, compiled)
+    verify_runtime(package, root, reference)
+    paths = {name: package / name for name in reference.artifacts}
     paths.update({name: root / source for name, source in NOTICES.items()})
     if any(not path.is_file() or path.is_symlink() or path.stat().st_size == 0
            for path in paths.values()):
@@ -63,6 +38,11 @@ def check(archive, paths):
         for name, source in paths.items():
             if zipped.read(name) != source.read_bytes():
                 raise ValueError(f"archive byte mismatch: {name}")
+            member = zipped.getinfo(name)
+            mode = member.external_attr >> 16
+            if (member.create_system != 3 or not stat.S_ISREG(mode)
+                    or stat.S_IMODE(mode) != 0o644 or member.flag_bits & 1):
+                raise ValueError(f"unsafe archive member metadata: {name}")
     return len(paths)
 
 
@@ -88,7 +68,7 @@ def main():
         parser.error("create/check require an archive path")
     paths = payloads(args.package, Path(__file__).resolve().parents[2])
     if args.mode == "verify":
-        print(f"PASS Rime package: {len(GENERATED)} exact generated files; all notices present")
+        print(f"PASS Rime package: {len(paths) - len(NOTICES)} exact compiled files; all notices present")
         return
     count = (create if args.mode == "create" else check)(args.archive, paths)
     print(f"PASS Rime archive: {count} exact generated/document/license file identities")

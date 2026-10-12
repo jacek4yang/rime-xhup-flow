@@ -5,8 +5,9 @@
 -- 3. 2.0 mandatory Lua 合同: 主方案 xhup_flow 依赖 librime-lua 运行时;
 --    若环境未加载 librime-lua 或关键模块缺失，提供明确诊断与安装指引。
 
+local build_info = require("xhup_flow.data.build_info")
 local M = {
-  _VERSION = "2.0.0",
+  _VERSION = build_info.version,
   _MODULE = "xhup_flow",
 }
 

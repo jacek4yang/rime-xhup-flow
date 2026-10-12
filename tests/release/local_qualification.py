@@ -173,7 +173,7 @@ node --test tests/security/*.test.cjs""")
         step("native-prepare", """mkdir "$EVIDENCE/native-input"
 xhup-cli generate rime --output "$EVIDENCE/native-input/package"
 python3 tests/release/check_distribution_sources.py --depfile "$CARGO_TARGET_DIR/debug/xhup-cli.d"
-python3 tests/release/check_generated_runtime_sources.py "$EVIDENCE/native-input/package"
+python3 tests/release/check_generated_runtime_sources.py "$EVIDENCE/native-input/package" --target-dir "${CARGO_TARGET_DIR}-runtime-reference" --evidence "$EVIDENCE/native-input/compiler.json" --require-clean
 python3 tests/release/rime_archive.py verify "$EVIDENCE/native-input/package"
 static-shortcut-audit --dump-static-menu-manifest "$EVIDENCE/native-input/static.manifest"
 for kind in extended open; do
@@ -188,6 +188,7 @@ python3 tests/librime/audit_shards.py prepare --root "$EVIDENCE/native-input" --
         step("native-controls", """pkg-config --modversion rime
 lua5.4 -v
 package="$EVIDENCE/native-input/package"
+python3 tests/lua/run_runtime_suite.py "$package"
 for script in run-exclusive-schema run-runtime-smoke run-deploy-audit run-ime-controls run-lua-audit run-context-ranker-audit; do
   bash "tests/librime/$script.sh" "$package"
 done

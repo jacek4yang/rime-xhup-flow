@@ -46,7 +46,9 @@ jobs:
           mkdir /tmp/native-audit-input
           cargo run -p xhup-cli --locked -- generate rime --output /tmp/native-audit-input/package
           python3 tests/release/check_distribution_sources.py --depfile target/debug/xhup-cli.d
-          python3 tests/release/check_generated_runtime_sources.py /tmp/native-audit-input/package
+          python3 tests/release/check_generated_runtime_sources.py /tmp/native-audit-input/package \
+            --target-dir /tmp/xhup-full-reference-target \
+            --evidence /tmp/native-audit-input/compiler.json --require-clean
           cargo run -p xhup-analyzer --locked --bin static-shortcut-audit -- \
             --dump-static-menu-manifest /tmp/native-audit-input/static.manifest
           for kind in extended open; do
@@ -64,6 +66,7 @@ jobs:
       - name: 部署、控制、Lua 与诊断门禁（没有移除原门禁）
         run: |
           package=/tmp/native-audit-input/package
+          python3 tests/lua/run_runtime_suite.py "$package"
           tests/librime/run-runtime-smoke.sh "$package"
           target/debug/xhup-cli doctor --user-data-dir "$package"
           tests/librime/run-deploy-audit.sh "$package"

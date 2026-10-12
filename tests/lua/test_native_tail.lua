@@ -1,4 +1,4 @@
-package.path = "rime/lua/?.lua;" .. package.path
+dofile("tests/lua/runtime_path.lua")
 local policy = require("xhup_flow.native_tail")
 local checks = 0
 local function check(ok, why) assert(ok, why); checks = checks + 1 end
