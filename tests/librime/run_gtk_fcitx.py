@@ -61,7 +61,7 @@ Layout=
     # Accept a release package, never an existing installation/user dictionary.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "release"))
     from rime_archive import payloads
-    contents = payloads(args.package, Path(__file__).resolve().parents[2])
+    contents = payloads(args.package, args.source_root)
     destination = home / "data/fcitx5/rime"
     destination.mkdir(parents=True)
     for name, data in contents.items():
@@ -93,6 +93,11 @@ Layout=
         package={name: hashlib.sha256(data).hexdigest() for name, data in contents.items()},
         compile_command=compile_command, probe_sha256=digest(probe), driver_sha256=digest(Path(__file__)),
         fcitx_sha256=digest(args.prefix / "bin/fcitx5"),
+        source_root=str(args.source_root),
+        producer_head=subprocess.check_output(
+            ["git", "-C", str(args.source_root), "rev-parse", "HEAD"], text=True).strip(),
+        producer_dirty=bool(subprocess.check_output(
+            ["git", "-C", str(args.source_root), "status", "--porcelain"], text=True).strip()),
         cold_control_burst=args.cold_control_burst,
         gtk_key_delivery="sync" if args.sync_mode else "distribution-default",
         lua_loading="distribution librime plugin loader; no LD_PRELOAD override")
@@ -198,12 +203,15 @@ def main():
     parser.add_argument("--package", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--prefix", type=Path, default=Path("/usr"))
+    parser.add_argument("--source-root", type=Path, default=Path(__file__).resolve().parents[2],
+                        help="trusted producer checkout for independent artifact verification")
     parser.add_argument("--cold-control-burst", action="store_true")
     parser.add_argument("--sync-mode", action="store_true",
                         help="diagnose with upstream synchronous GTK key delivery; not the default")
     parser.add_argument("--inside", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     args.package, args.output, args.prefix = args.package.resolve(), args.output.resolve(), args.prefix.resolve()
+    args.source_root = args.source_root.resolve()
     return inside(args) if args.inside else outer(args)
 
 

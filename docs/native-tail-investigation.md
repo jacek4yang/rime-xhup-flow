@@ -629,6 +629,13 @@ python3 tests/librime/run_gtk_fcitx.py \
 截图、日志和文件哈希。只使用合成输入，不读取用户词典。所有 GUI 结果均不能
 替代 Windows、macOS、Android 验收或全部学习/升级/异常场景。
 
+测试驱动可用 `--source-root /absolute/frozen-checkout` 指定独立生产源码，
+仍须用该源码的编译器验证全部包身份；收据记录生产源码 SHA、脏状态和驱动哈希，
+不把研究分支误当成 RC 来源。对冻结 `2.1.0-rc.1` 源码
+`e739ab5dd2a0b833b95a051a126110215ece2918` 的 34 文件生产包，
+上述三个真实输入、候选显示和完整提交均通过，`jbzqu` 截图首选“进去”。
+证据目录为 `rc1-e739ab5/`；这仍不是完整平台验收。
+
 永久驱动的发行版默认投递实测：基础三题通过，`--cold-control-burst` 失败，
 目录分别为 `regression-d47684b/` 和 `regression-d47684b-cold-control/`。
 在同一包、同一按键序列上，仅启用 `--sync-mode`，冷启动突发及三题全部通过，
