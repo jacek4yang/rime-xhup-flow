@@ -340,17 +340,17 @@ local function joint_candidates(input, segment, env)
   return full, pending
 end
 
--- An explicitly learned exact native word may have a user-created code absent
--- from the immutable beam lexicon. Do not demote that native first choice.
-local function learned_exact(candidate, segment)
-  if candidate.type ~= "user_table" or candidate.start ~= segment.start
-    or candidate._end ~= segment._end then return false end
-  local ok, learned = pcall(function()
+-- Joint and native scores are not cross-calibrated. Preserve a complete exact
+-- native first choice (including learned words); joint search fills missing
+-- complete paths rather than assigning itself an unconditional ranking boost.
+local function complete_exact(candidate, segment)
+  if candidate.start ~= segment.start or candidate._end ~= segment._end then return false end
+  local ok, complete = pcall(function()
     local phrase = candidate:to_phrase()
     local entry = phrase and phrase.entry
-    return entry and entry.commit_count > 0 and entry.remaining_code_length == 0
+    return entry and entry.remaining_code_length == 0
   end)
-  return ok and learned
+  return ok and complete
 end
 
 function M.func(input, segment, env)
@@ -403,7 +403,7 @@ function M.func(input, segment, env)
   end
   if base then
     for candidate in base:iter() do
-      if collected == 0 and used_joint and learned_exact(candidate, segment) then
+      if collected == 0 and used_joint and complete_exact(candidate, segment) then
         emit(candidate)
         append_full()
       else

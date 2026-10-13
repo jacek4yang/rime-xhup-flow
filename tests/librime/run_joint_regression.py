@@ -56,14 +56,17 @@ def main() -> None:
         if 'LuaTranslation::Next error' in errors or 'LuaTranslation::Peek error' in errors:
             raise AssertionError(f'{label}: native Lua callback failed; see saved stderr')
 
-    def exported(user: Path, label: str, expected: int, previous: Path | None = None,
-                 target: tuple[str, str] = ('就是拟好', 'jqui nihc')) -> None:
+    def export_state(user: Path, label: str) -> tuple[list[str], list[list[str]]]:
         path = output / f'{label}.tsv'
         subprocess.run(['rime_dict_manager', '-e', 'xhup_flow_user', str(path)],
                        cwd=user, check=True, stdout=subprocess.DEVNULL)
         lines = path.read_text().splitlines()
         records = [line.split('\t') for line in lines if line and not line.startswith('#')]
-        wanted = [[*target, str(expected)]] if expected else []
+        return lines, records
+
+    def exported(user: Path, label: str, expected: int, previous: Path | None = None) -> None:
+        lines, records = export_state(user, label)
+        wanted = [['就是拟好', 'jqui nihc', str(expected)]] if expected else []
         old_tick = 0
         if previous:
             old_lines = previous.read_text().splitlines()
@@ -87,11 +90,21 @@ def main() -> None:
     exported(learning, 'first-choice', 1)
     run(learning, 'restarted-choice', '--learned')
     exported(learning, 'restarted-choice', 2)
+    # Preserve the real native Sentence's learning semantics, not the incidental
+    # single-Phrase record layout of an unconditionally promoted joint candidate.
+    # The control actually selects the same input with joint search disabled.
+    control = prepare('compound-native-control', True)
     compound = prepare('compound', True)
-    run(compound, 'compound-choice', '--learn-compound')
-    exported(compound, 'compound-choice', 1, target=('你好', 'nirx hcnz'))
-    run(compound, 'compound-restart', '--learn-compound')
-    exported(compound, 'compound-restart', 2, target=('你好', 'nirx hcnz'))
+    for label in ('compound-choice', 'compound-restart'):
+        run(control, label + '-native', '--native-compound')
+        run(compound, label, '--learn-compound')
+        expected_lines, expected_records = export_state(control, label + '-native')
+        actual_lines, actual_records = export_state(compound, label)
+        assert sorted(actual_records) == sorted(expected_records), f'{label}: native learning records changed'
+        for prefix in ('#@/tick\t', '#@/db_name\t'):
+            assert [line for line in actual_lines if line.startswith(prefix)] == [
+                line for line in expected_lines if line.startswith(prefix)
+            ], f'{label}: native update clock or persistent identity changed'
     quota = prepare('quota', True, 0)
     run(quota, 'quota', '--quota')
     exported(quota, 'quota', 0)

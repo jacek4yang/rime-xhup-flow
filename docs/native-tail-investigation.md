@@ -436,3 +436,37 @@ The pre-correction development traces and SDK diagnosis are archived at
 (SHA-256 `6b8b2d157b0d68a1d620a46c792fab535b3e41c63a8f87456fab2aaa3b6f21af`).
 The archive contains 4,432 files and is 5,989,657,972 bytes; tar comparison passed.
 It is investigation evidence, not a qualified release package.
+
+### Complete native first-choice contract (development)
+
+The `0308710` reading-model correction was rerun against the same frozen 7,388
+development cases, with the same `complete_raw_span_v1` harness for both sides.
+Both runs had zero commit-contract failures. Top-1 was 40.8365% → 39.8078%,
+Top-3 43.4759% → 53.7899%, first-page coverage 43.8820% → 58.9740%, and complete
+selection/commit 44.7212% → 62.5609%. There were 193 lost baseline first choices,
+117 gained first choices, and 41 lost baseline first-page cases. This remains a
+negative default-enablement result; the confirmation partition is untouched.
+
+The previous merge policy unconditionally put joint paths before native results
+despite having no cross-model score calibration. The conservative replacement
+preserves the first native candidate only when its raw span is complete and its
+native entry has no remaining code. Joint candidates follow that object; when
+the native head is partial or predictive, complete joint paths may precede it.
+Static exact priority is unchanged. Joint path scores still rank competing joint
+paths; they do not claim to be comparable to native translator quality.
+
+The ordering regression failed before this change and passed afterward. Real
+librime mixed typing, cursor edits, learning-off privacy, restart, quota and old
+state restoration also passed. A preserved native Sentence naturally learns its
+constituent entries, unlike the previously promoted atomic joint Phrase. The
+old compound test incorrectly assumed that record layout independently of which
+native object was selected. It now compares actual joint-on/off native learning
+records, tick and persistent identity across selection and process restart.
+This differential regression fails on the previous package and passes on the
+new one; the separate joint-Phrase exact-once test remains. On librime 1.16.1 the
+`nirxhcnz` control and new policy both incremented `你/nirx` and `好/hcnz` once per
+selection, with ticks 2 then 4.
+
+These focused results do not qualify the new ranking policy. Its full development
+comparison, confirmation, paired performance and platform acceptance are pending.
+

@@ -117,4 +117,49 @@ local stale_model = {identity="old", policy="joint-frequency-context-v2",
 check(not pcall(search.scorer, stale_model, "new"), "a cached model from another deployment cannot score candidates")
 check(not pcall(search.scorer, stale_model), "missing schema/model binding fails closed")
 
+-- The joint model is not calibrated against native translator quality. A
+-- complete native first choice survives; partial/predictive heads cannot hide
+-- a fully consumed joint path. Exercise real search and provider ordering.
+local policy = require("xhup_flow.native_tail")
+DictEntry = function()
+  return {code={push=function(self, id) self[#self + 1] = id end}}
+end
+Phrase = function(_, _, start, finish, entry)
+  local phrase = {start=start, _end=finish, text=entry.text, type="phrase"}
+  phrase.toCandidate = function() return phrase end
+  return phrase
+end
+native.lang_name = "fixture"
+for _, case in ipairs({
+  {finish=12, remaining=0, preserve=true},
+  {finish=11, remaining=0, preserve=false},
+  {finish=12, remaining=1, preserve=false},
+}) do
+  local head = {start=5, _end=case.finish, text="原生首选", type="sentence",
+    quality=-1000, to_phrase=function() return {entry={remaining_code_length=case.remaining}} end}
+  local output = {}
+  yield = function(candidate) output[#output + 1] = candidate end
+  local env = {
+    engine={context={get_option=function() return true end, set_property=function() end}},
+    native={lang_name="fixture", query=function()
+      return {iter=function() local done=false; return function()
+        if not done then done=true; return head end
+      end end}
+    end},
+    joint_ready=true, memory=native, aliases=aliases, reverse=reverse,
+    edge_lengths=lengths, lexical_score=function() return -1 end,
+  }
+  policy.func("jqunihc", {start=5, _end=12}, env)
+  if case.preserve then
+    check(output[1] == head and output[2].text == "就是你好",
+      "complete native first choice keeps identity ahead of uncalibrated joint scores")
+  else
+    check(output[1].text == "就是你好" and output[1]._end == 12,
+      "partial or predictive native head cannot suppress full joint consumption")
+  end
+  local occurrences = 0
+  for _, candidate in ipairs(output) do if candidate == head then occurrences=occurrences+1 end end
+  check(occurrences == 1, "native candidate is neither duplicated nor wrapped")
+end
+
 print(string.format("PASS joint key/text search: %d assertions (pure Lua, not librime)", checks))

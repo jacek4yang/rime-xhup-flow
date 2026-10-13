@@ -17,12 +17,15 @@ static void annotation(RimeSessionId s, int rank, const char *name) {
   }
 }
 
-static void compound_learning_case(void) {
+static void compound_learning_case(int joint) {
   RimeSessionId s = start();
-  r->set_option(s, "joint_decoder", 1);
+  r->set_option(s, "joint_decoder", joint);
   State state = type(s, "compound-learning", "nirxhcnz", "你好", NULL);
   annotation(s, state.target_rank, "compound-learning");
   selected_commit(s, &state, "你好", "compound commits with quick hints enabled");
+  char status[96] = "unavailable";
+  r->get_property(s, "xhup_flow_learning_status", status, sizeof(status));
+  check(!strcmp(status, "ready"), "complete native choice uses the active bounded writer");
   r->destroy_session(s);
 }
 
@@ -87,7 +90,7 @@ int main(int argc, char **argv) {
   if (argc == 4 && strcmp(argv[3], "--learn") && strcmp(argv[3], "--learned")
       && strcmp(argv[3], "--quota") && strcmp(argv[3], "--seed-legacy")
       && strcmp(argv[3], "--recall-legacy") && strcmp(argv[3], "--recall-joint")
-      && strcmp(argv[3], "--learn-compound")) return 2;
+      && strcmp(argv[3], "--learn-compound") && strcmp(argv[3], "--native-compound")) return 2;
   r = rime_get_api();
   quick_hint_enabled = 1;
   RIME_STRUCT(RimeTraits, traits);
@@ -96,7 +99,8 @@ int main(int argc, char **argv) {
   xhup_initialize(r, &traits);
   check(r->find_module("lua") != NULL, "real Lua module available");
   if (argc == 4) {
-    if (!strcmp(argv[3], "--learn-compound")) compound_learning_case();
+    if (!strcmp(argv[3], "--learn-compound") || !strcmp(argv[3], "--native-compound"))
+      compound_learning_case(!strcmp(argv[3], "--learn-compound"));
     else if (!strcmp(argv[3], "--learn") || !strcmp(argv[3], "--learned") || !strcmp(argv[3], "--quota"))
       learning_case(argv[3]);
     else encoded_learning_case(argv[3]);
