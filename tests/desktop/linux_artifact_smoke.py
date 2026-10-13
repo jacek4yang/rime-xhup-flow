@@ -139,7 +139,9 @@ def main():
             time.sleep(.2)
 
         def text():
-            return execute("return document.body.innerText")
+            page = execute("return {url:location.href, text:document.body.innerText}")
+            report["last_page"] = page
+            return page["text"]
 
         def type_into(selector, value):
             ref = wait(lambda: execute("return document.querySelector(arguments[0])", [selector]))
@@ -172,6 +174,10 @@ def main():
                 session = start()
                 wait(lambda: "小鹤音形训练" in text())
                 check(execute("return location.protocol") == "tauri:", "packaged local frontend loads under real WebKit")
+                app_version = execute("const done=arguments[arguments.length-1];"
+                    "window.__TAURI_INTERNALS__.invoke('plugin:app|version')"
+                    ".then(done,e=>done({error:String(e)}));", [], True)
+                check(app_version == args.version, "compiled Rust application version matches the product version")
                 check(not rime.exists(), "training starts without creating a Rime profile")
                 removed_commands = ["product_status", "product_plan", "product_execute",
                     "product_diagnostics", "product_redeploy", "product_export_package",

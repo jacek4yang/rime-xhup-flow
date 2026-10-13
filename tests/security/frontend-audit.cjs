@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const { createHash } = require('node:crypto');
 const { createRequire } = require('node:module');
 const { spawnSync } = require('node:child_process');
+const { parseArgs } = require('node:util');
 const pins = require('./braces-upstream.json');
 const advisoryId = 'GHSA-vfj7-8cjw-p6xm';
 const sha256 = data => createHash('sha256').update(data).digest('hex');
@@ -99,15 +100,19 @@ function assessAudit(audit, exitCode, verified) {
 }
 
 function main() {
+  const { values } = parseArgs({ options: {
+    'output-dir': { type: 'string', default: 'artifacts/security' },
+  } });
+  const output = values['output-dir'];
   const result = spawnSync('pnpm', ['audit', '--json'], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
   if (result.error) throw result.error;
   // Retain raw output even on a registry/network/parse error. No `|| true` gate.
-  fs.mkdirSync('artifacts/security', { recursive: true });
-  fs.writeFileSync('artifacts/security/pnpm-audit.json', result.stdout || '');
+  fs.mkdirSync(output, { recursive: true });
+  fs.writeFileSync(path.join(output, 'pnpm-audit.json'), result.stdout || '');
   if (result.stderr) process.stderr.write(result.stderr);
   const verified = installedBraces(process.cwd()).map(verifyInstalled);
   const report = assessAudit(JSON.parse(result.stdout), result.status, verified);
-  fs.writeFileSync('artifacts/security/frontend-mitigation.json', JSON.stringify({ ...report, verified }, null, 2) + '\n');
+  fs.writeFileSync(path.join(output, 'frontend-mitigation.json'), JSON.stringify({ ...report, verified }, null, 2) + '\n');
   console.log(JSON.stringify(report));
 }
 if (require.main === module) main();

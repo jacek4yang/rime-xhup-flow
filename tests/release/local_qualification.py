@@ -172,9 +172,7 @@ pnpm --filter trainer build
 pnpm -r typecheck
 pnpm -r test
 pnpm --filter miniapp build:weapp
-node tests/security/frontend-audit.cjs
-mkdir "$EVIDENCE/frontend-security"
-cp artifacts/security/pnpm-audit.json artifacts/security/frontend-mitigation.json "$EVIDENCE/frontend-security/"
+node tests/security/frontend-audit.cjs --output-dir "$EVIDENCE/frontend-security"
 node --test tests/security/*.test.cjs""")
         step("native-prepare", """mkdir "$EVIDENCE/native-input"
 xhup-cli generate rime --output "$EVIDENCE/native-input/package"

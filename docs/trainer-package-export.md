@@ -44,9 +44,9 @@ WebKitWebDriver，调用真实前端及 Rust IPC，不替换产品 API。检查�
 
 ## 当前 Trainer-only 打包门禁
 
-Linux 打包工作流在实际 `.deb` 提取后运行 `linux_artifact_smoke.py`，检查真实
-WebKit 中的盲打、暂停/继续、进度持久化和重启恢复，并确认已移除的安装管理
-IPC 不可调用、已有 Rime 配置和用户词库不受影响。
+Linux 打包工作流分别提取实际 `.deb` 和 `.rpm`，运行 `linux_artifact_smoke.py`，
+检查真实 WebKit 中的盲打、暂停/继续、进度持久化、重启恢复和 Rust 内部版本，
+并确认已移除的安装管理 IPC 不可调用、已有 Rime 配置和用户词库不受影响。
 答案由同次构建的规范 Trainer 数据和 Rust 双拼表独立求得，不再从练习页面
 读取拼音；作答前检查可见/隐藏 DOM 及可访问性属性没有泄露完整答案。
 报告记录版本、源码提交、二进制、规范数据、编码表与测试脚本哈希。
