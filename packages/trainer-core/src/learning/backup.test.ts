@@ -6,7 +6,7 @@ import {
   exportBackup,
   importBackup,
 } from "./backup";
-import { emptyProgress } from "./progress";
+import { applyQuestionProgress, emptyProgress } from "./progress";
 import { emptyDailyStats } from "./daily-stats";
 import type { ItemProgress } from "./progress";
 import { recordConfusion } from "./confusion";
@@ -196,3 +196,36 @@ describe("importBackup", () => {
 });
 
 import { BackupError } from "./backup";
+
+describe("跨天复习备份迁移", () => {
+  it("V2 历史高掌握度保留,但不能伪造独立回忆证据", () => {
+    const legacy = JSON.parse(exportBackup(sampleData(), 1700));
+    legacy.version = 2;
+    legacy.progress["行:xk"].mastery = 100;
+    delete legacy.progress["行:xk"].review;
+    const restored = importBackup(JSON.stringify(legacy));
+    expect(restored.sourceVersion).toBe(2);
+    expect(restored.progress["行:xk"]).toMatchObject({
+      attempts: 3, correct: 2, wrong: 1, mastery: 100, review: null,
+    });
+  });
+
+  it("V3 跨端导入保留到期、路线和提示证据,损坏复习状态不能静默导入", () => {
+    const progress = applyQuestionProgress(emptyProgress(), {
+      outcome: "imperfect", routeUsed: "alternate", independentRecall: false,
+      usedAnswerHint: true, wrongKeyEvents: 2, questionMs: 9000, chars: 1, now: 1700,
+    });
+    const data = { ...sampleData(), progress: { "行:xk": progress } };
+    const json = exportBackup(data, 1800);
+    const restored = importBackup(json);
+    expect(restored.sourceVersion).toBe(3);
+    expect(restored.progress["行:xk"].review).toEqual({
+      version: 1, level: 0, dueAt: 601700, lastAttemptAt: 1700,
+      lastIndependentAt: null, lastResult: "hinted", questionMs: 9000,
+      wrongKeyEvents: 2, usedAnswerHint: true, routeUsed: "alternate", lapses: 1,
+    });
+    const corrupt = JSON.parse(json);
+    corrupt.progress["行:xk"].review.dueAt = -1;
+    expect(() => importBackup(JSON.stringify(corrupt))).toThrow(BackupError);
+  });
+});

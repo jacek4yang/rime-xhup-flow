@@ -16,12 +16,16 @@
  *
  * 另有两条规则:最近 5 题防重复;答错的题 3-8 题后自然回炉(仅会话内,
  * 不持久化)。轮换按 MODE_POOL_ROTATION 顺序推进,到期回炉题可临时打破。
+ * 常规池内优先到期复习;手动复习用异构 review 池覆盖全部码长。
  */
 
 import { emptyProgress, type ItemProgress } from "../learning/progress";
+import { isReviewDue } from "../learning/spaced-review";
 import type { TrainingItem } from "../data/trainer-index";
 import { MODE_POOL_ROTATION, type PracticeMode } from "./types";
 
+/** 手动复习条目可混合一级简码、词和句子,不受单字码长轮换限制。 */
+export const REVIEW_POOL_ID = "review";
 export type Rng = () => number;
 
 /** 一个候选池:统一训练项列表 + 预计算的 log 词频上限。 */
@@ -78,19 +82,25 @@ export function computePriority(
   );
 }
 
-/** 加权随机选题;excludeIds 中的条目会被跳过,全部被排除时回退到整池。 */
+/** 池内到期优先,再加权抽样;仍保留最近题排除和空备选回退。 */
 export function pickWeighted(
   pool: QuestionPool,
   progressById: ReadonlyMap<string, ItemProgress>,
   excludeIds: ReadonlySet<string>,
   rng: Rng,
+  now: number,
 ): TrainingItem | null {
   if (pool.items.length === 0) return null;
   const candidates =
     excludeIds.size === 0
       ? pool.items
       : pool.items.filter((item) => !excludeIds.has(item.id));
-  const source = candidates.length > 0 ? candidates : pool.items;
+  const available = candidates.length > 0 ? candidates : pool.items;
+  const due = available.filter((item) => {
+    const progress = progressById.get(item.id);
+    return progress !== undefined && isReviewDue(progress, now);
+  });
+  const source = due.length > 0 ? due : available;
 
   const priorityOf = (item: TrainingItem): number =>
     computePriority(
@@ -144,6 +154,7 @@ export type PickNextInput = {
   reviewQueue: readonly ReviewItem[];
   mixedCursor: number;
   rng: Rng;
+  now: number;
 };
 
 export type PickNextResult = {
@@ -189,7 +200,8 @@ export function pickNext(input: PickNextInput): PickNextResult | null {
     }
   }
 
-  const rotation = MODE_POOL_ROTATION[mode];
+  const rotation = pools.some((pool) => pool.id === REVIEW_POOL_ID)
+    ? [REVIEW_POOL_ID] : MODE_POOL_ROTATION[mode];
   const excludeIds = new Set(recentIds.slice(-RECENT_LIMIT));
 
   // 从轮换光标开始依次尝试各池,跳过空池。
@@ -197,7 +209,7 @@ export function pickNext(input: PickNextInput): PickNextResult | null {
     const poolId = rotation[(mixedCursor + step) % rotation.length];
     const pool = pools.find((candidate) => candidate.id === poolId);
     if (!pool || pool.items.length === 0) continue;
-    const item = pickWeighted(pool, progressById, excludeIds, rng);
+    const item = pickWeighted(pool, progressById, excludeIds, rng, input.now);
     if (item) {
       return {
         item,

@@ -5,6 +5,7 @@
  */
 
 import type { ItemProgress } from "./progress";
+import { isReviewDue } from "./spaced-review";
 import type { TrainingItem, TrainerIndex } from "../data/trainer-index";
 
 export type WeakListEntry = {
@@ -29,6 +30,28 @@ export function listWeakItems(
       b.progress.wrong - a.progress.wrong ||
       (b.progress.lastSeenAt ?? 0) - (a.progress.lastSeenAt ?? 0),
   );
+  return limit === undefined ? items : items.slice(0, limit);
+}
+
+/** 复习入口包含零错键的到期项;错题统计仍使用 listWeakItems。 */
+export function listReviewItems(
+  index: TrainerIndex,
+  progressById: Record<string, ItemProgress>,
+  now: number,
+  limit?: number,
+): WeakListEntry[] {
+  const items: WeakListEntry[] = [];
+  for (const [id, progress] of Object.entries(progressById)) {
+    if (progress.attempts === 0 || (progress.wrong === 0 && !isReviewDue(progress, now))) continue;
+    const item = index.byId.get(id);
+    if (item) items.push({ item, progress });
+  }
+  items.sort((a, b) =>
+    Number(isReviewDue(b.progress, now)) - Number(isReviewDue(a.progress, now)) ||
+    a.progress.mastery - b.progress.mastery ||
+    b.progress.wrong - a.progress.wrong ||
+    (a.progress.review?.dueAt ?? 0) - (b.progress.review?.dueAt ?? 0) ||
+    a.item.id.localeCompare(b.item.id));
   return limit === undefined ? items : items.slice(0, limit);
 }
 

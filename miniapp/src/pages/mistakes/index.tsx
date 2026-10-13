@@ -12,7 +12,8 @@ import {
   confusionId,
   itemAccuracy,
   keyHeatmap,
-  listWeakItems,
+  listReviewItems,
+  isReviewDue,
   positionLabel,
   topConfusions,
 } from "@xhup/trainer-core";
@@ -27,10 +28,11 @@ export default function Mistakes() {
   const { t } = useI18n();
   const [, setTick] = useState(0);
   useDidShow(() => setTick((n) => n + 1));
+  const now = Date.now();
 
   const weakItems = useMemo<WeakListEntry[]>(
-    () => listWeakItems(trainerIndex, state.progress),
-    [state.progress],
+    () => listReviewItems(trainerIndex, state.progress, now),
+    [state.progress, now],
   );
   const report = useMemo(
     () =>
@@ -88,6 +90,7 @@ export default function Mistakes() {
               <View className="weak-row" key={item.id}>
                 <Text className="weak-target">{item.target}</Text>
                 <Text className="weak-code">{item.primaryCode}</Text>
+                {isReviewDue(progress, now) && <Text>{t("review.due")}</Text>}
                 <Text className="weak-meta">
                   {t("common.mastery", { n: progress.mastery })} ·{" "}
                   {t("common.wrongCount", { n: progress.wrong })} ·{" "}

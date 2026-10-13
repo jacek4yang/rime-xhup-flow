@@ -13,8 +13,8 @@ Rust 生成规范数据 → packages/trainer-core(平台中立)→ miniapp(Taro/
   (`trainer/public/generated/xhup_flow_trainer.json`)确定性截取启动子集,
   输出到 `src/data/generated/dataset.json`,加载时仍走共享核心完整校验。
   唯一事实来源始终是 Rust;本脚本不手写任何编码/读音/词码。
-- **进度持久化**:`src/lib/state-schema.ts`(纯逻辑,可测)定义 V2 状态
-  文档(偏好 + 稀疏进度 + 按日统计 + 键位错误),逐字段校验降级——
+- **进度持久化**:`src/lib/state-schema.ts`(纯逻辑,可测)定义 V3 状态
+  文档(偏好 + 稀疏进度 + 跨天复习 + 按日统计 + 键位错误),逐字段校验降级——
   损坏字段回退默认,绝不整体清空;`src/lib/storage.ts` 把
   `Taro.getStorageSync` 实现为共享核心 `StorageAdapter` 契约,并支持
   旧版 v1 进度一次性迁入。备份格式与桌面端同一份(`exportBackup`)。
@@ -44,7 +44,7 @@ Rust 生成规范数据 → packages/trainer-core(平台中立)→ miniapp(Taro/
 | 小结 | `pages/summary/index` | 准确率/KPM/CPM/连对 + 本场错题 + 重开 |
 | 键位 | `pages/keyboard/index` | 教学键盘完整视图 + 零声母规则表 |
 | 键详情 | `pages/key-detail/index?key=` | 声母/韵母/零声母/一级简码/形码例字/我的错误 |
-| 错题 | `pages/mistakes/index` | listWeakItems 清单 + keyHeatmap 热力 + 维度聚合 |
+| 复习与错题 | `pages/mistakes/index` | 到期条目与薄弱项清单 + keyHeatmap 热力 + 维度聚合 |
 | 设置(tab「我的」) | `pages/settings/index` | 语言/提示/错误教学/键帽/触感/导出/重置 |
 
 tabBar 三页:今日 / 学习 / 我的。练习会话相关页面不在 tab 内。
@@ -78,12 +78,18 @@ AppID 使用测试号(本地 `project.config.json` 内置 `touristappid`)。
 ```bash
 pnpm miniapp:typecheck    # 严格 TS
 pnpm miniapp:test         # 语义测试:分片校验、多模式端到端、持久化往返/降级、触感/键帽标签
-pnpm miniapp:build        # 实际 weapp 构建(成功才算支持微信)
+pnpm miniapp:build        # 实际 weapp 构建,不等于 DevTools / 真机验收
 pnpm --filter miniapp size  # 主包体积报告 + 门槛
 ```
 
 CI 会运行以上全部,并运行共享核心的平台纯度守卫
 (`packages/trainer-core/src/purity.test.ts`),防止桌面/小程序依赖泄漏进核心。
+
+复习状态和间隔策略见[Trainer 跨天复习说明](../trainer/README.md#跨天复习与迁移)。
+本地存储键保持不变,V1/V2 记录保留原有统计并迁入 V3;新备份为 V3,
+可导入旧 V2 备份。后台恢复时重新计算到期条目,盲打提示授权不因到期而改变。
+复习入口的一级简码和长句可通过真实页面组件的触屏按钮完成;这些 DOM 测试
+不是微信真机结果。当前仍使用下述有限数据子集,不声称具有完整桌面码表覆盖。
 
 ## 当前范围与已知边界
 
