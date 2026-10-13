@@ -18,6 +18,22 @@ v2.0.0 的 `runtime-qualified-user-platform-testing-v1` 是历史特批；
 正式源码必须在已公开 RC 源码之后，不复用 RC 安装包。
 构建附件保留 30 天；过期或丢失时必须重新构建并重新验收，不能补造旧字节身份。
 
+### Linux 原生版本与升级顺序
+
+产品源码、应用内版本、tag 和附件名仍使用完整 SemVer。
+Linux 包管理器不能直接把 `2.1.0-rc.1` 当成预发布：DPKG/RPM 会把它排在
+`2.1.0` 之后。因此 DEB 使用 `2.1.0~rc.1`，RPM 使用 Version `2.1.0`、
+Release `0.rc.1`；正式版分别使用 `2.1.0` 和 `2.1.0-1`。
+映射来自 `linux_package_versions.py`，BUILD-INFO 记录具体原生字段。
+
+先以完整产品版本编译未打包应用，保存原始二进制，随后分别打包 DEB 和 RPM。
+RPM 的 core-only 配置只传给 `tauri bundle`，不得传给 Rust 编译；
+各格式打包前使用原始二进制，避免前一个格式消耗 Tauri 的 bundle-type 标记。
+DEB 控制字段转换后重新比较全部安装路径、文件内容、权限、属主和链接，
+不覆盖已有输出。两种实际安装包均提取运行 WebKit、Rust 版本 IPC、
+训练持久化和许可证门禁，不能仅凭文件名判断版本正确。
+
+
 ## 必需证明
 
 - [schema 3 平台收据](platform-acceptance.md)：四个平台全部检查项 PASS，

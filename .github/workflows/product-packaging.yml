@@ -348,10 +348,11 @@ jobs:
         run: |
           set -euo pipefail
           ver="${{ steps.meta.outputs.app_version }}"
-          nsis_count=$(ls target/release/bundle/nsis/*.exe 2>/dev/null | wc -l)
-          msi_count=$(ls target/release/bundle/msi/*.msi 2>/dev/null | wc -l)
-          [[ "$nsis_count" -eq 1 ]] || { echo "::error::期望 1 个 NSIS 包,实际 $nsis_count"; exit 1; }
-          [[ "$msi_count" -eq 1 ]] || { echo "::error::期望 1 个 MSI 包,实际 $msi_count"; exit 1; }
+          shopt -s nullglob
+          nsis=(target/release/bundle/nsis/*.exe)
+          msi=(target/release/bundle/msi/*.msi)
+          [[ "${#nsis[@]}" -eq 1 ]] || { echo "::error::期望 1 个 NSIS 包,实际 ${#nsis[@]}"; exit 1; }
+          [[ "${#msi[@]}" -eq 1 ]] || { echo "::error::期望 1 个 MSI 包,实际 ${#msi[@]}"; exit 1; }
           mkdir -p artifacts/windows
           cp target/release/bundle/nsis/*.exe "artifacts/windows/xhup-flow-trainer-v$ver-windows-x64-setup.exe"
           cp target/release/bundle/msi/*.msi "artifacts/windows/xhup-flow-trainer-v$ver-windows-x64.msi"
@@ -431,8 +432,9 @@ jobs:
         run: |
           set -euo pipefail
           ver="${{ steps.meta.outputs.app_version }}"
-          count=$(ls target/universal-apple-darwin/release/bundle/dmg/*.dmg 2>/dev/null | wc -l)
-          [[ "$count" -eq 1 ]] || { echo "::error::期望 1 个 DMG,实际 $count"; exit 1; }
+          shopt -s nullglob
+          dmg=(target/universal-apple-darwin/release/bundle/dmg/*.dmg)
+          [[ "${#dmg[@]}" -eq 1 ]] || { echo "::error::期望 1 个 DMG,实际 ${#dmg[@]}"; exit 1; }
           mkdir -p artifacts/macos
           cp target/universal-apple-darwin/release/bundle/dmg/*.dmg \
             "artifacts/macos/xhup-flow-trainer-v$ver-macos-universal.dmg"
@@ -468,6 +470,9 @@ jobs:
           printf '{"version":"%s"}' "$ver" > "$cfg"
           echo "app_version=$ver" >> "$GITHUB_OUTPUT"
           echo "config=$cfg" >> "$GITHUB_OUTPUT"
+          rpm_cfg="$RUNNER_TEMP/rpm-packaging-config.json"
+          python3 tests/release/linux_package_versions.py rpm-config --version "$ver" --output "$rpm_cfg"
+          echo "rpm_config=$rpm_cfg" >> "$GITHUB_OUTPUT"
 
       - name: 准备 Rust 工具链
         run: rustup show
@@ -487,7 +492,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev \
-            libssl-dev libayatana-appindicator3-dev librsvg2-dev
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev rpm rpm2cpio cpio
 
       - name: 安装 pnpm
         uses: pnpm/action-setup@v6
@@ -504,47 +509,68 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
+      - name: Linux 原生版本排序与包内容回归
+        run: python3 -m unittest discover -s tests/release -p 'test_linux_package_versions.py'
+
       - name: Tauri 构建(deb + rpm)
-        run: pnpm -C trainer tauri build --bundles deb,rpm --config "${{ steps.meta.outputs.config }}"
+        run: |
+          set -euo pipefail
+          pnpm -C trainer tauri build --no-bundle --config "${{ steps.meta.outputs.config }}"
+          # Each bundle stamps its type into the binary. Preserve the pristine
+          # compiled application across invocations with different native metadata.
+          cp target/release/trainer "$RUNNER_TEMP/pristine-trainer"
+          pnpm -C trainer tauri bundle --bundles deb --config "${{ steps.meta.outputs.config }}"
+          cp "$RUNNER_TEMP/pristine-trainer" target/release/trainer
+          # This core-only override is for RPM bundling, never Rust compilation.
+          pnpm -C trainer tauri bundle --bundles rpm --config "${{ steps.meta.outputs.rpm_config }}"
 
       - name: 校验并重命名产物
         run: |
           set -euo pipefail
           ver="${{ steps.meta.outputs.app_version }}"
-          deb_count=$(ls target/release/bundle/deb/*.deb 2>/dev/null | wc -l)
-          rpm_count=$(ls target/release/bundle/rpm/*.rpm 2>/dev/null | wc -l)
-          [[ "$deb_count" -eq 1 ]] || { echo "::error::期望 1 个 deb,实际 $deb_count"; exit 1; }
-          [[ "$rpm_count" -eq 1 ]] || { echo "::error::期望 1 个 rpm,实际 $rpm_count"; exit 1; }
+          shopt -s nullglob
+          deb=(target/release/bundle/deb/*.deb)
+          rpm=(target/release/bundle/rpm/*.rpm)
+          [[ "${#deb[@]}" -eq 1 ]] || { echo "::error::期望 1 个 deb,实际 ${#deb[@]}"; exit 1; }
+          [[ "${#rpm[@]}" -eq 1 ]] || { echo "::error::期望 1 个 rpm,实际 ${#rpm[@]}"; exit 1; }
           mkdir -p artifacts/linux
-          cp target/release/bundle/deb/*.deb "artifacts/linux/xhup-flow-trainer-v$ver-linux-amd64.deb"
+          python3 tests/release/linux_package_versions.py deb --version "$ver" \
+            --input target/release/bundle/deb/*.deb \
+            --output "artifacts/linux/xhup-flow-trainer-v$ver-linux-amd64.deb"
           cp target/release/bundle/rpm/*.rpm "artifacts/linux/xhup-flow-trainer-v$ver-linux-x86_64.rpm"
+          python3 tests/release/linux_package_versions.py check --version "$ver" \
+            --deb "artifacts/linux/xhup-flow-trainer-v$ver-linux-amd64.deb" \
+            --rpm "artifacts/linux/xhup-flow-trainer-v$ver-linux-x86_64.rpm"
           for f in artifacts/linux/*; do [[ -s "$f" ]] || { echo "::error::产物为空: $f"; exit 1; }; done
           ls -l artifacts/linux/
 
-      - name: 从实际 deb 提取并校验全部许可资源字节
-        run: |
-          extracted="$(mktemp -d)"
-          trap 'rm -rf "$extracted"' EXIT
-          dpkg-deb -x artifacts/linux/*.deb "$extracted"
-          python3 tests/release/check_bundle_notices.py "$extracted/usr/lib/XHUP Flow"
 
       - name: 安装真实桌面冒烟环境
         run: sudo apt-get install -y --no-install-recommends xvfb webkit2gtk-driver dbus-x11
 
-      - name: 实际 deb 的 WebKit / Rust IPC 回归
+      - name: 实际 deb/rpm 的 WebKit、Rust 版本与许可回归
         timeout-minutes: 5
         run: |
           set -euo pipefail
-          extracted="$(mktemp -d)"
-          trap 'rm -rf "$extracted"' EXIT
-          dpkg-deb -x artifacts/linux/*.deb "$extracted"
           cargo run --locked -q -p xhup-core --example syllable_codes > "$RUNNER_TEMP/syllable-codes.tsv"
-          dbus-run-session -- python3 tests/desktop/linux_artifact_smoke.py \
-            --binary "$extracted/usr/bin/trainer" --source-root "$GITHUB_WORKSPACE" \
-            --syllables "$RUNNER_TEMP/syllable-codes.tsv" \
-            --dataset trainer/public/generated/xhup_flow_trainer.json \
-            --version "${{ steps.meta.outputs.app_version }}" \
-            --report "$RUNNER_TEMP/desktop-smoke/report.json"
+          for kind in deb rpm; do
+            extracted="$(mktemp -d)"
+            trap 'rm -rf "$extracted"' EXIT
+            if [[ "$kind" == deb ]]; then
+              dpkg-deb -x artifacts/linux/*.deb "$extracted"
+            else
+              rpm2cpio artifacts/linux/*.rpm | cpio --extract --make-directories \
+                --quiet --no-absolute-filenames --directory="$extracted"
+            fi
+            python3 tests/release/check_bundle_notices.py "$extracted/usr/lib/XHUP Flow"
+            dbus-run-session -- python3 tests/desktop/linux_artifact_smoke.py \
+              --binary "$extracted/usr/bin/trainer" --source-root "$GITHUB_WORKSPACE" \
+              --syllables "$RUNNER_TEMP/syllable-codes.tsv" \
+              --dataset trainer/public/generated/xhup_flow_trainer.json \
+              --version "${{ steps.meta.outputs.app_version }}" \
+              --report "$RUNNER_TEMP/desktop-smoke/$kind/report.json"
+            rm -rf "$extracted"
+          done
 
       - name: 保留真实桌面回归报告（失败不视为通过）
         if: always()
@@ -610,9 +636,11 @@ jobs:
           [[ "$vcode" -le 2100000000 ]] || { echo "::error::versionCode 超出 Android 上限: $vcode"; exit 1; }
           cfg="$RUNNER_TEMP/packaging-config.json"
           printf '{"version":"%s","bundle":{"android":{"versionCode":%s}}}' "$ver" "$vcode" > "$cfg"
-          echo "app_version=$ver" >> "$GITHUB_OUTPUT"
-          echo "android_version_code=$vcode" >> "$GITHUB_OUTPUT"
-          echo "config=$cfg" >> "$GITHUB_OUTPUT"
+          {
+            echo "app_version=$ver"
+            echo "android_version_code=$vcode"
+            echo "config=$cfg"
+          } >> "$GITHUB_OUTPUT"
 
       - name: 准备 Rust 工具链与 Android 目标
         run: |
@@ -935,11 +963,13 @@ jobs:
             echo ""
             echo "应用版本: $APP_VERSION"
             echo "Rime 源包版本(xhup_flow.schema.yaml): $RIME_VERSION"
+            echo "Linux 原生包版本(与产品 SemVer 等价的发行版排序):"
+            python3 "$GITHUB_WORKSPACE/tests/release/linux_package_versions.py" describe --version "$APP_VERSION"
             echo ""
             echo "签名状态(逐产物,如实标注):"
             echo "  Windows NSIS/MSI: UNSIGNED(未签名)"
             echo "  macOS DMG: UNSIGNED + UNNOTARIZED(未签名且未公证)"
-            echo "  Linux deb/rpm: N/A(格式本身不携带发布签名)"
+            echo "  Linux deb/rpm: UNSIGNED(未添加发行者签名)"
             if [[ "$ARM64_DEFAULT" == "true" ]]; then
               echo "  Android arm64 APK(主产物): $android_state"
               echo "  Android universal APK(兼容附加): $android_state"

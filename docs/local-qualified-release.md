@@ -13,6 +13,10 @@ CI / Full Regression 仍保留 `workflow_dispatch` 入口；是否自动触发�
 
 合并经本地测试的修改后固定完整源 SHA；工作树必须干净，运行期间不可修改。
 在工具齐备的 Linux 主机执行（目标目录与证据目录须位于仓库之外，证据目录必须新建）：
+原生包版本回归还需要 `dpkg` 和 `rpm`。Cargo target 必须专属于当前源码工作树，
+不能与另一 checkout 共用；编译器会拒绝绑定到其他源码目录的陈旧 depfile。
+前端审计直接写入外部证据目录，不能在验收过程中创建仓库内的
+`artifacts/security`，否则后续干净源码检查必须失败。
 
 ```sh
 python3 tests/release/local_qualification.py run \

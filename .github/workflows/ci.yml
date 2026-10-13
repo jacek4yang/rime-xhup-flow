@@ -71,7 +71,8 @@ jobs:
             libxdo-dev \
             libssl-dev \
             libayatana-appindicator3-dev \
-            librsvg2-dev
+            librsvg2-dev \
+            rpm
 
       - name: 规范读音上游独立重建（固定提交及 SHA256）
         run: |
@@ -89,6 +90,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests/release -p 'test_distribution_sources.py'
           python3 -m unittest discover -s tests/release -p 'test_rime_archive.py'
+          python3 -m unittest discover -s tests/release -p 'test_linux_package_versions.py'
 
       - name: GLib 定界回移源码与许可门禁（不是忽略其它 advisories）
         run: |
@@ -298,7 +300,10 @@ jobs:
         run: python3 -m unittest discover -s tests/librime -p 'test_audit_input.py'
 
       - name: 编译逐键资格门禁（仅编译，不代表回归已通过）
-        run: cc -std=c11 -O2 -Wall -Wextra -Werror tests/librime/runtime_replay.c $(pkg-config --cflags --libs rime) -o /tmp/xhup-native-replay
+        run: |
+          rime_flags_text="$(pkg-config --cflags --libs rime)"
+          read -r -a rime_flags <<< "$rime_flags_text"
+          cc -std=c11 -O2 -Wall -Wextra -Werror tests/librime/runtime_replay.c "${rime_flags[@]}" -o /tmp/xhup-native-replay
 
       - name: 打印 librime 环境
         run: |
