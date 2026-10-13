@@ -51,7 +51,7 @@ export function listReviewItems(
     a.progress.mastery - b.progress.mastery ||
     b.progress.wrong - a.progress.wrong ||
     (a.progress.review?.dueAt ?? 0) - (b.progress.review?.dueAt ?? 0) ||
-    a.item.id.localeCompare(b.item.id));
+    (a.item.id < b.item.id ? -1 : a.item.id > b.item.id ? 1 : 0));
   return limit === undefined ? items : items.slice(0, limit);
 }
 

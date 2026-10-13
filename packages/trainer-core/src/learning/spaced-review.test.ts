@@ -3,7 +3,8 @@ import { applyQuestionProgress, emptyProgress } from "./progress";
 import { isReviewDue, parseSpacedReview, type RecallEvidence } from "./spaced-review";
 import { buildPool, pickWeighted } from "../practice/scheduler";
 import { charItem } from "../data/trainer-index";
-import { makeEntry } from "../testing/fixtures";
+import { makeEntry, makeIndex } from "../testing/fixtures";
+import { listReviewItems } from "./review";
 
 const DAY = 86_400_000;
 const answer: RecallEvidence = {
@@ -68,4 +69,13 @@ describe("跨天独立回忆", () => {
     expect(pickWeighted(pool, progress, new Set(), () => 0, due)?.id).toBe(b.id);
     expect(pickWeighted(pool, progress, new Set([b.id]), () => 0, due)?.id).toBe(a.id);
   });
+});
+
+it("零错误的到期项进入复习,同分决胜不依赖存储对象顺序或本机语言", () => {
+  const index = makeIndex({ entries: [makeEntry("爱", "ai"), makeEntry("汉", "hj")] });
+  const progress = { ...emptyProgress(), attempts: 3, correct: 3, mastery: 100 };
+  const left = listReviewItems(index, { "爱:ai": progress, "汉:hj": progress }, 0);
+  const right = listReviewItems(index, { "汉:hj": progress, "爱:ai": progress }, 0);
+  expect(left.map(({ item }) => item.id)).toEqual(["汉:hj", "爱:ai"]);
+  expect(right.map(({ item }) => item.id)).toEqual(["汉:hj", "爱:ai"]);
 });

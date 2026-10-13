@@ -91,6 +91,8 @@ export default function Mistakes() {
                 <Text className="weak-target">{item.target}</Text>
                 <Text className="weak-code">{item.primaryCode}</Text>
                 {isReviewDue(progress, now) && <Text>{t("review.due")}</Text>}
+                <Text>{progress.review
+                  ? t("review.level", { n: progress.review.level }) : t("review.unverified")}</Text>
                 <Text className="weak-meta">
                   {t("common.mastery", { n: progress.mastery })} ·{" "}
                   {t("common.wrongCount", { n: progress.wrong })} ·{" "}

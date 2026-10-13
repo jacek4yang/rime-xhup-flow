@@ -127,6 +127,8 @@ const zh = {
   "review.title": "到期复习与错题",
   "review.subtitle": "到期条目优先,其次复习薄弱项。历史记录需重新验证独立回忆。",
   "review.due": "复习到期",
+  "review.level": "复习等级 {n}",
+  "review.unverified": "回忆待验证",
   "review.practiceThese": "练这些({n})",
   "review.empty": "暂无到期条目或错题",
   "review.emptyHint": "正常练习会记录独立回忆,到期条目和答错的字会出现在这里。",
@@ -408,6 +410,8 @@ const en: Record<I18nKey, string> = {
   "review.title": "Due reviews and weaknesses",
   "review.subtitle": "Due items first, then weaknesses. Historical records need a fresh independent recall.",
   "review.due": "Review due",
+  "review.level": "Review level {n}",
+  "review.unverified": "Recall unverified",
   "review.practiceThese": "Practice these ({n})",
   "review.empty": "No due reviews or mistakes",
   "review.emptyHint":
