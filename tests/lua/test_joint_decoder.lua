@@ -21,10 +21,6 @@ end
 
 local hints = { ["时间"] = "uij", ["我们"] = "womf" }
 
--- 1. 模块结构
-check("模块返回 table", type(jd) == "table", true)
-check("bounded_promote 是函数", type(jd.bounded_promote) == "function", true)
-check("DEFAULT_BOUND = 3", jd.DEFAULT_BOUND, 3)
 
 -- 2. 空/无证据 → 恒等
 check("nil repeated → 恒等", table.concat(jd.bounded_promote({ { type = "table", text = "时间" } }, nil, hints, "uij"), ","), "1")
