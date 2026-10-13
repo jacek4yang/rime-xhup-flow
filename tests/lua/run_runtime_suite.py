@@ -20,6 +20,7 @@ PRODUCTION_TESTS = (
     "test_contract.lua", "test_quick_hint.lua", "test_context_ranker.lua",
     "test_ranker_stream.lua", "test_native_tail.lua", "test_full_span.lua",
     "test_session_memory.lua", "test_native_edge_index.lua", "test_joint_search.lua",
+    "test_joint_readings.lua",
 )
 
 

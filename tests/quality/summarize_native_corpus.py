@@ -40,6 +40,14 @@ def read_trace(path, metadata, mode):
                 raise ValueError("duplicate case or wrong mode")
             if type(row["rank"]) is not int or not -1 <= row["rank"] < 256:
                 raise ValueError("invalid rank")
+            if row.get("rank_contract") != "complete_raw_span_v1":
+                raise ValueError("trace lacks native full-consumption evidence")
+            span = (row.get("complete_start"), row.get("complete_end"))
+            if any(type(offset) is not int for offset in span):
+                raise ValueError("missing native candidate span")
+            expected_span = (0, row["keys"]) if row["rank"] >= 0 else (0, 0)
+            if span != expected_span:
+                raise ValueError("partial candidate cannot count as complete sentence recall")
             if row["commit_exact"] and row["rank"] < 0:
                 raise ValueError("commit without reachable target")
             rows[row["case"]] = row

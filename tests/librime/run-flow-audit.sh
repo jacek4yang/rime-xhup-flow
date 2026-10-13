@@ -194,7 +194,9 @@ fi
 
 if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
   if [[ -n "${XHUP_REPLAY_CORPUS:-}" ]]; then
-    cc $CFLAGS -std=c11 "$SCRIPT_DIR/runtime_corpus.c" $(pkg-config --cflags --libs rime) -o "$work/corpus"
+    cc $CFLAGS -std=c11 -c "$SCRIPT_DIR/runtime_corpus.c" $(pkg-config --cflags rime) -o "$work/corpus.o"
+    c++ $CFLAGS -std=c++17 "$SCRIPT_DIR/candidate_match.cc" "$work/corpus.o" \
+      $(pkg-config --cflags --libs rime) -ldl -o "$work/corpus"
     "$work/corpus" "$flow_dir" "$SHARED_DATA_DIR" "$XHUP_REPLAY_CORPUS" "${XHUP_CORPUS_MODE:-planner}"
     exit $?
   fi

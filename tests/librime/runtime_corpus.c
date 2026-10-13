@@ -3,6 +3,7 @@
 #define main original_replay_main
 #include "runtime_replay.c"
 #undef main
+#include "candidate_match.h"
 
 int main(int argc, char **argv) {
   if (argc != 5) return 2;
@@ -76,6 +77,13 @@ int main(int argc, char **argv) {
     int pending_reachable=pending.target_rank>=0;
     State restored=step(s,name,0xff08,target,NULL);
     check(equal(&state,&restored),"pending-key removal restores captured final state");
+    XhupCandidateMatch match;
+    check(xhup_candidate_match(s, target, LOOKUP, &match),
+          "native candidate ranges are available and within raw input");
+    check(match.text_rank == state.target_rank, "SDK ranges refer to the same visible C API candidates");
+    /* A legal short-code prefix can equal the target text while leaving keys.
+     * Keep it in the evidence, but never count it as complete sentence recall. */
+    state.target_rank = restored.target_rank = match.complete_rank;
     int commit_before=failures;
     if (state.target_rank>=0) {
       reached++;
@@ -84,6 +92,8 @@ int main(int argc, char **argv) {
     printf("{\"case\":"); json(name);
     printf(",\"event\":\"corpus_result\",\"mode\":"); json(argv[4]);
     printf(",\"joint_decoder\":%s,\"joint_status\":", joint ? "true" : "false"); json(joint_status);
+    printf(",\"rank_contract\":\"complete_raw_span_v1\",\"text_rank\":%d,\"text_start\":%zu,\"text_end\":%zu,\"complete_start\":%zu,\"complete_end\":%zu",
+      match.text_rank, match.start, match.end, match.complete_start, match.complete_end);
     printf(",\"keys\":%zu,\"rank\":%d,\"top1\":%s,\"top3\":%s,\"first_page\":%s,\"page_size\":%d,\"pending_reachable\":%s,\"commit_exact\":%s,\"contract_failures\":%d}\n",
       length,state.target_rank,state.target_rank==0?"true":"false",
       state.target_rank>=0 && state.target_rank<3?"true":"false",

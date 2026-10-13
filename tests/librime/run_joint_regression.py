@@ -56,13 +56,14 @@ def main() -> None:
         if 'LuaTranslation::Next error' in errors or 'LuaTranslation::Peek error' in errors:
             raise AssertionError(f'{label}: native Lua callback failed; see saved stderr')
 
-    def exported(user: Path, label: str, expected: int, previous: Path | None = None) -> None:
+    def exported(user: Path, label: str, expected: int, previous: Path | None = None,
+                 target: tuple[str, str] = ('就是拟好', 'jqui nihc')) -> None:
         path = output / f'{label}.tsv'
         subprocess.run(['rime_dict_manager', '-e', 'xhup_flow_user', str(path)],
                        cwd=user, check=True, stdout=subprocess.DEVNULL)
         lines = path.read_text().splitlines()
         records = [line.split('\t') for line in lines if line and not line.startswith('#')]
-        wanted = [['就是拟好', 'jqui nihc', str(expected)]] if expected else []
+        wanted = [[*target, str(expected)]] if expected else []
         old_tick = 0
         if previous:
             old_lines = previous.read_text().splitlines()
@@ -86,6 +87,11 @@ def main() -> None:
     exported(learning, 'first-choice', 1)
     run(learning, 'restarted-choice', '--learned')
     exported(learning, 'restarted-choice', 2)
+    compound = prepare('compound', True)
+    run(compound, 'compound-choice', '--learn-compound')
+    exported(compound, 'compound-choice', 1, target=('你好', 'nirx hcnz'))
+    run(compound, 'compound-restart', '--learn-compound')
+    exported(compound, 'compound-restart', 2, target=('你好', 'nirx hcnz'))
     quota = prepare('quota', True, 0)
     run(quota, 'quota', '--quota')
     exported(quota, 'quota', 0)
@@ -133,6 +139,11 @@ def main() -> None:
                                   float(fields['d']) * math.exp((int(fields['t']) - tick) / 200))
         return tick, records
     before_tick, before = state(backup)
+    # Native encoded entries and ordinary recalled spellings have distinct keys.
+    # Preserve both: seed once, then select twice, without duplicate updates.
+    assert before_tick == 8 and sum(
+        value[0] for (_, text), value in before.items() if text == '你好你好去'
+    ) == 3, 'native annotation lost or duplicated actual selection learning'
     after_tick, after = state(restored_backup)
     assert before_tick == after_tick and before.keys() == after.keys(), 'restore changed native codes or quota'
     for key, (commits, probability) in before.items():
@@ -140,6 +151,10 @@ def main() -> None:
         # Native UserDbValue::Pack uses six significant decimal digits.
         assert math.isclose(after[key][1], probability, rel_tol=6e-6), f'restore changed probability: {key!r}'
     run(restored, 'encoded-restored', '--recall-joint')
+    final_tick, final = state(save_snapshot(restored))
+    assert final_tick == before_tick + 1, 'restored annotated selection did not learn exactly once'
+    assert sum(value[0] for (_, text), value in final.items() if text == '你好你好去') == 4, \
+        'restored annotated candidate lost its native learning identity'
     print(f'PASS mixed-code typing, cursor edits, learning-off privacy, exactly-once learning, restart, quota and old records: {output}')
 
 

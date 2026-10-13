@@ -112,7 +112,7 @@ local malformed = {
 lookup = search.lexicon("zz", malformed, dictionary({}), reverse, {zz="\2"}, function() return -1 end)
 check(#search.search("zz", lookup).paths == 0 and visits == 64, "invalid canonical code vectors cannot cause an unbounded scan")
 
-local stale_model = {identity="old", policy="joint-frequency-context-v1",
+local stale_model = {identity="old", policy="joint-frequency-context-v2",
   total_reward=0, characters={}, transitions={}}
 check(not pcall(search.scorer, stale_model, "new"), "a cached model from another deployment cannot score candidates")
 check(not pcall(search.scorer, stale_model), "missing schema/model binding fails closed")

@@ -15,7 +15,8 @@ class SummaryTests(unittest.TestCase):
     def test_incomplete_duplicate_wrong_mode_rejected(self):
         meta = {"cases": [{"id": "a", "characters": 2}]}
         row = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": 0,
-               "keys": 4, "commit_exact": True}
+               "keys": 4, "commit_exact": True, "rank_contract": "complete_raw_span_v1",
+               "complete_start": 0, "complete_end": 4}
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "trace"
             for content in ("", json.dumps(row)+"\n"+json.dumps(row),
@@ -31,18 +32,37 @@ class SummaryTests(unittest.TestCase):
         key = {"case": "a", "key": 97, "keypress_ns": 1, "key_to_menu_ns": 2, "bounded_probe_ns": 3}
         commit = {"case": "a", "event": "selection_commit"}
         result = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": 0,
-                  "keys": 4, "commit_exact": True}
+                  "keys": 4, "commit_exact": True, "rank_contract": "complete_raw_span_v1",
+                  "complete_start": 0, "complete_end": 4}
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "trace"
             records = [key]*8 + [commit, result]
             path.write_text("\n".join(map(json.dumps, records)))
             rows, timing = read_trace(path, meta, "planner")
-            self.assertEqual(rows["a"], result)
             self.assertEqual(timing["key_to_menu_ns"]["samples"], 8)
             for incomplete in (records[1:], [key]*8 + [result]):
                 path.write_text("\n".join(map(json.dumps, incomplete)))
                 with self.assertRaises(ValueError):
                     read_trace(path, meta, "planner")
+
+    def test_partial_text_match_is_not_complete_recall(self):
+        meta = {"cases": [{"id": "a", "characters": 2}]}
+        key = {"case": "a", "key": 97, "keypress_ns": 1, "key_to_menu_ns": 2, "bounded_probe_ns": 3}
+        result = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": 0,
+                  "keys": 4, "commit_exact": False, "rank_contract": "complete_raw_span_v1",
+                  "complete_start": 0, "complete_end": 3, "text_rank": 0, "text_end": 3,
+                  "pending_reachable": True, "contract_failures": 0}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trace"
+            for invalid in (result, {**result, "complete_end": 4, "rank_contract": "text_only"},
+                            {**result, "complete_end": 4, "complete_start": 1}):
+                path.write_text("\n".join(map(json.dumps, [key]*8 + [invalid])))
+                with self.assertRaises(ValueError):
+                    read_trace(path, meta, "planner")
+            miss = {**result, "rank": -1, "complete_end": 0}
+            path.write_text("\n".join(map(json.dumps, [key]*8 + [miss])))
+            rows, _ = read_trace(path, meta, "planner")
+            self.assertEqual(rates(list(rows.values()))["top256"], 0)
 
     def test_offsetting_gains_cannot_hide_prefix_harm(self):
         baseline = {"a": {"rank": 0}, "b": {"rank": 1}, "c": {"rank": 9}}

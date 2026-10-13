@@ -6,12 +6,13 @@ local LOG_Q10 = 1024 / math.log(2)
 
 function M.scorer(data, identity)
   data = data or require("xhup_flow.data.joint_scores")
-  assert(data.policy == "joint-frequency-context-v1", "unsupported joint scoring policy")
+  assert(data.policy == "joint-frequency-context-v2", "unsupported joint scoring policy")
   assert(type(identity) == "string" and data.identity == identity, "stale joint scoring model")
   local scale = LOG_Q10
   local offset = math.log(100000000) * scale - data.total_reward
-  return function(text, weight)
-    local character = data.characters[text]
+  return function(text, weight, sound)
+    local readings = data.characters[sound]
+    local character = readings and readings[text]
     if character then return character end
     return math.floor(weight * scale + offset)
   end, function(previous, edge)
@@ -124,6 +125,7 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score)
     local cached = cache[code]
     if cached then return cached end
     local items, examined = {}, 0
+    local sound = owner == memory and code:sub(1, 2) or nil
     owner:dict_lookup(code, false, bound)
     stats.lookups = stats.lookups + 1
     for entry in owner:iter_dict() do
@@ -132,7 +134,7 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score)
       local id = owner == memory and entry.code:print() or nil
       if owner ~= memory or id:match("^%d+$") then
         items[#items + 1] = { text = entry.text, weight = entry.weight,
-          id = id and tonumber(id) or nil }
+          id = id and tonumber(id) or nil, sound = sound }
       end
       if examined >= bound then break end
     end
@@ -168,10 +170,10 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score)
     local remaining = #raw - start
     local native_lengths = lengths[raw:sub(start + 1, start + 2)] or ""
     local seen = {}
-    local function add(code, text, codes, weight, source, fallback_score)
+    local function add(code, text, codes, weight, source, fallback_score, sound)
       local key = code .. "\0" .. text
       if seen[key] then return end
-      local lexical = fallback_score or score(text, weight, source, code)
+      local lexical = fallback_score or score(text, weight, sound)
       if not finite(lexical) then return end
       seen[key] = true
       edges[#edges + 1] = { keys = code, text = text, codes = codes,
@@ -186,7 +188,7 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score)
         local items = lookup(memory, canonical, code, 64)
         for j = 1, math.min(8, #items) do
           local item = items[j]
-          add(code, item.text, { item.id }, item.weight, "canonical")
+          add(code, item.text, { item.id }, item.weight, "canonical", nil, item.sound)
         end
       end
     end
@@ -198,7 +200,8 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score)
         if not seen[code .. "\0" .. item.text] then
           local canonical_item = exact_text(item.text)
           if canonical_item then
-            add(code, item.text, { canonical_item.id }, canonical_item.weight, "static_alias")
+            add(code, item.text, { canonical_item.id }, canonical_item.weight,
+              "static_alias", nil, canonical_item.sound)
           elseif #item.text <= 128 then
             local codes, lexical, characters = {}, 0, {}
             for character in item.text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
@@ -206,7 +209,7 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score)
               if not primitive or #codes == 32 then codes = {}; break end
               codes[#codes + 1] = primitive.id
               characters[#characters + 1] = character
-              lexical = lexical + score(character, primitive.weight, "alias_character", code)
+              lexical = lexical + score(character, primitive.weight, primitive.sound)
             end
             if #codes > 0 and table.concat(characters) == item.text then
               add(code, item.text, codes, nil, "spelled_alias", lexical)
@@ -265,6 +268,7 @@ function M.candidate(path, memory, language, quality)
   local phrase = Phrase(memory, "phrase", path.start, path.finish, entry)
   phrase.preedit, phrase.quality = path.preedit, quality
   local candidate = phrase:toCandidate()
+  if path.remaining ~= "" then candidate.comment = "待续:" .. path.remaining end
   path.native_candidate, path.native_language = candidate, language
   return candidate
 end

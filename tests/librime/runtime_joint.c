@@ -3,6 +3,29 @@
 #include "runtime_replay.c"
 #undef main
 
+static void annotation(RimeSessionId s, int rank, const char *name) {
+  RimeCandidateListIterator it = {0};
+  if (r->candidate_list_begin(s, &it)) {
+    for (int i = 0; i <= rank && i < LOOKUP && r->candidate_list_next(&it); ++i) {
+      if (i == rank) {
+        printf("{\"case\":"); json(name);
+        printf(",\"event\":\"candidate_annotation\",\"text\":"); json(it.candidate.text ? it.candidate.text : "");
+        printf(",\"comment\":"); json(it.candidate.comment ? it.candidate.comment : ""); puts("}");
+      }
+    }
+    r->candidate_list_end(&it);
+  }
+}
+
+static void compound_learning_case(void) {
+  RimeSessionId s = start();
+  r->set_option(s, "joint_decoder", 1);
+  State state = type(s, "compound-learning", "nirxhcnz", "你好", NULL);
+  annotation(s, state.target_rank, "compound-learning");
+  selected_commit(s, &state, "你好", "compound commits with quick hints enabled");
+  r->destroy_session(s);
+}
+
 static void learning_case(const char *mode) {
   int resumed = !strcmp(mode, "--learned");
   int quota = !strcmp(mode, "--quota");
@@ -51,8 +74,10 @@ static void encoded_learning_case(const char *mode) {
   int seed = !strcmp(mode, "--seed-legacy");
   RimeSessionId s = start();
   r->set_option(s, "joint_decoder", !strcmp(mode, "--recall-joint"));
+  r->set_option(s, "debug_candidate_annotations", !strcmp(mode, "--recall-joint"));
   State state = type(s, mode, seed ? "nihcnznihcnzqu" : "nhnhq", "你好你好去", NULL);
   if (!seed) check(state.target_rank == 0, "native learned compound remains first across decoder policies");
+  annotation(s, state.target_rank, mode);
   selected_commit(s, &state, "你好你好去", "native encoded compound commits completely");
   r->destroy_session(s);
 }
@@ -61,7 +86,8 @@ int main(int argc, char **argv) {
   if (argc != 3 && argc != 4) return 2;
   if (argc == 4 && strcmp(argv[3], "--learn") && strcmp(argv[3], "--learned")
       && strcmp(argv[3], "--quota") && strcmp(argv[3], "--seed-legacy")
-      && strcmp(argv[3], "--recall-legacy") && strcmp(argv[3], "--recall-joint")) return 2;
+      && strcmp(argv[3], "--recall-legacy") && strcmp(argv[3], "--recall-joint")
+      && strcmp(argv[3], "--learn-compound")) return 2;
   r = rime_get_api();
   quick_hint_enabled = 1;
   RIME_STRUCT(RimeTraits, traits);
@@ -70,7 +96,8 @@ int main(int argc, char **argv) {
   xhup_initialize(r, &traits);
   check(r->find_module("lua") != NULL, "real Lua module available");
   if (argc == 4) {
-    if (!strcmp(argv[3], "--learn") || !strcmp(argv[3], "--learned") || !strcmp(argv[3], "--quota"))
+    if (!strcmp(argv[3], "--learn-compound")) compound_learning_case();
+    else if (!strcmp(argv[3], "--learn") || !strcmp(argv[3], "--learned") || !strcmp(argv[3], "--quota"))
       learning_case(argv[3]);
     else encoded_learning_case(argv[3]);
     r->finalize();
@@ -98,6 +125,7 @@ int main(int argc, char **argv) {
   r->set_option(s, "joint_decoder", 1);
   State pending = type(s, "mixed-pending", "jqunihcd", "就是你好", NULL);
   check(pending.target_rank >= 0, "decoded alias prefix remains selectable with a tail key");
+  annotation(s, pending.target_rank, "mixed-pending");
   if (pending.target_rank >= 0) {
     check(r->select_candidate(s, (size_t)pending.target_rank), "partial native Phrase accepted");
     RIME_STRUCT(RimeCommit, commit);

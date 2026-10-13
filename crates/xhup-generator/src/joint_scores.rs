@@ -31,6 +31,7 @@ fn quoted(out: &mut String, value: &str) {
 pub(crate) fn generate(flow: &str) -> Result<(String, String), LuaBuildError> {
     let error = |message| LuaBuildError::new("joint_scores", message);
     let mut characters = BTreeMap::<char, u64>::new();
+    let mut readings = BTreeMap::new();
     for entry in finalized_char_code_entries() {
         let frequency = u64::from(
             u32::try_from(entry.frequency_score())
@@ -38,6 +39,12 @@ pub(crate) fn generate(flow: &str) -> Result<(String, String), LuaBuildError> {
                 .max(1),
         );
         characters
+            .entry(entry.hanzi().as_char())
+            .and_modify(|old| *old = (*old).max(frequency))
+            .or_insert(frequency);
+        readings
+            .entry(&entry.code().as_slice()[..2])
+            .or_insert_with(BTreeMap::<char, u64>::new)
             .entry(entry.hanzi().as_char())
             .and_modify(|old| *old = (*old).max(frequency))
             .or_insert(frequency);
@@ -86,7 +93,7 @@ pub(crate) fn generate(flow: &str) -> Result<(String, String), LuaBuildError> {
     let mut out = String::new();
     writeln!(
         out,
-        "local model = {{ policy = \"joint-frequency-context-v1\", total_reward = {denominator},"
+        "local model = {{ policy = \"joint-frequency-context-v2\", total_reward = {denominator},"
     )
     .unwrap();
     writeln!(
@@ -96,15 +103,19 @@ pub(crate) fn generate(flow: &str) -> Result<(String, String), LuaBuildError> {
     )
     .unwrap();
     writeln!(out, "  context_pairs = {}, characters = {{", pairs.len()).unwrap();
-    for (character, frequency) in characters {
-        out.push_str("    [");
-        quoted(&mut out, character.encode_utf8(&mut [0; 4]));
-        writeln!(
-            out,
-            "] = {},",
-            BaselineScorer::frequency_reward(frequency) - denominator
-        )
-        .unwrap();
+    for (sound, characters) in readings {
+        writeln!(out, "    [\"{}{}\"] = {{", sound[0], sound[1]).unwrap();
+        for (character, frequency) in characters {
+            out.push_str("      [");
+            quoted(&mut out, character.encode_utf8(&mut [0; 4]));
+            writeln!(
+                out,
+                "] = {},",
+                BaselineScorer::frequency_reward(frequency) - denominator
+            )
+            .unwrap();
+        }
+        out.push_str("    },\n");
     }
     out.push_str("  }, transitions = {\n");
     let mut previous = None;

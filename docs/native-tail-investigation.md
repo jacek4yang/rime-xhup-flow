@@ -394,3 +394,45 @@ static codes both before and after learning, plus native learning management.
 Other supported Lua/Rime versions and remaining release qualification must pass
 before promotion. Windows/macOS manual acceptance follows
 README. These historical results do not qualify a new release.
+
+## v2.1 draft joint-search qualification
+
+The opt-in draft remains disabled by default. On the frozen 7,388-case development
+partition, source `435460321cb6b43d385a67b79ae7f6e77e379151` reduced Top-1 from
+0.408365 to 0.391852, despite increased first-page coverage. This is a failed
+quality gate, not release qualification; the confirmation partition remains
+unobserved. These runs were not controlled paired performance measurements.
+
+The original text-only corpus probe incorrectly counted 18 partial candidates as
+complete matches. Actual native SDK inspection found spans `[0, raw_length - 1)`;
+selection retained the last key and emitted no premature commit. Sending Space
+then committed that remaining key too. The failures are retained, not relabelled
+as correct complete sentences.
+
+`candidate_match.cc` now obtains native candidate spans without wrapping or
+copying candidate objects. Corpus ranking accepts only `[0, raw_length)` matches,
+records text-only matches separately, and actually selects complete matches.
+The summarizer rejects old traces lacking `complete_raw_span_v1`; historical
+traces must be rerun, not patched with inferred span fields. A real 19-case replay
+(one complete positive plus all 18 partial cases) passed 165 checks, retaining the
+18 quality misses. Pending joint candidates display `待续:` and the unconsumed keys.
+
+Native annotation/learning verification also selected a real `[USR]` candidate:
+seed and two recalls advanced the native clock from 6 to 8; total compound
+commits were 3 across the distinct encoded and ordinary-spelling records.
+Export/import preserved those records, and another annotated selection advanced
+the clock and total commits exactly once. Requiring one physical record per text
+was an incorrect test assumption; native encoding namespaces remain untouched.
+
+The draft's flat character scores also incorrectly let a common pronunciation
+lend its frequency to a rare one: `di` preferred `的方` over `地方` in the
+generated-model regression. Policy `joint-frequency-context-v2` groups scores by
+canonical two-key sound and character, taking the maximum only across matching
+shape variants. Alias edges use their resolved canonical sound. This is a scoring
+input correction, not evidence that the broader Top-1 gate now passes.
+
+The pre-correction development traces and SDK diagnosis are archived at
+`~/.local/share/xhup-flow/qualification/v2.1-joint-4354603/native-joint-investigation.tar.zst`
+(SHA-256 `6b8b2d157b0d68a1d620a46c792fab535b3e41c63a8f87456fab2aaa3b6f21af`).
+The archive contains 4,432 files and is 5,989,657,972 bytes; tar comparison passed.
+It is investigation evidence, not a qualified release package.
