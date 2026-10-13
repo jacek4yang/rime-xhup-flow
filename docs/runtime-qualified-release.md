@@ -33,6 +33,12 @@ DEB 控制字段转换后重新比较全部安装路径、文件内容、权限�
 不覆盖已有输出。两种实际安装包均提取运行 WebKit、Rust 版本 IPC、
 训练持久化和许可证门禁，不能仅凭文件名判断版本正确。
 
+Ubuntu 24.04 的 RPM 4.18.2 `rpm2cpio` 要求 `LONGARCHIVESIZE`，当前构建器没有
+写入该可选字段；即使已输出完整 payload，该工具也以 1 退出。
+打包门禁先用 `rpmkeys --checksig` 严格验证头部与 payload 摘要，再用同版本
+`rpm2archive --nocompression` 与 tar 提取；任何一步非零都失败，不忽略退出码。
+原生 4.18.2 工具的实际验证包括损坏 payload 拒绝、21 个安装文件的内容/权限/
+链接一致，以及提取应用的 26 项 WebKit 检查。此结果不是 Windows/macOS/Android 验收。
 
 ## 必需证明
 

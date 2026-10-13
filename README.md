@@ -24,6 +24,9 @@ Fcitx5-Rime 或完整 Linux 桌面体验验收。Windows/macOS 包未签名，ma
 连续输入仍有已知回归和候选排名限制，见 [#150](https://github.com/jacek4yang/rime-xhup-flow/issues/150)、
 [#151](https://github.com/jacek4yang/rime-xhup-flow/issues/151)。
 Linux GTK 冷启动的控制键突发限制另见 [#219](https://github.com/jacek4yang/rime-xhup-flow/issues/219)。
+真实 GTK 首选仍会将 `nihcnzqu` 上屏为“你好耨去”，重复输入也存在误分词；
+这是[正式发布阻塞 #223](https://github.com/jacek4yang/rime-xhup-flow/issues/223)，
+不能以目标候选在列表深处可达代替首选质量通过。
 混合简码联合搜索的 [PR #215](https://github.com/jacek4yang/rime-xhup-flow/pull/215)
 尚未通过性能资格，仍在开发分支，不将实验结果当成本 RC 已交付能力。
 详见[发布资格策略](docs/runtime-qualified-release.md)与[运行时支持矩阵](docs/runtime-support-matrix.md)。
