@@ -492,7 +492,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev \
-            libssl-dev libayatana-appindicator3-dev librsvg2-dev rpm rpm2cpio cpio
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev rpm
 
       - name: 安装 pnpm
         uses: pnpm/action-setup@v6
@@ -559,8 +559,9 @@ jobs:
             if [[ "$kind" == deb ]]; then
               dpkg-deb -x artifacts/linux/*.deb "$extracted"
             else
-              rpm2cpio artifacts/linux/*.rpm | cpio --extract --make-directories \
-                --quiet --no-absolute-filenames --directory="$extracted"
+              rpmkeys --checksig --verbose artifacts/linux/*.rpm
+              rpm2archive --nocompression artifacts/linux/*.rpm | \
+                tar --extract --file=- --directory="$extracted"
             fi
             python3 tests/release/check_bundle_notices.py "$extracted/usr/lib/XHUP Flow"
             dbus-run-session -- python3 tests/desktop/linux_artifact_smoke.py \
