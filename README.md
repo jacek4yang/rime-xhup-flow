@@ -12,20 +12,21 @@ v1 收口从 main 移除;既有版本仍可从 Releases 下载,文档见
 
 ## 发布验收范围
 
-本次 v2.0.0 按所有者明确授权，采用[云端底层运行时资格发布流程](docs/runtime-qualified-release.md)。
-发布要求同一冻结 RC 源提交的 CI、Full Regression 和 RC Release 全部成功，
-并核验完整原生审计证据、封存清单及实际附件字节；平台人工验收状态保持待验。
-此前的[本地完整验收方案](docs/local-qualified-release.md)保留为历史替代流程，
-不作为本次云端资格证明。
+当前开发版本为 **2.1.0-rc.1**；只有 [Releases](https://github.com/jacek4yang/rime-xhup-flow/releases)
+中实际发布的附件才是可下载构建。本次不继承 v2.0.0 的历史平台验收豁免。
 
-v2.0.0 可按所有者明确授权的「底层运行时合格、用户平台待验」范围发布，
-不代表 Windows / macOS / Android 人工安装和实际输入法体验均已通过。
-Windows、macOS 真机测试由用户完成；Linux 虚拟 Fcitx 前端实验未通过，
-且明确不作为本次发布门禁。底层 librime 资格通过不代表真实桌面输入上下文通过。
-Windows/macOS 包未签名，macOS 未公证；安装时请核对附件哈希和来源。
-每次发布的实际范围以 Release 中 `ACCEPTANCE.json`、`QUALIFICATION.json`
-及证明为准，`UNVERIFIED` 始终表示待验。默认完整平台门禁仍保留。
-详见[发布资格策略](docs/runtime-qualified-release.md)。
+RC 不等于全平台成熟正式版。正式发布必须对当前版本的准确安装包字节重新验收；
+每次构建的 `ACCEPTANCE.json` 明示实际状态，`UNVERIFIED` 始终表示尚未验证。
+Linux 底层 librime 测试不能替代 Windows Weasel、macOS Squirrel、Android
+Fcitx5-Rime 或完整 Linux 桌面体验验收。Windows/macOS 包未签名，macOS 未公证；
+请核对来源和 SHA-256，不要关闭系统防护。
+
+连续输入仍有已知回归和候选排名限制，见 [#150](https://github.com/jacek4yang/rime-xhup-flow/issues/150)、
+[#151](https://github.com/jacek4yang/rime-xhup-flow/issues/151)。
+Linux GTK 冷启动的控制键突发限制另见 [#219](https://github.com/jacek4yang/rime-xhup-flow/issues/219)。
+混合简码联合搜索的 [PR #215](https://github.com/jacek4yang/rime-xhup-flow/pull/215)
+尚未通过性能资格，仍在开发分支，不将实验结果当成本 RC 已交付能力。
+详见[发布资格策略](docs/runtime-qualified-release.md)与[运行时支持矩阵](docs/runtime-support-matrix.md)。
 
 ## XHUP Flow 是什么?与普通小鹤/Rime 配置有何不同?
 
