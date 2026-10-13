@@ -29,7 +29,7 @@ Xvfb 与 WebKitWebDriver 下启动成功；界面安装计划和确认会写入�
 实际修复后桌面回归另外记录二进制 SHA256 与 source/run，不能继承上述
 失败演练的成功状态。
 
-## 真实桌面回归
+## 历史桌面回归（安装管理能力已移除）
 
 `tests/desktop/linux_artifact_smoke.py` 使用独立 HOME/XDG、Xvfb 和
 WebKitWebDriver，调用真实前端及 Rust IPC，不替换产品 API。检查安装确认前
@@ -42,13 +42,22 @@ WebKitWebDriver，调用真实前端及 Rust IPC，不替换产品 API。检查�
 `0af63dfc8c2480e8adb112d3503a97dcd9b7bf5141d28501fc5a0805193b119e`。
 该构建仍为 RC.2 源码版本，是修复集成证据，不是已发布 RC.3 的证明。
 
-Linux 打包工作流在实际 `.deb` 提取后运行相同门禁，记录版本、源码提交、
-二进制/编码表哈希和检查结果；失败日志也单独上传，不混入正式安装包清单。
-最终产物必须重新通过，不能继承本地结果。Windows/macOS 人工验收仍按 README。
+## 当前 Trainer-only 打包门禁
+
+Linux 打包工作流在实际 `.deb` 提取后运行 `linux_artifact_smoke.py`，检查真实
+WebKit 中的盲打、暂停/继续、进度持久化和重启恢复，并确认已移除的安装管理
+IPC 不可调用、已有 Rime 配置和用户词库不受影响。
+答案由同次构建的规范 Trainer 数据和 Rust 双拼表独立求得，不再从练习页面
+读取拼音；作答前检查可见/隐藏 DOM 及可访问性属性没有泄露完整答案。
+报告记录版本、源码提交、二进制、规范数据、编码表与测试脚本哈希。
+失败日志单独上传，不混入正式安装包清单。最终产物必须重新通过，
+不能继承本地结果；Windows/macOS 人工验收仍按发布验收矩阵记录。
 
 ```sh
 cargo run --locked -q -p xhup-core --example syllable_codes > /tmp/syllables.tsv
 dbus-run-session -- python3 tests/desktop/linux_artifact_smoke.py \
   --binary /absolute/path/to/extracted/usr/bin/trainer --source-root "$PWD" \
-  --syllables /tmp/syllables.tsv --version 2.0.0-rc.3 --report /tmp/desktop-report.json
+  --syllables /tmp/syllables.tsv \
+  --dataset trainer/public/generated/xhup_flow_trainer.json \
+  --version 2.1.0-rc.1 --report /tmp/desktop-report.json
 ```
