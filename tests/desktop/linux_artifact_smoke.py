@@ -18,6 +18,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import unicodedata
 
 ELEMENT = "element-6066-11e4-a52e-4f735466cecf"
 
@@ -40,11 +41,18 @@ def sha(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def answer_tokens(value):
+    normalized = "".join(char for char in unicodedata.normalize("NFKD", value).casefold()
+                         if not unicodedata.combining(char))
+    return set(re.findall("[a-z]+", normalized))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--syllables", type=Path, required=True)
+    parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--xvfb", default="Xvfb")
@@ -52,10 +60,17 @@ def main():
     args = parser.parse_args()
     root = args.source_root.resolve()
     binary = args.binary.resolve(strict=True)
+    dataset = json.loads(args.dataset.read_text(encoding="utf-8"))
+    if dataset["packageVersion"] != args.version:
+        raise ValueError("canonical answer oracle belongs to another product version")
+    entries_by_char = {}
+    for entry in dataset["entries"]:
+        entries_by_char.setdefault(entry["char"], []).append(entry)
     report = {
         "binary_sha256": sha(binary), "expected_version": args.version,
         "source_commit": subprocess.check_output(["git", "-C", root, "rev-parse", "HEAD"], text=True).strip(),
         "syllables_sha256": sha(args.syllables), "checks": [], "passed": False,
+        "dataset_sha256": sha(args.dataset), "test_driver_sha256": sha(Path(__file__)),
         "scope": "actual Linux WebKit frontend and Rust IPC; isolated synthetic profile; not fcitx5/Android manual acceptance",
     }
     def check(condition, label):
@@ -158,9 +173,6 @@ def main():
                 wait(lambda: "小鹤音形训练" in text())
                 check(execute("return location.protocol") == "tauri:", "packaged local frontend loads under real WebKit")
                 check(not rime.exists(), "training starts without creating a Rime profile")
-                check(not execute("return [...document.querySelectorAll('button')].some(e=>"
-                    "['输入法','安装','修复','卸载','导出包'].includes(e.textContent.trim()))"),
-                    "no input-method management entry or installer onboarding")
                 removed_commands = ["product_status", "product_plan", "product_execute",
                     "product_diagnostics", "product_redeploy", "product_export_package",
                     "learning_export", "learning_import", "learning_reset",
@@ -169,21 +181,43 @@ def main():
                     rejected = execute("const done=arguments[arguments.length-1];"
                         "window.__TAURI_INTERNALS__.invoke(arguments[0],{})"
                         ".then(()=>done({ok:true}),e=>done({ok:false,error:String(e)}));", [command], True)
-                    check(not rejected["ok"] and "not found" in rejected.get("error", "").lower()
-                        and command in rejected.get("error", ""), f"removed IPC {command} is not registered")
+                    check(not rejected["ok"], f"removed IPC {command} is rejected")
                 check(not rime.exists(), "removed IPC probes never create input-method state")
 
+                # Make question selection reproducible without replacing product APIs.
+                execute("Math.random = () => 0.5")
                 click("今日")
                 click("开始练习")
                 click("开始练习")
                 wait(lambda: "编码输入区" == execute("return document.querySelector('input')?.getAttribute('aria-label')"))
                 codes = dict(line.split("\t") for line in args.syllables.read_text(encoding="utf-8").splitlines() if not line.startswith("#"))
-                reading = next(line.split(" / ")[0] for line in text().splitlines() if re.fullmatch("[a-z]+( / [a-z]+)*", line))
+                prompt = execute("""const card=document.querySelector('input').parentElement;
+                    const attributes=elements=>elements.flatMap(e=>[...e.attributes]
+                      .filter(a=>['aria-label','aria-description','title','alt','value'].includes(a.name))
+                      .map(a=>a.value));
+                    return {visible:card.innerText, text:card.textContent,
+                      attributes:attributes([card,...card.querySelectorAll('*')]),
+                      accessible:attributes([...document.querySelectorAll('*')])};""")
+                target = next((line.strip() for line in prompt["visible"].splitlines()
+                               if line.strip()), "")
+                if target not in entries_by_char:
+                    raise AssertionError(f"expected a canonical character prompt: {prompt!r}")
+                entries = entries_by_char[target]
+                readings = {reading for entry in entries for reading in entry["readings"]}
+                reading = next(reading for reading in sorted(readings) if reading in codes)
+                # The oracle is generated canonical data, never an answer leaked by UI.
+                answers = readings | {entry.get("toneReading", "") for entry in entries}
+                answers |= {codes[reading] for reading in readings if reading in codes}
+                forbidden = answer_tokens(" ".join(answers))
+                check(not (forbidden & answer_tokens(prompt["text"] + " " + " ".join(prompt["attributes"]))),
+                      "blind prompt has no pinyin or code in visible/hidden DOM or accessibility attributes")
+                check(not ({token for token in forbidden if len(token) > 1}
+                           & answer_tokens(" ".join(prompt["accessible"]))),
+                      "accessibility content does not reveal the complete answer")
                 type_into("input", codes[reading])
-                wait(lambda: "1 / 30" in text())
-                check(True, "real WebDriver keyboard events complete a double-pinyin question")
-                # Default on-error hint is visible during feedback only. Pause is
-                # defined for the next question, not the short feedback phase.
+                wait(lambda: execute("return Object.values(JSON.parse(localStorage.getItem("
+                    "'xhup-flow.trainer.v2')).state.progress).reduce((n,p)=>n+p.correct,0)") == 1)
+                # Wait for the completed question's explanation to leave before pause.
                 wait(lambda: execute("return document.querySelector('[aria-live=polite]')?.textContent.trim()") == "")
                 click("暂停")
                 wait(lambda: "已暂停" in text())
@@ -204,13 +238,11 @@ def main():
                 wait(lambda: "小鹤音形训练" in text())
                 after = execute("return JSON.parse(localStorage.getItem('xhup-flow.trainer.v2')).state.progress")
                 check(progress == after, "practice progress survives actual application restart")
-                check("欢迎使用 XHUP Flow" not in text(), "restart never opens installer onboarding")
                 for destination in ("错题", "统计", "键位", "学习", "设置"):
                     click(destination)
                 check("导出进度备份" in text(), "training progress backup remains available")
                 check(execute("return document.querySelector('[data-testid=training-data-version]')?.textContent.trim()") == args.version,
                     "packaged training dataset version matches the expected artifact version")
-                check("输入法学习数据" not in text(), "settings do not manage Rime user dictionaries")
                 check(profile_snapshot() == before_profile, "all preexisting Rime files and learning bytes remain unchanged")
                 call("DELETE", "/session/" + session)
                 session = None

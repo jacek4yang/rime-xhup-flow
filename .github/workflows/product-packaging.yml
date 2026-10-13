@@ -542,6 +542,7 @@ jobs:
           dbus-run-session -- python3 tests/desktop/linux_artifact_smoke.py \
             --binary "$extracted/usr/bin/trainer" --source-root "$GITHUB_WORKSPACE" \
             --syllables "$RUNNER_TEMP/syllable-codes.tsv" \
+            --dataset trainer/public/generated/xhup_flow_trainer.json \
             --version "${{ steps.meta.outputs.app_version }}" \
             --report "$RUNNER_TEMP/desktop-smoke/report.json"
 
