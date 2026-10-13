@@ -467,8 +467,8 @@ new one; the separate joint-Phrase exact-once test remains. On librime 1.16.1 th
 `nirxhcnz` control and new policy both incremented `你/nirx` and `好/hcnz` once per
 selection, with ticks 2 then 4.
 
-These focused results alone do not qualify the ranking policy. The completed
-development/confirmation comparison follows; paired performance and platform acceptance remain pending.
+These focused results alone do not qualify the ranking policy. Development and
+confirmation results follow; paired performance failed and platform acceptance remains pending.
 
 
 ## v2.1 首选保护冻结后的确认集（19f83fa）
@@ -492,7 +492,7 @@ development/confirmation comparison follows; paired performance and platform acc
 第一页 59.3530%，完整提交 62.5609%，旧第一页丢失 5 条。
 
 这通过的是预先规定的聚合质量门槛，不是首选质量提升，更不是成熟拼音级首选能力证明。
-Top-1 没有改善，所有不可达样本仍在分母中；全量 Static、独立延迟/内存配对、
+Top-1 没有改善，所有不可达样本仍在分母中；全量 Static、性能修正后的重新资格验证、
 当前产物平台验收与最终发布门禁仍须分别完成，默认开关继续关闭。
 
 本机原始证据：`~/.cache/xhup-flow/v210-native-tmp/confirmation-native-first-19f83fa/`，
@@ -500,4 +500,32 @@ Top-1 没有改善，所有不可达样本仍在分母中；全量 Static、独�
 分析器新增第一页聚类区间，并拒绝缺失/非法页长或与完整候选排名矛盾的第一页标志。
 质量回放总耗时不是配对性能；性能驱动分别指定 `--baseline-joint off`
 和 `--candidate-joint on`，记录实际开关及 ready/bounded 状态，禁止静默回退冒充启用测量。
+
+## 四组联合搜索配对性能：未通过（harness 6eb754d）
+
+冻结运行时不变，每组五个交替顺序进程对、每侧 19,800 次按键；
+quick hint 开启，基线 v2.0.0 关闭 joint，新方案明确开启并核验 ready/bounded。
+下表为原生 API 按键至第一页菜单，不是 GUI 显示延迟。
+
+| CPU / 学习 | 基线 p50/p95/p99 ms | 新方案 p50/p95/p99 ms | 峰值 RSS KiB，基线→新 |
+| --- | --- | --- | --- |
+| CPU0 / 关 | 3.607 / 5.196 / 5.646 | 6.662 / 10.759 / 11.942 | 34,940→59,260 |
+| CPU0 / 开 | 3.607 / 5.335 / 5.690 | 7.288 / 12.000 / 13.199 | 37,044→63,780 |
+| CPU8 / 关 | 8.647 / 11.184 / 11.825 | 11.780 / 18.534 / 19.977 | 34,932→59,252 |
+| CPU8 / 开 | 8.633 / 11.406 / 12.088 | 12.910 / 20.349 / 21.944 | 37,008→63,756 |
+
+四组均未满足既定延迟/资源比值 ≤1.10 的门禁，不能默认启用。
+进程初始化与首会话时间基本相当，但不包含 joint 首次按键时的延迟加载成本。
+每组有 18,600 次菜单内容、3,550 次 preedit、5,100 次选择显示范围差异；
+没有 raw/commit/handled/caret 差异，不能将菜单内容差异数量当成首选损失数量。
+全部逐键记录、进程摘要及失败比值保留于
+`~/.cache/xhup-flow/v210-native-tmp/joint-paired-6eb754d/`。
+
+另以同一新包 joint 关/开进行插桩诊断（1,188 键，非延迟资格测量）：
+Memory lookup 121,617→148,653，Lua 分配次数 684,999→13,987,041，
+增长字节 53,838,725→1,118,066,180；回合末 Lua 分配器尚未释放的字节约 8.5→11.1MB。
+只减少查询次数不足以修复此问题。关闭自动 GC 的额外函数级诊断显示，
+词边提供器约 180MB、搜索其余部分约 69MB、路径展开约 91MB 的净增长；
+诊断用 `rime.lua` 仅在隔离副本中注入，不进入发布包，也不用于声称生产延迟。
+这为后续分配优化提供依据，并不改变当前性能门禁失败的结论。
 
