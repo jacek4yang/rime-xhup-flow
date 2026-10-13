@@ -650,3 +650,21 @@ python3 tests/librime/run_gtk_fcitx.py \
 GDK 队列；reset 另行发送，`FCITX_ENABLE_SYNC_MODE` 是上游已有的同步选项。
 [INFERENCE] 结果指向冷启动的异步投递/重置时序，但尚无完整调用轨迹证明根因。
 这不是已修复的产品缺陷，不删除默认失败，也不以同步诊断替代默认平台验收。
+
+### 冻结 RC 的六例首选与实际上屏
+
+源码 `39e9cfc70139897429e00033d78823827da482d8`、同源 34 文件包，
+默认 GTK/Fcitx 投递、隔离用户状态、逐键输入后只按空格选择首选：
+`q`、`jqu`、`jbzqu` 和长串
+`nihcvegeuurufawojtdesuduhduikeyi` 完整上屏通过；长串实际提交
+“你好这个输入法我觉得速度还是可以”，没有残留组合。
+
+`nihcnzqu` 的 preedit 为 `nihc nz qu`，实际提交“你好耨去”；
+`nihcnznihcnzqu` 为 `nihc nz nihc nz qu`，实际提交“你好耨你好耨去”。
+两例目标分别为“你好去”“你好你好去”，因此整套 **FAIL（4 PASS / 2 FAIL）**，
+不是候选可达性通过。驱动保留每例截图、提交和剩余 preedit，继续收集后续
+案例但最终非零退出，不删除失败样本。证据 `rc1-39e9cfc-six-complete/`。
+
+正式发布阻塞 [#223](https://github.com/jacek4yang/rime-xhup-flow/issues/223)：
+不能以基础三题或候选深处可达代替首选质量；不为这些输入增加特判。
+尚未以这次观察证明是相对 v2.0 的新回归，且本研究联合搜索没有进入该 RC。

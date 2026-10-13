@@ -161,25 +161,37 @@ def inside(args):
             wait_for(ready.is_set, "frontend deployment success", timeout=240)
             if args.cold_control_burst:
                 run([bin_dir / "xdotool", "key", "--clearmodifiers", "Escape", "ctrl+a", "BackSpace"])
-            for index, (keys, expected) in enumerate((("q", "去"), ("jqu", "就是"), ("jbzqu", "进去"))):
-                if index:
-                    run([bin_dir / "xdotool", "key", "--clearmodifiers", "ctrl+a", "BackSpace"])
-                    wait_for(lambda: (output / "committed.txt").read_text() == "", "clear committed text")
-                run([bin_dir / "xdotool", "type", "--clearmodifiers", "--delay", "100", keys])
-                wait_for(lambda: (output / "preedit.txt").read_text().replace(" ", "") == keys,
-                         f"GTK preedit retains {keys}")
-                if (output / "committed.txt").read_text() != "":
-                    raise AssertionError("IME committed before selection")
-                (output / "capture.request").write_text("capture without keyboard side effects\n")
-                wait_for(lambda: (output / f"screen-{index}.png").exists(), "actual candidate screenshot")
-                preedit = (output / "preedit.txt").read_text()
-                run([bin_dir / "xdotool", "key", "space"])
-                wait_for(lambda: (output / "committed.txt").read_text() == expected, f"{keys} commits {expected}")
-                wait_for(lambda: (output / "preedit.txt").read_text() == "", "no remaining composition")
-                case = dict(keys=keys, expected=expected, committed=(output / "committed.txt").read_text(),
-                            preedit=preedit, screenshot=f"screen-{index}.png")
+            cases = (
+                ("q", "去"), ("jqu", "就是"), ("jbzqu", "进去"),
+                ("nihcnzqu", "你好去"), ("nihcnznihcnzqu", "你好你好去"),
+                ("nihcvegeuurufawojtdesuduhduikeyi", "你好这个输入法我觉得速度还是可以"),
+            )
+            for index, (keys, expected) in enumerate(cases):
+                case = dict(keys=keys, expected=expected, result="FAIL", screenshot=f"screen-{index}.png")
+                try:
+                    if index:
+                        run([bin_dir / "xdotool", "key", "--clearmodifiers", "Escape", "ctrl+a", "BackSpace"])
+                        wait_for(lambda: (output / "committed.txt").read_text() == "", "clear committed text")
+                    run([bin_dir / "xdotool", "type", "--clearmodifiers", "--delay", "100", keys])
+                    wait_for(lambda: (output / "preedit.txt").read_text().replace(" ", "") == keys,
+                             f"GTK preedit retains {keys}")
+                    if (output / "committed.txt").read_text() != "":
+                        raise AssertionError("IME committed before selection")
+                    (output / "capture.request").write_text("capture without keyboard side effects\n")
+                    wait_for(lambda: (output / f"screen-{index}.png").exists(), "actual candidate screenshot")
+                    case["preedit_before_selection"] = (output / "preedit.txt").read_text()
+                    run([bin_dir / "xdotool", "key", "space"])
+                    wait_for(lambda: (output / "committed.txt").read_text() == expected, f"{keys} commits {expected}")
+                    wait_for(lambda: (output / "preedit.txt").read_text() == "", "no remaining composition")
+                    case["result"] = "PASS"
+                except Exception as error:
+                    case["error"] = str(error)
+                case["committed"] = (output / "committed.txt").read_text()
+                case["remaining_preedit"] = (output / "preedit.txt").read_text()
                 report["cases"].append(case)
                 print(json.dumps(case, ensure_ascii=False), flush=True)
+            if any(case["result"] != "PASS" for case in report["cases"]):
+                raise AssertionError("one or more actual frontend cases failed; all results retained")
             report["result"] = "PASS"
     except Exception as error:
         report["error"] = str(error)
