@@ -125,10 +125,40 @@ function M.describe(raw, node, start)
     tie = node.serial, node = node }
 end
 
--- Per-query read-only lexical memoization. No candidates or user-dictionary
--- results survive the call, so edits/selection/learning cannot stale this cache.
-function M.lexicon(raw, memory, aliases, reverse, lengths, score)
+-- FIFO of immutable dictionary rows only: never native candidates, user rows,
+-- scores, normalization decisions or beam state. Replaced with the schema env.
+local CACHE_ENTRIES, CACHE_ROWS, CACHE_BYTES = 512, 2048, 262144
+function M.readonly_cache(memory, aliases)
+  assert(memory.user_dict == nil and aliases.user_dict == nil, "cache must be read-only")
+  return { memory = memory, aliases = aliases, canonical = {}, static = {},
+    queue = {}, head = 1, count = 0, rows = 0, bytes = 0 }
+end
+
+local function remember(shared, index, code, items)
+  local bytes = #code
+  for _, item in ipairs(items) do bytes = bytes + #item.text + #(item.sound or "") end
+  if #items > CACHE_ROWS or bytes > CACHE_BYTES then return end
+  while shared.count >= CACHE_ENTRIES or shared.rows + #items > CACHE_ROWS
+    or shared.bytes + bytes > CACHE_BYTES do
+    local old = shared.queue[shared.head]
+    old.index[old.code] = nil
+    shared.queue[shared.head] = nil
+    shared.head = shared.head % CACHE_ENTRIES + 1
+    shared.count = shared.count - 1
+    shared.rows, shared.bytes = shared.rows - #old.items, shared.bytes - old.bytes
+  end
+  local tail = (shared.head + shared.count - 1) % CACHE_ENTRIES + 1
+  shared.queue[tail] = { index = index, code = code, items = items, bytes = bytes }
+  index[code] = items
+  shared.count = shared.count + 1
+  shared.rows, shared.bytes = shared.rows + #items, shared.bytes + bytes
+end
+
+-- Query-local normalization budgets remain identical on cold and warm caches.
+function M.lexicon(raw, memory, aliases, reverse, lengths, score, shared)
   assert(memory.user_dict == nil and aliases.user_dict == nil, "lexical lookup must be read-only")
+  assert(not shared or (shared.memory == memory and shared.aliases == aliases),
+    "cache dictionary owner mismatch")
   local canonical, static, normalized = {}, {}, {}
   -- Position-free immutable edges can be shared inside this query. Keep source
   -- variants separate: a budget-limited spelling may later resolve a word ID.
@@ -139,6 +169,12 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score)
   local function lookup(owner, cache, code, bound)
     local cached = cache[code]
     if cached then return cached end
+    local index = shared and (owner == memory and shared.canonical or shared.static)
+    local remembered = index and index[code]
+    if remembered then
+      cache[code] = remembered
+      return remembered
+    end
     local items, examined = {}, 0
     local sound = owner == memory and code:sub(1, 2) or nil
     owner:dict_lookup(code, false, bound)
@@ -154,6 +190,7 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score)
       if examined >= bound then break end
     end
     cache[code] = items
+    if shared then remember(shared, index, code, items) end
     return items
   end
   local function exact_text(text)

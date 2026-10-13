@@ -94,6 +94,7 @@ function M.init(env)
   env.native, env.memory, env.native_error, env.edge_lengths = nil, nil, nil, nil
   env.joint_ready, env.aliases, env.reverse = nil, nil, nil
   env.lexical_score, env.transition_score = nil, nil
+  env.lexical_cache = nil
   if not Component or not Component.Translator then
     env.native_error = "native translator API unavailable"
     return
@@ -176,6 +177,7 @@ function M.fini(env)
   env.memory, env.native, env.edge_lengths = nil, nil, nil
   env.aliases, env.reverse, env.lexical_score, env.transition_score = nil, nil, nil, nil
   env.joint_ready = nil
+  env.lexical_cache = nil
 end
 
 local function plans(input, env)
@@ -283,6 +285,7 @@ local function prepare_joint(env)
     local aliases = Memory(env.engine, env.engine.schema, "flow_aliases")
     assert(aliases.user_dict == nil and aliases.dict.loaded)
     env.aliases = aliases
+    env.lexical_cache = joint.readonly_cache(env.memory, aliases)
     env.reverse = ReverseDb("build/xhup_flow_user.reverse.bin")
     env.lexical_score, env.transition_score = lexical, transition
   end)
@@ -291,6 +294,7 @@ local function prepare_joint(env)
     joint_status(env, "ready")
   else
     env.aliases, env.reverse = nil, nil
+    env.lexical_cache = nil
     joint_status(env, "configuration_or_api_unavailable")
   end
   return env.joint_ready
@@ -299,7 +303,7 @@ end
 local function joint_candidates(input, segment, env)
   local joint = require("xhup_flow.joint_decoder")
   local provider, stats = joint.lexicon(input, env.memory, env.aliases, env.reverse,
-    env.edge_lengths, env.lexical_score)
+    env.edge_lengths, env.lexical_score, env.lexical_cache)
   local result = joint.search(input, provider, env.transition_score)
   local full, pending, seen, paths = {}, {}, {}, {}
   local personalization = true

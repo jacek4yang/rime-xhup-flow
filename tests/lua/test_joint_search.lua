@@ -113,6 +113,67 @@ check(mixed[1].text == "就是你好" and mixed[1].preedit == "jqu nihc", "legal
 check(table.concat(mixed[1].codes, ",") == "7,11", "aliases resolve native IDs without replacing an exact canonical route")
 check(mixed[1].sources[1] == "static_alias" and mixed[1].sources[2] == "canonical", "source provenance distinguishes alias resolution")
 do
+  local memo = search.readonly_cache(native, aliases)
+  local function signature(input, cache)
+    local resolve, stats = search.lexicon(input, native, aliases, reverse, lengths,
+      function() return -1 end, cache)
+    local result = {}
+    for _, node in ipairs(search.search(input, resolve).paths) do
+      local path = search.describe(input, node)
+      result[#result + 1] = table.concat({ path.finish, path.score, path.tie, path.text,
+        path.preedit, table.concat(path.codes, ","), path.remaining }, "|")
+    end
+    return table.concat(result, "\n"), stats
+  end
+  for _, input in ipairs({"jqunihc", "jqunih", "jqunhc", "jqunihc", "abqu", "jqunihc"}) do
+    check(signature(input, memo) == signature(input), "append/backspace/edit preserves cold paths and native IDs")
+  end
+  local _, warm = signature("jqunihc", memo)
+  check(warm.lookups == 0, "repeated immutable lookups require no native dictionary calls")
+  local replacement = dictionary({ jqui = {native_entry("就是", 77)} })
+  check(not pcall(search.lexicon, "jqu", replacement, aliases, reverse, lengths,
+    function() return -1 end, memo), "schema dictionary replacement rejects old cached IDs")
+  local resolve = search.lexicon("jqu", replacement, aliases, reverse, lengths,
+    function() return -1 end, search.readonly_cache(replacement, aliases))
+  local changed = describe("jqu", search.search("jqu", resolve), 3)
+  check(changed[1].text == "就是" and changed[1].codes[1] == 77, "new schema uses its own syllable IDs")
+end
+
+do
+  local empty, alias_rows = dictionary({}), dictionary({})
+  local memo = search.readonly_cache(empty, alias_rows)
+  local bounds = {}
+  for i = 0, 675 do
+    local code = string.char(97 + math.floor(i / 26), 97 + i % 26)
+    bounds[code] = "\2"
+    search.lexicon(code, empty, alias_rows, reverse, bounds, function() return -1 end, memo)(0)
+  end
+  check(memo.count <= 512 and memo.rows == 0 and memo.bytes <= 262144,
+    "negative lookups cannot create an unbounded session cache")
+  local resolve, evicted = search.lexicon("aa", empty, alias_rows, reverse, bounds,
+    function() return -1 end, memo)
+  resolve(0)
+  check(evicted.lookups > 0, "old negative entries are evicted rather than retained forever")
+  local dense, rows = {}, {}
+  for i = 1, 64 do rows[i] = native_entry("字" .. i, i) end
+  for code in pairs(bounds) do dense[code] = rows end
+  local owner = dictionary(dense)
+  memo = search.readonly_cache(owner, alias_rows)
+  for i = 0, 49 do
+    local code = string.char(97 + math.floor(i / 26), 97 + i % 26)
+    search.lexicon(code, owner, alias_rows, reverse, bounds, function() return -1 end, memo)(0)
+  end
+  check(memo.rows <= 2048 and memo.count <= 512 and memo.bytes <= 262144,
+    "dense homophone buckets remain bounded by total rows, not only lookup count")
+  owner = dictionary({aa = {native_entry(string.rep("字", 90000), 1)}})
+  memo = search.readonly_cache(owner, alias_rows)
+  search.lexicon("aa", owner, alias_rows, reverse, bounds, function() return -1 end, memo)(0)
+  local again, oversized = search.lexicon("aa", owner, alias_rows, reverse, bounds,
+    function() return -1 end, memo)
+  again(0)
+  check(memo.bytes <= 262144 and oversized.lookups > 0, "oversized rows are not retained in the session cache")
+end
+do
   -- The same alias can initially hit the normalization budget, then acquire a
   -- whole-word ID at a later position. Reusing an edge must not freeze fallback IDs.
   local rows = dictionary({
@@ -128,19 +189,22 @@ do
     ["丙"] = "xq xr xs xt xu xv xw xx", ["丁"] = "ya yb yc yd ye yf yg yh",
     ["你"] = "ab", ["好"] = "ab", ["你好"] = "zz",
   }
-  local resolve = search.lexicon("abab", rows, alias_rows,
-    { lookup = function(_, text) return spellings[text] or "" end },
-    { ab = "\2" }, function() return -1 end)
-  local function alias_at(start)
-    for _, item in ipairs(resolve(start)) do
-      if item.keys == "a" and item.text == "你好" then return item end
+  local memo = search.readonly_cache(rows, alias_rows)
+  for _ = 1, 2 do
+    local resolve = search.lexicon("abab", rows, alias_rows,
+      { lookup = function(_, text) return spellings[text] or "" end },
+      { ab = "\2" }, function() return -1 end, memo)
+    local function alias_at(start)
+      for _, item in ipairs(resolve(start)) do
+        if item.keys == "a" and item.text == "你好" then return item end
+      end
+      error("valid alias missing")
     end
-    error("valid alias missing")
+    local before, after = alias_at(0), alias_at(2)
+    check(before.source == "spelled_alias" and table.concat(before.codes, ",") == "1,2"
+      and after.source == "static_alias" and table.concat(after.codes, ",") == "3",
+      "cold/warm normalization budgets preserve fallback and whole-word learning IDs")
   end
-  local before, after = alias_at(0), alias_at(2)
-  check(before.source == "spelled_alias" and table.concat(before.codes, ",") == "1,2"
-    and after.source == "static_alias" and table.concat(after.codes, ",") == "3",
-    "later whole-word normalization preserves both paths' native learning IDs")
 end
 raw = "abqu"
 lookup = search.lexicon(raw, native, aliases, reverse, lengths, function() return -1 end)
