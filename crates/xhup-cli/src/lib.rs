@@ -140,8 +140,10 @@ enum Command {
     Doctor(DoctorArgs),
     /// 校验 GA 验收清单(release/acceptance-*.json;#148)
     ValidateAcceptance(ValidateAcceptanceArgs),
-    /// 对已构建的签名 RC 发布目录生成不可覆盖的 BUILD-MANIFEST.json
+    /// 对已构建的 RC/正式版发布目录生成不可覆盖的 BUILD-MANIFEST.json
     SealBuild(SealBuildArgs),
+    /// 从封存字节生成全新 UNVERIFIED 验收清单 JSON(输出到 stdout)
+    InitAcceptance(SealBuildArgs),
     /// 输出逐平台最差验收状态(platform=STATE;供发布说明引用)
     AcceptanceSummary(AcceptanceSummaryArgs),
 }
@@ -157,13 +159,13 @@ struct ValidateAcceptanceArgs {
     /// 稳定版门禁:要求完整证据及外部来源/实际工件校验
     #[arg(long, requires_all = ["expect_version", "expect_source", "artifacts_dir"])]
     stable: bool,
-    /// 从 accepted RC tag 独立解析的完整源 SHA,不能从验收 JSON 复制
+    /// 从独立 packaging run 解析的完整源 SHA,不能从验收 JSON 复制
     #[arg(long, requires = "stable")]
     expect_source: Option<String>,
-    /// 已下载的 RC 发布附件目录(包括 BUILD-MANIFEST.json)
+    /// 当前版本封存附件目录(包括 BUILD-MANIFEST.json)
     #[arg(long, requires = "stable")]
     artifacts_dir: Option<PathBuf>,
-    /// 显式仓库所有者授权的平台待验决定；不改变默认完整验收规则
+    /// 当前构建的完整平台/同源 CI/全量原生资格决定，不允许平台豁免
     #[arg(long, requires_all = ["stable", "qualification_proofs", "repository", "actor"])]
     runtime_qualification: Option<PathBuf>,
     /// 工作流从 GitHub 独立获取并重新汇总的证明目录
@@ -550,6 +552,20 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                 source: source.to_string(),
             })?;
             println!("BUILD-MANIFEST.json 已生成(仅记录构建,不代表验收 PASS)");
+            Ok(())
+        }
+        Command::InitAcceptance(args) => {
+            let json = acceptance::provenance::acceptance_template(
+                &args.version,
+                &args.source_commit,
+                &args.artifacts_dir,
+            )
+            .and_then(|manifest| serde_json::to_string_pretty(&manifest).map_err(io::Error::other))
+            .map_err(|source| CliError::AcceptanceInvalid {
+                path: args.artifacts_dir,
+                source: source.to_string(),
+            })?;
+            println!("{json}");
             Ok(())
         }
         Command::ValidateAcceptance(args) => {

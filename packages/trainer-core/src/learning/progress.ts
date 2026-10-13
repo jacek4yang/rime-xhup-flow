@@ -2,11 +2,13 @@
  * 单条目学习进度与掌握度更新规则(纯函数)。
  *
  * 进度是稀疏的:只有用户实际见过的条目才有记录。
- * 掌握度是确定性的简单算法,用于打字肌肉记忆训练,不是间隔重复。
+ * 历史 mastery 保持原规则;跨天复习单独记录有版本的真实回忆证据。
  *
  * V2:`avgLatencyMs` 记录该条目的指数滑动平均完成耗时(按题计时;
  * null 表示尚无有效样本),供调度器把「慢而不错」的条目适度提前。
  */
+
+import { independentRecall, updateSpacedReview, type RecallEvidence, type SpacedReview } from "./spaced-review";
 
 export type ItemProgress = {
   /** 完成展示次数(无论完美与否)。 */
@@ -23,6 +25,8 @@ export type ItemProgress = {
   lastSeenAt: number | null;
   /** 完成耗时指数滑动平均(ms;无有效样本为 null)。 */
   avgLatencyMs: number | null;
+  /** null = 尚无新版独立回忆证据(包括迁移的历史记录)。 */
+  review: SpacedReview | null;
 };
 
 export function emptyProgress(): ItemProgress {
@@ -34,6 +38,7 @@ export function emptyProgress(): ItemProgress {
     mastery: 0,
     lastSeenAt: null,
     avgLatencyMs: null,
+    review: null,
   };
 }
 
@@ -69,6 +74,7 @@ export function applyPerfect(
     mastery: Math.min(MASTERY_MAX, progress.mastery + Math.min(8, 3 + streak)),
     lastSeenAt: now,
     avgLatencyMs: nextAvgLatency(progress.avgLatencyMs, latencyMs),
+    review: progress.review,
   };
 }
 
@@ -86,5 +92,14 @@ export function applyImperfect(
     mastery: Math.max(0, progress.mastery - IMPERFECT_PENALTY),
     lastSeenAt: now,
     avgLatencyMs: nextAvgLatency(progress.avgLatencyMs, latencyMs),
+    review: progress.review,
   };
+}
+
+/** 会话和两个持久化宿主共享同一个记账入口。 */
+export function applyQuestionProgress(progress: ItemProgress, evidence: RecallEvidence): ItemProgress {
+  const updated = independentRecall(evidence)
+    ? applyPerfect(progress, evidence.now, evidence.questionMs)
+    : applyImperfect(progress, evidence.now, evidence.questionMs);
+  return { ...updated, review: updateSpacedReview(progress.review, evidence) };
 }

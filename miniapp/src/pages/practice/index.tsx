@@ -1,6 +1,6 @@
 /**
  * 练习首页:全部 12 种练习模式的分组选择。模式可用性来自本机规范
- * 分片的池内容:池为空的模式禁用并标注「该模式数据未加载」,
+ * 数据的池内容:池为空的模式禁用并标注「该模式数据未加载」,
  * 绝不进入空会话。
  */
 
@@ -10,13 +10,14 @@ import {
   MODE_LABELS,
 } from "@xhup/trainer-core";
 import type { PracticeMode } from "@xhup/trainer-core";
-import { trainerIndex } from "../../lib/dataset";
+import { useTrainerData, withTrainerData } from "../../lib/trainer-data";
 import { MODE_GROUPS, computeModeAvailability } from "../../lib/mode-availability";
 import { useAppState, actions } from "../../lib/store";
 import { useI18n } from "../../lib/i18n";
 import { ROUTES, navigateTo } from "../../lib/navigation";
 
-export default function Practice() {
+function Practice() {
+  const { trainerIndex } = useTrainerData();
   const state = useAppState();
   const { t } = useI18n();
   const availability = computeModeAvailability(trainerIndex);
@@ -64,3 +65,5 @@ export default function Practice() {
     </View>
   );
 }
+
+export default withTrainerData(Practice);

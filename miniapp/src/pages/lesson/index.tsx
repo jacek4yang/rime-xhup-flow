@@ -1,7 +1,7 @@
 /**
  * 课程章节页:渲染共享核心 LEARN_CHAPTERS 的完整章节,覆盖全部
  * section 种类(text/list/practice/shape-explorer)。课程正文为规范
- * 中文;形码探索器数据来自本机规范分片聚合(数据不足时如实降级)。
+ * 中文;形码探索器数据来自本机完整规范数据聚合。
  */
 
 import { useMemo, useState } from "react";
@@ -19,12 +19,12 @@ import type {
   Language,
   ShapeKeyStat,
 } from "@xhup/trainer-core";
-import { dataset } from "../../lib/dataset";
+import { useTrainerData, withTrainerData } from "../../lib/trainer-data";
 import { useAppState } from "../../lib/store";
 import { useI18n } from "../../lib/i18n";
 import { ROUTES, navigateTo, pageParam } from "../../lib/navigation";
 
-export default function Lesson() {
+function Lesson() {
   const state = useAppState();
   const { t } = useI18n();
   const chapter = useMemo<LearnChapter | null>(() => {
@@ -115,21 +115,22 @@ function SectionView({
       </View>
     );
   }
-  // shape-explorer:形码探索器(数据驱动;分片不足时如实展示少量例字)。
+  // shape-explorer:完整规范数据驱动的形码探索器。
   return <ShapeExplorer heading={section.heading} />;
 }
 
-/** 形码探索器:规范分片全码数据按首形/次形键聚合,点键查看例字。 */
+/** 形码探索器:规范全码数据按首形/次形键聚合,点键查看例字。 */
 function ShapeExplorer({ heading }: { heading: string }) {
+  const { dataset } = useTrainerData();
   const [openKey, setOpenKey] = useState<string | null>(null);
-  const stats = useMemo<ShapeKeyStat[]>(() => buildShapeKeyStats(dataset.entries), []);
+  const stats = useMemo<ShapeKeyStat[]>(() => buildShapeKeyStats(dataset.entries), [dataset]);
   const active = stats.find((stat) => stat.key === openKey) ?? null;
 
   return (
     <View className="card">
       <Text className="card-heading">{heading}</Text>
       <Text className="subtitle">
-        例字与计数全部来自本机训练数据(全码第 3、4 位);小程序分片只含高频子集。
+        例字与计数全部来自本机完整规范训练数据(全码第 3、4 位)。
       </Text>
       <View className="key-grid">
         {stats.map((stat) => (
@@ -162,3 +163,5 @@ function ShapeExplorer({ heading }: { heading: string }) {
     </View>
   );
 }
+
+export default withTrainerData(Lesson);

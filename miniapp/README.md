@@ -6,32 +6,42 @@
 ## 架构位置
 
 ```text
-Rust 生成规范数据 → packages/trainer-core(平台中立)→ miniapp(Taro/React)
+Rust 规范 Trainer JSON → ASCII JSON/Brotli + SHA-256 清单 → 本地文件读取 → 共享校验/按需索引 → Taro/React
 ```
 
-- **数据分片**:`scripts/generate-shards.mjs` 从桌面端规范数据集
-  (`trainer/public/generated/xhup_flow_trainer.json`)确定性截取启动子集,
-  输出到 `src/data/generated/dataset.json`,加载时仍走共享核心完整校验。
-  唯一事实来源始终是 Rust;本脚本不手写任何编码/读音/词码。
-- **进度持久化**:`src/lib/state-schema.ts`(纯逻辑,可测)定义 V2 状态
-  文档(偏好 + 稀疏进度 + 按日统计 + 键位错误),逐字段校验降级——
+- **完整规范数据**:`scripts/build-dataset.mjs` 无损编译桌面端同一份
+  `trainer/public/generated/xhup_flow_trainer.json`，不再抽取演示子集。
+  输出 `src/data/generated/trainer.json.br` 和 `dataset-manifest.json`；
+  清单绑定源 JSON、Node/Brotli 版本、构建器源码及压缩/解压产物 SHA-256。
+  正常生成先运行 Rust；直接调用 Taro 也必须通过构建器 `--check`，陈旧产物不能继续打包。
+  唯一事实来源仍是 Rust，不在脚本或前端手写编码。
+- **进度持久化**:`src/lib/state-schema.ts`(纯逻辑,可测)定义 V3 状态
+  文档(偏好 + 稀疏进度 + 跨天复习 + 按日统计 + 键位错误),逐字段校验降级——
   损坏字段回退默认,绝不整体清空;`src/lib/storage.ts` 把
   `Taro.getStorageSync` 实现为共享核心 `StorageAdapter` 契约,并支持
   旧版 v1 进度一次性迁入。备份格式与桌面端同一份(`exportBackup`)。
 - **触感反馈**:`src/lib/haptics.ts` 按共享核心 `HapticsAdapter` 契约
   把产品档位(off/light/medium)诚实映射到 `Taro.vibrateShort` 的
   物理档位(light/medium/heavy);设备不支持时静默无效。
-- **主包体积**:启动只加载约 19KB 数据分片;完整数据集不进小程序。
-  `pnpm --filter miniapp size` 输出体积报告并在超限时失败(主包
-  1.5MB、单 JS chunk 200KB);`--json` 输出确定性 JSON 供 CI 产物
-  留档,`--out <file>` 同时写文件(CI 会把报告作为 artifact 上传)。
-- **启动校验开销**:数据分片在启动时同步走共享核心完整校验
-  (`validateTrainerDataset` + `buildTrainerIndex`,见
-  `src/lib/dataset.ts`)。实测基线:19.3KB 分片在 CI 档 Node 上约
-  1-3ms,远低于 `src/lib/dataset.perf.test.ts` 守护的 200ms 预算;
-  分片增长或校验退化时该基准测试会在 CI 直接暴露。
+- **主包体积**:完整规范数据以本地 Brotli 资源随包分发，不请求网络。
+  当前压缩资源 944,651 字节，解压为 14,979,909 字节 ASCII JSON；
+  包含 28,851 个单字条目、20,000 个词、65,909 个 PRIMARY 简码、
+  2,933 个 FIXED_FIRST 简码、26 个一级简码及 14 条句子。
+  这是完整 Trainer 数据集，不等于 Rime 全部输入词典。
+  `pnpm --filter miniapp size` 保持总包 1,572,864 字节、单 JS 204,800 字节门槛；
+  `--json`/`--out <file>` 可供 CI 留档。
+- **加载与错误处理**:通过宿主 `readCompressedFile` 回调读取代码包文件，
+  无须额外解压库。缺 API、读取失败或数据损坏会阻止练习并显示重试入口，
+  不回退旧数据或缺字子集，不清除用户进度。需要支持该文件 API 的微信版本。
+  App 始终保留 Taro 的原生页面根节点；数据门禁位于各页面内，加载期间也能显示错误和重试，
+  不会因替换 App children 而移除 PageWrapper。
+- **启动与索引**:解压后完整校验所有规范行，再建立全部 ID 索引；
+  训练项和题池排序按访问生成并在当前数据集内缓存，首次进入新题池仍有成本。
+  `dataset.perf.test.ts` 的 200ms 门槛仅计校验及索引初始化，
+  不含解压、JSON 解析、题池首次物化或渲染；单独进程执行以免与其他测试争用。
+  Node 测量不能代表微信真机启动、内存或交互验收。
 
-## 页面(里程碑 #42 MVP)
+## 页面
 
 | 页面 | 路径 | 说明 |
 | --- | --- | --- |
@@ -44,7 +54,9 @@ Rust 生成规范数据 → packages/trainer-core(平台中立)→ miniapp(Taro/
 | 小结 | `pages/summary/index` | 准确率/KPM/CPM/连对 + 本场错题 + 重开 |
 | 键位 | `pages/keyboard/index` | 教学键盘完整视图 + 零声母规则表 |
 | 键详情 | `pages/key-detail/index?key=` | 声母/韵母/零声母/一级简码/形码例字/我的错误 |
-| 错题 | `pages/mistakes/index` | listWeakItems 清单 + keyHeatmap 热力 + 维度聚合 |
+| 复习与错题 | `pages/mistakes/index` | 到期条目与薄弱项清单 + keyHeatmap 热力 + 维度聚合 |
+| 统计 | `pages/stats/index` | 按日训练统计与错误分布 |
+| 导入 | `pages/import/index` | 备份校验、预览与恢复 |
 | 设置(tab「我的」) | `pages/settings/index` | 语言/提示/错误教学/键帽/触感/导出/重置 |
 
 tabBar 三页:今日 / 学习 / 我的。练习会话相关页面不在 tab 内。
@@ -57,10 +69,7 @@ tabBar 三页:今日 / 学习 / 我的。练习会话相关页面不在 tab 内�
 # 仓库根(一次性)
 pnpm install
 
-# 先确保桌面端规范数据存在(小程序分片从它截取)
-pnpm -C trainer generate:data
-
-# 构建 weapp 产物(自动生成数据分片)
+# 构建 weapp 产物(自动运行 Rust 生成、完整数据编译及源身份校验)
 pnpm miniapp:build
 
 # 产物在 miniapp/dist/
@@ -77,23 +86,32 @@ AppID 使用测试号(本地 `project.config.json` 内置 `touristappid`)。
 
 ```bash
 pnpm miniapp:typecheck    # 严格 TS
-pnpm miniapp:test         # 语义测试:分片校验、多模式端到端、持久化往返/降级、触感/键帽标签
-pnpm miniapp:build        # 实际 weapp 构建(成功才算支持微信)
+pnpm miniapp:test         # 构建负向/重现性、真实页面盲打与重试、跨端状态、独立性能门槛
+pnpm miniapp:build        # 实际 weapp 构建 + 编译产物运行回归,不等于真机验收
 pnpm --filter miniapp size  # 主包体积报告 + 门槛
 ```
 
 CI 会运行以上全部,并运行共享核心的平台纯度守卫
 (`packages/trainer-core/src/purity.test.ts`),防止桌面/小程序依赖泄漏进核心。
+`scripts/test-weapp-runtime.cjs` 在显式模拟的原生宿主中执行真正编译后的 Taro/React，
+验证回调式读包前页面已挂载、恢复规范弱项后不序列化完整答案以及页面卸载。
+它能捕获单独 jsdom 页面测试看不到的 App/Page 集成错误，但不能替代微信宿主验收。
+
+复习状态和间隔策略见[Trainer 跨天复习说明](../trainer/README.md#跨天复习与迁移)。
+本地存储键保持不变,V1/V2 记录保留原有统计并迁入 V3;新备份为 V3,
+可导入旧 V2 备份。后台恢复时重新计算到期条目,盲打提示授权不因到期而改变。
+复习入口的一级简码和长句可通过真实页面组件的触屏按钮完成;这些 DOM 测试
+不是微信真机结果。桌面与小程序使用同一份完整规范 Trainer JSON。
 
 ## 当前范围与已知边界
 
-- 11 个页面覆盖训练主流程;教学键盘质量对齐桌面端 PR #39
+- 13 个页面覆盖训练主流程;教学键盘沿用现有布局
   (rpx 固定几何、大键帽、情境双拼/形码标签——标签只来自规范数据,
   无数据的键留空,绝不编造)。
-- 提示方式(HintMode)独立控制答案类信息;键帽参考(KeyRefMode)
-  只影响键帽标签,两者正交,与桌面端一致。
+- 盲打中不因提示偏好或键帽参考自动揭示答案；主动帮助会记录为非独立回忆。
 - 触屏无实体键盘:输入全部经屏显键盘;反馈展示 1 秒自动前进
   (桌面端 150ms 是为键盘用户设计,触屏适当放慢)。
-- 分片只含高频子集:部分一级简码字的全码不在分片(备用合法码为空),
-  引擎按「仅简码路线」降级,不影响练习;形码探索器例字数量受分片限制。
-- 暂无统计页(按日时长趋势);错题页已覆盖键位热力与维度聚合。
+- 缺失完整码的演示子集已移除；例如规范 `去=quts` 可以从复习入口完成盲打，
+  读取失败→重试→真实页面触屏作答有回归测试。
+- `touristappid` 只用于本地开发。weapp 构建和 DOM 测试不是微信 DevTools／
+  真机验收；本次完整数据包的真实微信启动与内存仍为 **UNVERIFIED**。

@@ -55,6 +55,10 @@ describe("recordQuestionResult", () => {
       streak: 1,
       avgLatencyMs: 1000,
     });
+    expect(state.progress["行:xk"].review).toMatchObject({
+      level: 1, lastIndependentAt: now, dueAt: now + 86_400_000,
+      lastResult: "recalled", usedAnswerHint: false, routeUsed: "primary",
+    });
     const today = state.daily[localDateKey(new Date(now))];
     expect(today).toMatchObject({
       questions: 1,
@@ -387,7 +391,7 @@ describe("V1 → V2 迁移(B9)", () => {
     expect(migrated.difficulty).toBe("beginner");
     expect(migrated.sessionLength).toBe(50);
     expect(migrated.lastMode).toBe("mixed"); // V1 值仍是合法 V2 模式
-    expect(migrated.progress["行:xk"]).toEqual({
+    expect(migrated.progress["行:xk"]).toMatchObject({
       attempts: 7,
       correct: 5,
       wrong: 2,
@@ -396,6 +400,7 @@ describe("V1 → V2 迁移(B9)", () => {
       lastSeenAt: 1700000000000,
       avgLatencyMs: null, // V1 无延迟样本
     });
+    expect(migrated.progress["行:xk"].review).toBeNull();
     expect(migrated.progress.broken).toBeUndefined();
     expect(migrated.progress.empty).toBeUndefined(); // 空进度条目丢弃
     expect(migrated.daily["2026-08-01"]).toEqual({

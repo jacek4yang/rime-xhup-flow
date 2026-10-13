@@ -23,7 +23,8 @@ import {
   createSession,
   expectedKey,
   finish,
-  listWeakItems,
+  listReviewItems,
+  REVIEW_POOL_ID,
   pause,
   resume,
   retryCurrent,
@@ -43,8 +44,9 @@ import type {
   SessionState,
   StepResult,
   TrainingItem,
+  TrainerIndex,
 } from "@xhup/trainer-core";
-import { trainerIndex } from "../../lib/dataset";
+import { useTrainerData, withTrainerData } from "../../lib/trainer-data";
 import { appStore, useAppState } from "../../lib/store";
 import { buildKeyLabels } from "../../lib/keyboard-labels";
 import { useI18n } from "../../lib/i18n";
@@ -86,7 +88,8 @@ function resolveRefMode(keyRefMode: KeyRefMode, mode: string): KeyboardRefMode {
   }
 }
 
-export default function Session() {
+function Session() {
+  const { trainerIndex } = useTrainerData();
   const state = useAppState();
   const { t } = useI18n();
   const [session, setSession] = useState<SessionState | null>(null);
@@ -172,7 +175,7 @@ export default function Session() {
     sessionMetaRef.current = { mode, src };
 
     const settings = appStore.getState().settings;
-    const pools = buildPools(src === "weak" ? null : mode, src, settings.difficulty);
+    const pools = buildPools(trainerIndex, src === "weak" ? null : mode, src, settings.difficulty);
     const created =
       pools.length === 0
         ? null
@@ -547,29 +550,24 @@ export default function Session() {
 }
 
 /**
- * 构建题池:normal = 模式轮换池;weak = 错题条目按码长重组
- * (对齐桌面端 config.entries 路径)。池全空返回 []。
+ * 构建题池:normal = 模式轮换池;weak = 保留所有码长的异构复习池。
+ * 池全空返回 []。
  */
 function buildPools(
+  trainerIndex: TrainerIndex,
   mode: PracticeMode | null,
   src: "normal" | "weak",
   difficulty: Difficulty,
 ): QuestionPool[] {
   if (src === "weak") {
-    const weak = listWeakItems(trainerIndex, appStore.getState().progress, 30);
+    const weak = listReviewItems(trainerIndex, appStore.getState().progress, Date.now(), 30);
     const items = weak.map((entry) => entry.item);
     if (items.length === 0) return [];
-    const byLength = new Map<number, TrainingItem[]>();
-    for (const item of items) {
-      const list = byLength.get(item.codeLength) ?? [];
-      list.push(item);
-      byLength.set(item.codeLength, list);
-    }
-    return [...byLength.entries()].map(([length, group]) =>
-      buildPool(`char-${length}`, group),
-    );
+    return [buildPool(REVIEW_POOL_ID, items)];
   }
   return MODE_POOL_ROTATION[mode ?? "double"]
     .map((poolId) => buildPool(poolId, selectPool(trainerIndex, poolId, difficulty)))
     .filter((pool) => pool.items.length > 0);
 }
+
+export default withTrainerData(Session);

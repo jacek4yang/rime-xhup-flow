@@ -24,15 +24,15 @@ on:
     # 人工 RC 演练入口(publish=false:不打 tag、不发 Release、不签名)。
     inputs:
       version:
-        description: "发布版本覆盖(semver,如 1.0.0-rc.1;空 = tauri.conf.json 版本)"
+        description: "构建版本(必须等于全部源码版本;空 = workspace 版本)"
         type: string
         required: false
         default: ""
       android_version_code:
-        description: "Android versionCode(version 覆盖时必填,单调递增)"
+        description: "Android versionCode(空 = 按 RC/正式版规则派生;显式值须单调递增)"
         type: string
         required: false
-        default: "1"
+        default: ""
       sign_android:
         description: "Android 使用发布签名(需 secrets)"
         type: boolean
@@ -58,15 +58,15 @@ on:
   workflow_call:
     inputs:
       version:
-        description: "发布版本覆盖(semver,如 1.0.0-rc.1;空 = tauri.conf.json 版本)"
+        description: "构建版本(必须等于全部源码版本;空 = workspace 版本)"
         type: string
         required: false
         default: ""
       android_version_code:
-        description: "Android versionCode(version 覆盖时必填,单调递增)"
+        description: "Android versionCode(空 = 按 RC/正式版规则派生)"
         type: string
         required: false
-        default: "1"
+        default: ""
       sign_android:
         description: "Android 使用发布签名(需 secrets)"
         type: boolean
@@ -105,9 +105,30 @@ env:
   APP_VERSION_CONF: trainer/src-tauri/tauri.conf.json
 
 jobs:
+  product-version:
+    name: 产品源码版本一致性
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: 禁止以版本覆盖参数重命名旧源码
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_VCODE: ${{ inputs.android_version_code }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [[ -n "$INPUT_VERSION" ]]; then args=(--expect-version "$INPUT_VERSION"); fi
+          python3 tests/release/check_product_version.py "${args[@]}"
+          if [[ -n "$INPUT_VCODE" && ! "$INPUT_VCODE" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::android_version_code 必须为正整数或留空派生"
+            exit 1
+          fi
+
   # ---------- 平台中立 Rime 源包:生成 + 结构校验 + librime 编译校验 ----------
   rime-package:
     name: Rime 源包
+    needs: product-version
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
@@ -226,7 +247,7 @@ jobs:
         with:
           name: product-packaging-rime
           path: artifacts/
-          retention-days: 7
+          retention-days: 30
 
       - name: 上传独立编译来源证据（不混入可复现 Rime ZIP）
         uses: actions/upload-artifact@v7
@@ -234,11 +255,12 @@ jobs:
           name: rime-compiler-evidence
           path: /tmp/xhup-package-compiler.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
   # ---------- Windows:NSIS + MSI ----------
   windows:
     name: Windows x64
+    needs: product-version
     runs-on: windows-latest
     timeout-minutes: 60
     outputs:
@@ -347,11 +369,12 @@ jobs:
         with:
           name: product-packaging-windows
           path: artifacts/windows/
-          retention-days: 7
+          retention-days: 30
 
   # ---------- macOS:universal DMG(aarch64 + x86_64) ----------
   macos:
     name: macOS universal
+    needs: product-version
     runs-on: macos-latest
     timeout-minutes: 60
 
@@ -421,11 +444,12 @@ jobs:
         with:
           name: product-packaging-macos
           path: artifacts/macos/
-          retention-days: 7
+          retention-days: 30
 
   # ---------- Linux:deb + rpm(AppImage 见工作流头注说明) ----------
   linux:
     name: Linux deb/rpm
+    needs: product-version
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -535,11 +559,12 @@ jobs:
         with:
           name: product-packaging-linux
           path: artifacts/linux/
-          retention-days: 7
+          retention-days: 30
 
   # ---------- Android:universal APK(未签名,无发布 secrets) ----------
   android:
     name: Android universal APK
+    needs: product-version
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -766,7 +791,7 @@ jobs:
         with:
           name: product-packaging-android
           path: artifacts/android/
-          retention-days: 7
+          retention-days: 30
 
       # arm64-only 测量构建(#83 ABI 拆分待办的数据来源)。刻意不进入
       # 发布清单:artifact 名不带 product-packaging- 前缀,manifest 的
@@ -939,6 +964,26 @@ jobs:
           cat SHA256SUMS.txt
           cat BUILD-INFO.txt
 
+      - name: 封存当前版本并初始化待验清单
+        if: inputs.sign_android == true && inputs.arm64_default == true
+        run: |
+          set -euo pipefail
+          [[ "$APP_VERSION" == "$RIME_VERSION" ]]
+          cargo run -q -p xhup-cli --locked -- seal-build \
+            --version "$APP_VERSION" --source-commit "$GITHUB_SHA" --artifacts-dir artifacts
+          cargo run -q -p xhup-cli --locked -- init-acceptance \
+            --version "$APP_VERSION" --source-commit "$GITHUB_SHA" --artifacts-dir artifacts \
+            > "$RUNNER_TEMP/ACCEPTANCE.json"
+
+      - name: 上传当前字节对应的空白验收清单
+        if: inputs.sign_android == true && inputs.arm64_default == true
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-acceptance-template
+          path: ${{ runner.temp }}/ACCEPTANCE.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: 上传发布清单
         uses: actions/upload-artifact@v7
         with:
@@ -947,7 +992,8 @@ jobs:
             artifacts/SHA256SUMS.txt
             artifacts/BUILD-INFO.txt
             artifacts/CANONICAL-SHA256SUMS.txt
-          retention-days: 7
+            artifacts/BUILD-MANIFEST.json
+          retention-days: 30
 
       - name: 构建摘要
         run: |

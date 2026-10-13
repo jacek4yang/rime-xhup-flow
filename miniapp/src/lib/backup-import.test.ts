@@ -46,6 +46,7 @@ function validBackupJson(): string {
           mastery: 55,
           lastSeenAt: 1788710400000,
           avgLatencyMs: 1400,
+          review: null,
         },
       },
       daily: {
@@ -74,7 +75,6 @@ describe("parseBackupForImport:解析与预览分离", () => {
     const result = parseBackupForImport(validBackupJson());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.preview.version).toBe(2);
     expect(result.preview.progressCount).toBe(1);
     expect(result.preview.dailyDays).toBe(2);
     expect(result.preview.dateRange).toEqual(["2026-09-05", "2026-09-06"]);
@@ -94,8 +94,9 @@ describe("parseBackupForImport:解析与预览分离", () => {
       kind: "invalid",
     });
 
-    const wrongVersion = validBackupJson().replace('"version": 2', '"version": 1');
-    expect(parseBackupForImport(wrongVersion)).toMatchObject({
+    const wrongVersion = JSON.parse(validBackupJson());
+    wrongVersion.version = 999;
+    expect(parseBackupForImport(JSON.stringify(wrongVersion))).toMatchObject({
       ok: false,
       kind: "invalid",
     });
@@ -193,7 +194,6 @@ describe("应用语义:与 applyBackup 一致的整体替换", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.preview).toMatchObject({
-      version: 2,
       progressCount: 0,
       dailyDays: 0,
       dateRange: null,

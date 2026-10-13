@@ -2,13 +2,14 @@
  * 训练进度备份:确定性 JSON 导出 / 校验导入(纯逻辑;本地文件)。
  *
  * 备份只包含用户进度与偏好,绝不包含规范数据集(数据集由 Rust 重新
- * 生成);时间戳由调用方注入以保持导出确定性。导入按版本迁移:仅接受
- * 当前版本 2;损坏 / 未知结构抛 {@link BackupError},调用方展示原因。
+ * 生成);时间戳由调用方注入以保持导出确定性。V3 保存跨天复习证据,
+ * V2 记录迁移为未验证回忆;损坏 / 未知结构抛 {@link BackupError}。
  * 备份体积超过 {@link MAX_BACKUP_JSON_CHARS} 直接拒绝(可操作的错误提示),
  * 防止误选超大文件卡死解析。
  */
 
 import type { ItemProgress } from "./progress";
+import { parseSpacedReview } from "./spaced-review";
 import type { DailyStats } from "./daily-stats";
 import type { ConfusionMap } from "./confusion";
 import { sanitizeConfusionMap } from "./confusion";
@@ -17,7 +18,7 @@ import type { HintMode, PracticeMode, SessionLength } from "../practice/types";
 import type { LessonEvidence } from "../learning-path/lesson-state";
 
 export const BACKUP_KIND = "xhup-flow-trainer-backup";
-export const BACKUP_VERSION = 2;
+export const BACKUP_VERSION = 3;
 
 /**
  * 备份 JSON 字符长度上限(约 2 MB;按 UTF-16 码元计,偏保守)。
@@ -121,6 +122,8 @@ function validateProgress(value: unknown): Record<string, ItemProgress> {
   const progress: Record<string, ItemProgress> = {};
   for (const [id, raw] of Object.entries(value)) {
     if (!isRecord(raw)) fail(`进度条目 ${id} 结构无效`);
+    const review = parseSpacedReview(raw.review);
+    if (raw.review != null && review === null) fail(`进度条目 ${id} 的复习状态无效`);
     progress[id] = {
       attempts: numberField(raw.attempts, id),
       correct: numberField(raw.correct, id),
@@ -130,6 +133,7 @@ function validateProgress(value: unknown): Record<string, ItemProgress> {
       lastSeenAt: typeof raw.lastSeenAt === "number" ? raw.lastSeenAt : null,
       avgLatencyMs:
         typeof raw.avgLatencyMs === "number" ? raw.avgLatencyMs : null,
+      review,
     };
     // 空进度条目丢弃(备份只存见过的条目)。
     if (progress[id].attempts === 0) {
@@ -232,9 +236,8 @@ function validateConfusions(value: unknown): ConfusionMap {
 
 /**
  * 校验并导入备份;返回可直接并入 store 的数据。
- * 只接受版本 2(旧版本无备份格式,不存在迁移路径);lessonEvidence
- * 与 confusions 为可选增量字段:缺失 → {}(旧备份),存在 → 逐条校验,
- * 损坏条目单独丢弃(confusions)或回默认(lessonEvidence)。
+ * 接受 V2/V3;V2 缺失的复习证据保持 null,不把历史 mastery 当独立回忆。
+ * lessonEvidence 与 confusions 仍按各自的字段校验策略处理。
  * 超过 {@link MAX_BACKUP_JSON_CHARS} 的输入直接拒绝(可操作的错误提示)。
  */
 export function importBackup(json: string): {
@@ -244,6 +247,7 @@ export function importBackup(json: string): {
   keyErrors: Record<string, number>;
   lessonEvidence: Record<string, LessonEvidence>;
   confusions: ConfusionMap;
+  sourceVersion: number;
 } {
   if (json.length > MAX_BACKUP_JSON_CHARS) {
     fail(
@@ -258,8 +262,8 @@ export function importBackup(json: string): {
   }
   if (!isRecord(parsed)) fail("备份结构无效");
   if (parsed.kind !== BACKUP_KIND) fail("这不是训练器备份文件");
-  if (parsed.version !== BACKUP_VERSION) {
-    fail(`备份版本应为 ${BACKUP_VERSION}(实际 ${String(parsed.version)})`);
+  if (parsed.version !== 2 && parsed.version !== BACKUP_VERSION) {
+    fail(`备份版本应为 2 或 ${BACKUP_VERSION}(实际 ${String(parsed.version)})`);
   }
   if (typeof parsed.createdAt !== "number") fail("备份缺少 createdAt");
   if (!isRecord(parsed.settings)) fail("备份缺少 settings");
@@ -277,6 +281,7 @@ export function importBackup(json: string): {
     fail("settings.sessionLength 应为非负整数");
   }
   return {
+    sourceVersion: parsed.version,
     settings: {
       theme: settings.theme as string,
       hintMode: settings.hintMode as HintMode,

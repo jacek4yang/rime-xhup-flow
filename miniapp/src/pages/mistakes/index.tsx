@@ -12,25 +12,28 @@ import {
   confusionId,
   itemAccuracy,
   keyHeatmap,
-  listWeakItems,
+  listReviewItems,
+  isReviewDue,
   positionLabel,
   topConfusions,
 } from "@xhup/trainer-core";
 import type { WeakListEntry } from "@xhup/trainer-core";
-import { trainerIndex } from "../../lib/dataset";
+import { useTrainerData, withTrainerData } from "../../lib/trainer-data";
 import { useAppState } from "../../lib/store";
 import { useI18n } from "../../lib/i18n";
 import { ROUTES, navigateToOrRedirect } from "../../lib/navigation";
 
-export default function Mistakes() {
+function Mistakes() {
+  const { trainerIndex } = useTrainerData();
   const state = useAppState();
   const { t } = useI18n();
   const [, setTick] = useState(0);
   useDidShow(() => setTick((n) => n + 1));
+  const now = Date.now();
 
   const weakItems = useMemo<WeakListEntry[]>(
-    () => listWeakItems(trainerIndex, state.progress),
-    [state.progress],
+    () => listReviewItems(trainerIndex, state.progress, now),
+    [state.progress, now],
   );
   const report = useMemo(
     () =>
@@ -88,6 +91,9 @@ export default function Mistakes() {
               <View className="weak-row" key={item.id}>
                 <Text className="weak-target">{item.target}</Text>
                 <Text className="weak-code">{item.primaryCode}</Text>
+                {isReviewDue(progress, now) && <Text>{t("review.due")}</Text>}
+                <Text>{progress.review
+                  ? t("review.level", { n: progress.review.level }) : t("review.unverified")}</Text>
                 <Text className="weak-meta">
                   {t("common.mastery", { n: progress.mastery })} ·{" "}
                   {t("common.wrongCount", { n: progress.wrong })} ·{" "}
@@ -172,3 +178,5 @@ function formatAccuracy(ratio: number | null): string {
 function tPercent(ratio: number): string {
   return `${Math.round(ratio * 100)}%`;
 }
+
+export default withTrainerData(Mistakes);

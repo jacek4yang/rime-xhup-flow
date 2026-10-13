@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { itemAccuracy, listWeakItems } from "@xhup/trainer-core";
+import { itemAccuracy, listReviewItems, isReviewDue } from "@xhup/trainer-core";
 import { aggregateWeakness, keyHeatmap, topConfusions, positionLabel } from "@xhup/trainer-core";
 import { confusionId } from "@xhup/trainer-core";
 import { formatPercent } from "@xhup/trainer-core";
@@ -69,7 +69,8 @@ export function WeaknessCenter({
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const weakItems = useMemo(() => listWeakItems(index, progress), [index, progress]);
+  const now = Date.now();
+  const weakItems = useMemo(() => listReviewItems(index, progress, now), [index, progress, now]);
   const report = useMemo(
     () =>
       aggregateWeakness(
@@ -163,7 +164,7 @@ export function WeaknessCenter({
         <div className="flex flex-col gap-2">
           {filtered.map(({ item, progress: itemProgress }) => (
             <Card key={item.id} className="px-4 py-3">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <label className="flex cursor-pointer items-center gap-3">
                   <input
                     type="checkbox"
@@ -184,9 +185,13 @@ export function WeaknessCenter({
                     {t("common.wrongCount", { n: itemProgress.wrong })}
                   </span>
                 </div>
+                {isReviewDue(itemProgress, now) && <Badge className="whitespace-nowrap">{t("review.due")}</Badge>}
+                <Badge variant="outline" className="whitespace-nowrap">{itemProgress.review
+                  ? t("review.level", { n: itemProgress.review.level }) : t("review.unverified")}</Badge>
                 <div className="ml-auto flex w-28 flex-col items-end gap-1 sm:w-36">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Badge
+                      className="whitespace-nowrap"
                       variant={itemProgress.mastery < 40 ? "destructive" : "outline"}
                     >
                       {t("common.mastery", { n: itemProgress.mastery })}

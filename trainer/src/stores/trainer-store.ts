@@ -4,9 +4,9 @@
  * 只持久化小型稀疏数据:偏好、见过的条目进度、按日统计、键位错误。
  * 规范数据集、当前题、已输入、回炉队列等运行态一律不进 store。
  *
- * 持久化版本 2(V2):相对 V1 新增 `DailyStats.chars/corrections` 与
- * `keyErrors`;V1 状态经 migrate 逐字段迁移(进度/统计/偏好保留,
- * 新字段回默认值),未知/损坏字段在校验边界逐字段回退为默认值。
+ * 持久化 V3 新增有版本的跨天复习证据,保留存储键和旧统计。
+ * V1 补齐 DailyStats/延迟字段,V2 的复习证据为 null,不能推定已掌握。
+ * 未知/损坏字段在校验边界逐字段回退,不整体清空用户数据。
  *
  * 里程碑 44:`lessonEvidence`(章节学习证据)作为版本 2 的可选增量
  * 字段加入——旧持久化数据缺省回 `{}`,无需升版;备份同理。
@@ -19,8 +19,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-  applyImperfect,
-  applyPerfect,
+  applyQuestionProgress,
+  parseSpacedReview,
   emptyProgress,
   type ItemProgress,
 } from "@xhup/trainer-core";
@@ -171,7 +171,7 @@ export type TrainerActions = {
 export type TrainerStore = TrainerData & TrainerActions;
 
 export const STORAGE_KEY = "xhup-flow.trainer.v2";
-export const STORAGE_VERSION = 2;
+export const STORAGE_VERSION = 3;
 
 function defaultData(): TrainerData {
   return {
@@ -212,7 +212,7 @@ function isNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function isProgress(value: unknown): value is ItemProgress {
+function isProgress(value: unknown): value is Omit<ItemProgress, "review"> & { review?: unknown } {
   return (
     isRecord(value) &&
     isNumber(value.attempts) &&
@@ -308,6 +308,7 @@ function migrateProgressV1(value: unknown): Record<string, ItemProgress> {
       mastery: isNumber(entry.mastery) ? entry.mastery : 0,
       lastSeenAt: isNumber(entry.lastSeenAt) ? entry.lastSeenAt : null,
       avgLatencyMs: null,
+      review: null,
     };
   }
   return result;
@@ -362,7 +363,8 @@ export function sanitizePersisted(value: unknown): TrainerData {
     difficulty: pickEnum(value.difficulty, DIFFICULTIES, defaults.difficulty),
     sessionLength,
     lastMode: pickEnum(value.lastMode, MODES, defaults.lastMode),
-    progress: pickRecord(value.progress, isProgress),
+    progress: Object.fromEntries(Object.entries(pickRecord(value.progress, isProgress))
+      .map(([id, progress]) => [id, { ...progress, review: parseSpacedReview(progress.review) }])),
     daily: pickRecord(value.daily, isDailyStats),
     keyErrors: Object.fromEntries(
       Object.entries(
@@ -375,8 +377,8 @@ export function sanitizePersisted(value: unknown): TrainerData {
 }
 
 /**
- * zustand persist 版本迁移:v1 → v2 显式迁移(进度/统计/偏好保留,
- * 新字段取默认值);其余版本交给校验边界兜底。
+ * zustand persist 版本迁移:V1 补齐旧统计字段,V1/V2 都不伪造回忆。
+ * 其余字段交给共享复习校验和宿主状态校验边界。
  */
 export function migratePersisted(persisted: unknown, version: number): TrainerData {
   if (version < 2 && isRecord(persisted)) {
@@ -422,10 +424,7 @@ export const useTrainerStore = create<TrainerStore>()(
       recordQuestionResult: (payload) =>
         set((state) => {
           const previous = state.progress[payload.id] ?? emptyProgress();
-          const updated =
-            payload.outcome === "perfect"
-              ? applyPerfect(previous, payload.now, payload.questionMs)
-              : applyImperfect(previous, payload.now, payload.questionMs);
+          const updated = applyQuestionProgress(previous, payload);
           const dateKey = localDateKey(new Date(payload.now));
           const keyErrors = { ...state.keyErrors };
           for (const key of new Set(payload.wrongKeys)) {

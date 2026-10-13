@@ -9,11 +9,11 @@
     "css": "none"
   },
   "scripts": {
-    "generate:data": "node scripts/generate-shards.mjs",
-    "build:weapp": "npm run generate:data && taro build --type weapp",
+    "generate:data": "pnpm --filter trainer generate:data && node scripts/build-dataset.mjs",
+    "build:weapp": "npm run generate:data && taro build --type weapp && node scripts/test-weapp-runtime.cjs",
     "dev:weapp": "npm run generate:data && taro build --type weapp --watch",
-    "typecheck": "node scripts/generate-shards.mjs && tsc --noEmit",
-    "test": "node scripts/generate-shards.mjs && vitest run",
+    "typecheck": "pnpm generate:data && tsc --noEmit",
+    "test": "pnpm generate:data && node --test scripts/build-dataset.test.mjs && vitest run --exclude src/lib/dataset.perf.test.ts && vitest run src/lib/dataset.perf.test.ts",
     "size": "node scripts/size-report.mjs"
   },
   "browserslist": [

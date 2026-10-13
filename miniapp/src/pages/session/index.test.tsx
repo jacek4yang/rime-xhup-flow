@@ -1,17 +1,20 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
-import type { HTMLAttributes } from "react";
+import type { ComponentType, HTMLAttributes } from "react";
 import { createElement } from "react";
 
-const host = vi.hoisted(() => ({ storage: new Map<string, string>(), hide: () => {} }));
+const host = vi.hoisted(() => ({
+  storage: new Map<string, string>(), hide: () => {},
+  params: { mode: "double" } as Record<string, string>,
+}));
 vi.mock("@tarojs/taro", () => ({
   useDidHide: (callback: () => void) => { host.hide = callback; },
   default: {
     getStorageSync: (key: string) => host.storage.get(key) ?? "",
     setStorageSync: (key: string, value: string) => { host.storage.set(key, value); },
     removeStorageSync: (key: string) => { host.storage.delete(key); },
-    getCurrentInstance: () => ({ router: { params: { mode: "double" } } }),
+    getCurrentInstance: () => ({ router: { params: host.params } }),
     vibrateShort: vi.fn(), redirectTo: vi.fn(), showModal: vi.fn(),
   },
 }));
@@ -20,15 +23,21 @@ vi.mock("@tarojs/components", () => ({
   Text: (props: HTMLAttributes<HTMLSpanElement>) => createElement("span", props),
   ScrollView: ({ scrollY: _scrollY, ...props }: HTMLAttributes<HTMLDivElement> & { scrollY?: boolean }) => createElement("div", props),
 }));
+vi.mock("../../lib/trainer-data", () => ({
+  withTrainerData: (Page: ComponentType) => Page,
+  useTrainerData: () => compiledTrainerData,
+}));
 
 import Session from "./index";
 import { appStore } from "../../lib/store";
 import { defaultAppState } from "../../lib/state-schema";
-import { trainerIndex } from "../../lib/dataset";
+import { compiledTrainerData, trainerIndex } from "../../testing/compiled-dataset";
+import { emptyProgress } from "@xhup/trainer-core";
 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(100000);
+  host.params = { mode: "double" };
   vi.spyOn(Math, "random").mockReturnValue(0);
   appStore.resetProgress();
   appStore.updateSettings(defaultAppState().settings);
@@ -92,5 +101,25 @@ describe("真实小程序页面的答案授权", () => {
     expect(container.querySelector(".session-code-hint")).toBeNull();
     act(() => { vi.advanceTimersByTime(1); });
     expect(container.querySelector(".session-code-hint")).not.toBeNull();
+  });
+});
+
+it.each(["level1", "sentence"] as const)("到期 %s 从复习路由可触屏完成且保存独立回忆", (kind) => {
+  host.params = { mode: "mixed", src: "weak" };
+  const item = [...trainerIndex.byId.values()].find((entry) => entry.kind === kind &&
+    (kind !== "level1" || entry.alternateCode?.startsWith(entry.primaryCode)))!;
+  appStore.applyBackup({ progress: {
+    [item.id]: { ...emptyProgress(), attempts: 2, correct: 2, mastery: 100 },
+  }, daily: {}, keyErrors: {} });
+  const { container, getByText } = render(<Session />);
+  expect(container.querySelector(".session-target")?.textContent).toBe(item.target);
+  expect(container.querySelector(".session-reading")).toBeNull();
+  for (const key of item.primaryCode) fireEvent.click(getByText(key.toUpperCase()));
+  if (kind === "level1") fireEvent.click(getByText(/^确认/));
+  const progress = appStore.getState().progress[item.id]!;
+  expect(progress.attempts).toBe(3);
+  expect(progress.review).toMatchObject({
+    level: 1, lastResult: "recalled", lastIndependentAt: 100000,
+    dueAt: 86500000, usedAnswerHint: false, routeUsed: "primary",
   });
 });

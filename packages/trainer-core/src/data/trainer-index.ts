@@ -10,6 +10,8 @@
 import type {
   TrainerDataset,
   TrainerEntry,
+  TrainerLevel1Shortcut,
+  TrainerSentence,
   TrainerShortcut,
   TrainerShortcutLayer,
   TrainerWord,
@@ -58,6 +60,8 @@ export type TrainingItem = {
   readings: readonly string[];
 };
 
+const NO_READINGS: readonly string[] = Object.freeze([]);
+
 /** 单字条目 → 统一训练项。 */
 export function charItem(entry: TrainerEntry): TrainingItem {
   return {
@@ -94,7 +98,7 @@ export function level1Item(
     frequencyScore,
     frozen: true,
     components: null,
-    readings: [],
+    readings: NO_READINGS,
   };
 }
 
@@ -112,12 +116,14 @@ export function wordItem(word: TrainerWord): TrainingItem {
     frequencyScore: word.rimeWeight,
     frozen: true,
     components: null,
-    readings: [],
+    readings: NO_READINGS,
   };
 }
 
 /** 简码条目 → 统一训练项(主练码 = 简码,备用 = 全码)。 */
 export function shortcutItem(shortcut: TrainerShortcut): TrainingItem {
+  let charCount = 0;
+  for (const _character of shortcut.word) charCount++;
   return {
     id: shortcutId(shortcut),
     kind: "shortcut",
@@ -125,12 +131,12 @@ export function shortcutItem(shortcut: TrainerShortcut): TrainingItem {
     primaryCode: shortcut.shortcutCode,
     acceptedCodes: [shortcut.shortcutCode],
     alternateCode: shortcut.fullCode,
-    charCount: [...shortcut.word].length,
+    charCount,
     codeLength: shortcut.shortcutCode.length,
     frequencyScore: 0,
     frozen: true,
     components: null,
-    readings: [],
+    readings: NO_READINGS,
   };
 }
 
@@ -152,7 +158,7 @@ export function sentenceItem(sentence: {
     frequencyScore: 0,
     frozen: false,
     components: sentence.components,
-    readings: [],
+    readings: NO_READINGS,
   };
 }
 
@@ -198,7 +204,7 @@ export const ALL_POOL_IDS: PoolId[] = [
 export type TrainerIndex = {
   dataset: TrainerDataset;
   /** 统一训练项:`${id}` → 条目(覆盖全部条目种类)。 */
-  byId: Map<string, TrainingItem>;
+  byId: ReadonlyMap<string, TrainingItem>;
   /** 单字条目(生成顺序)。 */
   chars: TrainerEntry[];
   byCharLength: Record<CodeLength, TrainerEntry[]>;
@@ -215,6 +221,37 @@ function sortedPool(
   return [...pools[id]].sort(compareByFrequency);
 }
 
+type TrainingSource = TrainerEntry | TrainerWord | TrainerLevel1Shortcut | TrainerShortcut | TrainerSentence;
+
+/** Complete ID lookup; materialization is bounded by this dataset, not session history. */
+class TrainingItemMap implements ReadonlyMap<string, TrainingItem> {
+  constructor(
+    private readonly sources: ReadonlyMap<string, TrainingSource>,
+    private readonly resolve: (source: TrainingSource) => TrainingItem,
+  ) {}
+
+  get size() { return this.sources.size; }
+  get(key: string): TrainingItem | undefined {
+    const source = this.sources.get(key);
+    return source === undefined ? undefined : this.resolve(source);
+  }
+  has(key: string) { return this.sources.has(key); }
+  keys() { return this.sources.keys(); }
+  *values(): MapIterator<TrainingItem> {
+    for (const source of this.sources.values()) yield this.resolve(source);
+  }
+  *entries(): MapIterator<[string, TrainingItem]> {
+    for (const [key, source] of this.sources) yield [key, this.resolve(source)] as [string, TrainingItem];
+  }
+  [Symbol.iterator]() { return this.entries(); }
+  forEach(
+    callback: (value: TrainingItem, key: string, map: ReadonlyMap<string, TrainingItem>) => void,
+    thisArg?: unknown,
+  ): void {
+    for (const [key, value] of this) callback.call(thisArg, value, key, this);
+  }
+}
+
 /** 单字在规范数据中的最长全码(一级简码的备用合法码)。 */
 function longestCharCode(dataset: TrainerDataset, char: string): string {
   let longest = "";
@@ -226,26 +263,18 @@ function longestCharCode(dataset: TrainerDataset, char: string): string {
   return longest;
 }
 
-/** 加载校验后构建一次;之后视为不可变。 */
+/** Index all validated rows once; only materialize/sort the pools a caller uses. */
 export function buildTrainerIndex(dataset: TrainerDataset): TrainerIndex {
-  const byId = new Map<string, TrainingItem>();
+  const sources = new Map<string, TrainingSource>();
   const byCharLength: Record<CodeLength, TrainerEntry[]> = { 2: [], 3: [], 4: [] };
-
   const charFrequency = new Map<string, number>();
-  const pools: Record<PoolId, TrainingItem[]> = {
-    "char-2": [],
-    "char-3": [],
-    "char-4": [],
-    "word-4": [],
-    "word-6": [],
-    "word-8": [],
-    "shortcut-primary": [],
-    "shortcut-fixed-first": [],
-    "shortcut-primary-two-key": [],
-    level1: [],
-    sentence: [],
+  const sourcePools = Object.fromEntries(
+    ALL_POOL_IDS.map((id) => [id, [] as TrainingSource[]]),
+  ) as Record<PoolId, TrainingSource[]>;
+  const add = (source: TrainingSource, id: string, pool: PoolId) => {
+    sources.set(id, source);
+    sourcePools[pool].push(source);
   };
-
   const equivalentCodes = new Map<string, string[]>();
   for (const entry of dataset.entries) {
     const key = `${entry.char}:${entry.length}`;
@@ -255,59 +284,71 @@ export function buildTrainerIndex(dataset: TrainerDataset): TrainerIndex {
     } else {
       equivalentCodes.set(key, [entry.code]);
     }
-  }
-  for (const codes of equivalentCodes.values()) codes.sort();
-  for (const entry of dataset.entries) {
-    const item = charItem(entry);
-    item.acceptedCodes = [entry.code, ...equivalentCodes.get(`${entry.char}:${entry.length}`)!
-      .filter((code) => code !== entry.code)];
-    byId.set(item.id, item);
+    add(entry, itemId(entry), `char-${entry.length}`);
     byCharLength[entry.length].push(entry);
-    pools[`char-${entry.length}`].push(item);
-    // 同字多条码时,保留频率证据最大者供一级简码引用。
     const known = charFrequency.get(entry.char) ?? 0;
-    if (entry.frequencyScore > known) {
-      charFrequency.set(entry.char, entry.frequencyScore);
-    }
+    if (entry.frequencyScore > known) charFrequency.set(entry.char, entry.frequencyScore);
   }
+  for (const codes of equivalentCodes.values()) if (codes.length > 1) codes.sort();
   for (const word of dataset.words) {
-    const item = wordItem(word);
-    byId.set(item.id, item);
-    pools[`word-${word.length as WordCodeLength}`].push(item);
+    add(word, wordId(word), `word-${word.length as WordCodeLength}`);
   }
   for (const shortcut of dataset.level1Shortcuts) {
-    const item = level1Item(
-      shortcut,
-      longestCharCode(dataset, shortcut.char),
-      charFrequency.get(shortcut.char) ?? 0,
-    );
-    byId.set(item.id, item);
-    pools.level1.push(item);
+    add(shortcut, `level1:${shortcut.key}:${shortcut.char}`, "level1");
   }
   for (const shortcut of dataset.primaryShortcuts) {
-    const item = shortcutItem(shortcut);
-    byId.set(item.id, item);
-    const poolId = shortcut.shortcutCode.length === 2 ? "shortcut-primary-two-key" : "shortcut-primary";
-    pools[poolId].push(item);
+    add(shortcut, shortcutId(shortcut),
+      shortcut.shortcutCode.length === 2 ? "shortcut-primary-two-key" : "shortcut-primary");
   }
   for (const shortcut of dataset.fixedFirstShortcuts) {
-    const item = shortcutItem(shortcut);
-    byId.set(item.id, item);
-    pools["shortcut-fixed-first"].push(item);
+    add(shortcut, shortcutId(shortcut), "shortcut-fixed-first");
   }
-  for (const sentence of dataset.sentences) {
-    const item = sentenceItem(sentence);
-    byId.set(item.id, item);
-    pools.sentence.push(item);
+  for (const sentence of dataset.sentences) add(sentence, sentenceId(sentence), "sentence");
+
+  // Cache by source row, not ID: two layers can share an ID but have different
+  // alternate routes. Preserve each pool's row and the last-source byId rule.
+  const materialized = new WeakMap<TrainingSource, TrainingItem>();
+  const resolve = (source: TrainingSource): TrainingItem => {
+    const cached = materialized.get(source);
+    if (cached) return cached;
+    let item: TrainingItem;
+    if ("key" in source) {
+      item = level1Item(source, longestCharCode(dataset, source.char), charFrequency.get(source.char) ?? 0);
+    } else if ("shortcutCode" in source) {
+      item = shortcutItem(source);
+    } else if ("word" in source) {
+      item = wordItem(source);
+    } else if ("text" in source) {
+      item = sentenceItem(source);
+    } else {
+      item = charItem(source);
+      const codes = equivalentCodes.get(`${source.char}:${source.length}`)!;
+      if (codes.length > 1) {
+        const accepted = [source.code];
+        for (const code of codes) if (code !== source.code) accepted.push(code);
+        item.acceptedCodes = accepted;
+      }
+    }
+    materialized.set(source, item);
+    return item;
+  };
+  const pools = {} as Record<PoolId, TrainingItem[]>;
+  const frequencySorted = {} as Record<PoolId, TrainingItem[]>;
+  for (const id of ALL_POOL_IDS) {
+    let items: TrainingItem[] | undefined;
+    let sorted: TrainingItem[] | undefined;
+    Object.defineProperty(pools, id, {
+      enumerable: true,
+      get: () => items ??= sourcePools[id].map(resolve),
+    });
+    Object.defineProperty(frequencySorted, id, {
+      enumerable: true,
+      get: () => sorted ??= sortedPool(pools, id),
+    });
   }
-
-  const frequencySorted = Object.fromEntries(
-    ALL_POOL_IDS.map((id) => [id, sortedPool(pools, id)]),
-  ) as Record<PoolId, TrainingItem[]>;
-
   return {
     dataset,
-    byId,
+    byId: new TrainingItemMap(sources, resolve),
     chars: dataset.entries,
     byCharLength,
     pools,
