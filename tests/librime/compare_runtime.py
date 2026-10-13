@@ -29,6 +29,8 @@ def main():
     parser.add_argument("--repetitions", type=int, default=10)
     parser.add_argument("--learning", choices=("on", "off"), default="off")
     parser.add_argument("--quick-hint", choices=("on", "off"), default="on")
+    parser.add_argument("--baseline-joint", choices=("on", "off", "schema"), default="schema")
+    parser.add_argument("--candidate-joint", choices=("on", "off", "schema"), default="schema")
     parser.add_argument("--schema", choices=("xhup_flow", "xhup_flow_static"), default="xhup_flow")
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--complete-menu", action="store_true")
@@ -76,7 +78,8 @@ def main():
                        "--deployed", str(output / f"{label}-source"), "--plugin", str(args.plugin),
                        "--output", str(directory), "--trials", "1", "--repetitions", str(args.repetitions),
                        "--schema", args.schema, "--learning", args.learning,
-                       "--quick-hint", args.quick_hint]
+                       "--quick-hint", args.quick_hint,
+                       "--joint-decoder", getattr(args, f"{label}_joint")]
             for enabled, flag in ((args.profile, "--profile"), (args.complete_menu, "--complete-menu"),
                                   (args.sustained, "--sustained")):
                 if enabled:

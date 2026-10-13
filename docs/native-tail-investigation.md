@@ -467,6 +467,37 @@ new one; the separate joint-Phrase exact-once test remains. On librime 1.16.1 th
 `nirxhcnz` control and new policy both incremented `你/nirx` and `好/hcnz` once per
 selection, with ticks 2 then 4.
 
-These focused results do not qualify the new ranking policy. Its full development
-comparison, confirmation, paired performance and platform acceptance are pending.
+These focused results alone do not qualify the ranking policy. The completed
+development/confirmation comparison follows; paired performance and platform acceptance remain pending.
+
+
+## v2.1 首选保护冻结后的确认集（19f83fa）
+
+在观察确认组排名前冻结运行时代码 `19f83fa`。全部 7,291 条事先划分的确认样本
+使用相同 `complete_raw_span_v1` SDK harness 重跑 v2.0.0 与新方案；不删除失败样本。
+两侧均退出 0，完整提交契约失败为 0。该语料已经完成首次观察，此后不能重新称为未见集。
+
+| 指标 | v2.0.0 | 新方案 | 句子聚类配对 95% 差值区间 |
+| --- | ---: | ---: | ---: |
+| Top-1 | 39.9259% | 39.9259% | [0, 0] 个百分点 |
+| Top-3 | 42.6005% | 53.6689% | [10.3357, 11.8125] 个百分点 |
+| 可见第一页 | 43.0119% | 58.7299% | [14.8808, 16.6187] 个百分点 |
+| Top-256 / 完整选择上屏 | 44.3012% | 61.8982% | [16.7343, 18.5527] 个百分点 |
+| 待续目标前缀可达 | 36.4971% | 61.9942% | [24.5157, 26.5914] 个百分点 |
+
+区间使用现有分析器的 1,999 个句子簇、2,000 次固定种子重采样。
+旧首选丢失/新增均为 0，但有 **3 条旧第一页目标掉出第一页**，逐例保留。
+排除已知 KDConv/PTT 重叠后的 7,171 条仅作分组报告，仍不能证明严格训练隔离。
+开发组 7,388 条的 Top-1 同样保持 40.8365%，Top-3 为 54.6697%，
+第一页 59.3530%，完整提交 62.5609%，旧第一页丢失 5 条。
+
+这通过的是预先规定的聚合质量门槛，不是首选质量提升，更不是成熟拼音级首选能力证明。
+Top-1 没有改善，所有不可达样本仍在分母中；全量 Static、独立延迟/内存配对、
+当前产物平台验收与最终发布门禁仍须分别完成，默认开关继续关闭。
+
+本机原始证据：`~/.cache/xhup-flow/v210-native-tmp/confirmation-native-first-19f83fa/`，
+含两侧逐键 JSONL、部署文件哈希、输入/插件/二进制身份与 `analysis.json`。
+分析器新增第一页聚类区间，并拒绝缺失/非法页长或与完整候选排名矛盾的第一页标志。
+质量回放总耗时不是配对性能；性能驱动分别指定 `--baseline-joint off`
+和 `--candidate-joint on`，记录实际开关及 ready/bounded 状态，禁止静默回退冒充启用测量。
 

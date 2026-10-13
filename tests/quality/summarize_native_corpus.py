@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 import random
 
-METRICS = ("top1", "top3", "top256", "commit_exact", "pending_reachable")
+METRICS = ("top1", "top3", "first_page", "top256", "commit_exact", "pending_reachable")
 SEED = 20261002
 REPLICATES = 2000
 
@@ -20,7 +20,7 @@ def quantile(values, fraction):
 
 def outcomes(row):
     rank = row["rank"]
-    return [int(rank == 0), int(0 <= rank < 3), int(rank >= 0),
+    return [int(rank == 0), int(0 <= rank < 3), int(row["first_page"]), int(rank >= 0),
             int(row["commit_exact"]), int(row["pending_reachable"])]
 
 
@@ -48,6 +48,11 @@ def read_trace(path, metadata, mode):
             expected_span = (0, row["keys"]) if row["rank"] >= 0 else (0, 0)
             if span != expected_span:
                 raise ValueError("partial candidate cannot count as complete sentence recall")
+            page_size = row.get("page_size")
+            if type(page_size) is not int or not 1 <= page_size <= 256:
+                raise ValueError("missing or invalid visible page boundary")
+            if type(row.get("first_page")) is not bool or row["first_page"] != (0 <= row["rank"] < page_size):
+                raise ValueError("first-page outcome disagrees with complete candidate rank")
             if row["commit_exact"] and row["rank"] < 0:
                 raise ValueError("commit without reachable target")
             rows[row["case"]] = row
