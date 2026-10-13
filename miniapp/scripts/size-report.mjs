@@ -45,7 +45,7 @@ function walk(dir) {
 function areaOf(path) {
   if (path.startsWith("pages/")) return "pages";
   if (VENDOR_FILES.has(path)) return "vendor";
-  if (path.endsWith(".json")) return "data";
+  if (path.startsWith("data/") || path.endsWith(".json")) return "data";
   return "app";
 }
 

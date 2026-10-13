@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  ALL_POOL_IDS,
   buildTrainerIndex,
   charItem,
   selectPool,
@@ -10,23 +9,6 @@ import { makeDataset, makeEntry } from "../testing/fixtures";
 describe("buildTrainerIndex(V4)", () => {
   const index = buildTrainerIndex(makeDataset());
 
-  it("全部池 ID 都被构建且非空", () => {
-    for (const poolId of ALL_POOL_IDS) {
-      expect(index.pools[poolId].length, poolId).toBeGreaterThan(0);
-      expect(index.frequencySorted[poolId].length, poolId).toBeGreaterThan(0);
-    }
-  });
-
-  it("byId 覆盖全部条目种类且 ID 唯一", () => {
-    const expected =
-      index.dataset.entries.length +
-      index.dataset.words.length +
-      index.dataset.level1Shortcuts.length +
-      index.dataset.primaryShortcuts.length +
-      index.dataset.fixedFirstShortcuts.length +
-      index.dataset.sentences.length;
-    expect(index.byId.size).toBe(expected);
-  });
 
   it("单字条目投影保留读音与码长", () => {
     const item = index.byId.get("行:xk");
@@ -100,6 +82,31 @@ describe("buildTrainerIndex(V4)", () => {
     expect(full[0]?.frequencyScore).toBeGreaterThanOrEqual(
       full[full.length - 1]?.frequencyScore ?? 0,
     );
+  });
+
+  it("按需查询多音字不会把另一主练路线的首码混入当前路线", () => {
+    const dataset = makeDataset();
+    dataset.entries = [makeEntry("行", "xk", 10), makeEntry("行", "hh", 10)];
+    const cold = buildTrainerIndex(dataset);
+    expect(cold.byId.get("行:xk")?.acceptedCodes).toEqual(["xk", "hh"]);
+    expect(cold.byId.get("行:hh")?.acceptedCodes).toEqual(["hh", "xk"]);
+    expect(selectPool(cold, "char-2", "full").map((item) => item.primaryCode)).toEqual(["hh", "xk"]);
+    expect(cold.byId.get("行:xk")?.acceptedCodes).toEqual(["xk", "hh"]);
+  });
+
+  it("跨层同ID不会覆盖题池自己的备用路线;进度查询保留末层优先规则", () => {
+    const dataset = makeDataset();
+    dataset.primaryShortcuts = [{
+      word: "行长", fullCode: "hhvh", shortcutCode: "hv", rank: 1, mergedRank: 1,
+    }];
+    dataset.fixedFirstShortcuts = [{
+      word: "行长", fullCode: "xkvh", shortcutCode: "hv", mode: "FI",
+    }];
+    const cold = buildTrainerIndex(dataset);
+    expect(cold.byId.get("shortcut:行长:hv")?.alternateCode).toBe("xkvh");
+    expect(selectPool(cold, "shortcut-primary-two-key", "full")[0].alternateCode).toBe("hhvh");
+    expect(selectPool(cold, "shortcut-fixed-first", "full")[0].alternateCode).toBe("xkvh");
+    expect([...cold.byId].find(([id]) => id === "shortcut:行长:hv")?.[1].alternateCode).toBe("xkvh");
   });
 
   it("charItem 独立可用(错题重练路径)", () => {

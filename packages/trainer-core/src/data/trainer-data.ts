@@ -226,7 +226,7 @@ function validateEntry(value: unknown, index: number): TrainerEntry {
   if (typeof rimeWeight !== "number" || !Number.isInteger(rimeWeight) || rimeWeight <= 0) {
     fail(`${at} 的 rimeWeight 应为正整数`);
   }
-  if (new Set(readings).size !== readings.length) {
+  if (readings.length > 1 && new Set(readings).size !== readings.length) {
     fail(`${at} 的 readings 存在重复读音`);
   }
   if (
@@ -235,12 +235,11 @@ function validateEntry(value: unknown, index: number): TrainerEntry {
   ) {
     fail(`${at} 的 toneReading 应为 1-7 字符的带调拼音`);
   }
-  return {
+  const entry: TrainerEntry = {
     char,
     code,
     length,
     readings,
-    ...(toneReading === undefined ? {} : { toneReading }),
     frequencyScore,
     rimeWeight,
     scope,
@@ -248,6 +247,8 @@ function validateEntry(value: unknown, index: number): TrainerEntry {
     sources: sourceValues,
     statuses: statusValues,
   };
+  if (toneReading !== undefined) entry.toneReading = toneReading;
+  return entry;
 }
 
 function validateWord(value: unknown, index: number): TrainerWord {
@@ -317,7 +318,10 @@ function validatePrimaryShortcut(value: unknown, index: number): TrainerPrimaryS
   if (!Number.isSafeInteger(mergedRank) || (mergedRank as number) < (rank as number)) {
     fail(`第 ${index + 1} 条 PRIMARY 简码 mergedRank 应为不小于 rank 的正整数`);
   }
-  return { ...base, rank: rank as number, mergedRank: mergedRank as number };
+  return {
+    word: base.word, fullCode: base.fullCode, shortcutCode: base.shortcutCode,
+    rank: rank as number, mergedRank: mergedRank as number,
+  };
 }
 
 function validateFixedFirstShortcut(
@@ -331,7 +335,7 @@ function validateFixedFirstShortcut(
   if (typeof mode !== "string" || !/^[FI]+$/.test(mode)) {
     fail(`${at} 的 mode 应为 F/I 投影串`);
   }
-  return { ...base, mode };
+  return { word: base.word, fullCode: base.fullCode, shortcutCode: base.shortcutCode, mode };
 }
 
 function validateSentence(value: unknown, index: number): TrainerSentence {
@@ -369,9 +373,10 @@ function validateArray<T>(
   return value.map(validateItem);
 }
 
-function ensureUnique(keys: string[], label: string): void {
+function ensureUnique<T>(items: readonly T[], keyOf: (item: T) => string, label: string): void {
   const seen = new Set<string>();
-  for (const key of keys) {
+  for (const item of items) {
+    const key = keyOf(item);
     if (seen.has(key)) {
       fail(`${label} 存在重复条目:${key}`);
     }
@@ -443,16 +448,16 @@ export function validateTrainerDataset(
     fail("训练数据缺少 packageVersion");
   }
   const entries = validateArray(value.entries, 1, "entries", validateEntry);
-  ensureUnique(entries.map((entry) => `${entry.char}:${entry.code}`), "entries");
+  ensureUnique(entries, (entry) => `${entry.char}:${entry.code}`, "entries");
   const words = validateArray(value.words, 1, "words", validateWord);
-  ensureUnique(words.map((word) => `${word.word}:${word.code}`), "words");
+  ensureUnique(words, (word) => `${word.word}:${word.code}`, "words");
   const level1Shortcuts = validateArray(
     value.level1Shortcuts,
     26,
     "level1Shortcuts",
     validateLevel1,
   );
-  ensureUnique(level1Shortcuts.map((shortcut) => shortcut.key), "level1Shortcuts");
+  ensureUnique(level1Shortcuts, (shortcut) => shortcut.key, "level1Shortcuts");
   const primaryShortcuts = validateArray(
     value.primaryShortcuts,
     1,
@@ -460,7 +465,7 @@ export function validateTrainerDataset(
     validatePrimaryShortcut,
   );
   ensureUnique(
-    primaryShortcuts.map((shortcut) => `${shortcut.word}:${shortcut.shortcutCode}`),
+    primaryShortcuts, (shortcut) => `${shortcut.word}:${shortcut.shortcutCode}`,
     "primaryShortcuts",
   );
   const fixedFirstShortcuts = validateArray(
@@ -470,11 +475,11 @@ export function validateTrainerDataset(
     validateFixedFirstShortcut,
   );
   ensureUnique(
-    fixedFirstShortcuts.map((shortcut) => `${shortcut.word}:${shortcut.shortcutCode}`),
+    fixedFirstShortcuts, (shortcut) => `${shortcut.word}:${shortcut.shortcutCode}`,
     "fixedFirstShortcuts",
   );
   const sentences = validateArray(value.sentences, 1, "sentences", validateSentence);
-  ensureUnique(sentences.map((sentence) => sentence.text), "sentences");
+  ensureUnique(sentences, (sentence) => sentence.text, "sentences");
   return {
     schemaVersion: 4,
     packageVersion: value.packageVersion,

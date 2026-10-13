@@ -1,10 +1,11 @@
 import { resolve } from "node:path";
+import { execFileSync } from "node:child_process";
 import { defineConfig } from "@tarojs/cli";
 
-// 微信小程序构建配置。主包只允许极小的启动数据分片;完整数据集
-// 仍在桌面端(trainer)由 Rust 生成,这里通过 scripts/generate-shards.mjs
-// 从规范数据集确定性截取。
+// Full canonical data is a local Brotli resource, not a JavaScript JSON import.
+// Direct Taro invocations must also reject stale or corrupt generated artifacts.
 export default defineConfig(async (merge) => {
+  execFileSync(process.execPath, [resolve(__dirname, "../scripts/build-dataset.mjs"), "--check"], { stdio: "inherit" });
   const baseConfig = {
     projectName: "xhup-flow-miniapp",
     date: "2026-9-6",
@@ -18,7 +19,13 @@ export default defineConfig(async (merge) => {
     outputRoot: "dist",
     plugins: [],
     defineConstants: {},
-    copy: { patterns: [], options: {} },
+    copy: {
+      patterns: [
+        { from: "src/data/generated/trainer.json.br", to: "dist/data/trainer.json.br" },
+        { from: "src/data/generated/dataset-manifest.json", to: "dist/data/dataset-manifest.json" },
+      ],
+      options: {},
+    },
     framework: "react",
     compiler: "webpack5",
     // Exercise the awaited, maintained XML minifier in production builds.

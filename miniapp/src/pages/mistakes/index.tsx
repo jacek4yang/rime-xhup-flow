@@ -18,12 +18,13 @@ import {
   topConfusions,
 } from "@xhup/trainer-core";
 import type { WeakListEntry } from "@xhup/trainer-core";
-import { trainerIndex } from "../../lib/dataset";
+import { useTrainerData, withTrainerData } from "../../lib/trainer-data";
 import { useAppState } from "../../lib/store";
 import { useI18n } from "../../lib/i18n";
 import { ROUTES, navigateToOrRedirect } from "../../lib/navigation";
 
-export default function Mistakes() {
+function Mistakes() {
+  const { trainerIndex } = useTrainerData();
   const state = useAppState();
   const { t } = useI18n();
   const [, setTick] = useState(0);
@@ -177,3 +178,5 @@ function formatAccuracy(ratio: number | null): string {
 function tPercent(ratio: number): string {
   return `${Math.round(ratio * 100)}%`;
 }
+
+export default withTrainerData(Mistakes);

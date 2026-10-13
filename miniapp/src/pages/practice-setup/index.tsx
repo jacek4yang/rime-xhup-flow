@@ -18,7 +18,7 @@ import type {
   KeyRefMode,
   PracticeMode,
 } from "@xhup/trainer-core";
-import { trainerIndex } from "../../lib/dataset";
+import { useTrainerData, withTrainerData } from "../../lib/trainer-data";
 import { isModeAvailable } from "../../lib/mode-availability";
 import { actions, useAppState } from "../../lib/store";
 import { useI18n } from "../../lib/i18n";
@@ -36,7 +36,8 @@ const KEY_REF_LABELS: Record<KeyRefMode, string> = {
   both: "双拼+形码",
 };
 
-export default function PracticeSetup() {
+function PracticeSetup() {
+  const { trainerIndex } = useTrainerData();
   const state = useAppState();
   const { t } = useI18n();
 
@@ -160,3 +161,5 @@ function isPracticeMode(value: string | null): value is PracticeMode {
     value === "mixed-all"
   );
 }
+
+export default withTrainerData(PracticeSetup);

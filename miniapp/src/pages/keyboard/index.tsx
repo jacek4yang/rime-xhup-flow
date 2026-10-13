@@ -5,7 +5,7 @@
 
 import { useMemo } from "react";
 import { View, Text } from "@tarojs/components";
-import { dataset } from "../../lib/dataset";
+import { useTrainerData, withTrainerData } from "../../lib/trainer-data";
 import { buildKeyLabels } from "../../lib/keyboard-labels";
 import { useI18n } from "../../lib/i18n";
 import { ROUTES, navigateTo } from "../../lib/navigation";
@@ -13,11 +13,12 @@ import { TeachingKeyboard } from "../../components/TeachingKeyboard";
 import type { ShapeKeyRef } from "../../components/TeachingKeyboard";
 import { buildShapeKeyStats } from "@xhup/trainer-core";
 
-export default function KeyboardReference() {
+function KeyboardReference() {
+  const { dataset } = useTrainerData();
   const { t } = useI18n();
   const labels = useMemo(() => buildKeyLabels(dataset.doublePinyin), []);
 
-  // 形码代表字:仅当分片有全码数据时出现(没有就如实不显示)。
+  // 形码代表字仅取规范全码数据，不推测缺失的字根。
   const shapeRef = useMemo<ShapeKeyRef>(() => {
     const map: ShapeKeyRef = new Map();
     for (const stat of buildShapeKeyStats(dataset.entries)) {
@@ -67,3 +68,5 @@ export default function KeyboardReference() {
     </View>
   );
 }
+
+export default withTrainerData(KeyboardReference);

@@ -237,7 +237,7 @@ jobs:
       - name: 构建训练器前端(自动生成规范训练数据)
         run: pnpm trainer:build
 
-      - name: 小程序数据分片校验与语义测试
+      - name: 小程序完整数据构建、负向校验与语义测试
         run: pnpm miniapp:test
 
       - name: 构建微信小程序 weapp 产物

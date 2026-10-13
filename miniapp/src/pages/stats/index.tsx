@@ -21,7 +21,7 @@ import {
   kpm,
   localDateKey,
 } from "@xhup/trainer-core";
-import { trainerIndex } from "../../lib/dataset";
+import { useTrainerData, withTrainerData } from "../../lib/trainer-data";
 import { useAppState } from "../../lib/store";
 import { useI18n } from "../../lib/i18n";
 import { StatChip } from "../../components/StatChip";
@@ -34,7 +34,8 @@ function masteryBucket(mastery: number): number {
   return Math.min(4, Math.floor(mastery / 20));
 }
 
-export default function Stats() {
+function Stats() {
+  const { trainerIndex } = useTrainerData();
   const state = useAppState();
   const { t } = useI18n();
   const [, setTick] = useState(0);
@@ -230,3 +231,5 @@ function streakDays(daily: Record<string, unknown>): number {
   }
   return streak;
 }
+
+export default withTrainerData(Stats);
