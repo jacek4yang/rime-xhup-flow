@@ -47,6 +47,23 @@ local many = {}
 for i = 1, search.beam_width + 5 do many[i] = edge("a", tostring(i), -i) end
 local bounded = describe("a", search.search("a", provider("a", many)), 1)
 check(#bounded == search.beam_width and bounded[1].text == "1" and bounded[#bounded].text == "8", "beam retains the highest scoring lexical alternatives")
+-- Late arrivals replace future beams; retained ancestors must never be recycled.
+local replacements = { edge("b", "尾", 0), edge("c", "终", 0) }
+for i = 1, search.beam_width + 5 do
+  replacements[#replacements + 1] = edge("a", "字" .. i, i)
+  replacements[#replacements + 1] = edge("ab", "旧" .. i, i - 100)
+end
+local replaced = search.search("abc", provider("abc", replacements))
+for finish = 1, 3 do
+  local retained = describe("abc", replaced, finish)
+  for rank = 1, search.beam_width do
+    local value = search.beam_width + 6 - rank
+    local suffix = finish == 3 and "尾终" or (finish == 2 and "尾" or "")
+    check(retained[rank].text == "字" .. value .. suffix
+      and retained[rank].score == value and retained[rank].node.count == finish,
+      "beam replacement preserves ancestor text, score and edge count")
+  end
+end
 local ties = { edge("ab", "词", -2), edge("a", "字", -1), edge("b", "符", -1) }
 local tied = describe("ab", search.search("ab", provider("ab", ties)), 2)
 check(tied[1].text == "词" and tied[2].text == "字符", "equal scores prefer fewer edges deterministically")
@@ -95,6 +112,36 @@ local mixed = describe(raw, search.search(raw, lookup), #raw)
 check(mixed[1].text == "就是你好" and mixed[1].preedit == "jqu nihc", "legal alias and canonical word compose")
 check(table.concat(mixed[1].codes, ",") == "7,11", "aliases resolve native IDs without replacing an exact canonical route")
 check(mixed[1].sources[1] == "static_alias" and mixed[1].sources[2] == "canonical", "source provenance distinguishes alias resolution")
+do
+  -- The same alias can initially hit the normalization budget, then acquire a
+  -- whole-word ID at a later position. Reusing an edge must not freeze fallback IDs.
+  local rows = dictionary({
+    ab = { native_entry("你", 1), native_entry("好", 2) },
+    zz = { native_entry("你好", 3) },
+  })
+  local alias_rows = dictionary({ a = {
+    native_entry("甲", 0), native_entry("乙", 0), native_entry("丙", 0),
+    native_entry("丁", 0), native_entry("你好", 0),
+  } })
+  local spellings = {
+    ["甲"] = "xa xb xc xd xe xf xg xh", ["乙"] = "xi xj xk xl xm xn xo xp",
+    ["丙"] = "xq xr xs xt xu xv xw xx", ["丁"] = "ya yb yc yd ye yf yg yh",
+    ["你"] = "ab", ["好"] = "ab", ["你好"] = "zz",
+  }
+  local resolve = search.lexicon("abab", rows, alias_rows,
+    { lookup = function(_, text) return spellings[text] or "" end },
+    { ab = "\2" }, function() return -1 end)
+  local function alias_at(start)
+    for _, item in ipairs(resolve(start)) do
+      if item.keys == "a" and item.text == "你好" then return item end
+    end
+    error("valid alias missing")
+  end
+  local before, after = alias_at(0), alias_at(2)
+  check(before.source == "spelled_alias" and table.concat(before.codes, ",") == "1,2"
+    and after.source == "static_alias" and table.concat(after.codes, ",") == "3",
+    "later whole-word normalization preserves both paths' native learning IDs")
+end
 raw = "abqu"
 lookup = search.lexicon(raw, native, aliases, reverse, lengths, function() return -1 end)
 local spelled = describe(raw, search.search(raw, lookup), #raw)

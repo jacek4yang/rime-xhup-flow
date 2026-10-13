@@ -63,16 +63,27 @@ function M.search(raw, edges_at, transition)
               serial = serial + 1
               if finite(score) and (#target < M.beam_width
                 or better(score, count, serial, target[#target])) then
-                local node = { previous = previous, edge = edge, finish = finish,
-                  score = score, count = count, serial = serial,
-                  lexical = previous.lexical + edge.lexical,
-                  context = previous.context + context }
                 local position = #target + 1
                 while position > 1 and better(score, count, serial, target[position - 1]) do
                   position = position - 1
                 end
+                local node
+                if #target == M.beam_width then
+                  -- finish > start: this beam has not expanded, so its evicted
+                  -- node cannot be an ancestor. Never recycle an expanded node.
+                  node = target[#target]
+                  target[#target] = nil
+                  node.previous, node.edge, node.finish = previous, edge, finish
+                  node.score, node.count, node.serial = score, count, serial
+                  node.lexical = previous.lexical + edge.lexical
+                  node.context = previous.context + context
+                else
+                  node = { previous = previous, edge = edge, finish = finish,
+                    score = score, count = count, serial = serial,
+                    lexical = previous.lexical + edge.lexical,
+                    context = previous.context + context }
+                end
                 table.insert(target, position, node)
-                if #target > M.beam_width then target[#target] = nil end
               end
             end
           end
@@ -119,6 +130,10 @@ end
 function M.lexicon(raw, memory, aliases, reverse, lengths, score)
   assert(memory.user_dict == nil and aliases.user_dict == nil, "lexical lookup must be read-only")
   local canonical, static, normalized = {}, {}, {}
+  -- Position-free immutable edges can be shared inside this query. Keep source
+  -- variants separate: a budget-limited spelling may later resolve a word ID.
+  local prepared = { canonical = {}, static_alias = {}, spelled_alias = {} }
+  local prepared_count = 0
   local stats = { lookups = 0, reverse = 0, rows = 0, normalization_budget = 0 }
   local normalization_left = 0
   local function lookup(owner, cache, code, bound)
@@ -176,8 +191,18 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score)
       local lexical = fallback_score or score(text, weight, sound)
       if not finite(lexical) then return end
       seen[key] = true
-      edges[#edges + 1] = { keys = code, text = text, codes = codes,
-        lexical = lexical, source = source }
+      local cache = prepared[source]
+      local edge = cache[key]
+      if not edge then
+        edge = { keys = code, text = text,
+          codes = type(codes) == "number" and { codes } or codes,
+          lexical = lexical, source = source }
+        if prepared_count < 1024 then
+          cache[key] = edge
+          prepared_count = prepared_count + 1
+        end
+      end
+      edges[#edges + 1] = edge
     end
     -- Native edges come first, preserving their exact canonical syllable IDs
     -- when a static spelling denotes the same text.
@@ -188,7 +213,7 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score)
         local items = lookup(memory, canonical, code, 64)
         for j = 1, math.min(8, #items) do
           local item = items[j]
-          add(code, item.text, { item.id }, item.weight, "canonical", nil, item.sound)
+          add(code, item.text, item.id, item.weight, "canonical", nil, item.sound)
         end
       end
     end
@@ -200,7 +225,7 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score)
         if not seen[code .. "\0" .. item.text] then
           local canonical_item = exact_text(item.text)
           if canonical_item then
-            add(code, item.text, { canonical_item.id }, canonical_item.weight,
+            add(code, item.text, canonical_item.id, canonical_item.weight,
               "static_alias", nil, canonical_item.sound)
           elseif #item.text <= 128 then
             local codes, lexical, characters = {}, 0, {}
