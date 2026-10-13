@@ -9,14 +9,11 @@ struct Qualified {
 }
 impl Qualified {
     fn new() -> Self {
-        let mut fixture = Fixture::new();
-        fixture.manifest.platforms[0]
-            .checks
-            .insert(CHECK_KEYS[0].into(), CheckState::Unverified);
+        let fixture = Fixture::new();
         let proofs = fixture.dir.with_extension("proofs");
         fs::create_dir(&proofs).unwrap();
         let authorization = Authorization {
-            schema_version: 1,
+            schema_version: 2,
             policy: policy::POLICY.into(),
             version: "2.0.0".into(),
             accepted_rc: RC.into(),
@@ -26,8 +23,7 @@ impl Qualified {
             approved_by: "owner".into(),
             approved_at: "2026-10-05T00:00:00Z".into(),
             rationale: "SYNTHETIC TEST ONLY".into(),
-            limitations: vec!["Pending hardware testing".into()],
-            user_testing_platforms: vec!["windows".into()],
+            limitations: vec!["Synthetic unsigned desktop packages".into()],
             ci_run: 11,
             runtime_run: 12,
             package_run: 13,
@@ -35,7 +31,7 @@ impl Qualified {
         for (name, id, workflow) in [
             ("ci", 11, "ci"),
             ("runtime", 12, "full-regression"),
-            ("package", 13, "xhup-flow-rc-release"),
+            ("package", 13, "product-packaging"),
         ] {
             fs::write(proofs.join(format!("{name}-run.json")),json!({"id":id,"run_attempt":1,"status":"completed","conclusion":"success","head_sha":SOURCE,"head_branch":"main","path":format!(".github/workflows/{workflow}.yml"),"event":"workflow_dispatch","repository":{"full_name":"owner/repo","owner":{"login":"owner"}}}).to_string()).unwrap();
         }
@@ -80,13 +76,17 @@ impl Drop for Qualified {
     }
 }
 #[test]
-fn explicit_scope_preserves_unverified_and_default_strict_gate() {
-    let f = Qualified::new();
-    assert!(!f.fixture.verify().is_empty());
+fn qualification_never_excuses_unverified_platforms() {
+    let mut f = Qualified::new();
     assert!(f.verify().is_empty(), "{:?}", f.verify());
-    assert_eq!(
-        f.fixture.manifest.platforms[0].checks[CHECK_KEYS[0]],
-        CheckState::Unverified
+    f.fixture.manifest.platforms[0]
+        .checks
+        .insert(CHECK_KEYS[0].into(), CheckState::Unverified);
+    assert!(
+        f.verify()
+            .iter()
+            .any(|violation| violation.platform.as_deref() == Some("windows")
+                && violation.check.as_deref() == Some(CHECK_KEYS[0]))
     );
 }
 #[test]
@@ -122,8 +122,8 @@ fn rejects_authorization_mutations() {
         |a| a.limitations.clear(),
         |a| a.source_commit = "b".repeat(40),
         |a| a.approved_at = "2026-02-30T00:00:00Z".into(),
-        |a| a.user_testing_platforms.clear(),
-        |a| a.user_testing_platforms.push("linux".into()),
+        |a| a.schema_version = 1,
+        |a| a.policy = "runtime-qualified-user-platform-testing-v1".into(),
         |a| a.accepted_rc = "2.0.0-rc.2".into(),
         |a| a.build_manifest_sha256 = "b".repeat(64),
     ] {
@@ -141,7 +141,9 @@ fn cannot_excuse_fail_or_modified_payload() {
     assert!(!f.verify().is_empty());
     let f = Qualified::new();
     fs::write(
-        f.fixture.dir.join(provenance::payload_names(RC)[0].clone()),
+        f.fixture
+            .dir
+            .join(provenance::payload_names(VERSION)[0].clone()),
         b"changed",
     )
     .unwrap();

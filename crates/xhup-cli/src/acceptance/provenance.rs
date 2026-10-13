@@ -1,4 +1,4 @@
-//! Small exact-byte RC promotion contract. No rebuild/equivalence shortcut.
+//! Exact-byte publication contract for independently built RC and stable versions.
 use super::{AcceptanceManifest, ArtifactRecord, Violation, check_stable};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -125,8 +125,8 @@ fn file_digest(path: &Path) -> io::Result<String> {
     Ok(format!("{:x}", hash.finalize()))
 }
 
-/// Expected published payload: all eight signed-RC packages plus three metadata files.
-/// Rehearsal unsigned APKs deliberately cannot satisfy stable promotion.
+/// Expected published payload: all eight packages plus three metadata files.
+/// Rehearsal unsigned APKs deliberately cannot satisfy publication.
 pub fn payload_names(version: &str) -> Vec<String> {
     let mut names = vec![format!("xhup-flow-rime-v{version}.zip")];
     for suffix in [
@@ -152,12 +152,12 @@ pub fn payload_names(version: &str) -> Vec<String> {
     names
 }
 
-/// Seal the published RC payload. This command records bytes, NOT hardware acceptance.
+/// Seal versioned payload bytes, NOT hardware acceptance. Stable is built separately from RC.
 /// Existing output is never silently overwritten.
 pub fn seal(version: &str, source: &str, directory: &Path) -> io::Result<()> {
-    if rc_core(version).is_none() || !is_hex(source, 40) {
+    if (!stable_version(version) && rc_core(version).is_none()) || !is_hex(source, 40) {
         return Err(io::Error::other(
-            "seal requires canonical RC version and exact source SHA",
+            "seal requires canonical stable/RC version and exact source SHA",
         ));
     }
     let artifacts = payload_names(version)
@@ -168,7 +168,7 @@ pub fn seal(version: &str, source: &str, directory: &Path) -> io::Result<()> {
         })
         .collect::<io::Result<Vec<_>>>()?;
     let build = BuildManifest {
-        schema_version: 1,
+        schema_version: 2,
         version: version.to_string(),
         source_commit: source.to_string(),
         artifacts,
@@ -183,7 +183,9 @@ pub fn seal(version: &str, source: &str, directory: &Path) -> io::Result<()> {
     expected.sort();
     actual.sort();
     if expected != actual {
-        return Err(io::Error::other("unexpected or missing RC payload files"));
+        return Err(io::Error::other(
+            "unexpected or missing versioned payload files",
+        ));
     }
     use std::io::Write;
     let mut output = fs::OpenOptions::new()
@@ -194,8 +196,66 @@ pub fn seal(version: &str, source: &str, directory: &Path) -> io::Result<()> {
     output.sync_all()
 }
 
-/// Verify against an independently resolved RC tag commit and actual release bytes.
-/// The workflow supplies source from GitHub's commit resolution, never from this JSON.
+/// Start fresh receipts from verified sealed bytes. Never inherit a platform PASS.
+pub fn acceptance_template(
+    version: &str,
+    source: &str,
+    directory: &Path,
+) -> io::Result<AcceptanceManifest> {
+    if !stable_version(version) && rc_core(version).is_none() {
+        return Err(io::Error::other("invalid product version"));
+    }
+    let raw = fs::read(directory.join(BUILD_MANIFEST))?;
+    let build: BuildManifest = serde_json::from_slice(&raw)?;
+    let platforms = [
+        ("windows", "Weasel", "x64", "windows-x64-setup.exe"),
+        ("linux", "Fcitx5-Rime", "amd64", "linux-amd64.deb"),
+        ("macos", "Squirrel", "universal", "macos-universal.dmg"),
+        ("android", "Fcitx5-Rime", "arm64", "android-arm64.apk"),
+    ]
+    .into_iter()
+    .map(
+        |(platform, frontend, architecture, suffix)| super::PlatformEntry {
+            platform: platform.into(),
+            frontend: format!("{frontend} (UNVERIFIED)"),
+            os: "UNVERIFIED".into(),
+            architecture: architecture.into(),
+            artifact: format!("xhup-flow-trainer-v{version}-{suffix}"),
+            checks: super::CHECK_KEYS
+                .map(|key| (key.to_string(), super::CheckState::Unverified))
+                .into(),
+            evidence: None,
+            verified_at: None,
+            runtime: None,
+            tested_build: None,
+            exemptions: BTreeMap::new(),
+        },
+    )
+    .collect();
+    let manifest = AcceptanceManifest {
+        schema_version: 3,
+        version: version.into(),
+        accepted_rc: None,
+        source_commit: source.into(),
+        build_manifest_sha256: Some(digest(&raw)),
+        artifacts: build.artifacts,
+        platforms,
+    };
+    let violations = verify_with_checks(&manifest, source, directory, super::check_rc(&manifest));
+    if !violations.is_empty() {
+        return Err(io::Error::other(
+            violations
+                .into_iter()
+                .map(|v| v.message)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ));
+    }
+    Ok(manifest)
+}
+
+/// Verify against an independently resolved packaging source and actual release bytes.
+/// The workflow obtains the source from GitHub run metadata, never from this JSON.
 pub fn verify(
     manifest: &AcceptanceManifest,
     version: &str,
@@ -224,7 +284,7 @@ pub(super) fn verify_with_checks(
         })
     };
     if !is_hex(expected_source, 40) || manifest.source_commit != expected_source {
-        fail("source_commit differs from independently resolved accepted RC source".to_string());
+        fail("source_commit differs from independently resolved packaging source".to_string());
     }
     let raw = match fs::read(directory.join(BUILD_MANIFEST)) {
         Ok(raw) => raw,
@@ -243,11 +303,11 @@ pub(super) fn verify_with_checks(
             return violations;
         }
     };
-    if build.schema_version != 1
-        || Some(build.version.as_str()) != manifest.accepted_rc.as_deref()
+    if build.schema_version != 2
+        || build.version != manifest.version
         || build.source_commit != expected_source
     {
-        fail("build manifest schema/version/source does not match accepted RC".to_string());
+        fail("build manifest schema/version/source does not match the current release".to_string());
     }
     let records = |items: &[ArtifactRecord]| -> BTreeMap<String, String> {
         items
@@ -262,7 +322,7 @@ pub(super) fn verify_with_checks(
     }
     let names: Vec<_> = built.keys().cloned().collect();
     if names != payload_names(&build.version) {
-        fail("build manifest must contain exact complete published RC payload".to_string());
+        fail("build manifest must contain exact complete versioned payload".to_string());
     }
     for (name, expected) in &built {
         if !safe_name(name) || !is_hex(expected, 64) {

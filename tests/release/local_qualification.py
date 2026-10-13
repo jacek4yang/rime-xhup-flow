@@ -17,8 +17,10 @@ import shutil
 import tempfile
 import subprocess
 
+from check_product_version import VERSION
+
 ROOT = Path(__file__).resolve().parents[2]
-POLICY = "local-runtime-qualified-user-platform-testing-v1"
+POLICY = "local-runtime-evidence-v2"
 BASE_CHECKS = {"rust", "security", "python", "frontend", "native-prepare", "native-controls", "native-collect"}
 CHECKS = BASE_CHECKS | {f"native-shard-{i}" for i in range(16)}
 
@@ -43,12 +45,12 @@ def inventory(directory):
 
 def verify(directory, source):
     report = json.loads((directory / "LOCAL-VALIDATION.json").read_text())
-    if (report["schema_version"], report["policy"], report["source_commit"], report["result"]) != (1, POLICY, source, "PASS"):
+    if (report["schema_version"], report["policy"], report["source_commit"], report["result"]) != (2, POLICY, source, "PASS"):
         raise ValueError("wrong qualification policy/source/result")
     if not re.fullmatch(r"[0-9a-f]{40}", source):
         raise ValueError("expected full independent source SHA")
-    if sorted(report["user_platform_testing"]) != ["android", "linux", "macos", "windows"]:
-        raise ValueError("platform pending scope changed")
+    if report["platform_acceptance"] != dict.fromkeys(("android", "linux", "macos", "windows"), "UNVERIFIED"):
+        raise ValueError("local runtime evidence cannot assert platform acceptance")
     checks = report["checks"]
     if len(checks) != len(CHECKS) or {c["name"] for c in checks} != CHECKS:
         raise ValueError("missing/duplicate qualification checks")
@@ -77,21 +79,24 @@ def verify(directory, source):
 
 
 def verify_build(directory, source, artifacts, version):
-    """Bind local evidence to exact cloud-built RC bytes; no rebuild or fake PASS."""
+    """Bind local test evidence to current version bytes, never authorize publication."""
     report = verify(directory, source)
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*", version):
-        raise ValueError("expected RC artifact version; stable promotion preserves embedded version")
+    if not VERSION.fullmatch(version):
+        raise ValueError("expected canonical RC or stable artifact version")
     expected = {f"xhup-flow-rime-v{version}.zip", "SHA256SUMS.txt", "CANONICAL-SHA256SUMS.txt", "BUILD-INFO.txt"}
     for suffix in ("windows-x64-setup.exe", "windows-x64.msi", "macos-universal.dmg", "linux-amd64.deb", "linux-x86_64.rpm", "android-arm64.apk", "android-universal.apk"):
         expected.add(f"xhup-flow-trainer-v{version}-{suffix}")
     build = json.loads((artifacts / "BUILD-MANIFEST.json").read_text())
-    if (build["schema_version"], build["source_commit"], build["version"]) != (1, source, version):
+    if (build["schema_version"], build["source_commit"], build["version"]) != (2, source, version):
         raise ValueError("cloud build source/version mismatch")
     records = build["artifacts"]
     if len(records) != len(expected) or {a["name"] for a in records} != expected:
         raise ValueError("cloud artifact inventory mismatch")
     actual = {p.name for p in artifacts.iterdir()}
-    if actual not in (expected | {"BUILD-MANIFEST.json"}, expected | {"BUILD-MANIFEST.json", "ACCEPTANCE.json"}):
+    sealed = expected | {"BUILD-MANIFEST.json"}
+    if actual not in (sealed, sealed | {"ACCEPTANCE.json"},
+                      sealed | {"ACCEPTANCE.json", "RELEASE-SHA256SUMS.txt"},
+                      sealed | {"ACCEPTANCE.json", "RELEASE-SHA256SUMS.txt", "QUALIFICATION.json", "QUALIFICATION-PROOFS.tar.gz"}):
         raise ValueError("missing or unexpected downloaded artifacts")
     for item in records:
         path = artifacts / item["name"]
@@ -100,7 +105,7 @@ def verify_build(directory, source, artifacts, version):
     return dict(policy=POLICY, source_commit=source, artifact_version=version,
                 local_validation_sha256=sha(directory / "LOCAL-VALIDATION.json"),
                 build_manifest_sha256=sha(artifacts / "BUILD-MANIFEST.json"),
-                user_platform_testing=report["user_platform_testing"])
+                platform_acceptance=report["platform_acceptance"])
 
 
 def run(args):
@@ -140,8 +145,9 @@ def run(args):
         print(f"{name}: exit={result.returncode}", flush=True)
         if result.returncode:
             raise RuntimeError(f"{name} failed; see {log}")
-    report = dict(schema_version=1, policy=POLICY, source_commit=source, run=env["AUDIT_RUN"],
-                  result="FAIL", checks=checks, user_platform_testing=["windows", "linux", "macos", "android"])
+    report = dict(schema_version=2, policy=POLICY, source_commit=source, run=env["AUDIT_RUN"],
+                  result="FAIL", checks=checks,
+                  platform_acceptance=dict.fromkeys(("windows", "linux", "macos", "android"), "UNVERIFIED"))
     try:
         step("rust", """rustc -Vv
 cargo fmt --all -- --check

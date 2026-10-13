@@ -3,7 +3,7 @@
 机器可读事实来源：`release/acceptance-v2.0.0.json`（schema 2）。
 发布决定：`release/qualification-v2.0.0.json`。
 
-## 当前范围
+## v2.0.0 历史范围（不得沿用于新发布）
 
 - 产品源提交：`2c54d99f3a6f0792cf345450186dddc7b490325c`。
 - 正式版从 `2.0.0-rc.3` 原样晋升，不重新构建安装包。
@@ -18,7 +18,7 @@
 - 原 RC.1 记录原字节保存在 `release/history/acceptance-v2.0.0-rc.1.json`，
   不把其中的旧 PASS 套用到本次产物，也不沿用历史 Android N/A。
 
-## 当前逐平台人工验收项
+## v2.0.0 逐平台人工验收记录
 
 PASS 需要对应平台证据和验证时间；FAIL 不可被此策略覆盖；
 UNVERIFIED 表示未验。当前 schema 2 的训练器生命周期覆盖四个平台，
@@ -40,80 +40,70 @@ UNVERIFIED 表示未验。当前 schema 2 的训练器生命周期覆盖四个�
 | 训练器练习、进度、备份和重启恢复 | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED |
 | 隐私（本地运行、无遥测） | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED |
 
-## 原字节晋升契约(Phase 1A / F02)
+## 当前发布契约：独立版本构建与重新验收
 
-这是当前工作流实际执行的契约,不是对上述历史记录补造证据。
+以上 v2.0.0 记录保留历史事实，不是后续版本的授权或验收。
+新正式版不能通过重命名旧 RC 附件发布，不能继承旧平台 PASS 或豁免。
 
-### 构建封存
+### 先构建，再验收同一批字节
 
-签名 RC 的产品打包完成后,`xhup-cli seal-build --version <x.y.z-rc.N>
---source-commit <40位SHA> --artifacts-dir <dir>` 生成
-`BUILD-MANIFEST.json`。此命令不会覆盖已存在的清单,只接受完整的
-8 个发布包 + `SHA256SUMS.txt`、`CANONICAL-SHA256SUMS.txt`、
-`BUILD-INFO.txt`;名称排序、SHA256 流式计算,同源同字节输出相同。
+1. 将 Cargo workspace、Tauri、Trainer、小程序和 trainer-core 的完整版本统一到
+   目标版本。`check_product_version.py` 在所有平台构建之前拒绝版本覆盖和漂移。
+2. RC 由 RC Release 工作流构建；正式版本先独立运行 Product Packaging，
+   开启 `sign_android`、`arm64_default`。Windows/macOS 签名状态仍须如实记录。
+3. 打包完成时 `xhup-cli seal-build` 写入不可覆盖的 `BUILD-MANIFEST.json`
+   （schema 2）。固定清单为 8 个包和 SHA256SUMS、CANONICAL-SHA256SUMS、
+   BUILD-INFO 三个元数据文件。每个文件必须存在、非空、非符号链接，字节 SHA-256 受约束。
+4. `xhup-cli init-acceptance` 重新核对实际封存目录，生成 schema 3 验收模板；
+   所有平台初始为 UNVERIFIED，不读取旧验收记录。模板作为独立
+   `release-acceptance-template` artifact 下载，不混入已封存负载。
+5. 对这些准确字节完成真实平台验收，然后提交 `release/acceptance-v<core>.json`
+   和 `release/qualification-v<version>.json`。验收记录提交可以晚于产品构建；
+   `source_commit` 必须仍指向实际构建源码，不是记录提交。
 
-清单 schema 1 包含 `schema_version`、`version`、`source_commit`、
-`artifacts: [{name, sha256}]`。源码 SHA 绑定代码、锁文件和数据版本;
-已有 BUILD-INFO/规范哈希文件也作为受哈希的附件保留。这不是签名证明、
-工具链可复现性证明或新增通用溯源系统。unsigned RC 演练不封存为可晋升工件。
+产品版本升级后必须重新构建和重新验收。验收完成后则不能再次打包：
+时间戳、签名或其他构建差异都可能改变字节，不能用“源码基本相同”替代身份验证。
 
-### 新验收记录(schema 2)
+### schema 3 平台收据
 
-保留原顶层字段及平台检查键,仅新增:
-- 顶层 `build_manifest_sha256`:已受验 BUILD-MANIFEST.json **原始字节**
-  的 64 位小写 SHA256;
-- 平台 `runtime`:受验 librime、Lua(或明确无 Lua)、客户端及版本;
-- 平台 `exemptions`:保留的历史字段；当前 schema 2 不接受豁免，应为空对象。
+顶层保留 `version`、`source_commit`、`build_manifest_sha256`、完整 `artifacts`
+和四个平台的十二个检查项。正式版的 `accepted_rc` 仅记录同 core 的前序 RC，
+不代表其字节或平台验收可被继承。
 
-`version` 是目标 stable `x.y.z`,`accepted_rc` 必须是同 core 的规范
-`x.y.z-rc.N`(N >= 1,不允许前导零、构建后缀或子串匹配)。
-`source_commit` 是接受 RC 的完整小写 SHA,不是文档更新提交。
-`artifacts` 必须与构建清单的全部 11 个文件名/摘要精确相同。
+任何 PASS 平台收据必须有：
 
-四个平台各出现一次,各包含现有 12 个检查键,不得新增未知平台/检查键。
-默认完整平台门禁要求必查项 PASS；当前 schema 2 不接受 N/A，
-Android 的训练器生命周期也要实际验收。历史 schema 1 的桌面控制中心豁免
-只用于读取旧记录，不能作为当前稳定晋升证据。明确授权的平台待验策略
-可保留 UNVERIFIED，但不得将失败或未测改写为 PASS。
-每个平台的 PASS 必须附非空 `evidence` 和真实有效的 UTC
-`verified_at`(`YYYY-MM-DDTHH:MM:SSZ`,校验日历日期)。
-来源、平台/架构/客户端/运行时身份均不可为空。
-这些字段记录审阅后的证据,程序不能替人验证日志/截图是否真实或覆盖完整。
+- `tested_build.version`：当前产物的完整版本；
+- `tested_build.source_commit`：当前构建源码 SHA；
+- `tested_build.build_manifest_sha256`：受验封存清单原始字节的 SHA-256；
+- 实际 `frontend`、`os`、`architecture`、`runtime`；
+- 非空 `evidence` 和有效 UTC `verified_at`。
 
-### 工作流与 CLI 强制边界
+前三项必须与顶层身份完全一致。正式版全部检查项均须 PASS；
+FAIL、UNVERIFIED、N/A、旧 schema、缺失证据均阻塞，没有平台豁免选项。
+程序能验证绑定和结构，不能替维护者证明截图、日志或人工操作真实。
 
-`validate-acceptance --stable` 必须同时传
-`--expect-version`、`--expect-source`、`--artifacts-dir`;
-缺少外部绑定参数直接拒绝,没有默认 stable 版本。
-`--expect-source` 必须来自接受 RC tag 的独立解析,不能复制 JSON 声明。
+### 发布时的独立证明
 
-发布工作流:
-1. RC 仍允许 UNVERIFIED;拒绝 FAIL、非法结构和未允许的 N/A。
-   schema 1 的 Android 生命周期理由缺失仅在历史 RC 预检容忍。
-   历史清单若版本/源 SHA 不匹配当前 RC,发布说明所有平台显示 UNVERIFIED。
-2. stable **不重新打包**。从非 draft 的 prerelease 接受 RC 下载全部附件,
-   经 GitHub commit API 解析 tag 到源提交,验证清单哈希、源、版本、全部
-   附件的实际字节、集合完整性,拒绝多余文件、空文件和符号链接。
-3. 只上传验证后的 payload 供发布 job 消费。任何门禁失败都不能创建 stable
-   草稿;演练同样执行门禁。stable tag 指向 RC 的源 SHA。
-4. 附件名和应用内嵌版本**保持 RC 原样**;stable 是这些字节的正式发布标签,
-   不伪装为重编译的 stable 二进制。若必须改变内嵌版本,此路径不支持,
-   必须另行设计/审核等价证明,当前不允许绕过。
-5. `ACCEPTANCE.json` 单独附带此次审阅记录,不纳入构建清单以避免循环哈希。
-   已下载 RC 的旧 ACCEPTANCE.json 仅在隔离附件目录中替换;构建字节不修改。
+正式发布传入独立 `package_run`。工作流从 GitHub 获取其真实源码 SHA，
+拒绝失败、其他工作流、其他仓库、非 main 或非 workflow_dispatch 的构建；
+下载完整六组产物并拒绝重复文件；来源校验只使用可信源码构建的校验器，不运行附件提供的程序。
+前序 RC 必须已公开，正式源码必须在其后，不能用同一 RC 提交冒充正式源码。
 
-已有 rc.1/rc.2 若没有封存清单不能 retroactively 自动晋升。不得仅对旧附件
-重新计算摘要并宣称它们已经受验;需要新 RC 封存及真实 schema 2 证据。
-当前历史记录不能使 GA 门禁通过,未执行平台继续 UNVERIFIED。
+随后核验 schema 3、当前版本、构建清单、真实附件字节、完整平台收据，
+以及[同源 CI 与全量原生证明](runtime-qualified-release.md)。全部通过才创建草稿。
+tag 指向实际产品构建 SHA，附件名和内部版本均为目标版本。
+RC 发布则生成当前构建的新 UNVERIFIED 收据，不复制历史 PASS。
 
-### 可执行回归
+`ACCEPTANCE.json`、正式版资格记录和证明在封存验证后附加，避免循环哈希。
+原 `SHA256SUMS.txt` 不再改写；`RELEASE-SHA256SUMS.txt` 覆盖公开附件及新增元数据
+（不包含校验和文件自身）。已经公开的同名 tag/Release 不覆盖。
 
-- `cargo test -p xhup-cli --test acceptance_provenance`:合成附件正向对照、
-  F02 全 N/A/假 SHA/无关 RC/缺证据重现,实际字节/清单/集合篡改与 CLI 参数。
-- `cargo test -p xhup-cli --test acceptance_doc_sync`:历史记录及表格一致性。
-- `tests/release/test_acceptance_workflow.py`:实际 prepare shell 块,
-  使用真实 CLI 和隔离模拟 GitHub(无网络);覆盖 RC/演练/stable 分支及失败门禁。
-  Unix Rust integration test 自动调用;单跑时指定 `XHUP_CLI` 为构建后的 CLI。
-- `python3 tests/release/check_workflow_shell.py`:工作流 shell 语法。
+### 验证入口
 
-这些是发布契约测试,不冒充 GitHub 真实发布、签名或四平台验收。
+- `cargo test -p xhup-cli --lib acceptance`
+- `cargo test -p xhup-cli --test acceptance_provenance`
+- `python3 tests/release/test_product_version.py`
+- `XHUP_CLI=<已构建CLI> python3 tests/release/test_acceptance_workflow.py`
+- `python3 tests/release/check_workflow_shell.py`
+
+合成附件和模拟 GitHub 仅验证拒绝边界，不是签名、平台或真实发布验收。

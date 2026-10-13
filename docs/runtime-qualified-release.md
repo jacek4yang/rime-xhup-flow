@@ -1,48 +1,55 @@
-# 显式底层运行时资格发布策略
+# 正式版完整平台与同源运行时资格
 
-默认 `full-platform` 模式不变：稳定版要求完整平台验收。另一个模式
-`runtime-qualified-user-platform-testing-v1` 仅供仓库所有者明确授权发布，
-不是“所有平台测试通过”，也不是通用跳过检查开关。
+当前策略为 `full-platform-rebuilt-release-v1`。它补充平台验收，不能豁免平台验收。
+v2.0.0 的 `runtime-qualified-user-platform-testing-v1` 是历史特批；
+旧记录保留，但新工作流已移除此选项，旧授权不能用于新版本。
 
-## 必须满足的门禁
+## 两阶段发布
 
-- 仍从已公开、非 draft、同主版本的 RC 晋升原字节；不重编产品，内嵌版本仍为 RC。
-- 独立解析 RC 标签的源 SHA，逐项核验 schema 2、完整工件列表、sealed
-  BUILD-MANIFEST 与实际下载附件大小/SHA256；任何 FAIL 仍拒绝发布。
-- CI、Full Regression、RC Release 三次不同成功运行，均绑定同一 RC 源 SHA，
-  来自本仓库 main 的 push 或 workflow_dispatch；不接受 PR、其他仓库或其他源。
-- CI 六个必需任务全部成功，拒绝缺失/分页截断/跳过/不同源的任务。
-- 下载完整 native-audit-input、16 个分区的原始日志和收据；使用现有收集器重新
-  `collect`，然后逐字段比较发布的 coverage.json，校验 revision/run attempt。
-  不接受只有摘要或“总运行绿了”。全量静态、扩展词和开放组合覆盖仍是必需项。
-- 工作流从 GitHub 独立获取仓库 owner，必须等于实际 github.actor。
-  审批记录的 approved_by 不能代替工作流身份检查。
-- 授权记录与验收清单中的 UNVERIFIED 平台集合必须完全一致且非空；
-  未验项目原样保留，未知状态、重复平台、无理由 N/A 等旧校验继续有效。
+1. 在 main 固定目标**正式版本**源码，统一全部产品版本。
+2. 对同一完整 SHA 运行 CI、Full Regression 和独立 Product Packaging；
+   打包启用 Android 发布签名及 ARM64 主包，得到正式版本的准确字节。
+3. 下载封存包和 `release-acceptance-template`，对这些字节执行各平台实际验收。
+   未具备硬件、权限或签名条件时保留 UNVERIFIED；不得假装签名或平台验证已完成。
+4. 提交真实验收及资格记录。随后 dispatch RC Release，传入正式 `version`、
+   `package_run` 与 `publish=true`。该阶段只核验和发布已验收字节，不再次构建。
 
-## 授权记录（不是平台证据）
+产品、manifest 与 tag 版本必须一致。前序 RC 只用于记录版本关系；
+正式源码必须在已公开 RC 源码之后，不复用 RC 安装包。
+构建附件保留 30 天；过期或丢失时必须重新构建并重新验收，不能补造旧字节身份。
 
-真实 RC 和成功运行出现后，提交 `release/qualification-v<VERSION>.json`：
+## 必需证明
 
-- `schema_version: 1`，`policy: runtime-qualified-user-platform-testing-v1`；
-- `version`、`accepted_rc`、`source_commit`、`build_manifest_sha256`：实际精确绑定；
-- `repository`、`approved_by`、`approved_at`（UTC）：实际上下文与授权时间；
-- `rationale`、非空 `limitations`：真实授权范围及已知限制；
-- `user_testing_platforms`：验收清单中仍有 UNVERIFIED 的平台；
-- `ci_run`、`runtime_run`、`package_run`：三个实际 GitHub Actions 运行 ID。
+- [schema 3 平台收据](platform-acceptance.md)：四个平台全部检查项 PASS，
+  `tested_build` 与当前版本、源码及 BUILD-MANIFEST 摘要一致。FAIL、UNVERIFIED、
+  N/A、旧 schema、无证据均拒绝。
+- CI、Full Regression、Product Packaging 三次不同成功运行，来自本仓库 main，
+  精确绑定同一构建 SHA；打包必须是独立 workflow_dispatch。
+- CI 六个必需任务全部成功，拒绝缺失、分页截断、跳过和不同源任务。
+- 下载完整 native-audit-input、16 个分区的原始日志和收据，用现有收集器重新
+  collect，比较 coverage.json，并核验 revision/run attempt。
+  全量 Static、Extended 和 OOV 覆盖不能用 focused 回放替代。
+- 独立读取 GitHub repository owner，并匹配实际 github.actor；
+  JSON 中的 `approved_by` 不能替代工作流身份。
+- 当前版本 BUILD-MANIFEST schema 2、全部封存文件实际字节和精确清单均通过验证。
+  来源校验不执行附件提供的程序；实际平台使用验收另在目标环境中运行受验安装包。
 
-本实现不生成占位审批或虚假 PASS。合成 fixtures 仅用于测试。
-工作流 dispatch 显式选择策略，默认仍为 full-platform；选择新模式不会改变
-源 RC 内容或平台状态。稳定版附加 QUALIFICATION.json 与
-QUALIFICATION-PROOFS.tar.gz，Release 正文明示范围和各平台状态。
+## 资格记录
 
-## 限制与用户测试
+`release/qualification-v<VERSION>.json`：
 
-Windows/macOS 人工安装与真实输入法体验由用户验证，不能使用跨平台编译或
-打包成功替代。Windows/macOS 未签名，macOS 未公证；Android 只沿用既有
-签名密钥链，不替换密钥。Linux 虚拟 Fcitx 输入实验尚未通过，底层 librime
-通过并不证明真实桌面输入上下文正常。本次任务明确不把该图形实验作为发布门禁。
+- `schema_version: 2`，`policy: full-platform-rebuilt-release-v1`；
+- `version`、`accepted_rc`、`source_commit`、`build_manifest_sha256`；
+- `repository`、`approved_by`、真实 UTC `approved_at`；
+- `rationale`、非空 `limitations`，如尚未提供桌面签名，但不得将未验平台列为豁免；
+- `ci_run`、`runtime_run`、`package_run`，且 package_run 等于 dispatch 输入。
 
-独占仅指 Rime 方案选单，不删除系统输入法。安装原配置替换、备份和卸载恢复
-须按安装文档执行；手动安装需要自行保管原 default.custom.yaml。
-历史完整平台验收和本策略不得混写，任何新源提交均须重新取得同源证明。
+记录是审阅决定，不制造 PASS。正式版附加 QUALIFICATION.json 和
+QUALIFICATION-PROOFS.tar.gz，另以 RELEASE-SHA256SUMS.txt 覆盖公开附件。
+生成草稿不代表已经公开；维护者仍须核对当前资产、版本、限制与下载后哈希。
+
+## 验收边界
+
+Linux librime 回放不能证明 Windows Weasel、macOS Squirrel 或 Android 前端实际输入正常。
+编译、合成 DOM、虚拟组件宿主也不能替代当前安装包的真实目标平台验收。
+不能要求用户关闭系统安全防护。正式门禁未满足时，只能保留草稿或发布如实标注的 RC。
