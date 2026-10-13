@@ -26,7 +26,7 @@ import type {
 import { HAPTICS_MODES } from "@xhup/trainer-core";
 import { appStore, actions, useAppState } from "../../lib/store";
 import { useI18n } from "../../lib/i18n";
-import { dataset } from "../../lib/dataset";
+import { useTrainerData, withTrainerData } from "../../lib/trainer-data";
 import { ROUTES, navigateTo } from "../../lib/navigation";
 
 /** 提示方式全集(核心未导出枚举表;与 HintMode 一一对应)。 */
@@ -55,7 +55,8 @@ const ERROR_TEACHING_LABELS: Record<ErrorTeachingMode, Parameters<ReturnType<typ
   detailed: "practice.errorTeaching.detailed",
 };
 
-export default function Settings() {
+function Settings() {
+  const { dataset } = useTrainerData();
   const state = useAppState();
   const { t } = useI18n();
   const [exported, setExported] = useState(false);
@@ -234,3 +235,5 @@ export default function Settings() {
     </View>
   );
 }
+
+export default withTrainerData(Settings);

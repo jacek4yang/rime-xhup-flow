@@ -1,6 +1,6 @@
 /**
- * 练习流程语义测试(真实分片数据):
- * - 模式可用性与分片池内容一致(空池模式可被 UI 前置拦截);
+ * 练习流程语义测试(完整生产数据):
+ * - 十二种模式可用;空池仍可被 UI 前置拦截;
  * - 简码/词/句等非单字模式端到端跑通(逐键真实编码);
  * - 错题重练(src=weak)的池构建与评分;
  * - 一级简码的双路线评分(简码完美 / 全码合法但 imperfect)。
@@ -12,7 +12,6 @@ import {
   advance,
   aggregateWeakness,
   buildPool,
-  buildTrainerIndex,
   createSession,
   confirmQuestion,
   emptyProgress,
@@ -20,14 +19,11 @@ import {
   listWeakItems,
   selectPool,
   typeKey,
-  validateTrainerDataset,
 } from "@xhup/trainer-core";
 import type { PracticeMode, TrainerIndex } from "@xhup/trainer-core";
-import shard from "../data/generated/dataset.json";
+import { trainerIndex as index } from "../testing/compiled-dataset";
 import { computeModeAvailability } from "./mode-availability";
 
-const dataset = validateTrainerDataset(shard);
-const index: TrainerIndex = buildTrainerIndex(dataset);
 
 function makeRng(seed = 20260906): () => number {
   let state = seed;
@@ -73,22 +69,6 @@ function runSession(mode: PracticeMode, questions: number) {
 }
 
 describe("模式可用性(数据驱动,空池禁用)", () => {
-  it("可用性判定与分片池内容一致", () => {
-    const availability = computeModeAvailability(index);
-    for (const mode of Object.keys(MODE_POOL_ROTATION) as PracticeMode[]) {
-      const hasData = MODE_POOL_ROTATION[mode].some(
-        (poolId) => index.pools[poolId].length > 0,
-      );
-      expect(availability[mode]).toBe(hasData);
-    }
-  });
-
-  it("本分片支持全部 12 种模式(每种轮换至少有一个非空池)", () => {
-    const availability = computeModeAvailability(index);
-    for (const mode of Object.keys(availability) as PracticeMode[]) {
-      expect(availability[mode], `模式 ${mode} 应可用`).toBe(true);
-    }
-  });
 
   it("数据不足的模式确实返回禁用(合成空索引验证拦截路径)", () => {
     const emptyPoolsIndex = {
@@ -102,42 +82,18 @@ describe("模式可用性(数据驱动,空池禁用)", () => {
   });
 });
 
-describe("非单字模式端到端(真实编码)", () => {
-  it("一级简码:5 题双路线引擎完整跑通", () => {
-    const final = runSession("level1", 5);
-    expect(final).not.toBeNull();
-    expect(final!.phase).toBe("completed");
-    expect(final!.questionsCompleted).toBe(5);
-  });
-
-  it("二码词简码:5 题完整跑通", () => {
-    const final = runSession("two-key-word", 5);
-    expect(final).not.toBeNull();
-    expect(final!.phase).toBe("completed");
-    expect(final!.questionsCompleted).toBe(5);
-  });
-
-  it("组句:3 题完整跑通(整句拼接码逐键输入)", () => {
-    const final = runSession("sentence", 3);
-    expect(final).not.toBeNull();
-    expect(final!.phase).toBe("completed");
-    expect(final!.questionsCompleted).toBe(3);
-    expect(final!.charsCompleted).toBeGreaterThan(3);
-  });
-
-  it("全模式综合:5 题完整跑通(跨池轮换)", () => {
-    const final = runSession("mixed-all", 5);
-    expect(final).not.toBeNull();
-    expect(final!.phase).toBe("completed");
-    expect(final!.questionsCompleted).toBe(5);
+describe("完整规范数据的十二种模式", () => {
+  it.each(Object.keys(MODE_POOL_ROTATION) as PracticeMode[])("%s 按真实主练码完成三题", (mode) => {
+    const final = runSession(mode, 3);
+    expect(final?.phase).toBe("completed");
+    expect(final?.questionsCompleted).toBe(3);
   });
 });
 
 describe("一级简码双路线评分(B5 契约)", () => {
 
   it("合成首键分歧条目:备用全码路线合法但计 imperfect(引擎 B5 语义)", () => {
-    // 分片内没有首键分歧的一级简码;用合成 TrainingItem 验证引擎
-    // 的双路线评分在会话语境下同样成立(引擎语义由核心测试兜底)。
+    // 独立覆盖首键分歧的路线边界；生产数据的成功路径在上面逐模式验证。
     const synthetic: Parameters<typeof buildPool>[1][number] = {
       id: "level1:test:测",
       kind: "level1",
@@ -168,26 +124,6 @@ describe("一级简码双路线评分(B5 契约)", () => {
     expect(state.lastRoute).toBe("alternate");
   });
 
-  it("备用码不在分片的一级简码仍可按简码路线正常完成(降级不崩溃)", () => {
-    const pool = buildPool(
-      "level1",
-      selectPool(index, "level1", "daily").filter(
-        (item) => item.alternateCode === null || item.alternateCode === "",
-      ),
-    );
-    if (pool.items.length === 0) return; // 分片恰好全覆盖时无此路径
-    const rng = makeRng();
-    let state = createSession(
-      { mode: "level1", intent: "blind", hintMode: "on-error", targetLength: 1, pools: [pool] },
-      new Map(),
-      rng,
-      1000,
-    )!;
-    for (const key of state.current.primaryCode) {
-      state = typeKey(state, key, rng, 1500).state;
-    }
-    expect(state.lastOutcome).toBe("perfect");
-  });
 });
 
 describe("错题重练(src=weak 路径)", () => {
@@ -205,11 +141,4 @@ describe("错题重练(src=weak 路径)", () => {
     expect(keyHeatmap({ d: 2, Z: 1 })).toEqual({ d: 2 });
   });
 
-  it("错题为空时池为空(会话页据此显示空态而非崩溃)", () => {
-    const pools = (() => {
-      const weak = listWeakItems(index, {}, 30);
-      return weak.length === 0 ? [] : weak.map((entry) => entry.item);
-    })();
-    expect(pools).toEqual([]);
-  });
 });

@@ -14,13 +14,14 @@ import {
   formatPercent,
   localDateKey,
 } from "@xhup/trainer-core";
-import { dataset, trainerIndex } from "../../lib/dataset";
+import { useTrainerData, withTrainerData } from "../../lib/trainer-data";
 import { useAppState } from "../../lib/store";
 import { useI18n } from "../../lib/i18n";
 import { ROUTES, navigateTo, switchTab } from "../../lib/navigation";
 import { StatChip } from "../../components/StatChip";
 
-export default function Home() {
+function Home() {
+  const { dataset, trainerIndex } = useTrainerData();
   const state = useAppState();
   const { t } = useI18n();
   const [, setTick] = useState(0);
@@ -37,10 +38,7 @@ export default function Home() {
     () => Object.values(state.progress).filter((p) => p.wrong > 0).length,
     [state.progress],
   );
-  const entryCount =
-    trainerIndex.frequencySorted["char-2"].length +
-    trainerIndex.frequencySorted["char-3"].length +
-    trainerIndex.frequencySorted["char-4"].length;
+  const entryCount = trainerIndex.chars.length;
 
   return (
     <View className="page">
@@ -149,3 +147,5 @@ export default function Home() {
     </View>
   );
 }
+
+export default withTrainerData(Home);

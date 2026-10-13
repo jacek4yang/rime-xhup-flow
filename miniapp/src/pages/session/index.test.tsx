@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
-import type { HTMLAttributes } from "react";
+import type { ComponentType, HTMLAttributes } from "react";
 import { createElement } from "react";
 
 const host = vi.hoisted(() => ({
@@ -23,11 +23,15 @@ vi.mock("@tarojs/components", () => ({
   Text: (props: HTMLAttributes<HTMLSpanElement>) => createElement("span", props),
   ScrollView: ({ scrollY: _scrollY, ...props }: HTMLAttributes<HTMLDivElement> & { scrollY?: boolean }) => createElement("div", props),
 }));
+vi.mock("../../lib/trainer-data", () => ({
+  withTrainerData: (Page: ComponentType) => Page,
+  useTrainerData: () => compiledTrainerData,
+}));
 
 import Session from "./index";
 import { appStore } from "../../lib/store";
 import { defaultAppState } from "../../lib/state-schema";
-import { trainerIndex } from "../../lib/dataset";
+import { compiledTrainerData, trainerIndex } from "../../testing/compiled-dataset";
 import { emptyProgress } from "@xhup/trainer-core";
 
 beforeEach(() => {

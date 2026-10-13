@@ -9,12 +9,13 @@ import { View, Text } from "@tarojs/components";
 import {
   buildShapeKeyStats,
 } from "@xhup/trainer-core";
-import { dataset, trainerIndex } from "../../lib/dataset";
+import { useTrainerData, withTrainerData } from "../../lib/trainer-data";
 import { useAppState } from "../../lib/store";
 import { useI18n } from "../../lib/i18n";
 import { pageParam } from "../../lib/navigation";
 
-export default function KeyDetail() {
+function KeyDetail() {
+  const { dataset, trainerIndex } = useTrainerData();
   const state = useAppState();
   const { t } = useI18n();
   const language = state.settings.language;
@@ -40,7 +41,7 @@ export default function KeyDetail() {
     );
     const shapeStat =
       buildShapeKeyStats(dataset.entries).find((stat) => stat.key === key) ?? null;
-    // 含该键的全码例字(教学演示:完整编码来自分片)。
+    // 含该键的全码例字，全部来自完整规范数据。
     const examples = trainerIndex.dataset.entries
       .filter((entry) => entry.code.includes(key))
       .slice(0, 8);
@@ -151,9 +152,11 @@ export default function KeyDetail() {
         </Text>
         <Text className="subtitle">{t("keyDetail.errorsNote")}</Text>
         <Text className="subtitle">
-          {language === "en" ? "Data: canonical shard." : "数据:规范分片(高频子集)。"}
+          {language === "en" ? "Data: complete canonical Trainer dataset." : "数据:完整规范 Trainer 数据集。"}
         </Text>
       </View>
     </View>
   );
 }
+
+export default withTrainerData(KeyDetail);

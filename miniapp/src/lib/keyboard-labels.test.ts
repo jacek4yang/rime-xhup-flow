@@ -1,16 +1,13 @@
 /**
- * 键帽标签推导测试:全部标签来自真实规范分片数据;无数据的键留空;
+ * 键帽标签推导测试:全部标签来自完整规范数据;无数据的键留空;
  * 韵母缩写规则与桌面端一致(多个韵母 = 首个 + "+")。
  */
 
 import { describe, expect, it } from "vitest";
-import shard from "../data/generated/dataset.json";
-import { validateTrainerDataset } from "@xhup/trainer-core";
+import { dataset } from "../testing/compiled-dataset";
 import { KEY_ROWS, buildKeyLabels, compactFinals, compactInitials } from "./keyboard-labels";
 
-const dataset = validateTrainerDataset(shard);
-
-describe("buildKeyLabels(规范分片数据)", () => {
+describe("buildKeyLabels(完整规范数据)", () => {
   it("QWERTY 三行覆盖全部 26 个字母键,无重复", () => {
     const keys = KEY_ROWS.flat();
     expect(keys).toHaveLength(26);
