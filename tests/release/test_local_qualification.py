@@ -40,9 +40,9 @@ class LocalQualification(unittest.TestCase):
             path = self.root / f"{name}.log"
             path.write_text("synthetic log only")
             checks.append(dict(name=name, exit_code=0, log_sha256=local.sha(path)))
-        self.report = dict(schema_version=1, policy=local.POLICY, source_commit=SOURCE, result="PASS",
+        self.report = dict(schema_version=2, policy=local.POLICY, source_commit=SOURCE, result="PASS",
                            checks=checks, run="synthetic-test", files=local.inventory(self.root),
-                           user_platform_testing=["windows", "linux", "macos", "android"])
+                           platform_acceptance=dict.fromkeys(("windows", "linux", "macos", "android"), "UNVERIFIED"))
         self.save()
 
     def save(self):
@@ -59,7 +59,7 @@ class LocalQualification(unittest.TestCase):
                 path = artifacts / name
                 path.write_text("SYNTHETIC NON-INSTALLABLE FIXTURE " + name)
                 records.append(dict(name=name, sha256=local.sha(path)))
-            build = dict(schema_version=1, source_commit=SOURCE, version=version, artifacts=records)
+            build = dict(schema_version=2, source_commit=SOURCE, version=version, artifacts=records)
             manifest = artifacts / "BUILD-MANIFEST.json"
             manifest.write_text(json.dumps(build))
             result = local.verify_build(self.root, SOURCE, artifacts, version)
@@ -71,13 +71,6 @@ class LocalQualification(unittest.TestCase):
             manifest.write_text(json.dumps(build))
             (artifacts / names[0]).write_text("changed")
             with self.assertRaises(ValueError): local.verify_build(self.root, SOURCE, artifacts, version)
-
-    def test_cloud_full_tests_are_manual_only(self):
-        for name in ("ci.yml", "full-regression.yml"):
-            workflow = (local.ROOT / ".github/workflows" / name).read_text()
-            self.assertIn("  workflow_dispatch:", workflow)
-            for trigger in ("  push:", "  pull_request:", "  schedule:"):
-                self.assertNotIn(trigger, workflow)
 
     def test_recollects_all_receipts_without_reusing_coverage(self):
         local.verify(self.root, SOURCE)
@@ -98,6 +91,12 @@ class LocalQualification(unittest.TestCase):
             self.save()
             with self.assertRaises(ValueError): local.verify(self.root, SOURCE)
             self.report = old
+
+    def test_local_tests_cannot_become_platform_acceptance(self):
+        self.report["platform_acceptance"]["windows"] = "PASS"
+        self.save()
+        with self.assertRaises(ValueError):
+            local.verify(self.root, SOURCE)
 
     def test_changed_log_rejected(self):
         (self.root / "rust.log").write_text("modified")

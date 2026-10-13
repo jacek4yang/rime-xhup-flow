@@ -185,60 +185,56 @@ Cargo 使用隔离 target;配额失败后还将 TMPDIR 指向磁盘隔离目录,
   见 `docs/performance-baseline.md`);运行时帧内指标未建立,列为
   已知限制而非阻塞。
 
-## 打包矩阵与签名状态
+## 当前打包矩阵与签名状态
 
 - Windows:NSIS + MSI(UNSIGNED);
 - macOS:universal DMG(UNSIGNED / UNNOTARIZED);
 - Linux:deb + rpm;AppImage 暂不构建;
 - Android:**arm64-only APK(主产物,SIGNED)** + universal APK
   (兼容附加,SIGNED);versionCode 单调派生;
-- 平台中立 Rime 源包 zip(stable 原字节晋升时内嵌版本保持接受 RC);
+- 平台中立 Rime 源包 ZIP，文件名、schema 和目标产品版本一致；
 - 封存与验收:`BUILD-MANIFEST.json` / `ACCEPTANCE.json`;
 - 原有清单三件套:`SHA256SUMS.txt` / `CANONICAL-SHA256SUMS.txt` /
   `BUILD-INFO.txt`(逐产物如实标注签名状态);
-- 签名策略(#148 §9):不以 Windows/macOS 签名缺失阻塞 GA;
-  元数据如实标注;绝不为发布弱化 OS 安全控制或提交签名凭据。
+- `RELEASE-SHA256SUMS.txt` 额外覆盖当前验收、来源及资格附件；
+- Windows/macOS 签名、公证状态如实标注；外部要求及真实平台验收仍须满足，
+  不自动继承历史豁免，不弱化 OS 安全控制或提交签名凭据。
 
-## 平台验收(#148 §4)
+## 当前平台验收
 
-- 唯一事实来源:`release/acceptance-v2.0.0.json`(schema_version 1,
-  状态严格四档 PASS/FAIL/UNVERIFIED/N/A);
-- 文档映射:`docs/platform-acceptance.md` 由 doc-sync 测试机械约束;
-- 四平台 × 12 检查项(干净安装/升级/部署/静态冒烟/Flow 组句/学习
-  持久化/OOV/两开关中性/static 回退/Trainer 生命周期/隐私);
-- RC 发布(publish=true,`*-rc.N`)允许 UNVERIFIED;**稳定发布
-  (publish=true,`2.0.0`)要求 schema 2 必查 PASS、唯一有理由 Android N/A、
-  精确源/构建清单/附件字节绑定**,
-  失败逐行输出阻塞平台/检查项,无人工绕过(#148 §3);
-- 硬件不可用的平台保持 UNVERIFIED 并如实列为外部阻塞;CI 构建成功
-  不冒充真机验证。
+- 当前正式发布使用 schema 3 收据；v2.0.0 的历史 JSON 保留但不能晋升为新证据。
+- 四平台 × 12 检查项，全部 PASS 才可正式发布；不接受 N/A 或平台待验豁免。
+- PASS 的版本、源码 SHA、BUILD-MANIFEST 摘要必须由每个平台的 `tested_build`
+  再次明确绑定，并提供实际前端/运行时、证据和有效 UTC 时间。
+- RC 当前构建的新收据初始全部 UNVERIFIED，不复制旧 PASS。
+- 硬件、权限或签名条件不足时如实记录阻塞；CI 编译、原生 API 和 DOM
+  测试不能冒充真实平台验收。完整规则见 [platform-acceptance.md](platform-acceptance.md)。
 
 ## 已知限制与待验收项（不自动豁免发布门禁）
 
 - 学习导出/导入依赖 `rime_dict_manager`(同 v1);
 - AppImage、微信小程序 Release 附件不在矩阵(同 v1);
 - Android 运行时帧内指标(内存/延迟)未建立基线;
-- `joint_decoder` 不属于支持的实时能力；完整联合解码保留为研究方向；
+- 联合解码上线需单独通过质量、性能与平台门禁；未通过不得宣称生产成熟；
 - `context_ranker`/会话 `user_memory` 保持可选且默认关闭，不另写持久快照。
 
-## RC → GA 晋升规则(#148 §7/§8)
+## 当前 RC → 正式版流程
 
-1. 最终 RC 验证后冻结 shipped 内容;发现缺陷 → PR + CI/Full
-   Regression → 递增 `2.0.0-rc.N` 重切,受影响验收重跑;
-   **文档/证据类变更不需重切**;
-2. GA:`publish=true, version=2.0.0` 仅原字节晋升已接受 RC,不重建;
-   schema 2 绑定确切源 SHA、BUILD-MANIFEST.json 摘要及完整附件,
-   独立解析 RC tag 并校验实际下载字节;详见 `docs/platform-acceptance.md`。
-   历史 schema 1 不满足此门禁;附件名称及内嵌版本保持 RC;
-3. 创建 `xhup-flow-v2.0.0` 草稿(非 prerelease),发布说明的
-   平台状态取自清单真实数据;人工复核后发布;
-4. 全程无人工绕过;最终证据回填 #83。
+1. 最终 RC 固定源码与封存字节；代码或产品内容变化须新建 RC 并重跑受影响验收。
+2. 正式版统一升级全部源码版本，独立运行 Product Packaging，开启 Android
+   签名与 ARM64 主包。生成当前版本 BuildManifest schema 2 及全新待验模板。
+3. 对正式包准确字节重新验收，取得同源 CI、Full Regression 和独立打包证明，
+   提交 schema 3 平台收据及 `full-platform-rebuilt-release-v1` 资格记录。
+4. 发布工作流传入目标 `version` 和 `package_run`；只核验这些已受验字节，
+   不下载旧 RC 安装包替代、不在验收后再次重建。tag 指向实际构建源码。
+5. 全部门禁通过后创建草稿，再核对资产、版本、签名状态、已知限制及下载哈希。
+   未满足正式门禁只能保留草稿或如实发布 RC，不覆盖既有公开版本。
 
 ## 验证分层声明
 
 | 层级 | 覆盖 | 例子 |
 | ---- | ---- | ---- |
-| 自动化验证(CI) | 词典/映射/学习/打包/升级语义 | Full Regression、`v1_to_v2_*` fixture 测试、doc-sync |
-| 真机验证(人工) | 部署 + 输入手感 + 前端交互 | `release/acceptance-v2.0.0.json` 平台条目 |
-| 已知限制 | 不阻塞 GA 的缺口 | 本节列表 |
+| 自动化验证(CI) | 词典/映射/学习/打包/升级语义 | Full Regression、迁移 fixture、来源篡改拒绝测试 |
+| 真机验证(人工) | 当前包部署 + 输入手感 + 前端交互 | schema 3 平台收据及其证据 |
+| 已知限制 | 逐项评估，不能自动豁免 | 当前版本真实记录 |
 | 发布阻塞 | 缺一不可发布 | UNVERIFIED/FAIL 的平台验收项 |

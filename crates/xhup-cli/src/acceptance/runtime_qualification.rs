@@ -1,15 +1,14 @@
-//! Explicit owner-authorized runtime qualification; never relabel platform tests.
-//! Full-platform promotion remains the default. This verifier additionally binds
-//! successful same-source GitHub runs and independently recollected full coverage.
-use super::{AcceptanceManifest, CheckState, Violation, check_stable_policy, provenance};
+//! Full-platform qualification bound to fresh versioned payload bytes.
+//! Successful same-source GitHub runs and independently recollected full coverage
+//! supplement platform receipts; they never replace hardware acceptance.
+use super::{AcceptanceManifest, Violation, check_stable, provenance};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-/// A deliberately named policy, not a generic "ignore verification" switch.
-pub const POLICY: &str = "runtime-qualified-user-platform-testing-v1";
+/// Versioned strict policy; historical platform waivers cannot qualify new builds.
+pub const POLICY: &str = "full-platform-rebuilt-release-v1";
 
 /// Reviewed release decision. It does not manufacture any PASS evidence.
 #[derive(Debug, Deserialize, Serialize)]
@@ -26,7 +25,6 @@ pub struct Authorization {
     pub approved_at: String,
     pub rationale: String,
     pub limitations: Vec<String>,
-    pub user_testing_platforms: Vec<String>,
     pub ci_run: u64,
     pub runtime_run: u64,
     pub package_run: u64,
@@ -157,7 +155,7 @@ fn check(
 ) -> Result<(), String> {
     let a = authorization;
     require(
-        a.schema_version == 1 && a.policy == POLICY,
+        a.schema_version == 2 && a.policy == POLICY,
         "unsupported release qualification policy",
     )?;
     require(
@@ -192,31 +190,6 @@ fn check(
             && a.limitations.iter().all(|s| !s.trim().is_empty()),
         "explicit rationale and disclosed limitations are required",
     )?;
-    let pending: BTreeSet<_> = manifest
-        .platforms
-        .iter()
-        .filter(|p| p.checks.values().any(|s| *s == CheckState::Unverified))
-        .map(|p| p.platform.as_str())
-        .collect();
-    let accepted: BTreeSet<_> = a
-        .user_testing_platforms
-        .iter()
-        .map(String::as_str)
-        .collect();
-    require(
-        !pending.is_empty()
-            && pending == accepted
-            && accepted.len() == a.user_testing_platforms.len(),
-        "decision must explicitly list exactly the still-unverified platforms; use full-platform mode otherwise",
-    )?;
-    // A known acceptance failure is never excused by delegating future user tests.
-    require(
-        !manifest
-            .platforms
-            .iter()
-            .any(|p| p.checks.values().any(|s| *s == CheckState::Fail)),
-        "FAIL cannot be overridden by this qualification policy",
-    )?;
     let ci = check_run(
         &context.proofs.join("ci-run.json"),
         a.ci_run,
@@ -232,7 +205,7 @@ fn check(
     check_run(
         &context.proofs.join("package-run.json"),
         a.package_run,
-        ".github/workflows/xhup-flow-rc-release.yml",
+        ".github/workflows/product-packaging.yml",
         context,
     )?;
     require(
@@ -282,7 +255,7 @@ fn check(
     Ok(())
 }
 
-/// Verify explicit scope, external run evidence, RC provenance and actual bytes.
+/// Verify platform acceptance, external run evidence and the current version's actual bytes.
 /// Returns all failures; callers must never publish unless this is empty.
 pub fn verify(
     manifest: &AcceptanceManifest,
@@ -290,7 +263,7 @@ pub fn verify(
     context: &Context<'_>,
 ) -> Vec<Violation> {
     let decision = check(manifest, authorization, context);
-    let mut violations = check_stable_policy(manifest, context.version, decision.is_ok());
+    let mut violations = check_stable(manifest, context.version);
     if let Err(message) = decision {
         violations.push(Violation {
             platform: None,

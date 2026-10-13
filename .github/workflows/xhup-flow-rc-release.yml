@@ -7,11 +7,10 @@ name: XHUP Flow RC Release
 # - `xhup-flow-v<version>`   → XHUP Flow 产品(本工作流;RC 与正式)
 #
 # 行为:
-# - publish=false(演练):完整构建 + 校验 + 上传 workflow 产物;
-#   不打 tag、不建 Release;
-# - publish=true(发布):必须满足全部门禁(main 分支、版本一致、
-#   tag/Release 不存在),构建后创建草稿 Release(RC 为 Pre-release,
-#   正式版非 prerelease),人工复核发布说明与各平台验收状态后发布。
+# - RC:构建当前源码版本;publish=true 时签名 Android 并创建草稿 Pre-release。
+# - stable:消费独立 Product Packaging run 的正式版本原字节;必须重新完成
+#   当前字节的平台验收、同源 CI 与全量原生证明，不从 RC 附件晋升。
+# - publish=false 不创建 tag/Release;所有公开版本仍须人工复核草稿。
 #
 # 签名如实标注:桌面产物未签名/未公证(仓库无相应凭据);Android 仅在
 # publish=true 时经既有密钥链路签名(密钥仅运行时注入,不入库)。
@@ -20,21 +19,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "RC 必须等于 workspace 版本;stable x.y.z 原字节晋升 schema 2 指定的同 core RC"
+        description: "目标完整版本；RC 现构建，stable 必须是独立封存且重新验收的正式版本"
         required: true
-        default: "1.0.0-rc.1"
       publish:
         description: "发布(创建草稿 Release;正式版非 prerelease;必须 main 分支)"
         required: true
         type: boolean
         default: false
-      qualification:
-        description: "Stable 验收范围：默认完整平台；平台待验必须仓库所有者显式授权"
-        type: choice
-        default: full-platform
-        options:
-          - full-platform
-          - runtime-qualified-user-platform-testing-v1
+      package_run:
+        description: "stable 必填：成功的独立 Product Packaging run ID；RC 留空"
+        required: false
+        default: ""
       android_version_code:
         description: "Android versionCode 覆盖(空 = 从版本确定性派生,单调递增)"
         required: false
@@ -58,10 +53,6 @@ jobs:
       is_rc: ${{ steps.meta.outputs.is_rc }}
       publish: ${{ steps.meta.outputs.publish }}
       android_version_code: ${{ steps.meta.outputs.android_version_code }}
-      acceptance_windows: ${{ steps.meta.outputs.acceptance_windows }}
-      acceptance_linux: ${{ steps.meta.outputs.acceptance_linux }}
-      acceptance_macos: ${{ steps.meta.outputs.acceptance_macos }}
-      acceptance_android: ${{ steps.meta.outputs.acceptance_android }}
 
     steps:
       - name: 检出仓库
@@ -75,55 +66,33 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_PUBLISH: ${{ inputs.publish }}
           INPUT_VCODE: ${{ inputs.android_version_code }}
-          QUALIFICATION: ${{ inputs.qualification }}
+          INPUT_PACKAGE_RUN: ${{ inputs.package_run }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           version="$INPUT_VERSION"
-          if ! [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-rc\.([1-9][0-9]*))?$ ]]; then
-            echo "::error::版本 '$version' 不合法,必须形如 1.0.0-rc.1(RC)或 1.0.0(正式),且不得复用 alpha 命名空间"
+          if ! [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?$ ]]; then
+            echo "::error::版本必须是规范 x.y.z 或 x.y.z-rc.N"
             exit 1
           fi
-          core="${BASH_REMATCH[1]}"
-          if [[ -n "${BASH_REMATCH[2]}" ]]; then is_rc=true; else is_rc=false; fi
-          case "$QUALIFICATION" in
-            full-platform) ;;
-            runtime-qualified-user-platform-testing-v1)
-              [[ "$is_rc" == false ]] || { echo '::error::qualification is stable-only'; exit 1; }
-              [[ "$GITHUB_ACTOR" == "$(gh api "repos/$GH_REPO" --jq .owner.login)" ]] || exit 1
-              ;;
-            *) echo '::error::unknown qualification policy'; exit 1 ;;
-          esac
+          core="${version%-rc.*}"
+          if [[ "$version" != "$core" ]]; then is_rc=true; else is_rc=false; fi
+          if [[ "$is_rc" == true ]]; then
+            [[ -z "$INPUT_PACKAGE_RUN" ]] || { echo '::error::RC 不接受旧构建覆盖'; exit 1; }
+          else
+            [[ "$INPUT_PACKAGE_RUN" =~ ^[1-9][0-9]*$ ]] || { echo '::error::stable 必须指定独立打包 run'; exit 1; }
+          fi
           # 空 = 由打包工作流从版本确定性派生(单一事实来源);显式传入时须为正整数。
           if [[ -n "$INPUT_VCODE" ]] && ! [[ "$INPUT_VCODE" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::android_version_code '$INPUT_VCODE' 必须是 >= 1 的正整数,或留空自动派生"
             exit 1
           fi
-          # 版本一致性:完整发布版本必须同时等于全部产品级版本来源
-          # (Rime 源包版本 = workspace 版本,由生成器内嵌;
-          #  trainer/src-tauri 测试 product_versions_are_synchronized
-          #  在 CI 中强制同一不变量)。
-          # 注意:必须比较完整 version(含 -rc.N 后缀),core 只用于
-          # is_rc 判定与摘要展示 —— 用 core 比较会在 RC 路径下把
-          # 2.0.0-rc.1 与 2.0.0 误判为跳版(v1 时代 1.0.0 无后缀,未暴露)。
-          ws="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
-          check_version() {
-            local label="$1" actual="$2"
-            if [[ "$version" != "$actual" ]]; then
-              echo "::error::version '$version' != $label '$actual'(先统一升版,不得静默跳版)"
-              exit 1
-            fi
-          }
+          # RC 在本次源码上构建；stable 的源版本已在独立打包 run 中核验。
+          # 发布验收记录可晚于构建提交，不能把记录提交误当产物源码。
           if [[ "$is_rc" == "true" ]]; then
-            check_version "workspace 版本" "$ws"
-            for pkg in trainer/src-tauri/tauri.conf.json trainer/package.json \
-                       miniapp/package.json packages/trainer-core/package.json; do
-              actual="$(node -p "JSON.parse(require('fs').readFileSync('$pkg','utf8')).version")"
-              check_version "$pkg" "$actual"
-            done
+            python3 tests/release/check_product_version.py --expect-version "$version"
           fi
-          # Stable promotes unchanged RC bytes: workspace/app versions remain RC.
           publish="$INPUT_PUBLISH"
           if [[ "$publish" == "true" ]]; then
             if [[ "$REF" != "refs/heads/main" ]]; then
@@ -140,40 +109,21 @@ jobs:
               exit 1
             fi
           fi
-          # 机器可读 GA 门禁(#148 §3):清单 release/acceptance-v<core>.json。
-          # RC:结构合法且无 FAIL 即可(UNVERIFIED 放行 —— 硬件验收可后补);
-          # 此处仅做结构/FAIL 预检。stable 的完整源/附件/证据门禁在 prepare,
-          # 下载已接受 RC 后执行;没有 prepare 成功就不能发布。
-          manifest="release/acceptance-v$core.json"
-          gate_args=(validate-acceptance --manifest "$manifest")
-          gate_mode="rc"
           if [[ "$is_rc" == "false" ]]; then
-            gate_mode="stable-preflight"
+            [[ -s "release/acceptance-v$core.json" && -s "release/qualification-v$version.json" ]] \
+              || { echo "::error::缺少当前正式版本的验收/资格记录"; exit 1; }
           fi
-          cargo run -q -p xhup-cli --locked -- "${gate_args[@]}" \
-            || { echo "::error::GA 验收门禁($gate_mode)未通过: $manifest"; exit 1; }
           {
             echo "version=$version"
             echo "core=$core"
             echo "is_rc=$is_rc"
             echo "publish=$publish"
             echo "android_version_code=$INPUT_VCODE"
-            # 稳定版发布说明用真实验收状态(#148 §3):逐平台压缩为
-            # "platform=worst_state",由 acceptance 模块确定性推导。
-            acc_summary="$(cargo run -q -p xhup-cli --locked -- acceptance-summary --manifest "$manifest")"
-            # Never present historical rc1 evidence as acceptance of a later RC.
-            if [[ "$is_rc" == "true" ]] && ! jq -e --arg v "$version" --arg s "$GITHUB_SHA" \
-              '.version == $v and .source_commit == $s' "$manifest" >/dev/null; then
-              acc_summary=$'windows=UNVERIFIED\nlinux=UNVERIFIED\nmacos=UNVERIFIED\nandroid=UNVERIFIED'
-            fi
-            {
-              while IFS= read -r line; do echo "acceptance_$line"; done <<< "$acc_summary"
-            } >> "$GITHUB_OUTPUT"
           } >> "$GITHUB_OUTPUT"
           {
             if [[ "$is_rc" == "true" ]]; then kind="RC(Pre-release)"; else kind="正式版(stable)"; fi
             echo "### 发布元数据"
-            echo "- 版本: \`$version\`(core \`$core\`,$kind;RC 同步产品版本,stable 保留受验 RC 字节)"
+            echo "- 版本: \`$version\`(core \`$core\`,$kind;安装包内部版本必须一致)"
             if [[ -n "$INPUT_VCODE" ]]; then
               echo "- Android versionCode: \`$INPUT_VCODE\`(显式覆盖)"
             else
@@ -201,16 +151,23 @@ jobs:
       arm64_default: true
 
   prepare:
-    name: RC 构建封存或 stable 原字节晋升
+    name: 核验当前版本封存字节与验收来源
     needs: [validate, build]
     if: >-
       ${{ always() && needs.validate.result == 'success' &&
           (needs.validate.outputs.is_rc == 'false' || needs.build.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
     outputs:
       artifact_version: ${{ steps.bundle.outputs.artifact_version }}
       source_commit: ${{ steps.bundle.outputs.source_commit }}
+      acceptance_windows: ${{ steps.bundle.outputs.acceptance_windows }}
+      acceptance_linux: ${{ steps.bundle.outputs.acceptance_linux }}
+      acceptance_macos: ${{ steps.bundle.outputs.acceptance_macos }}
+      acceptance_android: ${{ steps.bundle.outputs.acceptance_android }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -218,7 +175,7 @@ jobs:
       CORE: ${{ needs.validate.outputs.core }}
       IS_RC: ${{ needs.validate.outputs.is_rc }}
       PUBLISH: ${{ needs.validate.outputs.publish }}
-      QUALIFICATION: ${{ inputs.qualification }}
+      PACKAGE_RUN: ${{ inputs.package_run }}
     steps:
       - uses: actions/checkout@v7
       - name: 下载本次 RC 构建
@@ -228,53 +185,54 @@ jobs:
           pattern: product-packaging-*
           path: artifacts
           merge-multiple: true
-      - name: 封存或验证实际发布字节
+      - name: 验证实际发布字节
         id: bundle
         run: |
           set -euo pipefail
-          manifest="release/acceptance-v$CORE.json"
+          artifact_version="$VERSION"
+          acc_summary=$'windows=UNVERIFIED\nlinux=UNVERIFIED\nmacos=UNVERIFIED\nandroid=UNVERIFIED'
           if [[ "$IS_RC" == "true" ]]; then
-            artifact_version="$VERSION"
             source_commit="$GITHUB_SHA"
-            # Unsigned rehearsal artifacts are not promotable; preserve that distinction.
             if [[ "$PUBLISH" == "true" ]]; then
-              cargo run -q -p xhup-cli --locked -- seal-build \
-                --version "$VERSION" --source-commit "$source_commit" --artifacts-dir artifacts
+              manifest="$RUNNER_TEMP/ACCEPTANCE.json"
+              cargo run -q -p xhup-cli --locked -- init-acceptance \
+                --version "$VERSION" --source-commit "$source_commit" --artifacts-dir artifacts \
+                > "$manifest"
+              cargo run -q -p xhup-cli --locked -- validate-acceptance --manifest "$manifest"
+              cp "$manifest" artifacts/ACCEPTANCE.json
             fi
           else
-            artifact_version="$(jq -er '.accepted_rc' "$manifest")"
-            [[ "$artifact_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.[1-9][0-9]*$ ]]
-            [[ "${artifact_version%-rc.*}" == "$VERSION" ]]
-            tag="xhup-flow-v$artifact_version"
+            manifest="release/acceptance-v$CORE.json"
+            decision="release/qualification-v$VERSION.json"
+            [[ "$(jq -er '.package_run' "$decision")" == "$PACKAGE_RUN" ]]
+            source_commit="$(python3 tests/release/collect_qualification.py \
+              --package-run "$PACKAGE_RUN" --out artifacts)"
+            predecessor="$(jq -er '.accepted_rc' "$manifest")"
+            [[ "$predecessor" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.[1-9][0-9]*$ ]]
+            [[ "${predecessor%-rc.*}" == "$VERSION" ]]
+            tag="xhup-flow-v$predecessor"
             gh release view "$tag" --json isDraft,isPrerelease \
               --jq 'select(.isDraft == false and .isPrerelease == true)' | jq -e . >/dev/null
-            # Resolve annotated/lightweight tag to a real commit, not manifest assertions.
-            source_commit="$(gh api "repos/$GH_REPO/commits/$tag" --jq .sha)"
-            mkdir artifacts
-            gh release download "$tag" --dir artifacts
-            # Acceptance is attached separately; it is not part of the sealed payload.
-            rm -f artifacts/ACCEPTANCE.json
-            qualification_args=()
-            if [[ "$QUALIFICATION" == runtime-qualified-user-platform-testing-v1 ]]; then
-              decision="release/qualification-v$VERSION.json"
-              python3 tests/release/collect_qualification.py --decision "$decision" \
-                --source "$source_commit" --out qualification-proofs
-              qualification_args=(--runtime-qualification "$decision" \
-                --qualification-proofs qualification-proofs --repository "$GH_REPO" --actor "$GITHUB_ACTOR")
-            fi
+            rc_source="$(gh api "repos/$GH_REPO/commits/$tag" --jq .sha)"
+            [[ "$rc_source" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$(gh api "repos/$GH_REPO/compare/$rc_source...$source_commit" --jq .status)" == ahead ]]
+            python3 tests/release/collect_qualification.py --decision "$decision" \
+              --source "$source_commit" --out qualification-proofs
             cargo run -q -p xhup-cli --locked -- validate-acceptance \
               --manifest "$manifest" --stable --expect-version "$VERSION" \
-              --expect-source "$source_commit" --artifacts-dir artifacts "${qualification_args[@]}"
-            # Attach scope/proofs only AFTER verifying the exact sealed RC inventory.
-            if ((${#qualification_args[@]})); then
-              cp "$decision" artifacts/QUALIFICATION.json
-              tar -czf artifacts/QUALIFICATION-PROOFS.tar.gz qualification-proofs
-            fi
+              --expect-source "$source_commit" --artifacts-dir artifacts \
+              --runtime-qualification "$decision" --qualification-proofs qualification-proofs \
+              --repository "$GH_REPO" --actor "$GITHUB_ACTOR"
+            acc_summary="$(cargo run -q -p xhup-cli --locked -- acceptance-summary --manifest "$manifest")"
+            # Attach receipts only after exact sealed inventory and all qualification gates pass.
+            cp "$manifest" artifacts/ACCEPTANCE.json
+            cp "$decision" artifacts/QUALIFICATION.json
+            tar -czf artifacts/QUALIFICATION-PROOFS.tar.gz qualification-proofs
           fi
-          cp "$manifest" artifacts/ACCEPTANCE.json
           {
             echo "artifact_version=$artifact_version"
             echo "source_commit=$source_commit"
+            while IFS= read -r line; do echo "acceptance_$line"; done <<< "$acc_summary"
           } >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
@@ -304,7 +262,6 @@ jobs:
       RIME_VERSION: ${{ needs.prepare.outputs.artifact_version }}
       ARTIFACT_VERSION: ${{ needs.prepare.outputs.artifact_version }}
       SOURCE_COMMIT: ${{ needs.prepare.outputs.source_commit }}
-      QUALIFICATION: ${{ inputs.qualification }}
 
     steps:
       - name: 下载全部产物
@@ -335,156 +292,82 @@ jobs:
 
       - name: 组装发布说明(草稿,人工复核)
         env:
-          ACC_WINDOWS: ${{ needs.validate.outputs.acceptance_windows }}
-          ACC_LINUX: ${{ needs.validate.outputs.acceptance_linux }}
-          ACC_MACOS: ${{ needs.validate.outputs.acceptance_macos }}
-          ACC_ANDROID: ${{ needs.validate.outputs.acceptance_android }}
+          ACC_WINDOWS: ${{ needs.prepare.outputs.acceptance_windows }}
+          ACC_LINUX: ${{ needs.prepare.outputs.acceptance_linux }}
+          ACC_MACOS: ${{ needs.prepare.outputs.acceptance_macos }}
+          ACC_ANDROID: ${{ needs.prepare.outputs.acceptance_android }}
         run: |
           set -euo pipefail
           notes="$RUNNER_TEMP/RELEASE-NOTES.md"
-          # 平台状态来自机器可读验收清单的确定性推导(validate 输出),
-          # 不得手写硬编码；平台待验模式保留 UNVERIFIED，任何模式均拒绝 FAIL。
           if [[ "$IS_RC" == "true" ]]; then
-            title_suffix="(Release Candidate)"
-            banner="> **草稿 Pre-release**:各平台人工验收状态以机器可读清单
-          > release/acceptance-v$CORE.json 为准(UNVERIFIED = 待真机验收),
-          > 人工复核本说明并更新验收状态后手动发布。"
-            acceptance="
-          ## 人工验收状态(源:release/acceptance-v$CORE.json)
-
-          - Windows: **${ACC_WINDOWS:-UNVERIFIED}**
-          - Linux: **${ACC_LINUX:-UNVERIFIED}**
-          - macOS: **${ACC_MACOS:-UNVERIFIED}**
-          - Android: **${ACC_ANDROID:-UNVERIFIED}**
-          "
+            banner="Release Candidate：尚未完成全部真实平台验收。UNVERIFIED 不代表 PASS，也不是全平台成熟正式版。"
           else
-            title_suffix=""
-            banner="> 正式稳定版本。各平台验收状态来自机器可读清单
-          > release/acceptance-v$CORE.json(schema 2,完整证据及源/工件哈希验证)。
-          > 原字节晋升 RC $ARTIFACT_VERSION,附件名称及内嵌版本仍为 RC;不重新构建。"
-            acceptance="
-          ## 平台验收状态(schema 2:全部必查项需 PASS;训练器生命周期覆盖所有平台)
-
-          - Windows: **${ACC_WINDOWS:-UNVERIFIED}**
-          - Linux: **${ACC_LINUX:-UNVERIFIED}**
-          - macOS: **${ACC_MACOS:-UNVERIFIED}**
-          - Android: **${ACC_ANDROID:-UNVERIFIED}**
-          "
-          fi
-          if [[ "$IS_RC" == false && "$QUALIFICATION" == runtime-qualified-user-platform-testing-v1 ]]; then
-            banner="> 正式版按仓库所有者明确授权的底层运行时资格范围发布，**不是全平台人工验收通过**。
-          > 完整原生审计、CI、RC 来源与附件哈希已校验；UNVERIFIED 项仍待用户真机测试。
-          > 原字节晋升 RC $ARTIFACT_VERSION，附件名称与内嵌版本仍为 RC。授权与限制见 QUALIFICATION.json。"
-            acceptance="${acceptance/schema 2:全部必查项需 PASS;训练器生命周期覆盖所有平台/实际状态：UNVERIFIED 不代表 PASS}"
+            banner="正式版本：独立构建并重新验收当前版本字节，不重命名或晋升旧 RC 附件。"
           fi
           cat > "$notes" <<EOF
-          # XHUP Flow v$VERSION$title_suffix
+          # XHUP Flow v$VERSION
 
           $banner
 
-          ## 这是什么
+          小鹤音形输入方案与独立 Trainer。Trainer 负责训练、复习与进度备份，
+          不安装或管理 Rime。具体能力及已知限制以本次源码和验收记录为准；
+          本说明不复用历史版本的测试通过率、性能或平台验收成绩。
 
-          XHUP Flow:冻结静态层(一级简码 / 单字全码 / 词语简码 / 固定词)
-          之上的连续组句与本地学习输入方案,配套训练器(12 种练习模式、
-          错题中心、统计与训练进度备份)。Trainer 不管理输入法，
-          输入方案全部由用户按手动教程独立安装。
+          ## 当前构建
 
-          ## 输入能力
+          - 源码：[$SOURCE_COMMIT](https://github.com/$GITHUB_REPOSITORY/commit/$SOURCE_COMMIT)
+          - 产品及安装包版本：\`$ARTIFACT_VERSION\`
+          - 封存清单：\`BUILD-MANIFEST.json\`
+          - 当前字节的验收状态：\`ACCEPTANCE.json\`
+          - 正式版另附同源 CI / 全量原生资格记录与证明。
 
-          - 小鹤双拼 + 音形全码(单字 2~4 键、词语 4/6/8 键);
-          - 一级简码(26 键冻结映射)与 canonical v2 词语简码
-            (68,842 条 = 65,909 PRIMARY + 2,933 FIXED_FIRST);
-          - baseline / PRIMARY / FIXED_FIRST 同码候选以显式 merged rank
-            的唯一整数权重排序,不受学习或词典导入顺序影响;
-          - Flow 连续组句:整句输入、逐键组句、句子级本地学习;
-          - Lua 简码提示:长码候选标注可用简码(支持 librime-lua 的平台
-            自动启用,无插件环境完整降级为纯静态行为);
-          - 安装后 Rime 方案选单仅显示 \`xhup_flow\`；静态回退资源保留但不显示。
-            不移除系统键盘、其他输入法或已有用户词库。
+          | 平台 | 实际验收状态 |
+          | --- | --- |
+          | Windows | ${ACC_WINDOWS:-UNVERIFIED} |
+          | Linux | ${ACC_LINUX:-UNVERIFIED} |
+          | macOS | ${ACC_MACOS:-UNVERIFIED} |
+          | Android | ${ACC_ANDROID:-UNVERIFIED} |
 
-          ## P0 开放输入修复
-
-          - 8,105 个《通用规范汉字表》字符继续作为可审计的规范核心子集，不再充当整个输入法的字符边界；
-          - 新增带来源与固定版本的扩展输入事实层：当前覆盖 8,208 个输入字符、9,796 条事实记录，
-            包括小鹤官网核验的 \`嗯=ogkx/onkx/enkx-\` 与兼容编码 \`诶=eiyu\`；
-          - 保留 100,000 条 hot 词用于高质量静态排序，同时加入 1,301,434 条固定上游版本的
-            extended 词汇关系；词库层只决定候选质量，不再决定词汇是否可达；
-          - Flow 词典包含逐字两键音码原语，可生成词表外短语和含单字、结构助词、语气词的真实长句；
-            \`提示词(tiuici)\` 可达，且不依赖手工特例；
-          - 高优先级静态 exact 菜单保持前缀不变，开放组合仅追加候选，不触发意外自动上屏。
-          - Flow/Learn 共享 userdb 的 syllable-id 空间保持一致，扩词后本地学习、重启与快照恢复继续可用。
-
-          ## 下载与安装
-
-          ### 桌面 / Android 独立训练器
-
-          按下表下载对应平台安装包。Trainer 只负责练习、错题、统计、键位参考
-          与训练进度备份，无需 Rime 即可练习，不安装、检测或修改输入法文件。
-          输入法由用户独立安装；详细命令（含电脑下载与 ADB 安装 Android）见
-          [手动安装教程](https://github.com/$GITHUB_REPOSITORY/blob/main/docs/install-guide.zh-CN.md)。
-
-          ### 仅使用 Rime 输入方案(已有 Rime 客户端)
-
-          1. 下载 \`xhup-flow-rime-v$RIME_VERSION.zip\`;
-          2. 找到 Rime 用户数据目录(小狼毫: %%APPDATA%%\\Rime;
-             鼠须管: ~/Library/Rime;fcitx5: ~/.local/share/fcitx5/rime;
-             ibus: ~/.config/ibus/rime);
-          3. **先将原 default.custom.yaml 备份到目录外**，再解压 ZIP；更新不得覆盖首次备份。
-             手动卸载时恢复原文件（原本不存在则删除该文件），旧版管理安装须先核对真正的原始备份；
-          4. 重新部署(Deploy);
-          5. 方案选单仅显示并默认启用 XHUP Flow。
-
-          该 ZIP 包含独占方案列表 \`default.custom.yaml\`，安装会替换原文件中的方案列表
-          和其他全局自定义项。请先备份原文件，更新时保留首次备份，卸载时恢复；
-          原本不存在则在卸载时删除本包文件。默认只启用 \`xhup_flow\`，无需追加 schema_list。
-          ZIP 不含 \`default.yaml\`、\`installation.yaml\`、\`user.yaml\`、\`sync/\` 或 \`*.userdb\`，
-          不删除其他方案文件、学习数据或系统输入法。详细步骤见包内 INSTALL.md。
-
-          ## 产物与签名状态
+          ## 下载资产
 
           | 文件 | 平台 | 签名状态 |
-          | ---- | ---- | ---- |
-          | \`xhup-flow-rime-v$RIME_VERSION.zip\` | 平台中立 Rime 源包 | N/A(SHA256 校验) |
-          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-windows-x64-setup.exe\` | Windows(NSIS) | UNSIGNED |
-          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-windows-x64.msi\` | Windows(MSI) | UNSIGNED |
-          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-macos-universal.dmg\` | macOS(aarch64+x86_64) | UNSIGNED + UNNOTARIZED |
-          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-linux-amd64.deb\` | Linux(deb) | N/A |
-          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-linux-x86_64.rpm\` | Linux(rpm) | N/A |
-          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-android-arm64.apk\` | Android(主产物,arm64-v8a) | SIGNED |
-          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-android-universal.apk\` | Android(兼容附加,4-ABI) | SIGNED |
+          | --- | --- | --- |
+          | \`xhup-flow-rime-v$RIME_VERSION.zip\` | 平台中立 Rime 包 | SHA-256 校验 |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-windows-x64-setup.exe\` | Windows NSIS | UNSIGNED |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-windows-x64.msi\` | Windows MSI | UNSIGNED |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-macos-universal.dmg\` | macOS universal | UNSIGNED / UNNOTARIZED |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-linux-amd64.deb\` | Linux DEB | 无格式内签名 |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-linux-x86_64.rpm\` | Linux RPM | 无格式内签名 |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-android-arm64.apk\` | Android ARM64 | SIGNED |
+          | \`xhup-flow-trainer-v$ARTIFACT_VERSION-android-universal.apk\` | Android 兼容 APK | SIGNED |
 
-          - 完整性:安装前比对 \`SHA256SUMS.txt\`。
-          - 构建元数据:\`BUILD-INFO.txt\`;规范数据确定性哈希:
-            \`CANONICAL-SHA256SUMS.txt\`。
-          - Windows 未签名:SmartScreen 可能提示「未知发布者」,属预期,
-            请勿为此关闭系统安全防护。
-          - macOS 未公证:首次打开需右键 → 打开,或在系统设置中放行。
+          \`SHA256SUMS.txt\` 校验安装包；\`RELEASE-SHA256SUMS.txt\` 额外覆盖来源和验收附件。
+          \`BUILD-INFO.txt\` 与 \`CANONICAL-SHA256SUMS.txt\` 提供构建和规范数据身份。
+          许可证与第三方数据来源见 Rime 包内说明及绑定源码。
 
-          ## Canonical v2 验证
+          ## 安装、更新与恢复
 
-          - KdConv top-2000 replay:KSPC 1.8971,rank1 96.9544%,
-            rank≤3 99.9120%;
-          - 141,138 个静态 exact code 逐菜单 librime 审计;
-          - 1,301,434 条 extended 词汇关系全量 runtime 可达性审计;
-          - 1,000 条不占用高优先级 exact code 的确定性词表外组合 runtime 审计;
-          - 传统别名 `就是=jqu`、`知道=vdc`、`不是=buu`、
-            `你们=nim`、`还是=hdu`、`因为=yww`、`如果=rgo`
-            由 runtime rank1 哨兵锁定。
-          $acceptance
-          ## 已知限制
+          先阅读[本次源码的安装说明](https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_COMMIT/docs/install-guide.zh-CN.md)。
+          输入方案需要已有 Rime 前端及部署步骤；训练器无需 Rime。
+          修改配置前备份，保留首次备份和用户词典，不覆盖无关方案或全局自定义项。
+          Windows/macOS 安全提示须按系统正常流程处理，不应关闭系统防护。
+          AppImage 不在本次产物范围内。
 
-          - 学习导出/导入依赖 librime 官方 \`rime_dict_manager\`(librime-bin)。
-          - librime 内置短语编码器的学习码为内部派生(不读作小鹤语义);
-            动态候选恒排在全部静态候选之后。
-          - AppImage 暂不构建(外部 linuxdeploy 网络约束)。
+          ## 隐私与反馈
 
-          ## 隐私
-
-          本地运行:无账号、无遥测、无云端同步;学习数据仅存本机
-          \`xhup_flow_user.userdb\`,可通过独立的 \`xhup-cli learning\`
-          导出 / 恢复 / 重置。
+          项目本身不引入账号、遥测或云推理。输入、用户词典及训练记录留在本机。
+          请通过 [Issues](https://github.com/$GITHUB_REPOSITORY/issues) 提交系统、版本、
+          前端与最小复现步骤；不要上传私人词典、原始输入记录或敏感日志。
           EOF
           echo "notes=$notes" >> "$GITHUB_ENV"
+
+      - name: 汇总全部公开附件的校验和
+        run: |
+          set -euo pipefail
+          cd artifacts
+          # Do not rewrite the SHA256SUMS already sealed by BUILD-MANIFEST.
+          sha256sum -- * | LC_ALL=C sort -k2 > "$RUNNER_TEMP/RELEASE-SHA256SUMS.txt"
+          cp "$RUNNER_TEMP/RELEASE-SHA256SUMS.txt" .
 
       - name: 创建草稿 Release(人工复核后发布)
         run: |
@@ -507,8 +390,8 @@ jobs:
             "xhup-flow-trainer-v$ARTIFACT_VERSION-linux-x86_64.rpm" \
             "xhup-flow-trainer-v$ARTIFACT_VERSION-android-arm64.apk" \
             "xhup-flow-trainer-v$ARTIFACT_VERSION-android-universal.apk" \
-            SHA256SUMS.txt CANONICAL-SHA256SUMS.txt BUILD-INFO.txt BUILD-MANIFEST.json ACCEPTANCE.json
-          if [[ "$IS_RC" == false && "$QUALIFICATION" == runtime-qualified-user-platform-testing-v1 ]]; then
+            SHA256SUMS.txt RELEASE-SHA256SUMS.txt CANONICAL-SHA256SUMS.txt BUILD-INFO.txt BUILD-MANIFEST.json ACCEPTANCE.json
+          if [[ "$IS_RC" == false ]]; then
             gh release upload "xhup-flow-v$VERSION" QUALIFICATION.json QUALIFICATION-PROOFS.tar.gz
           fi
           url="$(gh release view "xhup-flow-v$VERSION" --json url -q .url)"

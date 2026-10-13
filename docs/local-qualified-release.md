@@ -1,9 +1,10 @@
-# 本地完整验收，云端仅最终打包发布
+# 本地完整运行时证据与发布边界
 
-本文保留此前提出的本地完整验收替代流程。本次 v2.0.0 已按所有者最新明确授权，
-改用[云端底层运行时资格流程](runtime-qualified-release.md)，要求同源 CI、
-Full Regression 与 RC Release 的实际成功证明。本文中的 `LOCAL-VALIDATION.json`
-与 `LOCAL-QUALIFICATION.json` 不作为本次发布的资格依据。
+本工具保留全量本地测试、16 分片和独立重新收集能力。
+当前 `local-runtime-evidence-v2`（报告 schema 2）只证明实际执行的本地检查；
+`platform_acceptance` 固定为四个平台 UNVERIFIED，不是正式发布授权。
+正式版另须满足[完整平台与同源云端资格](runtime-qualified-release.md)，
+不能用本地报告自动继承 v2.0.0 的历史豁免。
 
 CI / Full Regression 仍保留 `workflow_dispatch` 入口；是否自动触发与本次是否
 已实际执行是两回事。取消、失败或未运行的测试不能记作 PASS。
@@ -51,22 +52,21 @@ python3 tests/release/local_qualification.py verify \
 ```sh
 python3 tests/release/local_qualification.py verify-build \
   --out /absolute/new-evidence --source FULL_SOURCE_SHA \
-  --artifacts /absolute/downloaded-rc-assets --artifact-version 2.0.0-rc.3 \
+  --artifacts /absolute/downloaded-versioned-assets --artifact-version 2.1.0-rc.1 \
   > LOCAL-QUALIFICATION.json
 ```
 
-它要求同源 BUILD-MANIFEST、完整 11 项已封装负载（8 个产品包与 3 个元数据文件）
-及精确字节哈希，拒绝未知/缺失/改变的附件。保留 LOCAL-VALIDATION.json 和完整
-可重新收集的证据归档，公开记录实际云端构建运行 URL；不要制造云端测试成功证明。
+它要求当前 BuildManifest schema 2、同源同版本、完整 11 项封存负载
+（8 个产品包与 3 个元数据文件）及精确字节哈希。也支持独立构建的正式版本，
+不把 RC 文件名或内嵌版本当成正式版本。LOCAL-VALIDATION.json 与完整原始证据
+须保留；不能将本地执行说成云端测试成功，更不能据此宣称平台已验收。
 
-## 3. 所有者按此明确范围发布
+## 3. 发布仍执行独立门禁
 
-由所有者通过 GitHub Release API 创建 v2.0.0 草稿，复用上述已核验的 RC 原字节，
-附加 LOCAL-QUALIFICATION.json、LOCAL-VALIDATION.json 及完整证据归档。
-发布说明必须标注本地验收模式、确切源码/构建运行、平台 UNVERIFIED 状态、
-签名限制，以及附件名称和内嵌版本仍为 RC（不偷偷重编）。
-再次核对草稿实际附件后公开，再下载公开附件核验相同哈希。
-此直接发布流程基于所有者明确授权，不声称通过旧云端 CI/full-platform 晋升门禁。
+本地报告不创建 Release，也不允许直接绕过正式发布工作流。
+RC 可在核验当前构建后以明确的 UNVERIFIED 状态发布；
+正式版须对正式版本的真实字节重新验收，并提交 schema 3 平台收据、
+同源 CI/全量原生/独立打包记录。发布步骤不能再次重建受验安装包。
 
-Rime 内独占、首次原配置备份和恢复按安装文档执行，不删除系统输入法。
-发布不等于全平台人工验收通过，先在目标设备小范围使用并保留恢复路径。
+安装、备份与恢复按绑定源码的安装文档执行，不删除用户词典或无关配置。
+当前平台、签名或权限不足必须明确记录；没有证据就不生成 PASS。

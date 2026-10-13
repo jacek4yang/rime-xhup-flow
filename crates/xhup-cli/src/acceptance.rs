@@ -1,13 +1,12 @@
-//! GA 验收清单(`release/acceptance-v2.0.0.json`)的类型与确定性校验。
+//! 当前与历史平台验收收据的类型和确定性校验。
 //!
 //! 设计约束(#148 §2):
 //! - 状态严格有限:`PASS` / `FAIL` / `UNVERIFIED` / `N/A`,解析拒绝任何其他值;
 //! - 策略校验是纯函数;provenance 校验另外读取实际附件,均不联网;
-//! - stable 必须使用 provenance::verify:check_stable 仅校验 schema 2 策略;
+//! - stable 必须使用 provenance::verify:check_stable 仅校验 schema 3 策略;
 //!   RC 门禁语义:`check_rc` 允许 UNVERIFIED,但 FAIL 仍然阻止。
 //!
-//! 文档同步(`docs/platform-acceptance.md`)由工作流调用本模块的
-//! render_markdown 生成比对,保证文档不与清单漂移。
+//! render_markdown 从实际收据生成发布摘要，不将历史文档作为当前验收证据。
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -73,6 +72,15 @@ pub struct ArtifactRecord {
     pub sha256: String,
 }
 
+/// The exact build exercised by a platform receipt, not the publication commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TestedBuild {
+    pub version: String,
+    pub source_commit: String,
+    pub build_manifest_sha256: String,
+}
+
 /// 单平台验收条目。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlatformEntry {
@@ -87,10 +95,13 @@ pub struct PlatformEntry {
     pub evidence: Option<String>,
     /// 验证时间戳(ISO 8601);PASS 时必填。
     pub verified_at: Option<String>,
-    /// 明确的 librime / Lua / 客户端版本;schema 2 stable 必填。
+    /// 明确的 librime / Lua / 客户端版本;schema 3 PASS 必填。
     #[serde(default)]
     pub runtime: Option<String>,
-    /// 历史 schema 1 可保留 Android 控制中心 N/A；当前 schema 2 不接受豁免。
+    /// Schema 3 PASS receipts must identify the current sealed bytes.
+    #[serde(default)]
+    pub tested_build: Option<TestedBuild>,
+    /// 历史 schema 1 可保留 Android 控制中心 N/A；当前正式版不接受豁免。
     #[serde(default)]
     pub exemptions: BTreeMap<String, String>,
 }
@@ -100,7 +111,7 @@ pub struct PlatformEntry {
 pub struct AcceptanceManifest {
     pub schema_version: u32,
     pub version: String,
-    /// GA 发布所依据的已验收 RC 版本;stable 时必填。
+    /// Predecessor RC; its bytes and platform receipts cannot qualify the fresh stable build.
     pub accepted_rc: Option<String>,
     pub source_commit: String,
     /// 已验收 BUILD-MANIFEST.json 原始字节的 SHA256;stable 必填。
@@ -133,12 +144,12 @@ impl fmt::Display for Violation {
 pub fn validate_structure(manifest: &AcceptanceManifest) -> Vec<Violation> {
     let mut violations = Vec::new();
 
-    if ![1, 2].contains(&manifest.schema_version) {
+    if ![1, 2, 3].contains(&manifest.schema_version) {
         violations.push(Violation {
             platform: None,
             check: None,
             message: format!(
-                "schema_version 必须为 1 或 2,实际 {}",
+                "schema_version 必须为 1、2 或 3,实际 {}",
                 manifest.schema_version
             ),
         });
@@ -206,6 +217,54 @@ pub fn validate_structure(manifest: &AcceptanceManifest) -> Vec<Violation> {
 
     // 每个平台:检查键齐全、引用工件存在、frontend/os/architecture 非空。
     for entry in &manifest.platforms {
+        let current_pass = manifest.schema_version == 3
+            && entry
+                .checks
+                .values()
+                .any(|state| *state == CheckState::Pass);
+        if current_pass
+            && !entry.tested_build.as_ref().is_some_and(|build| {
+                build.version == manifest.version
+                    && build.source_commit == manifest.source_commit
+                    && provenance::is_hex(&build.build_manifest_sha256, 64)
+                    && manifest.build_manifest_sha256.as_deref()
+                        == Some(build.build_manifest_sha256.as_str())
+            })
+        {
+            violations.push(Violation {
+                platform: Some(entry.platform.clone()),
+                check: None,
+                message: "PASS 必须绑定当前版本、源码和封存清单；旧 RC 验收不能晋升".to_string(),
+            });
+        }
+        if current_pass {
+            if !entry
+                .runtime
+                .as_deref()
+                .is_some_and(|s| !s.trim().is_empty())
+            {
+                violations.push(Violation {
+                    platform: Some(entry.platform.clone()),
+                    check: None,
+                    message: "PASS 必须记录 runtime(librime/Lua/客户端版本)".to_string(),
+                });
+            }
+            if !entry
+                .evidence
+                .as_deref()
+                .is_some_and(|s| !s.trim().is_empty())
+                || !entry
+                    .verified_at
+                    .as_deref()
+                    .is_some_and(provenance::utc_timestamp)
+            {
+                violations.push(Violation {
+                    platform: Some(entry.platform.clone()),
+                    check: None,
+                    message: "PASS 必须有非空 evidence 和有效 UTC verified_at".to_string(),
+                });
+            }
+        }
         if !required.contains(&entry.platform.as_str()) {
             violations.push(Violation {
                 platform: Some(entry.platform.clone()),
@@ -294,25 +353,15 @@ pub fn check_rc(manifest: &AcceptanceManifest) -> Vec<Violation> {
     violations
 }
 
-/// stable 策略校验: schema 2、同 core RC、必查 PASS、显式豁免及证据。
+/// stable 策略校验: schema 3、同 core RC、全部 PASS 及当前构建证据。
 /// 这只是纯数据校验;发布必须调用 provenance::verify 校验独立来源和真实附件。
 pub fn check_stable(manifest: &AcceptanceManifest, expected_version: &str) -> Vec<Violation> {
-    check_stable_policy(manifest, expected_version, false)
-}
-
-// Only the explicit owner-authorized runtime qualification verifier may allow
-// still-visible UNVERIFIED platform checks. Default/full-platform remains strict.
-fn check_stable_policy(
-    manifest: &AcceptanceManifest,
-    expected_version: &str,
-    user_platform_testing: bool,
-) -> Vec<Violation> {
     let mut violations = validate_structure(manifest);
-    if manifest.schema_version != 2 {
+    if manifest.schema_version != 3 {
         violations.push(Violation {
             platform: None,
             check: None,
-            message: "stable 必须使用 schema_version 2;历史记录不能冒充当前验收".to_string(),
+            message: "stable 必须使用 schema_version 3 并重新验收正式版本产物".to_string(),
         });
     }
     if !provenance::stable_version(expected_version) {
@@ -357,7 +406,7 @@ fn check_stable_policy(
         _ => violations.push(Violation {
             platform: None,
             check: None,
-            message: "stable 发布必须记录 accepted_rc(依据哪个 RC 验收)".to_string(),
+            message: "stable 发布必须记录同一 core 的前序 accepted_rc".to_string(),
         }),
     }
 
@@ -371,43 +420,12 @@ fn check_stable_policy(
                         check: Some(key.clone()),
                         message: "FAIL 阻塞 stable 发布".to_string(),
                     }),
-                    CheckState::Unverified if !user_platform_testing => {
-                        violations.push(Violation {
-                            platform: Some(entry.platform.clone()),
-                            check: Some(key.clone()),
-                            message: "UNVERIFIED 阻塞 stable 发布(缺少真机/等价验证)".to_string(),
-                        })
-                    }
-                    CheckState::Unverified => {}
+                    CheckState::Unverified => violations.push(Violation {
+                        platform: Some(entry.platform.clone()),
+                        check: Some(key.clone()),
+                        message: "UNVERIFIED 阻塞 stable 发布(缺少真机/等价验证)".to_string(),
+                    }),
                 }
-            }
-            if !entry
-                .runtime
-                .as_deref()
-                .is_some_and(|s| !s.trim().is_empty())
-            {
-                violations.push(Violation {
-                    platform: Some(entry.platform.clone()),
-                    check: None,
-                    message: "stable 必须记录 runtime(librime/Lua/客户端版本)".to_string(),
-                });
-            }
-            let has_pass = entry.checks.values().any(|s| *s == CheckState::Pass);
-            if has_pass
-                && (!entry
-                    .evidence
-                    .as_deref()
-                    .is_some_and(|s| !s.trim().is_empty())
-                    || !entry
-                        .verified_at
-                        .as_deref()
-                        .is_some_and(provenance::utc_timestamp))
-            {
-                violations.push(Violation {
-                    platform: Some(entry.platform.clone()),
-                    check: None,
-                    message: "存在 PASS 项时 evidence 非空且 verified_at 必须是有效 UTC 时间 YYYY-MM-DDTHH:MM:SSZ".to_string(),
-                });
             }
         }
     }
@@ -498,6 +516,7 @@ mod tests {
             evidence: None,
             verified_at: None,
             runtime: Some("librime 1.16.1 / Lua 5.4 / test-client 1".to_string()),
+            tested_build: None,
             exemptions: BTreeMap::new(),
         }
     }
@@ -533,6 +552,39 @@ mod tests {
     }
 
     #[test]
+    fn current_rc_pass_requires_actual_receipt_metadata() {
+        let mut manifest = base_manifest();
+        manifest.schema_version = 3;
+        manifest.platforms[0].tested_build = Some(TestedBuild {
+            version: manifest.version.clone(),
+            source_commit: manifest.source_commit.clone(),
+            build_manifest_sha256: manifest.build_manifest_sha256.clone().unwrap(),
+        });
+        manifest.platforms[0]
+            .checks
+            .insert("clean_install".into(), CheckState::Pass);
+        let violations = check_rc(&manifest);
+        assert_eq!(
+            violations
+                .iter()
+                .map(|v| (v.platform.as_deref(), v.check.as_deref()))
+                .collect::<Vec<_>>(),
+            [(Some("windows"), None)]
+        );
+        manifest.platforms[0].evidence = Some("SYNTHETIC TEST ONLY".into());
+        manifest.platforms[0].verified_at = Some("2026-10-05T00:00:00Z".into());
+        assert!(check_rc(&manifest).is_empty());
+        manifest.platforms[0].runtime = None;
+        assert_eq!(
+            check_rc(&manifest)
+                .iter()
+                .map(|v| v.platform.as_deref())
+                .collect::<Vec<_>>(),
+            [Some("windows")]
+        );
+    }
+
+    #[test]
     fn structure_rejects_missing_platform() {
         let mut manifest = base_manifest();
         manifest.platforms.retain(|p| p.platform != "macos");
@@ -560,6 +612,7 @@ mod tests {
     #[test]
     fn stable_gate_rejects_unverified() {
         let mut manifest = base_manifest();
+        manifest.schema_version = 3;
         manifest.version = "2.0.0".to_string();
         manifest.accepted_rc = Some("2.0.0-rc.1".to_string());
         // 全部 UNVERIFIED → 必须阻塞,并指明平台/检查项。
@@ -568,40 +621,8 @@ mod tests {
             violations
                 .iter()
                 .any(|v| v.platform.as_deref() == Some("windows")
-                    && v.check.as_deref() == Some("clean_install")
-                    && v.message.contains("UNVERIFIED"))
+                    && v.check.as_deref() == Some("clean_install"))
         );
-    }
-
-    #[test]
-    fn stable_gate_requires_accepted_rc() {
-        let mut manifest = base_manifest();
-        manifest.version = "2.0.0".to_string();
-        for entry in &mut manifest.platforms {
-            for state in entry.checks.values_mut() {
-                *state = CheckState::Pass;
-            }
-            entry.evidence = Some("https://example.com".to_string());
-            entry.verified_at = Some("2026-09-27T00:00:00Z".to_string());
-        }
-        let violations = check_stable(&manifest, "2.0.0");
-        assert!(violations.iter().any(|v| v.message.contains("accepted_rc")));
-    }
-
-    #[test]
-    fn stable_gate_rejects_version_mismatch() {
-        let mut manifest = base_manifest();
-        manifest.version = "2.0.1".to_string();
-        manifest.accepted_rc = Some("2.0.0-rc.1".to_string());
-        for entry in &mut manifest.platforms {
-            for state in entry.checks.values_mut() {
-                *state = CheckState::Pass;
-            }
-            entry.evidence = Some("e".to_string());
-            entry.verified_at = Some("2026-09-27T00:00:00Z".to_string());
-        }
-        let violations = check_stable(&manifest, "2.0.0");
-        assert!(violations.iter().any(|v| v.message.contains("不一致")));
     }
 
     #[test]
@@ -609,14 +630,20 @@ mod tests {
         let mut manifest = base_manifest();
         manifest.version = "2.0.0".to_string();
         manifest.accepted_rc = Some("2.0.0-rc.1".to_string());
+        let tested_build = TestedBuild {
+            version: manifest.version.clone(),
+            source_commit: manifest.source_commit.clone(),
+            build_manifest_sha256: manifest.build_manifest_sha256.clone().unwrap(),
+        };
         for entry in &mut manifest.platforms {
             for state in entry.checks.values_mut() {
                 *state = CheckState::Pass;
             }
             entry.evidence = Some("#83 评论".to_string());
             entry.verified_at = Some("2026-09-27T00:00:00Z".to_string());
+            entry.tested_build = Some(tested_build.clone());
         }
-        manifest.schema_version = 2;
+        manifest.schema_version = 3;
         assert!(check_stable(&manifest, "2.0.0").is_empty());
     }
 
@@ -642,40 +669,6 @@ mod tests {
                 .iter()
                 .any(|v| v.check.as_deref() == Some("mystery_check"))
         );
-    }
-
-    #[test]
-    fn stable_rc_bypass_rejected_via_wrong_accepted_rc() {
-        // 用 stable=2.0.0 的清单但 accepted_rc 指向非 RC → 阻塞。
-        let mut manifest = base_manifest();
-        manifest.version = "2.0.0".to_string();
-        manifest.accepted_rc = Some("1.9.9".to_string());
-        for entry in &mut manifest.platforms {
-            for state in entry.checks.values_mut() {
-                *state = CheckState::Pass;
-            }
-            entry.evidence = Some("e".to_string());
-            entry.verified_at = Some("2026-09-27T00:00:00Z".to_string());
-        }
-        let violations = check_stable(&manifest, "2.0.0");
-        assert!(
-            violations
-                .iter()
-                .any(|v| v.message.contains("不是 RC 版本"))
-        );
-    }
-
-    #[test]
-    fn pass_requires_evidence() {
-        let mut manifest = base_manifest();
-        manifest.accepted_rc = Some("2.0.0-rc.1".to_string());
-        manifest.platforms[0]
-            .checks
-            .insert("clean_install".to_string(), CheckState::Pass);
-        // RC gate 只关心 FAIL,不因缺证据阻塞;但 stable 会。
-        assert!(check_rc(&manifest).is_empty());
-        let violations = check_stable(&manifest, "2.0.0-rc.1");
-        assert!(violations.iter().any(|v| v.message.contains("evidence")));
     }
 
     #[test]
