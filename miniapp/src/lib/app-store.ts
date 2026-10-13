@@ -2,14 +2,13 @@
  * 应用状态仓库工厂(纯逻辑,存储适配注入;node 测试可直接运行)。
  *
  * 订阅式最小 store:无 zustand,React 侧经 useAppState 订阅。
- * 学习语义全部复用共享核心的纯函数(applyPerfect/applyImperfect/
+ * 学习语义全部复用共享核心的纯函数(applyQuestionProgress/
  * emptyDailyStats);本模块只负责把核心语义落到持久化状态上,
  * 与桌面端 trainer store 的 recordQuestionResult 保持同一套数学。
  */
 
 import {
-  applyImperfect,
-  applyPerfect,
+  applyQuestionProgress,
   emptyDailyStats,
   emptyProgress,
   localDateKey,
@@ -141,10 +140,7 @@ export function createAppStore(storage: StorageAdapter, storeKey: string): AppSt
     recordQuestionResult(payload) {
       ensureLoaded();
       const previous = state.progress[payload.id] ?? emptyProgress();
-      const updated =
-        payload.outcome === "perfect"
-          ? applyPerfect(previous, payload.now, payload.questionMs)
-          : applyImperfect(previous, payload.now, payload.questionMs);
+      const updated = applyQuestionProgress(previous, payload);
       const dateKey = localDateKey(new Date(payload.now));
       const day = state.daily[dateKey] ?? emptyDailyStats();
       const keyErrors = { ...state.keyErrors };

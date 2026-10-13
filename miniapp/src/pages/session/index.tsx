@@ -23,7 +23,8 @@ import {
   createSession,
   expectedKey,
   finish,
-  listWeakItems,
+  listReviewItems,
+  REVIEW_POOL_ID,
   pause,
   resume,
   retryCurrent,
@@ -556,18 +557,10 @@ function buildPools(
   difficulty: Difficulty,
 ): QuestionPool[] {
   if (src === "weak") {
-    const weak = listWeakItems(trainerIndex, appStore.getState().progress, 30);
+    const weak = listReviewItems(trainerIndex, appStore.getState().progress, Date.now(), 30);
     const items = weak.map((entry) => entry.item);
     if (items.length === 0) return [];
-    const byLength = new Map<number, TrainingItem[]>();
-    for (const item of items) {
-      const list = byLength.get(item.codeLength) ?? [];
-      list.push(item);
-      byLength.set(item.codeLength, list);
-    }
-    return [...byLength.entries()].map(([length, group]) =>
-      buildPool(`char-${length}`, group),
-    );
+    return [buildPool(REVIEW_POOL_ID, items)];
   }
   return MODE_POOL_ROTATION[mode ?? "double"]
     .map((poolId) => buildPool(poolId, selectPool(trainerIndex, poolId, difficulty)))

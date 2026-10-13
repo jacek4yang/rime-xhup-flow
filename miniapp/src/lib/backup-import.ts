@@ -63,7 +63,7 @@ export function parseBackupForImport(json: string): ImportParseResult {
         confusions: parsed.confusions,
       },
       preview: {
-        version: 2,
+        version: parsed.sourceVersion,
         progressCount: Object.keys(parsed.progress).length,
         dailyDays: dates.length,
         dateRange:

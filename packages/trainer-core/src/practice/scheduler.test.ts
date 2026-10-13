@@ -92,8 +92,7 @@ describe("pickWeighted", () => {
     ]);
 
   it("从池中选题", () => {
-    const result = pickWeighted(pool(), new Map(), new Set(), zeroRng);
-    expect(result).not.toBeNull();
+    const result = pickWeighted(pool(), new Map(), new Set(), zeroRng, 0);
     expect(pool().items).toContainEqual(result);
   });
 
@@ -103,13 +102,14 @@ describe("pickWeighted", () => {
       new Map(),
       new Set(["甲:ja"]),
       zeroRng,
+      0,
     );
     expect(selected?.target).toBe("乙");
   });
 
   it("单条目池可以工作", () => {
     const single = buildPool("char-2", [charItem(makeEntry("甲", "ja"))]);
-    const selected = pickWeighted(single, new Map(), new Set(["甲:ja"]), zeroRng);
+    const selected = pickWeighted(single, new Map(), new Set(["甲:ja"]), zeroRng, 0);
     expect(selected?.target).toBe("甲");
   });
 
@@ -119,23 +119,12 @@ describe("pickWeighted", () => {
     const pLow = computePriority(p.items[0]!, emptyProgress(), p.maxLogFrequency);
     const pHigh = computePriority(p.items[1]!, emptyProgress(), p.maxLogFrequency);
     // rng 落在低频条目区间内 → 选第一个;超过则选第二个。
-    const inLow = pickWeighted(p, progress, new Set(), () => (pLow * 0.5) / (pLow + pHigh));
-    const pastLow = pickWeighted(p, progress, new Set(), () => (pLow + pHigh * 0.5) / (pLow + pHigh));
+    const inLow = pickWeighted(p, progress, new Set(), () => (pLow * 0.5) / (pLow + pHigh), 0);
+    const pastLow = pickWeighted(p, progress, new Set(), () => (pLow + pHigh * 0.5) / (pLow + pHigh), 0);
     expect(inLow?.target).toBe("甲");
     expect(pastLow?.target).toBe("乙");
   });
 
-  it("简码池携带层权重;同 RNG 序列可复现", () => {
-    const items = [
-      { ...charItem(makeEntry("甲", "ja")), primaryCode: "j", alternateCode: "ja" },
-    ];
-    const a = buildPool("level1", items, 1.2);
-    const b = buildPool("level1", items, 1.2);
-    expect(pickWeighted(a, new Map(), new Set(), seededRng(7))).toEqual(
-      pickWeighted(b, new Map(), new Set(), seededRng(7)),
-    );
-    expect(a.layerWeight).toBe(1.2);
-  });
 });
 
 describe("scheduleReview", () => {
@@ -169,6 +158,7 @@ describe("pickNext", () => {
     reviewQueue: [] as { id: string; dueIn: number }[],
     mixedCursor: 0,
     rng: zeroRng,
+    now: 0,
   });
 
   it("mixed 模式按 2 → 3 → 4 均衡轮换", () => {

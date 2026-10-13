@@ -45,7 +45,7 @@ import {
   type SessionState,
   type StepResult,
 } from "@xhup/trainer-core";
-import { buildPool, type QuestionPool } from "@xhup/trainer-core";
+import { buildPool, REVIEW_POOL_ID, type QuestionPool } from "@xhup/trainer-core";
 import { SessionSummary } from "./SessionSummary";
 import { ErrorTeachingCard, findEntry } from "./ErrorTeachingCard";
 import type { PracticeConfig } from "./PracticeSetupView";
@@ -120,15 +120,7 @@ export function PracticeView({
   // 题池只在会话开始时构建一次;出题不再全量 filter/sort。
   const pools = useMemo<QuestionPool[]>(() => {
     if (config.entries) {
-      const byLength = new Map<number, TrainingItem[]>();
-      for (const item of config.entries) {
-        const list = byLength.get(item.codeLength) ?? [];
-        list.push(item);
-        byLength.set(item.codeLength, list);
-      }
-      return [...byLength.entries()].map(([length, items]) =>
-        buildPool(`char-${length}`, items),
-      );
+      return [buildPool(REVIEW_POOL_ID, config.entries)];
     }
     return MODE_POOL_ROTATION[config.mode]
       .map((poolId) => buildPool(poolId, selectPool(index, poolId, config.difficulty)))

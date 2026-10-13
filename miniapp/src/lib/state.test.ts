@@ -7,7 +7,6 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SESSION_LENGTH,
   DEFAULT_HINT_MODE,
-  applyPerfect,
   emptyDailyStats,
   emptyProgress,
   recordConfusion,
@@ -95,9 +94,10 @@ describe("状态 Schema 与持久化校验边界", () => {
     expect(sanitized.settings.hintMode).toBe("always");
     expect(sanitized.settings.sessionLength).toBe(DEFAULT_SESSION_LENGTH);
     expect(sanitized.settings.lastMode).toBe("sentence");
-    expect(sanitized.progress["的:de"]).toEqual({
+    expect(sanitized.progress["的:de"]).toMatchObject({
       attempts: 2, correct: 1, wrong: 1, streak: 0, mastery: 0, lastSeenAt: null, avgLatencyMs: null,
     });
+    expect(sanitized.progress["的:de"].review).toBeNull();
     expect(Object.keys(sanitized.progress)).toEqual(["的:de"]);
     expect(sanitized.daily["2026-09-06"]).toEqual({
       ...emptyDailyStats(), questions: 4, practiceMs: 60_000,
@@ -125,9 +125,10 @@ describe("状态 Schema 与持久化校验边界", () => {
       "的:de": { attempts: 5, correct: 4, wrong: 1, streak: 2, mastery: 30, lastSeenAt: 100 },
       "坏": null,
     });
-    expect(migrated["的:de"]).toEqual({
+    expect(migrated["的:de"]).toMatchObject({
       attempts: 5, correct: 4, wrong: 1, streak: 2, mastery: 30, lastSeenAt: 100, avgLatencyMs: null,
     });
+    expect(migrated["的:de"].review).toBeNull();
     expect(Object.keys(migrated)).toEqual(["的:de"]);
   });
 });
@@ -167,10 +168,7 @@ describe("应用状态仓库(存储注入)", () => {
     });
 
     const state = store.getState();
-    const expected = applyPerfect(emptyProgress(), now, 4_000);
-    // 第二次 imperfect 在 perfect 结果之上。
-    const afterPerfect = applyPerfect(emptyProgress(), now, 4_000);
-    expect(state.progress["的:de"]!.attempts).toBe(afterPerfect.attempts + 1);
+    expect(state.progress["的:de"]!.attempts).toBe(2);
     expect(state.progress["的:de"]!.wrong).toBe(1);
     expect(state.keyErrors).toEqual({ q: 1 });
 
@@ -181,13 +179,15 @@ describe("应用状态仓库(存储注入)", () => {
     expect(state.daily[dateKey]!.practiceMs).toBe(10_000);
     expect(state.daily[dateKey]!.chars).toBe(2);
     expect(state.daily[dateKey]!.corrections).toBe(1);
-    // 数学与直接调用共享核心纯函数一致。
-    expect(expected.attempts).toBe(1);
 
     // 已持久化:新 store 实例从同一存储读到相同状态。
     const reloaded = createAppStore(storage, "test.state.v2");
     expect(reloaded.getState().progress["的:de"]!.attempts).toBe(2);
     expect(reloaded.getState().daily[dateKey]!.keystrokes).toBe(5);
+    expect(reloaded.getState().progress["的:de"]!.review).toMatchObject({
+      level: 0, lastResult: "error", lapses: 1, lastIndependentAt: now,
+      lastAttemptAt: now + 30_000, dueAt: now + 630_000,
+    });
   });
 
   it("损坏存储回退默认值,不崩溃", () => {

@@ -5,7 +5,7 @@
  * 同一个状态机;不为任何模式单写引擎。计时只累计活跃时间,暂停 /
  * 小结 / 设置页不计时。进度更新与持久化通过事件交给外层:引擎自己
  * 维护一份会话内进度副本供调度使用,store 侧用同一组纯函数
- * (applyPerfect / applyImperfect)独立重放,数学上保持一致。
+ * (applyQuestionProgress)独立重放,数学上保持一致。
  *
  * 简码评分契约(B5):简码条目携带备用合法码(全码)。引擎逐键跟踪
  * 实际输入路线——主练码(简码)完成且零错键 = perfect;改走备用路线
@@ -24,8 +24,7 @@ import {
   type ConfusionMap,
 } from "../learning/confusion";
 import {
-  applyImperfect,
-  applyPerfect,
+  applyQuestionProgress,
   emptyProgress,
   type ItemProgress,
 } from "../learning/progress";
@@ -154,6 +153,7 @@ function drawQuestion(
     reviewQueue: state.reviewQueue,
     mixedCursor: state.mixedCursor,
     rng,
+    now: state.lastTickAt,
   });
   if (!picked) return null;
   return {
@@ -294,10 +294,11 @@ function completeQuestion(
   const previous = state.progressById.get(id) ?? emptyProgress();
   const practiceMsThisQuestion = Math.max(0, now - state.lastTickAt);
   const questionMs = questionElapsedMs(state, now);
-  const updated =
-    outcome === "perfect"
-      ? applyPerfect(previous, now, questionMs)
-      : applyImperfect(previous, now, questionMs);
+  const updated = applyQuestionProgress(previous, {
+    outcome, routeUsed, independentRecall: outcome === "perfect",
+    usedAnswerHint: state.usedAnswerHint, wrongKeyEvents: state.wrongKeysThisQuestion,
+    questionMs, chars: state.current.charCount, now,
+  });
   const progressById = new Map(state.progressById);
   progressById.set(id, updated);
 
@@ -370,7 +371,7 @@ export function advance(
   }
 
   const recentIds = [...state.recentIds, state.current.id].slice(-RECENT_LIMIT);
-  const drawn = drawQuestion({ ...state, current: null, recentIds }, rng);
+  const drawn = drawQuestion({ ...state, current: null, recentIds, lastTickAt: now }, rng);
   if (!drawn) {
     // 池意外耗尽:视为会话结束,不产生错误。
     return {

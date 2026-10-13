@@ -17,6 +17,7 @@ import type {
 import {
   emptyDailyStats,
   emptyProgress,
+  parseSpacedReview,
   LANGUAGES,
   sanitizeConfusionMap,
   type ConfusionMap,
@@ -29,8 +30,8 @@ import {
   type SessionLength,
 } from "@xhup/trainer-core";
 
-/** 持久化文档版本(V2:与桌面端语义一致)。 */
-export const STORE_VERSION = 2;
+/** V3:独立回忆与跨天复习;保留旧存储键以原位迁移。 */
+export const STORE_VERSION = 3;
 
 /** 本机持久化键(带版本;旧 v1 进度键仅在迁移时读取)。 */
 export const STORE_KEY = "xhup.miniapp.state.v2";
@@ -163,6 +164,7 @@ function sanitizeProgressEntry(value: unknown): ItemProgress | null {
     mastery: typeof value.mastery === "number" && Number.isFinite(value.mastery) ? value.mastery : base.mastery,
     lastSeenAt,
     avgLatencyMs,
+    review: parseSpacedReview(value.review),
   };
 }
 
