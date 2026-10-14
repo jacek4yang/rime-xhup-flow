@@ -150,17 +150,20 @@ function M.describe(raw, node, start, diagnostics)
 end
 
 -- FIFO of immutable dictionary rows only: never native candidates, user rows,
--- scores, normalization decisions or beam state. Replaced with the schema env.
+-- scores, budget decisions or beam state. Replaced with the schema env.
 local CACHE_ENTRIES, CACHE_ROWS, CACHE_BYTES = 512, 2048, 262144
-function M.readonly_cache(memory, aliases)
+function M.readonly_cache(memory, aliases, reverse)
   assert(memory.user_dict == nil and aliases.user_dict == nil, "cache must be read-only")
-  return { memory = memory, aliases = aliases, canonical = {}, static = {},
+  return { memory = memory, aliases = aliases, reverse = reverse,
+    canonical = {}, static = {}, projection = {},
     queue = {}, head = 1, count = 0, rows = 0, bytes = 0 }
 end
 
 local function remember(shared, index, code, items)
   local bytes = #code
-  for _, item in ipairs(items) do bytes = bytes + #item.text + #(item.sound or "") end
+  for _, item in ipairs(items) do
+    bytes = bytes + #item.text + #(item.sound or "") + #(item.spelling or "")
+  end
   if #items > CACHE_ROWS or bytes > CACHE_BYTES then return end
   while shared.count >= CACHE_ENTRIES or shared.rows + #items > CACHE_ROWS
     or shared.bytes + bytes > CACHE_BYTES do
@@ -181,9 +184,10 @@ end
 -- Query-local normalization budgets remain identical on cold and warm caches.
 function M.lexicon(raw, memory, aliases, reverse, lengths, score, shared)
   assert(memory.user_dict == nil and aliases.user_dict == nil, "lexical lookup must be read-only")
-  assert(not shared or (shared.memory == memory and shared.aliases == aliases),
+  assert(not shared or (shared.memory == memory and shared.aliases == aliases and shared.reverse == reverse),
     "cache dictionary owner mismatch")
   local canonical, static, normalized = {}, {}, {}
+  local normalization_seen = {}
   -- Position-free immutable edges can be shared inside this query. Keep source
   -- variants separate: a budget-limited spelling may later resolve a word ID.
   local prepared = { canonical = {}, static_alias = {}, spelled_alias = {} }
@@ -217,25 +221,47 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score, shared)
     if shared then remember(shared, index, code, items) end
     return items
   end
+  local function projected_rows(text)
+    local cached = shared and shared.projection[text]
+    if cached then return cached end
+    stats.reverse = stats.reverse + 1
+    local items = {}
+    for value in reverse:lookup(text):gmatch("%S+") do
+      if #items == 8 then break end
+      local code, id, weight = value:match("^([a-z]+)!(%d+)!(.+)$")
+      if not code then code = value:match("^([a-z]+)!x$") end
+      assert(code, "invalid canonical projection record")
+      if id then
+        id, weight = tonumber(id), tonumber(weight)
+        assert(id >= 0 and id <= 2147483647 and finite(weight), "invalid canonical projection value")
+        local entry = DictEntry()
+        local native_code = entry.code
+        native_code:push(id)
+        local decoded = memory.dict:decode(native_code)
+        assert(#decoded == 1 and decoded[1] == code, "stale canonical projection ID")
+      end
+      items[#items + 1] = { text = text, spelling = code, id = id,
+        weight = weight, sound = code:sub(1, 2) }
+    end
+    if shared then remember(shared, shared.projection, text, items) end
+    return items
+  end
   local function exact_text(text)
     local cached = normalized[text]
     if cached ~= nil then return cached or nil end
-    stats.reverse = stats.reverse + 1
-    local best, visited = nil, 0
-    for code in reverse:lookup(text):gmatch("[a-z]+") do
-      visited = visited + 1
-      if visited > 8 then break end
-      if not canonical[code] then
+    local best
+    for _, item in ipairs(projected_rows(text)) do
+      local code = item.spelling
+      -- Replay cold-query quotas even when immutable projection rows are cached.
+      if not canonical[code] and not normalization_seen[code] then
         if normalization_left == 0 then
           stats.normalization_budget = stats.normalization_budget + 1
           return nil -- A budget miss is not a dictionary miss; do not cache it.
         end
         normalization_left = normalization_left - 1
       end
-      for _, item in ipairs(lookup(memory, canonical, code, 64)) do
-        if item.text == text and finite(item.weight)
-          and (not best or item.weight > best.weight) then best = item end
-      end
+      normalization_seen[code] = true
+      if item.id and (not best or item.weight > best.weight) then best = item end
     end
     normalized[text] = best or false
     return best

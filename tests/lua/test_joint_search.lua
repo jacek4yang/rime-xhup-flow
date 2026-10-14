@@ -91,12 +91,34 @@ for _, raw in ipairs({"", long .. "a", "a b", "a1"}) do
   local unsupported = search.search(raw, function() error("unsupported input must not query storage") end)
   check(unsupported.reason == "unsupported_input" and #unsupported.paths == 0, "unsupported input is explicit")
 end
+DictEntry = function()
+  return {code={push=function(self, id) self[#self + 1] = id end}}
+end
 local function native_entry(text, id, weight)
   return { text = text, weight = weight or -1, code = { print = function() return tostring(id) end } }
 end
 local function dictionary(rows)
+  local decoded = {}
+  for spelling, items in pairs(rows) do
+    for _, item in ipairs(items) do
+      local id = tonumber(item.code:print())
+      assert(item.code:print() == items[1].code:print(), "a native spelling has one ID")
+      if id then
+        assert(not decoded[id] or decoded[id] == spelling, "native IDs are unique per spelling")
+        decoded[id] = spelling
+      end
+    end
+  end
   local current
   return {
+    dict = {decode = function(_, code)
+      local result = {}
+      for _, id in ipairs(code) do
+        if not decoded[id] then return {} end
+        result[#result + 1] = decoded[id]
+      end
+      return result
+    end},
     dict_lookup = function(_, code, predictive)
       assert(not predictive, "lexical edges must be exact")
       current = rows[code] or {}
@@ -117,7 +139,8 @@ local aliases = dictionary({
   j = {native_entry("就", 1)}, jqu = {native_entry("就是", 2)},
   nihc = {native_entry("你好", 4)}, ab = {native_entry("你你", 6)},
 })
-local reverse_map = {["就"]="jq", ["就是"]="jqui", ["你好"]="niha", ["你"]="ni", ["好"]="hc"}
+local reverse_map = {["就"]="jq!3!-1", ["就是"]="jqui!7!-1",
+  ["你好"]="niha!99!10", ["你"]="ni!13!-1", ["好"]="hc!17!-1"}
 local reverse = { lookup = function(_, text) return reverse_map[text] or "" end }
 local lengths = {jq="\2\4", qu="\2", ni="\2\4", hc="\2"}
 local raw = "jqunihc"
@@ -127,7 +150,7 @@ check(mixed[1].text == "就是你好" and mixed[1].preedit == "jqu nihc", "legal
 check(table.concat(mixed[1].codes, ",") == "7,11", "aliases resolve native IDs without replacing an exact canonical route")
 check(mixed[1].sources[1] == "static_alias" and mixed[1].sources[2] == "canonical", "source provenance distinguishes alias resolution")
 do
-  local memo = search.readonly_cache(native, aliases)
+  local memo = search.readonly_cache(native, aliases, reverse)
   local function signature(input, cache)
     local resolve, stats = search.lexicon(input, native, aliases, reverse, lengths,
       function() return -1 end, cache)
@@ -147,15 +170,29 @@ do
   local replacement = dictionary({ jqui = {native_entry("就是", 77)} })
   check(not pcall(search.lexicon, "jqu", replacement, aliases, reverse, lengths,
     function() return -1 end, memo), "schema dictionary replacement rejects old cached IDs")
-  local resolve = search.lexicon("jqu", replacement, aliases, reverse, lengths,
-    function() return -1 end, search.readonly_cache(replacement, aliases))
+  local replacement_reverse = { lookup = function(_, text)
+    return text == "就是" and "jqui!77!-1" or ""
+  end }
+  check(not pcall(search.lexicon, "jqu", native, aliases, replacement_reverse, lengths,
+    function() return -1 end, memo), "projection replacement rejects old cached records")
+  local resolve = search.lexicon("jqu", replacement, aliases, replacement_reverse, lengths,
+    function() return -1 end, search.readonly_cache(replacement, aliases, replacement_reverse))
   local changed = describe("jqu", search.search("jqu", resolve), 3)
   check(changed[1].text == "就是" and changed[1].codes[1] == 77, "new schema uses its own syllable IDs")
 end
 
+for _, invalid in ipairs({"jqui!77!-1", "zz!7!-1", "jqui!7!1e999", "jqui"}) do
+  local projection = {lookup = function(_, text)
+    return text == "就是" and invalid or reverse:lookup(text)
+  end}
+  local resolve = search.lexicon("jqu", native, aliases, projection, lengths, function() return -1 end)
+  check(not pcall(search.search, "jqu", resolve),
+    "stale IDs, mismatched spellings and malformed weights cannot produce native candidates")
+end
+
 do
   local empty, alias_rows = dictionary({}), dictionary({})
-  local memo = search.readonly_cache(empty, alias_rows)
+  local memo = search.readonly_cache(empty, alias_rows, reverse)
   local bounds = {}
   for i = 0, 675 do
     local code = string.char(97 + math.floor(i / 26), 97 + i % 26)
@@ -168,11 +205,14 @@ do
     function() return -1 end, memo)
   resolve(0)
   check(evicted.lookups > 0, "old negative entries are evicted rather than retained forever")
-  local dense, rows = {}, {}
-  for i = 1, 64 do rows[i] = native_entry("字" .. i, i) end
-  for code in pairs(bounds) do dense[code] = rows end
+  local dense = {}
+  for i = 0, 675 do
+    local code, rows = string.char(97 + math.floor(i / 26), 97 + i % 26), {}
+    for j = 1, 64 do rows[j] = native_entry("字" .. j, i) end
+    dense[code] = rows
+  end
   local owner = dictionary(dense)
-  memo = search.readonly_cache(owner, alias_rows)
+  memo = search.readonly_cache(owner, alias_rows, reverse)
   for i = 0, 49 do
     local code = string.char(97 + math.floor(i / 26), 97 + i % 26)
     search.lexicon(code, owner, alias_rows, reverse, bounds, function() return -1 end, memo)(0)
@@ -180,7 +220,7 @@ do
   check(memo.rows <= 2048 and memo.count <= 512 and memo.bytes <= 262144,
     "dense homophone buckets remain bounded by total rows, not only lookup count")
   owner = dictionary({aa = {native_entry(string.rep("字", 90000), 1)}})
-  memo = search.readonly_cache(owner, alias_rows)
+  memo = search.readonly_cache(owner, alias_rows, reverse)
   search.lexicon("aa", owner, alias_rows, reverse, bounds, function() return -1 end, memo)(0)
   local again, oversized = search.lexicon("aa", owner, alias_rows, reverse, bounds,
     function() return -1 end, memo)
@@ -191,7 +231,7 @@ do
   -- The same alias can initially hit the normalization budget, then acquire a
   -- whole-word ID at a later position. Reusing an edge must not freeze fallback IDs.
   local rows = dictionary({
-    ab = { native_entry("你", 1), native_entry("好", 2) },
+    ab = { native_entry("你", 1), native_entry("好", 1) },
     zz = { native_entry("你好", 3) },
   })
   local alias_rows = dictionary({ a = {
@@ -201,12 +241,15 @@ do
   local spellings = {
     ["甲"] = "xa xb xc xd xe xf xg xh", ["乙"] = "xi xj xk xl xm xn xo xp",
     ["丙"] = "xq xr xs xt xu xv xw xx", ["丁"] = "ya yb yc yd ye yf yg yh",
-    ["你"] = "ab", ["好"] = "ab", ["你好"] = "zz",
+    ["你"] = "ab!1!-1", ["好"] = "ab!1!-1", ["你好"] = "zz!3!-1",
   }
-  local memo = search.readonly_cache(rows, alias_rows)
+  for _, text in ipairs({"甲", "乙", "丙", "丁"}) do
+    spellings[text] = spellings[text]:gsub("([a-z]+)", "%1!x")
+  end
+  local projection = {lookup = function(_, text) return spellings[text] or "" end}
+  local memo = search.readonly_cache(rows, alias_rows, projection)
   for _ = 1, 2 do
-    local resolve = search.lexicon("abab", rows, alias_rows,
-      { lookup = function(_, text) return spellings[text] or "" end },
+    local resolve = search.lexicon("abab", rows, alias_rows, projection,
       { ab = "\2" }, function() return -1 end, memo)
     local function alias_at(start)
       for _, item in ipairs(resolve(start)) do
@@ -215,7 +258,7 @@ do
       error("valid alias missing")
     end
     local before, after = alias_at(0), alias_at(2)
-    check(before.source == "spelled_alias" and table.concat(before.codes, ",") == "1,2"
+    check(before.source == "spelled_alias" and table.concat(before.codes, ",") == "1,1"
       and after.source == "static_alias" and table.concat(after.codes, ",") == "3",
       "cold/warm normalization budgets preserve fallback and whole-word learning IDs")
   end
@@ -246,9 +289,6 @@ check(not pcall(search.scorer, stale_model), "missing schema/model binding fails
 -- low-confidence sentences, and legacy policies; partial/predictive heads cannot
 -- hide a fully consumed path. Exercise the real search and provider ordering.
 local policy = require("xhup_flow.native_tail")
-DictEntry = function()
-  return {code={push=function(self, id) self[#self + 1] = id end}}
-end
 Phrase = function(_, _, start, finish, entry)
   local phrase = {start=start, _end=finish, text=entry.text, type="phrase"}
   phrase.toCandidate = function() return phrase end
@@ -299,9 +339,9 @@ end
 for _, margin in ipairs({2047, 2048, 2049}) do
   local memory = dictionary({
     aa={native_entry("甲", 1)},
-    bb={native_entry("乙", 2), native_entry("丙", 3), native_entry("丁", 4),
-      native_entry("戊", 5), native_entry("己", 6), native_entry("庚", 7),
-      native_entry("辛", 8), native_entry("壬", 9)},
+    bb={native_entry("乙", 2), native_entry("丙", 2), native_entry("丁", 2),
+      native_entry("戊", 2), native_entry("己", 2), native_entry("庚", 2),
+      native_entry("辛", 2), native_entry("壬", 2)},
   })
   memory.lang_name = "fixture"
   local head = {start=0, _end=4, text="原生整句", type="sentence",
@@ -335,7 +375,7 @@ end
 -- Request the stream incrementally, as a real translation consumer does.
 do
   local memory = dictionary({
-    aa={native_entry("甲", 1)}, bb={native_entry("乙", 2), native_entry("丁", 3)},
+    aa={native_entry("甲", 1)}, bb={native_entry("乙", 2), native_entry("丁", 2)},
   })
   memory.lang_name = "fixture"
   local head = {start=0, _end=4, text="甲乙", type="sentence",

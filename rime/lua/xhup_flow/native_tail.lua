@@ -289,8 +289,11 @@ local function prepare_joint(env)
     local aliases = Memory(env.engine, env.engine.schema, "flow_aliases")
     assert(aliases.user_dict == nil and aliases.dict.loaded)
     env.aliases = aliases
-    env.lexical_cache = joint.readonly_cache(env.memory, aliases)
-    env.reverse = ReverseDb("build/xhup_flow_user.reverse.bin")
+    env.reverse = ReverseDb("build/xhup_flow_alias_projection.reverse.bin")
+    assert(type(env.memory.dict.decode) == "function")
+    local identity = config:get_string("flow/alias_index_id")
+    assert(identity and #identity == 64 and env.reverse:lookup("__xhup_alias_identity__") == identity)
+    env.lexical_cache = joint.readonly_cache(env.memory, aliases, env.reverse)
     env.lexical_score, env.transition_score = lexical, transition
   end)
   if ready then

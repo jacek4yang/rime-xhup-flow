@@ -85,6 +85,19 @@ def main() -> None:
     typing = prepare('typing', False)
     run(typing, 'typing')
     assert not list(typing.glob('*.userdb*')), 'learning-off typing created a user database'
+    missing = prepare('projection-missing', False)
+    (missing / 'build/xhup_flow_alias_projection.reverse.bin').unlink()
+    run(missing, 'projection-missing', '--projection-unavailable')
+    stale = prepare('projection-stale', False)
+    with (stale / 'xhup_flow.custom.yaml').open('a') as stream:
+        stream.write('  flow/alias_index_id: "' + '0' * 64 + '"\n')
+    with (output / 'projection-stale-redeploy.log').open('wb') as log:
+        subprocess.run(['rime_deployer', '--compile', str(stale / 'xhup_flow.schema.yaml'),
+                        str(stale), str(args.shared_data_dir)],
+                       stdout=log, stderr=subprocess.STDOUT, check=True)
+    run(stale, 'projection-stale', '--projection-unavailable')
+    for user in (missing, stale):
+        assert not list(user.glob('*.userdb*')), 'unavailable projection created a user database'
     learning = prepare('learning', True)
     run(learning, 'first-choice', '--learn')
     exported(learning, 'first-choice', 1)
