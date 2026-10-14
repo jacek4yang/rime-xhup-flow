@@ -56,6 +56,19 @@ Ubuntu 24.04 的 RPM 4.18.2 `rpm2cpio` 要求 `LONGARCHIVESIZE`，当前构建�
 - 当前版本 BUILD-MANIFEST schema 2、全部封存文件实际字节和精确清单均通过验证。
   来源校验不执行附件提供的程序；实际平台使用验收另在目标环境中运行受验安装包。
 
+## CI 测试发现与实际 CLI
+
+CI 的发布行为套件使用 `test_*.py` 统一发现，不维护容易失效的单文件名列表。
+2026-10-14 的运行 `38497295414` 仍调用已删除的
+`test_packaging_runtime_gates.py`，Python 报 `NO TESTS RAN` 并退出 5；
+这是工作流缺陷，不是可忽略的环境失败。
+
+执行前构建当前源码的 `xhup-cli`，通过 `XHUP_CLI` 显式传入绝对路径。
+测试实际调用 CLI 校验来源、封存字节和平台授权；缺少 CLI 不能跳过。
+不恢复只检查工作流文本的旧测试，不把零测试退出码改成成功。
+修复后重新运行同源 CI，保留此前失败记录，不改写旧运行的源 SHA 或结果。
+
+
 ## 资格记录
 
 `release/qualification-v<VERSION>.json`：
