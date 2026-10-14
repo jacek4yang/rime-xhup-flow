@@ -90,10 +90,15 @@ pub(crate) fn generate(flow: &str) -> Result<(String, String), LuaBuildError> {
         pairs.truncate(MAX_PAIRS);
     }
     pairs.sort_unstable_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+    // Compatibility heuristic for discarding two explicitly typed shape keys.
+    // Use the same integer Q10 approximation as lexical frequencies, not a
+    // claimed calibrated probability. Negative runtime costs keep user rewards
+    // on their existing native probability scale.
+    let split_penalty = BaselineScorer::frequency_reward(26 * 26 - 1);
     let mut out = String::new();
     writeln!(
         out,
-        "local model = {{ policy = \"joint-frequency-context-v2\", total_reward = {denominator},"
+        "local model = {{ policy = \"joint-frequency-context-shape-v3\", total_reward = {denominator}, primary_full_code_split_penalty = {split_penalty},"
     )
     .unwrap();
     writeln!(
