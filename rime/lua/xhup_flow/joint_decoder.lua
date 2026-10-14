@@ -33,7 +33,8 @@ end
 
 -- edges_at(start) returns bounded lexical alternatives, in deterministic order.
 -- Each edge owns keys/text/source/codes/lexical; transition(previous, edge)
--- supplies a contextual score. Neither callback may mutate retained edges.
+-- supplies a contextual score. Callbacks are deterministic and must not mutate
+-- retained edges.
 -- start/finish are zero-based raw-key offsets, never virtual query offsets.
 function M.search(raw, edges_at, transition)
   if #raw == 0 or #raw > M.max_input or raw:find("[^a-z]") then
@@ -55,14 +56,19 @@ function M.search(raw, edges_at, transition)
           and raw:sub(start + 1, finish) == edge.keys and finite(edge.lexical) then
           local target = beams[finish]
           if not target then target = {}; beams[finish] = target end
+          local last_previous, context, valid_context
           for j = 1, #beam do
             local previous = beam[j]
-            local context = transition and transition(previous.edge, edge) or 0
-            if finite(context) then
+            if j == 1 or previous.edge ~= last_previous then
+              context = transition and transition(previous.edge, edge) or 0
+              valid_context = finite(context)
+              last_previous = previous.edge
+            end
+            if valid_context then
               local score, count = previous.score + edge.lexical + context, previous.count + 1
               serial = serial + 1
-              if finite(score) and (#target < M.beam_width
-                or better(score, count, serial, target[#target])) then
+              if (#target < M.beam_width or better(score, count, serial, target[#target]))
+                and finite(score) then
                 local position = #target + 1
                 while position > 1 and better(score, count, serial, target[position - 1]) do
                   position = position - 1

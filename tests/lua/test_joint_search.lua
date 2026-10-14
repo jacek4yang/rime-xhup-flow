@@ -64,6 +64,20 @@ for finish = 1, 3 do
       "beam replacement preserves ancestor text, score and edge count")
   end
 end
+do
+  local entries = {edge("b", "尾", 0), edge("c", "甲终", 0), edge("c", "乙终", 0)}
+  for i = 1, search.beam_width do entries[#entries + 1] = edge("a", "字" .. i, i) end
+  local paths = describe("abc", search.search("abc", provider("abc", entries), function(previous, current)
+    if previous and previous.text == "字8" then return math.huge end
+    if previous and previous.text == "尾" then return current.text == "乙终" and 100 or -100 end
+    return 0
+  end), 3)
+  check(paths[1].text == "字7尾乙终" and paths[1].score == 107,
+    "shared predecessor scores remain specific to the current edge")
+  for _, path in ipairs(paths) do
+    check(not path.text:find("字8", 1, true), "nonfinite transitions never enter retained paths")
+  end
+end
 local ties = { edge("ab", "词", -2), edge("a", "字", -1), edge("b", "符", -1) }
 local tied = describe("ab", search.search("ab", provider("ab", ties)), 2)
 check(tied[1].text == "词" and tied[2].text == "字符", "equal scores prefer fewer edges deterministically")
