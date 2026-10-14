@@ -284,10 +284,13 @@ end
 -- whether an automatically composed sentence may yield first place.
 for _, margin in ipairs({2047, 2048, 2049}) do
   local memory = dictionary({
-    aa={native_entry("甲", 1)}, bb={native_entry("乙", 2), native_entry("丙", 3)},
+    aa={native_entry("甲", 1)},
+    bb={native_entry("乙", 2), native_entry("丙", 3), native_entry("丁", 4),
+      native_entry("戊", 5), native_entry("己", 6), native_entry("庚", 7),
+      native_entry("辛", 8), native_entry("壬", 9)},
   })
   memory.lang_name = "fixture"
-  local head = {start=0, _end=4, text="甲丙", type="sentence",
+  local head = {start=0, _end=4, text="原生整句", type="sentence",
     to_phrase=function() return {entry={remaining_code_length=0}} end}
   local output = {}
   yield = function(candidate) output[#output + 1] = candidate end
@@ -295,7 +298,7 @@ for _, margin in ipairs({2047, 2048, 2049}) do
     engine={context={get_option=function() return true end, set_property=function() end}},
     ranking_policy="joint-confidence-v1", joint_ready=true,
     memory=memory, aliases=dictionary({}), reverse=reverse, edge_lengths={aa="\2", bb="\2"},
-    lexical_score=function(text) return text == "丙" and -1 - margin or -1 end,
+    lexical_score=function(text) return text ~= "甲" and text ~= "乙" and -1 - margin or -1 end,
     native={lang_name="fixture", query=function()
       return {iter=function() local done=false; return function()
         if not done then done=true; return head end
@@ -304,6 +307,11 @@ for _, margin in ipairs({2047, 2048, 2049}) do
   })
   if margin >= 2048 then
     check(output[1].text == "甲乙", "confident full path outranks an automatic native sentence")
+    local visible_native = false
+    for index = 1, math.min(5, #output) do
+      if output[index] == head then visible_native = true end
+    end
+    check(visible_native, "confident promotion keeps genuine native fallback on the first page")
   else
     check(output[1] == head, "ambiguous full paths retain the genuine native first choice")
   end

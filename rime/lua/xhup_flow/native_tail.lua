@@ -405,9 +405,9 @@ function M.func(input, segment, env)
     return
   end
   local full_appended = false
-  local function append_full()
+  local function append_full(start)
     if full_appended then return end
-    for _, candidate in ipairs(full) do emit(candidate) end
+    for index = start or 1, #full do emit(full[index]) end
     full_appended = true
   end
   local collected, appended = 0, false
@@ -421,9 +421,17 @@ function M.func(input, segment, env)
       local protect = env.ranking_policy ~= "joint-confidence-v1"
         or candidate.type ~= "sentence" or not confident
         or (full[1] and full[1].text == candidate.text)
-      if collected == 0 and used_joint and complete_exact(candidate, segment) and protect then
-        emit(candidate)
-        append_full()
+      if collected == 0 and used_joint and complete_exact(candidate, segment) then
+        if protect then
+          emit(candidate)
+          append_full()
+        else
+          -- Promote only the confident winner. Keep the native alternative
+          -- visible, rather than burying it behind the entire joint beam.
+          emit(full[1])
+          emit(candidate)
+          append_full(2)
+        end
       else
         append_full()
         emit(candidate)

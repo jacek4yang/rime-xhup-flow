@@ -106,6 +106,16 @@ static void first_choice_case(const char *keys, const char *expected) {
   r->destroy_session(s);
 }
 
+static void native_fallback_case(void) {
+  RimeSessionId s = start();
+  r->set_option(s, "joint_decoder", 1);
+  State state = type(s, "visible-native-fallback", "taruhzbjji", "踏入后半季", NULL);
+  check(state.target_rank >= 0 && state.target_rank < state.page_size,
+        "joint promotion keeps the native fallback on the visible first page");
+  selected_commit(s, &state, "踏入后半季", "visible native fallback commits completely");
+  r->destroy_session(s);
+}
+
 int main(int argc, char **argv) {
   if (argc != 3 && argc != 4) return 2;
   if (argc == 4 && strcmp(argv[3], "--learn") && strcmp(argv[3], "--learned")
@@ -152,6 +162,7 @@ int main(int argc, char **argv) {
   };
   for (size_t i = 0; i < sizeof(first_choices) / sizeof(first_choices[0]); ++i)
     first_choice_case(first_choices[i][0], first_choices[i][1]);
+  native_fallback_case();
   cursor_case();
   RimeSessionId s = start();
   r->set_option(s, "joint_decoder", 1);
