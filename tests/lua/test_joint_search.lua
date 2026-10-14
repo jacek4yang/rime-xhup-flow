@@ -191,6 +191,28 @@ for _, invalid in ipairs({"jqui!77!-1", "zz!7!-1", "jqui!7!1e999", "jqui"}) do
 end
 
 do
+  local rows = {}
+  for text in ("甲乙丙丁戊己庚辛末"):gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+    rows[#rows + 1] = native_entry(text, 1)
+  end
+  local owner = dictionary({ab = rows})
+  local alias_rows = dictionary({z = {native_entry("末", 0)}})
+  local projection = {lookup = function(_, text)
+    return text == "末" and "ab!1!-1" or ""
+  end}
+  local memo = search.readonly_cache(owner, alias_rows, projection)
+  for _ = 1, 2 do
+    local resolve = search.lexicon("abz", owner, alias_rows, projection, {ab = "\2"},
+      function() return -1 end, memo)
+    local paths = describe("abz", search.search("abz", resolve), 3)
+    check(paths[1].text == "甲末" and paths[1].remaining == "",
+      "alias beyond the canonical edge shortlist remains reachable on cold and warm caches")
+    check(table.concat(paths[1].codes, ",") == "1,1",
+      "shortlist truncation does not change the alias's original native code identity")
+  end
+end
+
+do
   local empty, alias_rows = dictionary({}), dictionary({})
   local memo = search.readonly_cache(empty, alias_rows, reverse)
   local bounds = {}

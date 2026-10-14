@@ -215,7 +215,9 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score, shared)
         items[#items + 1] = { text = entry.text, weight = entry.weight,
           id = id and tonumber(id) or nil, sound = sound }
       end
-      if examined >= bound then break end
+      -- Only eight accepted rows form lexical edges. Alias eligibility uses the
+      -- separately verified 64-row projection, not this materialized shortlist.
+      if #items == 8 or examined >= bound then break end
     end
     cache[code] = items
     if shared then remember(shared, index, code, items) end
