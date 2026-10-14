@@ -302,8 +302,50 @@ local malformed = {
 lookup = search.lexicon("zz", malformed, dictionary({}), reverse, {zz="\2"}, function() return -1 end)
 check(#search.search("zz", lookup).paths == 0 and visits == 64, "invalid canonical code vectors cannot cause an unbounded scan")
 
-local stale_model = {identity="old", policy="joint-frequency-context-v2",
-  total_reward=0, characters={}, transitions={}}
+do
+  local rows = dictionary({
+    ab = {native_entry("甲", 1)}, abcd = {native_entry("乙", 2)},
+    abc = {native_entry("丙丁", 3)}, dd = {native_entry("戊", 4)},
+  })
+  local static_rows = dictionary({
+    abcd = {native_entry("乙", 5)}, d = {native_entry("戊", 6)},
+  })
+  local projection = {lookup = function(_, text)
+    return text == "戊" and "dd!4!-1" or ""
+  end}
+  local function lexical(text) return text == "乙" and -9000 or -1 end
+  local bounds = {ab = "\2\3\4"}
+  local provider = search.lexicon("abcdabxx", rows, static_rows, projection,
+    bounds, lexical, nil, 9544)
+  local function edge_at(position, keys)
+    for _, edge in ipairs(provider(position)) do
+      if edge.keys == keys then return edge end
+    end
+    error("missing fixture edge")
+  end
+  check(edge_at(0, "ab").compatibility == -9544,
+    "splitting an actual primary full character carries a compatibility cost")
+  check(edge_at(4, "ab").compatibility == 0 and edge_at(0, "ab").compatibility == -9544,
+    "repeated lexical edges do not inherit another position's shape evidence")
+  provider = search.lexicon("abcd", rows, static_rows, projection, bounds, lexical, nil, 0)
+  check(describe("abcd", search.search("abcd", provider), 4)[1].text == "丙丁戊",
+    "frequency alone prefers the shorter-code combination in this ambiguity")
+  provider = search.lexicon("abcd", rows, static_rows, projection, bounds, lexical, nil, 9544)
+  local paths = describe("abcd", search.search("abcd", provider), 4)
+  check(paths[1].text == "乙" and paths[1].score == -9000 and paths[1].compatibility == 0,
+    "primary full-code evidence can outweigh a frequent shorter-code combination")
+  check(paths[2].text == "丙丁戊" and paths[2].compatibility == -9544
+    and paths[2].score == paths[2].lexical + paths[2].context + paths[2].compatibility,
+    "the alternative remains reachable with independently explainable score components")
+  local word_first = dictionary({abcd = {native_entry("丙丁", 7)}})
+  provider = search.lexicon("abcd", rows, word_first, projection, bounds, lexical, nil, 9544)
+  local short
+  for _, edge in ipairs(provider(0)) do if edge.keys == "abc" then short = edge end end
+  check(short.compatibility == 0, "a four-key word alias is not evidence of a primary full character")
+end
+
+local stale_model = {identity="old", policy="joint-frequency-context-shape-v3",
+  primary_full_code_split_penalty=9544, total_reward=0, characters={}, transitions={}}
 check(not pcall(search.scorer, stale_model, "new"), "a cached model from another deployment cannot score candidates")
 check(not pcall(search.scorer, stale_model), "missing schema/model binding fails closed")
 

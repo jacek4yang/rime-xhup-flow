@@ -173,6 +173,7 @@ int main(int argc, char **argv) {
     {"q", "去"}, {"jqu", "就是"}, {"jbzqu", "进去"},
     {"nihcnzqu", "你好去"}, {"nihcnznihcnzqu", "你好你好去"},
     {"nihcvegeuurufawojtdesuduhduikeyi", "你好这个输入法我觉得速度还是可以"},
+    {"tarywufd", "他於"}, {"djraqkdoicuowufd", "但清朝於"},
   };
   for (size_t i = 0; i < sizeof(first_choices) / sizeof(first_choices[0]); ++i)
     first_choice_case(first_choices[i][0], first_choices[i][1]);

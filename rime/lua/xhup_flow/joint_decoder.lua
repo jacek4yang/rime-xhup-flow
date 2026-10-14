@@ -6,8 +6,11 @@ local LOG_Q10 = 1024 / math.log(2)
 
 function M.scorer(data, identity)
   data = data or require("xhup_flow.data.joint_scores")
-  assert(data.policy == "joint-frequency-context-v2", "unsupported joint scoring policy")
+  assert(data.policy == "joint-frequency-context-shape-v3", "unsupported joint scoring policy")
   assert(type(identity) == "string" and data.identity == identity, "stale joint scoring model")
+  assert(type(data.primary_full_code_split_penalty) == "number"
+    and data.primary_full_code_split_penalty >= 0
+    and data.primary_full_code_split_penalty <= 32768, "invalid shape compatibility cost")
   local scale = LOG_Q10
   local offset = math.log(100000000) * scale - data.total_reward
   return function(text, weight, sound)
@@ -18,7 +21,7 @@ function M.scorer(data, identity)
   end, function(previous, edge)
     local row = data.transitions[previous and previous.text or "<s>"]
     return row and row[edge.text] or 0
-  end
+  end, data.primary_full_code_split_penalty
 end
 
 local function better(score, count, serial, other)
@@ -42,7 +45,7 @@ function M.search(raw, edges_at, transition)
   if n == 0 or n > M.max_input or raw:find("[^a-z]") then
     return { paths = {}, reason = "unsupported_input", truncated_edges = 0 }
   end
-  local root = { finish = 0, score = 0, lexical = 0, context = 0,
+  local root = { finish = 0, score = 0, lexical = 0, context = 0, compatibility = 0,
     count = 0, serial = 0 }
   local beams = { [0] = { root } }
   local serial, truncated = 0, 0
@@ -62,7 +65,8 @@ function M.search(raw, edges_at, transition)
             and raw:sub(start + 1, finish) == edge.keys
           last_keys = edge.keys
         end
-        if valid_keys and finite(edge.lexical) then
+        local compatibility = edge.compatibility or 0
+        if valid_keys and finite(edge.lexical) and finite(compatibility) then
           local target = beams[finish]
           if not target then target = {}; beams[finish] = target end
           local target_count = #target
@@ -75,7 +79,8 @@ function M.search(raw, edges_at, transition)
               last_previous = previous.edge
             end
             if valid_context then
-              local score, count = previous.score + edge.lexical + context, previous.count + 1
+              local score = previous.score + edge.lexical + context + compatibility
+              local count = previous.count + 1
               serial = serial + 1
               if (target_count < width or better(score, count, serial, target[target_count]))
                 and finite(score) then
@@ -93,11 +98,13 @@ function M.search(raw, edges_at, transition)
                   node.score, node.count, node.serial = score, count, serial
                   node.lexical = previous.lexical + edge.lexical
                   node.context = previous.context + context
+                  node.compatibility = previous.compatibility + compatibility
                 else
                   node = { previous = previous, edge = edge, finish = finish,
                     score = score, count = count, serial = serial,
                     lexical = previous.lexical + edge.lexical,
-                    context = previous.context + context }
+                    context = previous.context + context,
+                    compatibility = previous.compatibility + compatibility }
                   target_count = target_count + 1
                 end
                 table.insert(target, position, node)
@@ -146,6 +153,7 @@ function M.describe(raw, node, start, diagnostics)
     keys = keys, words = texts, sources = sources, spans = spans, codes = codes,
     text = table.concat(texts), preedit = table.concat(keys, " "),
     lexical = node.lexical, context = node.context, score = node.score,
+    compatibility = node.compatibility,
     tie = node.serial, node = node }
 end
 
@@ -182,15 +190,20 @@ local function remember(shared, index, code, items)
 end
 
 -- Query-local normalization budgets remain identical on cold and warm caches.
-function M.lexicon(raw, memory, aliases, reverse, lengths, score, shared)
+function M.lexicon(raw, memory, aliases, reverse, lengths, score, shared, split_penalty)
+  split_penalty = split_penalty or 0
+  assert(finite(split_penalty) and split_penalty >= 0, "invalid shape compatibility cost")
   assert(memory.user_dict == nil and aliases.user_dict == nil, "lexical lookup must be read-only")
   assert(not shared or (shared.memory == memory and shared.aliases == aliases and shared.reverse == reverse),
     "cache dictionary owner mismatch")
   local canonical, static, normalized = {}, {}, {}
   local normalization_seen = {}
-  -- Position-free immutable edges can be shared inside this query. Keep source
-  -- variants separate: a budget-limited spelling may later resolve a word ID.
-  local prepared = { canonical = {}, static_alias = {}, spelled_alias = {} }
+  -- Compatibility depends on the following keys. Never reuse a penalized edge
+  -- at a position without the same primary full-code evidence (or vice versa).
+  local prepared = {
+    plain = { canonical = {}, static_alias = {}, spelled_alias = {} },
+    split = { canonical = {}, static_alias = {}, spelled_alias = {} },
+  }
   local prepared_count = 0
   local stats = { lookups = 0, reverse = 0, rows = 0, normalization_budget = 0 }
   local normalization_left = 0
@@ -273,24 +286,35 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score, shared)
     local edges = {}
     local remaining = #raw - start
     local native_lengths = lengths[raw:sub(start + 1, start + 2)] or ""
+    local primary
+    if split_penalty > 0 and remaining >= 4 and native_lengths:find("\4", 1, true) then
+      local full_code = raw:sub(start + 1, start + 4)
+      local first = lookup(aliases, static, full_code, 8)[1]
+      if first and first.text:match("^[%z\1-\127\194-\244][\128-\191]*$") then
+        for _, item in ipairs(lookup(memory, canonical, full_code, 64)) do
+          if item.text == first.text then primary = first.text; break end
+        end
+      end
+    end
     local seen = {}
     local function add(code, text, codes, weight, source, fallback_score, sound)
       local key = code .. "\0" .. text
       if seen[key] then return end
-      local lexical = fallback_score or score(text, weight, sound)
-      if not finite(lexical) then return end
-      seen[key] = true
-      local cache = prepared[source]
+      local split = primary and (#code < 4 or (#code == 4 and text ~= primary))
+      local cache = (split and prepared.split or prepared.plain)[source]
       local edge = cache[key]
       if not edge then
+        local lexical = fallback_score or score(text, weight, sound)
+        if not finite(lexical) then return end
         edge = { keys = code, text = text,
           codes = type(codes) == "number" and { codes } or codes,
-          lexical = lexical, source = source }
+          lexical = lexical, compatibility = split and -split_penalty or 0, source = source }
         if prepared_count < 1024 then
           cache[key] = edge
           prepared_count = prepared_count + 1
         end
       end
+      seen[key] = true
       edges[#edges + 1] = edge
     end
     -- Native edges come first, preserving their exact canonical syllable IDs

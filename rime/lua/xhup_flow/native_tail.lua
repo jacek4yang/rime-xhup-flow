@@ -95,6 +95,7 @@ function M.init(env)
   env.native, env.memory, env.native_error, env.edge_lengths = nil, nil, nil, nil
   env.joint_ready, env.aliases, env.reverse = nil, nil, nil
   env.lexical_score, env.transition_score = nil, nil
+  env.primary_full_code_split_penalty = nil
   env.lexical_cache = nil
   if not Component or not Component.Translator then
     env.native_error = "native translator API unavailable"
@@ -179,6 +180,7 @@ function M.fini(env)
   end
   env.memory, env.native, env.edge_lengths = nil, nil, nil
   env.aliases, env.reverse, env.lexical_score, env.transition_score = nil, nil, nil, nil
+  env.primary_full_code_split_penalty = nil
   env.joint_ready = nil
   env.lexical_cache = nil
   env.ranking_policy = nil
@@ -285,7 +287,7 @@ local function prepare_joint(env)
     assert(type(env.memory.dict.name) == "string"
       and env.native.dict.name == env.memory.dict.name and env.native.dict.loaded)
     local joint = require("xhup_flow.joint_decoder")
-    local lexical, transition = joint.scorer(nil, config:get_string("flow/joint_model_id"))
+    local lexical, transition, split_penalty = joint.scorer(nil, config:get_string("flow/joint_model_id"))
     local aliases = Memory(env.engine, env.engine.schema, "flow_aliases")
     assert(aliases.user_dict == nil and aliases.dict.loaded)
     env.aliases = aliases
@@ -295,6 +297,7 @@ local function prepare_joint(env)
     assert(identity and #identity == 64 and env.reverse:lookup("__xhup_alias_identity__") == identity)
     env.lexical_cache = joint.readonly_cache(env.memory, aliases, env.reverse)
     env.lexical_score, env.transition_score = lexical, transition
+    env.primary_full_code_split_penalty = split_penalty
   end)
   if ready then
     env.joint_ready = true
@@ -349,7 +352,7 @@ end
 local function joint_candidates(input, segment, env)
   local joint = require("xhup_flow.joint_decoder")
   local provider, stats = joint.lexicon(input, env.memory, env.aliases, env.reverse,
-    env.edge_lengths, env.lexical_score, env.lexical_cache)
+    env.edge_lengths, env.lexical_score, env.lexical_cache, env.primary_full_code_split_penalty)
   local result = joint.search(input, provider, env.transition_score)
   local complete_count = 0
   while complete_count < #result.paths and result.paths[complete_count + 1].finish == #input do
