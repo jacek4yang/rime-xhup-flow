@@ -29,6 +29,7 @@ def read_trace(path, metadata, mode):
     rows, timing = {}, defaultdict(list)
     steps = defaultdict(int)
     commits = defaultdict(int)
+    last_steps = {}
     for line in path.read_text().splitlines():
         if not line.startswith("{"):
             continue  # audit deployment headings are not JSON records
@@ -49,7 +50,11 @@ def read_trace(path, metadata, mode):
             if span != expected_span:
                 raise ValueError("partial candidate cannot count as complete sentence recall")
             page_size = row.get("page_size")
-            if type(page_size) is not int or not 1 <= page_size <= 256:
+            frame = last_steps.pop(row["case"], {})
+            empty_menu = (page_size == 0 and row["rank"] == -1 and frame.get("head") == []
+                          and type(frame.get("page_size")) is int and frame["page_size"] == 0
+                          and isinstance(frame.get("raw"), str) and len(frame["raw"]) == row["keys"])
+            if type(page_size) is not int or not (1 <= page_size <= 256 or empty_menu):
                 raise ValueError("missing or invalid visible page boundary")
             if type(row.get("first_page")) is not bool or row["first_page"] != (0 <= row["rank"] < page_size):
                 raise ValueError("first-page outcome disagrees with complete candidate rank")
@@ -60,6 +65,7 @@ def read_trace(path, metadata, mode):
             commits[row["case"]] += 1
         elif "key" in row:
             steps[row["case"]] += 1
+            last_steps[row["case"]] = row
             for field in ("keypress_ns", "key_to_menu_ns", "bounded_probe_ns"):
                 if row[field] < 0:
                     raise ValueError("negative latency")
@@ -68,9 +74,12 @@ def read_trace(path, metadata, mode):
         raise ValueError("incomplete trace (never silently drop missing cases)")
     for case in metadata["cases"]:
         case_id = case["id"]
-        if rows[case_id]["keys"] != case["characters"] * 2:
+        keys = case.get("keys")
+        if type(keys) is not int or not 2 <= keys <= 128:
+            raise ValueError("explicit frozen key count required; regenerate corpus metadata")
+        if rows[case_id]["keys"] != keys:
             raise ValueError("input length does not match frozen fixture")
-        if steps[case_id] != case["characters"] * 2 + 4:
+        if steps[case_id] != keys + 4:
             raise ValueError("missing or duplicated per-key evidence")
         if rows[case_id]["commit_exact"] and commits[case_id] != 1:
             raise ValueError("missing or duplicated commit evidence")
