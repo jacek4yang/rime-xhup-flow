@@ -85,6 +85,27 @@ static void encoded_learning_case(const char *mode) {
   r->destroy_session(s);
 }
 
+static void first_choice_case(const char *keys, const char *expected) {
+  RimeSessionId s = start();
+  r->set_option(s, "joint_decoder", 1);
+  State state = type(s, "first-choice", keys, expected, NULL);
+  check(state.target_rank == 0, "full target is first, not merely reachable");
+  RIME_STRUCT(RimeCommit, commit);
+  int early = r->get_commit(s, &commit);
+  check(!early, "typing does not commit before explicit selection");
+  if (early) r->free_commit(&commit);
+  r->process_key(s, ' ', 0);
+  int committed = r->get_commit(s, &commit);
+  check(committed && commit.text && !strcmp(commit.text, expected),
+        "space selects and commits the exact full first choice");
+  if (committed) r->free_commit(&commit);
+  check(!r->get_input(s) || !*r->get_input(s), "first-choice selection consumes all raw keys");
+  int duplicate = r->get_commit(s, &commit);
+  check(!duplicate, "first-choice selection has no duplicate commit");
+  if (duplicate) r->free_commit(&commit);
+  r->destroy_session(s);
+}
+
 int main(int argc, char **argv) {
   if (argc != 3 && argc != 4) return 2;
   if (argc == 4 && strcmp(argv[3], "--learn") && strcmp(argv[3], "--learned")
@@ -124,6 +145,13 @@ int main(int argc, char **argv) {
     selected_commit(s, &state, cases[i][1], cases[i][0]);
     r->destroy_session(s);
   }
+  const char *first_choices[][2] = {
+    {"q", "去"}, {"jqu", "就是"}, {"jbzqu", "进去"},
+    {"nihcnzqu", "你好去"}, {"nihcnznihcnzqu", "你好你好去"},
+    {"nihcvegeuurufawojtdesuduhduikeyi", "你好这个输入法我觉得速度还是可以"},
+  };
+  for (size_t i = 0; i < sizeof(first_choices) / sizeof(first_choices[0]); ++i)
+    first_choice_case(first_choices[i][0], first_choices[i][1]);
   cursor_case();
   RimeSessionId s = start();
   r->set_option(s, "joint_decoder", 1);

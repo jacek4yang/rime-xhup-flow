@@ -228,9 +228,9 @@ local stale_model = {identity="old", policy="joint-frequency-context-v2",
 check(not pcall(search.scorer, stale_model, "new"), "a cached model from another deployment cannot score candidates")
 check(not pcall(search.scorer, stale_model), "missing schema/model binding fails closed")
 
--- The joint model is not calibrated against native translator quality. A
--- complete native first choice survives; partial/predictive heads cannot hide
--- a fully consumed joint path. Exercise real search and provider ordering.
+-- Native quality and joint scores are not cross-calibrated. Protect exact words,
+-- low-confidence sentences, and legacy policies; partial/predictive heads cannot
+-- hide a fully consumed path. Exercise the real search and provider ordering.
 local policy = require("xhup_flow.native_tail")
 DictEntry = function()
   return {code={push=function(self, id) self[#self + 1] = id end}}
@@ -245,8 +245,14 @@ for _, case in ipairs({
   {finish=12, remaining=0, preserve=true},
   {finish=11, remaining=0, preserve=false},
   {finish=12, remaining=1, preserve=false},
+  {finish=12, remaining=0, preserve=true, ranking="joint-confidence-v1"},
+  {finish=12, remaining=0, preserve=true, ranking="unknown"},
+  {finish=12, remaining=0, preserve=true, ranking="joint-confidence-v1", kind="table"},
+  {finish=12, remaining=0, preserve=true, ranking="joint-confidence-v1", kind="user_table"},
+  {finish=12, remaining=0, preserve=true, ranking="joint-confidence-v1",
+    kind="sentence", text="就是你好"},
 }) do
-  local head = {start=5, _end=case.finish, text="原生首选", type="sentence",
+  local head = {start=5, _end=case.finish, text=case.text or "原生首选", type=case.kind or "sentence",
     quality=-1000, to_phrase=function() return {entry={remaining_code_length=case.remaining}} end}
   local output = {}
   yield = function(candidate) output[#output + 1] = candidate end
@@ -258,12 +264,13 @@ for _, case in ipairs({
       end end}
     end},
     joint_ready=true, memory=native, aliases=aliases, reverse=reverse,
-    edge_lengths=lengths, lexical_score=function() return -1 end,
+    ranking_policy=case.ranking,
+    edge_lengths=lengths, lexical_score=function() return case.kind and -4096 or -1 end,
   }
   policy.func("jqunihc", {start=5, _end=12}, env)
   if case.preserve then
     check(output[1] == head and output[2].text == "就是你好",
-      "complete native first choice keeps identity ahead of uncalibrated joint scores")
+      "protected complete native first choice keeps its genuine identity")
   else
     check(output[1].text == "就是你好" and output[1]._end == 12,
       "partial or predictive native head cannot suppress full joint consumption")
@@ -271,6 +278,35 @@ for _, case in ipairs({
   local occurrences = 0
   for _, candidate in ipairs(output) do if candidate == head then occurrences=occurrences+1 end end
   check(occurrences == 1, "native candidate is neither duplicated nor wrapped")
+end
+
+-- A distinct-text confidence margin, not incomparable native quality, decides
+-- whether an automatically composed sentence may yield first place.
+for _, margin in ipairs({2047, 2048, 2049}) do
+  local memory = dictionary({
+    aa={native_entry("甲", 1)}, bb={native_entry("乙", 2), native_entry("丙", 3)},
+  })
+  memory.lang_name = "fixture"
+  local head = {start=0, _end=4, text="甲丙", type="sentence",
+    to_phrase=function() return {entry={remaining_code_length=0}} end}
+  local output = {}
+  yield = function(candidate) output[#output + 1] = candidate end
+  policy.func("aabb", {start=0, _end=4}, {
+    engine={context={get_option=function() return true end, set_property=function() end}},
+    ranking_policy="joint-confidence-v1", joint_ready=true,
+    memory=memory, aliases=dictionary({}), reverse=reverse, edge_lengths={aa="\2", bb="\2"},
+    lexical_score=function(text) return text == "丙" and -1 - margin or -1 end,
+    native={lang_name="fixture", query=function()
+      return {iter=function() local done=false; return function()
+        if not done then done=true; return head end
+      end end}
+    end},
+  })
+  if margin >= 2048 then
+    check(output[1].text == "甲乙", "confident full path outranks an automatic native sentence")
+  else
+    check(output[1] == head, "ambiguous full paths retain the genuine native first choice")
+  end
 end
 
 print(string.format("PASS joint key/text search: %d assertions (pure Lua, not librime)", checks))

@@ -4,7 +4,8 @@
 -- Static exact-code priority is enforced by the unchanged primary translator.
 local M = { MAX_INPUT = 128, MAX_EDGE = 32, HEAD = 5, CANDIDATES_PER_QUERY = 2,
   MAX_LEARNING_UPDATES = 65536, MAX_LEARNING_ELEMENTS = 64, MAX_ENCODER_PATHS = 32,
-  MAX_LEARNING_TEXT_BYTES = 256, MAX_LEARNING_CODE_BYTES = 4096 }
+  MAX_LEARNING_TEXT_BYTES = 256, MAX_LEARNING_CODE_BYTES = 4096,
+  MIN_JOINT_MARGIN = 2048 }
 
 local function learning_status(env, status)
   env.learning_status = status
@@ -100,6 +101,8 @@ function M.init(env)
     return
   end
   local config = env.engine.schema.config
+  env.ranking_policy = (config.get_string and config:get_string("flow/ranking_policy"))
+    or "native-prefix-v1"
   -- Probe callback/disconnect on a READ-ONLY object first. Distro backports can
   -- expose TableTranslator yet omit UserDictionary.tick, so version/date or
   -- constructor presence alone is not sufficient evidence.
@@ -178,6 +181,7 @@ function M.fini(env)
   env.aliases, env.reverse, env.lexical_score, env.transition_score = nil, nil, nil, nil
   env.joint_ready = nil
   env.lexical_cache = nil
+  env.ranking_policy = nil
 end
 
 local function plans(input, env)
@@ -306,6 +310,7 @@ local function joint_candidates(input, segment, env)
     env.edge_lengths, env.lexical_score, env.lexical_cache)
   local result = joint.search(input, provider, env.transition_score)
   local full, pending, seen, paths = {}, {}, {}, {}
+  local best_full_score, next_full_score
   local personalization = true
   env.user_lookup_count = 0
   for _, node in ipairs(result.paths) do
@@ -336,17 +341,23 @@ local function joint_candidates(input, segment, env)
       local candidate = joint.candidate(path, env.memory, env.native.lang_name, 1000 - rank)
       local target = path.finish == segment._end and full or pending
       target[#target + 1] = candidate
+      if target == full then
+        if not best_full_score then best_full_score = path.score
+        elseif not next_full_score then next_full_score = path.score end
+      end
     end
   end
   env.lookup_count = stats.lookups
   joint_status(env, not personalization and "personalization_unavailable"
     or (stats.normalization_budget > 0 and "bounded" or "ready"))
-  return full, pending
+  local confident = best_full_score ~= nil and result.truncated_edges == 0
+    and (next_full_score == nil or best_full_score - next_full_score >= M.MIN_JOINT_MARGIN)
+  return full, pending, confident
 end
 
--- Joint and native scores are not cross-calibrated. Preserve a complete exact
--- native first choice (including learned words); joint search fills missing
--- complete paths rather than assigning itself an unconditional ranking boost.
+-- Exact dictionary and learned phrases retain their native first-choice identity.
+-- Only automatic sentences may yield to a distinct-text confidence margin in the
+-- joint model; native quality is never compared numerically with joint scores.
 local function complete_exact(candidate, segment)
   if candidate.start ~= segment.start or candidate._end ~= segment._end then return false end
   local ok, complete = pcall(function()
@@ -373,13 +384,13 @@ function M.func(input, segment, env)
   if not ok then env.native_error = "native query failed"; return end
   local supported = #input >= 2 and #input <= M.MAX_INPUT and env.memory
     and not input:find("[^a-z]") and segment._end - segment.start == #input
-  local extra, full, used_joint = {}, {}, false
+  local extra, full, used_joint, confident = {}, {}, false, false
   local context = env.engine.context
   if supported and context and context.get_option and context:get_option("joint_decoder")
     and prepare_joint(env) then
-    local ready, complete, pending = pcall(joint_candidates, input, segment, env)
+    local ready, complete, pending, certain = pcall(joint_candidates, input, segment, env)
     if ready then
-      full, extra, used_joint = complete, pending, true
+      full, extra, used_joint, confident = complete, pending, true, certain
     else
       joint_status(env, "query_failed")
     end
@@ -407,7 +418,10 @@ function M.func(input, segment, env)
   end
   if base then
     for candidate in base:iter() do
-      if collected == 0 and used_joint and complete_exact(candidate, segment) then
+      local protect = env.ranking_policy ~= "joint-confidence-v1"
+        or candidate.type ~= "sentence" or not confident
+        or (full[1] and full[1].text == candidate.text)
+      if collected == 0 and used_joint and complete_exact(candidate, segment) and protect then
         emit(candidate)
         append_full()
       else

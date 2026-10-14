@@ -157,6 +157,9 @@ flow:
   # reset/import is explicit, and no second Lua persistence ledger is used.
   learning_max_updates: 65536
   joint_model_id: "{{JOINT_MODEL_ID}}"
+  # Protect exact native dictionary/user phrases; rerank only confident sentences.
+  # native-prefix-v1 restores unconditional native first-choice protection.
+  ranking_policy: joint-confidence-v1
   dictionary: xhup_flow_user
   user_dict: xhup_flow_user
   enable_completion: true
