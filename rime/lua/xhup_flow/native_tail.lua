@@ -304,17 +304,12 @@ local function prepare_joint(env)
   return env.joint_ready
 end
 
-local function joint_candidates(input, segment, env)
-  local joint = require("xhup_flow.joint_decoder")
-  local provider, stats = joint.lexicon(input, env.memory, env.aliases, env.reverse,
-    env.edge_lengths, env.lexical_score, env.lexical_cache)
-  local result = joint.search(input, provider, env.transition_score)
-  local full, pending, seen, paths = {}, {}, {}, {}
-  local best_full_score, next_full_score
+local function rank_joint_paths(joint, input, segment, env, nodes, first, last)
+  local candidates, seen, paths = {}, {}, {}
+  local best_score, next_score
   local personalization = true
-  env.user_lookup_count = 0
-  for _, node in ipairs(result.paths) do
-    local path = joint.describe(input, node, segment.start, false)
+  for index = first, last do
+    local path = joint.describe(input, nodes[index], segment.start, false)
     path.user = 0
     if personalization and env.native.user_dict then
       env.user_lookup_count = env.user_lookup_count + 1
@@ -337,14 +332,39 @@ local function joint_candidates(input, segment, env)
   for rank, path in ipairs(paths) do
     local key = path.finish .. "\0" .. path.text
     if not seen[key] then
-      seen[key], path.rank = true, rank - 1
-      local candidate = joint.candidate(path, env.memory, env.native.lang_name, 1000 - rank)
-      local target = path.finish == segment._end and full or pending
-      target[#target + 1] = candidate
-      if target == full then
-        if not best_full_score then best_full_score = path.score
-        elseif not next_full_score then next_full_score = path.score end
-      end
+      local ordinal = rank + first - 1
+      seen[key], path.rank = true, ordinal - 1
+      candidates[#candidates + 1] = joint.candidate(
+        path, env.memory, env.native.lang_name, 1000 - ordinal)
+      if not best_score then best_score = path.score
+      elseif not next_score then next_score = path.score end
+    end
+  end
+  return candidates, best_score, next_score, personalization
+end
+
+local function joint_candidates(input, segment, env)
+  local joint = require("xhup_flow.joint_decoder")
+  local provider, stats = joint.lexicon(input, env.memory, env.aliases, env.reverse,
+    env.edge_lengths, env.lexical_score, env.lexical_cache)
+  local result = joint.search(input, provider, env.transition_score)
+  local complete_count = 0
+  while complete_count < #result.paths and result.paths[complete_count + 1].finish == #input do
+    complete_count = complete_count + 1
+  end
+  env.user_lookup_count = 0
+  local full, best_full_score, next_full_score, personalization =
+    rank_joint_paths(joint, input, segment, env, result.paths, 1, complete_count)
+  local pending
+  if complete_count < #result.paths then
+    -- Pending paths cannot outrank complete consumption. Materialize them only
+    -- when the consumer reaches their menu position, retaining every frontier.
+    -- A failed user read rolls back this ranking group, never prior valid reads.
+    pending = function()
+      local candidates, _, _, personalized = rank_joint_paths(
+        joint, input, segment, env, result.paths, complete_count + 1, #result.paths)
+      if not personalized then joint_status(env, "personalization_unavailable") end
+      return candidates
     end
   end
   env.lookup_count = stats.lookups
@@ -385,12 +405,13 @@ function M.func(input, segment, env)
   local supported = #input >= 2 and #input <= M.MAX_INPUT and env.memory
     and not input:find("[^a-z]") and segment._end - segment.start == #input
   local extra, full, used_joint, confident = {}, {}, false, false
+  local pending_loader
   local context = env.engine.context
   if supported and context and context.get_option and context:get_option("joint_decoder")
     and prepare_joint(env) then
     local ready, complete, pending, certain = pcall(joint_candidates, input, segment, env)
     if ready then
-      full, extra, used_joint, confident = complete, pending, true, certain
+      full, pending_loader, used_joint, confident = complete, pending, true, certain
     else
       joint_status(env, "query_failed")
     end
@@ -400,7 +421,7 @@ function M.func(input, segment, env)
     if ready then extra = candidates
     else env.native_error = "boundary lookup failed" end
   end
-  if #full == 0 and #extra == 0 then
+  if #full == 0 and #extra == 0 and not pending_loader then
     if base then for candidate in base:iter() do emit(candidate) end end
     return
   end
@@ -413,6 +434,12 @@ function M.func(input, segment, env)
   local collected, appended = 0, false
   local function append_alternatives()
     if appended then return end
+    if pending_loader then
+      local ready, candidates = pcall(pending_loader)
+      pending_loader = nil
+      if ready then extra = candidates
+      else joint_status(env, "query_failed") end
+    end
     for _, candidate in ipairs(extra) do emit(candidate) end
     appended = true
   end

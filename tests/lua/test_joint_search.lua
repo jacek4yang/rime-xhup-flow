@@ -317,4 +317,49 @@ for _, margin in ipairs({2047, 2048, 2049}) do
   end
 end
 
+-- A pending user-read failure cannot discard an already valid complete choice.
+-- Request the stream incrementally, as a real translation consumer does.
+do
+  local memory = dictionary({
+    aa={native_entry("甲", 1)}, bb={native_entry("乙", 2), native_entry("丁", 3)},
+  })
+  memory.lang_name = "fixture"
+  local head = {start=0, _end=4, text="甲乙", type="sentence",
+    to_phrase=function() return {entry={remaining_code_length=0}} end}
+  local original_reward, failed_pending, status = search.user_reward, false, nil
+  search.user_reward = function(path)
+    if path.finish < 4 then failed_pending = true; error("pending dictionary read failed") end
+    return path.text == "甲丁" and 10000 or 0
+  end
+  yield = coroutine.yield
+  local stream = coroutine.create(function()
+    policy.func("aabb", {start=0, _end=4}, {
+      engine={context={get_option=function() return true end,
+        set_property=function(_, _, value) status=value end}},
+      ranking_policy="joint-confidence-v1", joint_ready=true,
+      memory=memory, aliases=dictionary({}), reverse=reverse, edge_lengths={aa="\2", bb="\2"},
+      lexical_score=function() return -2 end,
+      native={lang_name="fixture", user_dict={}, query=function()
+        return {iter=function() local done=false; return function()
+          if not done then done=true; return head end
+        end end}
+      end},
+    })
+  end)
+  local ok, first = coroutine.resume(stream)
+  check(ok and first.text == "甲丁" and first._end == 4 and not failed_pending,
+    "first page uses successful complete-path personalization before pending reads")
+  local pending
+  while coroutine.status(stream) ~= "dead" do
+    local resumed, candidate = coroutine.resume(stream)
+    assert(resumed, candidate)
+    if candidate and candidate._end == 2 then pending = candidate end
+  end
+  check(failed_pending and status == "personalization_unavailable",
+    "later user-read failure is reported, not hidden")
+  check(pending and pending.text == "甲" and pending.comment == "待续:bb",
+    "failed pending personalization retains a valid prefix and unconsumed keys")
+  search.user_reward = original_reward
+end
+
 print(string.format("PASS joint key/text search: %d assertions (pure Lua, not librime)", checks))
