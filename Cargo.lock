@@ -4583,6 +4583,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "xhup-core",
+ "xhup-decoder",
 ]
 
 [[package]]

@@ -43,7 +43,7 @@ const RIME_STATIC_SCHEMA_FILENAME: &str = "xhup_flow_static.schema.yaml";
 
 /// 辅助词典的「编译 wrapper」schema(见 generate_rime_artifacts 文档)。
 const RIME_FLOW_WRAPPER_SCHEMA_FILENAME: &str = "xhup_flow_flow.schema.yaml";
-const RIME_LEARN_WRAPPER_SCHEMA_FILENAME: &str = "xhup_flow_learn.schema.yaml";
+const RIME_LEARN_WRAPPER_SCHEMA_FILENAME: &str = "xhup_flow_user.schema.yaml";
 
 /// 顶层词典模板。
 const DICTIONARY_TEMPLATE: &str = include_str!("../../../rime/templates/xhup_flow.dict.yaml.in");
@@ -113,12 +113,14 @@ fn render_template(
     name: &str,
     schema_id: Option<&str>,
     index_id: Option<&str>,
+    model_id: Option<&str>,
 ) -> Result<String, LuaBuildError> {
     let mut rendered = String::with_capacity(template.len());
     let mut rest = template;
     let mut versions = 0;
     let mut schemas = 0;
     let mut indexes = 0;
+    let mut models = 0;
     while let Some(start) = rest.find("{{") {
         rendered.push_str(&rest[..start]);
         rest = &rest[start + 2..];
@@ -138,6 +140,10 @@ fn render_template(
                 indexes += 1;
                 rendered.push_str(index_id.expect("matched index placeholder"));
             }
+            "JOINT_MODEL_ID" if model_id.is_some() => {
+                models += 1;
+                rendered.push_str(model_id.expect("matched model placeholder"));
+            }
             unknown => {
                 return Err(LuaBuildError::new(
                     name,
@@ -151,6 +157,7 @@ fn render_template(
     if versions != 1
         || schema_id.is_some() != (schemas > 0)
         || indexes != usize::from(index_id.is_some())
+        || models != usize::from(model_id.is_some())
         || rendered.contains("}}")
     {
         return Err(LuaBuildError::new(
@@ -206,27 +213,43 @@ pub fn generate_rime_artifacts() -> Result<Vec<RimeArtifact>, LuaBuildError> {
     let learn_dictionary = generate_rime_learn_dictionary();
     let (native_edges, index_id) =
         crate::rime_flow::generate_native_edge_index([&flow_dictionary, &learn_dictionary])?;
-    let schema = render_template(SCHEMA_TEMPLATE, RIME_SCHEMA_FILENAME, None, Some(&index_id))?;
+    let (joint_scores, model_id) = crate::joint_scores::generate(&flow_dictionary)?;
+    let schema = render_template(
+        SCHEMA_TEMPLATE,
+        RIME_SCHEMA_FILENAME,
+        None,
+        Some(&index_id),
+        Some(&model_id),
+    )?;
     let static_schema = render_template(
         STATIC_SCHEMA_TEMPLATE,
         RIME_STATIC_SCHEMA_FILENAME,
         None,
         None,
+        None,
     )?;
-    let dictionary = render_template(DICTIONARY_TEMPLATE, RIME_DICTIONARY_FILENAME, None, None)?;
+    let dictionary = render_template(
+        DICTIONARY_TEMPLATE,
+        RIME_DICTIONARY_FILENAME,
+        None,
+        None,
+        None,
+    )?;
     let flow_wrapper = render_template(
         DICT_COMPILE_WRAPPER_TEMPLATE,
         RIME_FLOW_WRAPPER_SCHEMA_FILENAME,
         Some("xhup_flow_flow"),
         None,
+        None,
     )?;
     let learn_wrapper = render_template(
         DICT_COMPILE_WRAPPER_TEMPLATE,
         RIME_LEARN_WRAPPER_SCHEMA_FILENAME,
-        Some("xhup_flow_learn"),
+        Some(crate::rime_flow::LEARN_DICTIONARY_NAME),
+        None,
         None,
     )?;
-    let lua_modules = compile_runtime(&[&schema, &static_schema], &native_edges)?;
+    let lua_modules = compile_runtime(&[&schema, &static_schema], &native_edges, &joint_scores)?;
     let mut artifacts = vec![
         RimeArtifact {
             filename: "default.custom.yaml",
@@ -404,7 +427,7 @@ mod tests {
             ("version: {{VERSION}}\nschema: {{SCHEMA_ID}}", None),
             ("version: {{VERSION}}", Some("xhup_flow")),
         ] {
-            assert!(render_template(source, "fixture.yaml", schema, None).is_err());
+            assert!(render_template(source, "fixture.yaml", schema, None, None).is_err());
         }
     }
 }

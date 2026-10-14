@@ -8,7 +8,7 @@ local function check(ok, why) assert(ok, why); checks = checks + 1 end
 
 -- Independently consume the actual native dictionary format, not the generator's
 -- internal rows. Every spelling the old planner could query must remain possible.
-for _, name in ipairs({"xhup_flow_flow.dict.yaml", "xhup_flow_learn.dict.yaml"}) do
+for _, name in ipairs({"xhup_flow_flow.dict.yaml", "xhup_flow_user.dict.yaml"}) do
   local file = assert(io.open(package_root .. "/" .. name, "r"))
   local body = false
   for line in file:lines() do
@@ -69,8 +69,8 @@ local function fixture(settings, exact)
 end
 
 local exact = { ni = true, hc = true, hcnz = true, nihc = true, qu = true, jbz = true }
-local env, indexed = fixture({ enabled = true, dictionary = "xhup_flow_learn" }, exact)
-local _, exhaustive = fixture({ enabled = false, dictionary = "xhup_flow_learn" }, exact)
+local env, indexed = fixture({ enabled = true, dictionary = "xhup_flow_user" }, exact)
+local _, exhaustive = fixture({ enabled = false, dictionary = "xhup_flow_user" }, exact)
 -- Reuse each session across appends, backspaces and edits; the immutable index
 -- must never retain per-input negative results or alter deterministic boundaries.
 for _, input in ipairs({"jbzqu", "nihcnzqu", "nihcnznihcnzqu", string.rep("nihcnzqu", 16)}) do
@@ -94,14 +94,14 @@ check(indexed("jbzqu", 0):find("|jbz qu", 1, true), "three-plus-two path survive
 -- Five-key custom spellings are deliberately outside the canonical length set.
 -- Each unsupported profile must retain them instead of pruning with stale data.
 for _, settings in ipairs({
-  { dictionary = "xhup_flow_learn" },
-  { enabled = false, dictionary = "xhup_flow_learn" },
+  { dictionary = "xhup_flow_user" },
+  { enabled = false, dictionary = "xhup_flow_user" },
   { enabled = true, dictionary = "custom" },
-  { enabled = true, dictionary = "xhup_flow_learn", prism = "custom" },
-  { enabled = true, dictionary = "xhup_flow_learn", packs = {} },
-  { enabled = true, dictionary = "xhup_flow_learn", old_api = true },
-  { enabled = true, dictionary = "xhup_flow_learn", missing_identity = true },
-  { enabled = true, dictionary = "xhup_flow_learn", identity = "previous-deployment" },
+  { enabled = true, dictionary = "xhup_flow_user", prism = "custom" },
+  { enabled = true, dictionary = "xhup_flow_user", packs = {} },
+  { enabled = true, dictionary = "xhup_flow_user", old_api = true },
+  { enabled = true, dictionary = "xhup_flow_user", missing_identity = true },
+  { enabled = true, dictionary = "xhup_flow_user", identity = "previous-deployment" },
 }) do
   local _, custom = fixture(settings, { aaaaa = true, qu = true })
   check(custom("aaaaaqu", 0):find("|aaaaa qu", 1, true), "custom/legacy profile keeps exhaustive lookup")

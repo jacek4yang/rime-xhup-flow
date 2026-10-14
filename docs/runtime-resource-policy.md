@@ -13,7 +13,8 @@ plugins; performance must be measured on the deployed frontend.
 
 ## One runtime compiled table
 
-Both the learning provider and read-only lookup use `xhup_flow_learn`.
+Both the learning provider and read-only lookup use `xhup_flow_user`; the persisted
+database keeps its existing name and is never replaced by deployment.
 Its source imports the complete `xhup_flow_flow.dict.yaml`, preserving every
 word/code/weight and encoder relationship. The default deployment graph therefore
 needs only the static `xhup_flow` table and this one native table; separately

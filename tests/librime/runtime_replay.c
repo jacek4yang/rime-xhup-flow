@@ -87,12 +87,19 @@ static RimeSessionId start(void) {
   RimeSessionId s = r->create_session();
   if (!s || !r->select_schema(s, schema_id)) { fputs("schema unavailable\n", stderr); exit(2); }
   r->set_option(s, "context_ranker", 0);
-  r->set_option(s, "joint_decoder", 0);
+  const char *joint = getenv("XHUP_JOINT_DECODER");
+  if (joint) {
+    if (strcmp(joint, "on") && strcmp(joint, "off")) {
+      fputs("XHUP_JOINT_DECODER must be on or off\n", stderr); exit(2);
+    }
+    r->set_option(s, "joint_decoder", !strcmp(joint, "on"));
+  }
   r->set_option(s, "quick_hint", quick_hint_enabled);
   r->set_option(s, "user_memory", 0);
   fprintf(stderr, "XHUP_SESSION_START_NS %lld\n", now() - before);
 #ifdef XHUP_MEASURE_THREAD_CPU
   fprintf(stderr, "XHUP_QUICK_HINT %s\n", r->get_option(s, "quick_hint") ? "on" : "off");
+  fprintf(stderr, "XHUP_JOINT_DECODER %s\n", r->get_option(s, "joint_decoder") ? "on" : "off");
 #endif
   if (!strcmp(schema_id, "xhup_flow")) {
     char status[96] = "unavailable";
@@ -210,8 +217,8 @@ int main(int argc, char **argv) {
   check(r->config_get_bool(&config, "flow/enable_user_dict", &enabled) && !!enabled == learning,
         "Flow compiled native learning matches requested test mode");
   enabled = True;
-  check(r->config_get_bool(&config, "learn/enable_user_dict", &enabled) && !!enabled == learning,
-        "learn translator compiled native learning matches requested test mode");
+  check(r->config_get_bool(&config, "flow_lookup/enable_user_dict", &enabled) && !enabled,
+        "lexical lookup remains read-only independently of learning mode");
   r->config_close(&config);
   if (!RIME_API_AVAILABLE(r, candidate_list_begin) || !RIME_API_AVAILABLE(r, get_input)) return 2;
 

@@ -7,11 +7,11 @@ schema:
   version: "{{VERSION}}"
   author:
     - XHUP Flow
-  # 单一原生提供者与只读探测均使用 learn 编译表;该表 import 完整
-  # flow 源词典,无需再编译/部署一份重复的 flow table。
+  # 单一原生 writer 与只读候选工厂使用同名规范词典/用户库。
+  # 只更改物理规范词典名；import 关系、音节空间和既有用户库保持不变。
   # 旧 flow wrapper 源文件仍保留为拥有文件/手动研究入口,不在部署图中。
   dependencies:
-    - xhup_flow_learn
+    - xhup_flow_user
   description: |
     XHUP Flow 2.0 智能化双拼音形方案。本方案需要 librime-lua 运行时支持
     (候选注释、有界原生边界规划与可选会话调序);在不支持或未启用 Lua 的
@@ -40,6 +40,10 @@ switches:
   - name: quick_hint
     reset: 1
     states: [关闭提示, 简码提示]
+  # 独立质量与兼容门禁通过前保持关闭；切换关闭可回退原生边界规划。
+  - name: joint_decoder
+    reset: 0
+    states: [原生组句, 联合组句]
   # 候选注释调试模式:开 = 在注释中输出明确可信的元数据标签([S], [USR])。
   - name: debug_candidate_annotations
     reset: 0
@@ -124,17 +128,22 @@ translator:
 # 逐键、选择、上屏与学习重启合同由真实 librime 回放检查。
 # 只读词边探测器不绑定用户数据库,不注册第二个学习事务写入者。
 flow_lookup:
-  dictionary: xhup_flow_learn
+  dictionary: xhup_flow_user
   enable_user_dict: false
   # 构建期生成的前两键/码长索引;自定义规范词典内容时关闭或重新生成。
   # 自定义 dictionary/prism/packs 和旧 Lua API 自动回退到完整查词。
   enable_compiled_index: true
   compiled_index_id: "{{NATIVE_EDGE_INDEX_ID}}"
 
+# 冻结码表只作合法别名查询，不打开第二个用户库或导入学习音节空间。
+flow_aliases:
+  dictionary: xhup_flow
+  enable_user_dict: false
+
 # Old librime-lua cannot intercept native memorization. Keep typing available
 # without constructing a writer; native_tail verifies this explicit false flag.
 flow_readonly:
-  dictionary: xhup_flow_learn
+  dictionary: xhup_flow_user
   enable_completion: true
   enable_sentence: true
   sentence_over_completion: true
@@ -147,35 +156,23 @@ flow:
   # Native tick-based update quota. Exhaustion pauses learning, never typing;
   # reset/import is explicit, and no second Lua persistence ledger is used.
   learning_max_updates: 65536
-  dictionary: xhup_flow_learn
+  joint_model_id: "{{JOINT_MODEL_ID}}"
+  # Protect exact native dictionary/user phrases; rerank only confident sentences.
+  # native-prefix-v1 restores unconditional native first-choice protection.
+  ranking_policy: joint-confidence-v1
+  dictionary: xhup_flow_user
   user_dict: xhup_flow_user
   enable_completion: true
   enable_sentence: true
   sentence_over_completion: true
   enable_user_dict: true
   enable_encoder: true
-  encode_commit_history: true
+  # History creates zero-commit records outside the native positive-tick quota.
+  # Learn only actually selected entries and their native phrase encoding.
+  encode_commit_history: false
   max_phrase_length: 20
   max_homographs: 1
   initial_quality: 100
-
-# 历史 learn 配置保留用于外部定制迁移,不再注册第二个 translator。
-# 编码由上方单一 flow 提供者负责。学习词典 xhup_flow_learn
-# 通过 import_tables 继承完整 Flow 关系并追加 3/4 键单字全码原语，
-# 保证两个 translator 共享 xhup_flow_user 时 syllable-id 空间一致。
-# enable_sentence false 避免单字组句产生退化句子；本层 Memorize 触发
-# 多元素 EncodePhrase，把 ≥5 字短语按「逐字声码首键」规则编码入库。
-learn:
-  dictionary: xhup_flow_learn
-  user_dict: xhup_flow_user
-  enable_completion: false
-  enable_sentence: false
-  enable_user_dict: true
-  enable_encoder: true
-  encode_commit_history: true
-  max_phrase_length: 20
-  max_homographs: 1
-  initial_quality: 1000
 
 # 中英文切换不依赖客户端共享数据里的 default.yaml(部分平台的共享
 # 数据没有 ascii_composer 配置,Shift 切换会静默失效):在方案内显式

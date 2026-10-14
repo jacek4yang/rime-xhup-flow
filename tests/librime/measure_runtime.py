@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--schema", choices=("xhup_flow", "xhup_flow_static"), default="xhup_flow")
     parser.add_argument("--learning", choices=("on", "off"), default="off")
     parser.add_argument("--quick-hint", choices=("on", "off"), default="on")
+    parser.add_argument("--joint-decoder", choices=("on", "off", "schema"), default="schema")
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--complete-menu", action="store_true", help="separate final-state full enumeration, capped at 100000 candidates")
     parser.add_argument("--sustained", action="store_true", help="retain one native session across all cases/rounds")
@@ -48,6 +49,8 @@ def main():
         parser.error("Linux only; trials 1..100 and repetitions 1..1000")
     if args.schema == "xhup_flow_static" and args.learning != "off":
         parser.error("Static has no native learning mode")
+    if args.schema == "xhup_flow_static" and args.joint_decoder == "on":
+        parser.error("Static has no joint decoder")
     root = Path(__file__).resolve().parent
     deployed, plugin, output = args.deployed.resolve(), args.plugin.resolve(), args.output.resolve()
     if not (deployed / "build/xhup_flow.schema.yaml").is_file() or not plugin.is_file():
@@ -68,6 +71,7 @@ def main():
         "harness_commit": revision,
         "schema": args.schema, "learning": args.learning,
         "quick_hint": args.quick_hint,
+        "joint_decoder": args.joint_decoder,
         "trials": args.trials, "repetitions": args.repetitions,
         "platform": platform.platform(),
         "cpu_affinity": sorted(os.sched_getaffinity(0)),
@@ -88,6 +92,10 @@ def main():
     subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", str(root / "runtime_performance.c"), *flags, "-ldl", "-o", str(executable)], check=True)
     env = dict(os.environ, LD_PRELOAD=str(plugin), XHUP_LUA_LIBRARY=str(plugin))
     env["XHUP_MEASURE_QUICK_HINT"] = args.quick_hint
+    if args.joint_decoder == "schema":
+        env.pop("XHUP_JOINT_DECODER", None)
+    else:
+        env["XHUP_JOINT_DECODER"] = args.joint_decoder
     if args.profile:
         env["XHUP_REQUIRE_PROFILE"] = "1"
     else:
@@ -105,7 +113,7 @@ def main():
         directory = output / f"trial-{trial}"
         shutil.copytree(deployed, directory)
         enabled = "true" if args.learning == "on" else "false"
-        (directory / "xhup_flow.custom.yaml").write_text(f"patch:\n  flow/enable_user_dict: {enabled}\n  learn/enable_user_dict: {enabled}\n")
+        (directory / "xhup_flow.custom.yaml").write_text(f"patch:\n  flow/enable_user_dict: {enabled}\n")
         with (output / f"deploy-{trial}.log").open("w") as log:
             subprocess.run(["rime_deployer", "--compile", str(directory / f"{args.schema}.schema.yaml"), str(directory), str(args.shared)], env=env, stdout=log, stderr=log, check=True)
         started = time.monotonic_ns()
@@ -157,6 +165,15 @@ def main():
         hint_statuses = [line.split()[-1] for line in stderr if line.startswith("XHUP_QUICK_HINT ")]
         if hint_statuses != [args.quick_hint] * len(sessions):
             raise ValueError("runtime did not enter requested quick-hint state")
+        joint_options = [line.split()[-1] for line in stderr if line.startswith("XHUP_JOINT_DECODER ")]
+        if len(joint_options) != len(sessions) or len(set(joint_options)) != 1:
+            raise ValueError("incomplete or inconsistent joint-decoder option evidence")
+        if args.joint_decoder != "schema" and joint_options != [args.joint_decoder] * len(sessions):
+            raise ValueError("runtime did not enter requested joint-decoder state")
+        joint_statuses = [line.split()[-1] for line in stderr if line.startswith("XHUP_JOINT_STATUS ")]
+        expected_joint_checks = 9 * args.repetitions if joint_options[0] == "on" else 0
+        if len(joint_statuses) != expected_joint_checks or any(status not in ("ready", "bounded") for status in joint_statuses):
+            raise ValueError("joint decoder silently fell back during measurement")
         cases = {}
         for name in sorted({row["case"] for row in rows}):
             selected = [row for row in rows if row["case"] == name]
@@ -178,6 +195,7 @@ def main():
             "first_session_ns": sessions[0],
             "subsequent_session_ns": percentiles(sessions[1:]) if len(sessions) > 1 else None,
             "rss_kib_by_round": memory_rounds, "lua_bytes_by_round": lua_rounds,
+            "joint_decoder": joint_options[0], "joint_statuses": joint_statuses,
             "cases": cases,
         })
     if any(sha256(path) != provenance["source_sha256"][path.name] for path in source_files):
