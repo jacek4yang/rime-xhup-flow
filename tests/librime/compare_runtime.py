@@ -64,6 +64,7 @@ def main():
         "arguments": {key: str(value) if isinstance(value, Path) else value
                       for key, value in vars(args).items()},
         "user_state": "fresh copies omit *.userdb* and user.yaml on both sides",
+        "menu_page_size": 5,
         "gui_acceptance": False,
     }, indent=2) + "\n")
     all_rows = {label: [] for label in sources}
@@ -113,7 +114,7 @@ def main():
                     result[field] = percentiles([row[field] for row in selected])
             cases[name] = result
         metrics[label] = {"cases": cases, "processes": process_summaries[label]}
-    report = {"instrumented": args.profile, "gui_acceptance": False,
+    report = {"instrumented": args.profile, "gui_acceptance": False, "menu_page_size": 5,
               "pairs": args.trials, "semantic_differences": differences, "metrics": metrics}
     (output / "comparison.json").write_text(json.dumps(report, indent=2) + "\n")
     if sha256(script) != script_hash:
