@@ -72,6 +72,7 @@ def main():
         "schema": args.schema, "learning": args.learning,
         "quick_hint": args.quick_hint,
         "joint_decoder": args.joint_decoder,
+        "menu_page_size": 5,
         "trials": args.trials, "repetitions": args.repetitions,
         "platform": platform.platform(),
         "cpu_affinity": sorted(os.sched_getaffinity(0)),
@@ -114,6 +115,10 @@ def main():
         shutil.copytree(deployed, directory)
         enabled = "true" if args.learning == "on" else "false"
         (directory / "xhup_flow.custom.yaml").write_text(f"patch:\n  flow/enable_user_dict: {enabled}\n")
+        # Exhaustive audits deliberately deploy 500-entry menus. They must not
+        # silently turn one side of a daily-use comparison into a deep scan.
+        (directory / "default.custom.yaml").write_text(
+            f"patch:\n  schema_list:\n    - schema: {args.schema}\n  menu/page_size: 5\n")
         with (output / f"deploy-{trial}.log").open("w") as log:
             subprocess.run(["rime_deployer", "--compile", str(directory / f"{args.schema}.schema.yaml"), str(directory), str(args.shared)], env=env, stdout=log, stderr=log, check=True)
         started = time.monotonic_ns()
@@ -139,6 +144,8 @@ def main():
             raise ValueError("incomplete final-state menu measurements")
         if not rows or any(("profile_to_first_page" in row) != args.profile for row in rows):
             raise ValueError("instrumentation identity disagrees with requested run")
+        if any(type(row.get("page_size")) is not int or row["page_size"] not in (0, 5) for row in rows):
+            raise ValueError("runtime did not use the fixed five-candidate menu; trace retained")
         stderr = (output / f"trial-{trial}.stderr").read_text().splitlines()
         sessions = [int(line.split()[-1]) for line in stderr if line.startswith("XHUP_SESSION_START_NS ")]
         rss = [int(line.split()[-1]) for line in stderr if line.startswith("XHUP_PEAK_RSS_KIB ")]
