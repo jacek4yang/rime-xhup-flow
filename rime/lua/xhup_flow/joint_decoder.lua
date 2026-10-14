@@ -24,11 +24,6 @@ function M.scorer(data, identity)
   end, data.primary_full_code_split_penalty
 end
 
-local function better(score, count, serial, other)
-  return score > other.score or (score == other.score and
-    (count < other.count or (count == other.count and serial < other.serial)))
-end
-
 local INFINITY = math.huge
 local function finite(value)
   return type(value) == "number" and value == value
@@ -45,9 +40,17 @@ function M.search(raw, edges_at, transition)
   if n == 0 or n > M.max_input or raw:find("[^a-z]") then
     return { paths = {}, reason = "unsupported_input", truncated_edges = 0 }
   end
-  local root = { finish = 0, score = 0, lexical = 0, context = 0, compatibility = 0,
-    count = 0, serial = 0 }
-  local beams = { [0] = { root } }
+  -- Query-local columns avoid a hash table per beam node. IDs are bounded by
+  -- 1 + max_input * beam_width; only backpointers survive in returned paths.
+  local previous_ids, node_edges = {}, {}
+  local scores, counts, serials = {0}, {0}, {0}
+  local lexical_scores, contexts, compatibilities = {0}, {0}, {0}
+  local allocated = 1
+  local beams = { [0] = {1} }
+  local function better(score, count, serial, other)
+    return score > scores[other] or (score == scores[other] and
+      (count < counts[other] or (count == counts[other] and serial < serials[other])))
+  end
   local serial, truncated = 0, 0
   local width = M.beam_width
   for start = 0, n - 1 do
@@ -73,14 +76,15 @@ function M.search(raw, edges_at, transition)
           local last_previous, context, valid_context
           for j = 1, #beam do
             local previous = beam[j]
-            if j == 1 or previous.edge ~= last_previous then
-              context = transition and transition(previous.edge, edge) or 0
+            local previous_edge = node_edges[previous]
+            if j == 1 or previous_edge ~= last_previous then
+              context = transition and transition(previous_edge, edge) or 0
               valid_context = finite(context)
-              last_previous = previous.edge
+              last_previous = previous_edge
             end
             if valid_context then
-              local score = previous.score + edge.lexical + context + compatibility
-              local count = previous.count + 1
+              local score = scores[previous] + edge.lexical + context + compatibility
+              local count = counts[previous] + 1
               serial = serial + 1
               if (target_count < width or better(score, count, serial, target[target_count]))
                 and finite(score) then
@@ -94,19 +98,16 @@ function M.search(raw, edges_at, transition)
                   -- node cannot be an ancestor. Never recycle an expanded node.
                   node = target[target_count]
                   target[target_count] = nil
-                  node.previous, node.edge, node.finish = previous, edge, finish
-                  node.score, node.count, node.serial = score, count, serial
-                  node.lexical = previous.lexical + edge.lexical
-                  node.context = previous.context + context
-                  node.compatibility = previous.compatibility + compatibility
                 else
-                  node = { previous = previous, edge = edge, finish = finish,
-                    score = score, count = count, serial = serial,
-                    lexical = previous.lexical + edge.lexical,
-                    context = previous.context + context,
-                    compatibility = previous.compatibility + compatibility }
+                  allocated = allocated + 1
+                  node = allocated
                   target_count = target_count + 1
                 end
+                previous_ids[node], node_edges[node] = previous, edge
+                scores[node], counts[node], serials[node] = score, count, serial
+                lexical_scores[node] = lexical_scores[previous] + edge.lexical
+                contexts[node] = contexts[previous] + context
+                compatibilities[node] = compatibilities[previous] + compatibility
                 table.insert(target, position, node)
               end
             end
@@ -116,12 +117,19 @@ function M.search(raw, edges_at, transition)
     end
   end
   local paths = {}
+  local arena = { previous = previous_ids, edges = node_edges }
   -- Keep each recent complete frontier, even when another path consumes a new
   -- ambiguous tail key. A valid prefix is not an implicit commit boundary.
   for finish = n, math.max(1, n - M.max_pending), -1 do
     local beam = beams[finish]
     if beam then
-      for rank = 1, #beam do paths[#paths + 1] = beam[rank] end
+      for rank = 1, #beam do
+        local id = beam[rank]
+        paths[#paths + 1] = { arena = arena, id = id, finish = finish,
+          score = scores[id], count = counts[id], serial = serials[id],
+          lexical = lexical_scores[id], context = contexts[id],
+          compatibility = compatibilities[id] }
+      end
     end
   end
   return { paths = paths, truncated_edges = truncated }
@@ -133,10 +141,10 @@ function M.describe(raw, node, start, diagnostics)
   local edges, keys, texts, codes = {}, {}, {}, {}
   local sources, spans
   if diagnostics ~= false then sources, spans = {}, {} end
-  local current = node
-  while current.edge do
-    edges[#edges + 1] = current.edge
-    current = current.previous
+  local current, arena = node.id, node.arena
+  while arena.edges[current] do
+    edges[#edges + 1] = arena.edges[current]
+    current = arena.previous[current]
   end
   local offset = start or 0
   for i = #edges, 1, -1 do

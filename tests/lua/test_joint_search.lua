@@ -54,6 +54,9 @@ for i = 1, search.beam_width + 5 do
   replacements[#replacements + 1] = edge("ab", "旧" .. i, i - 100)
 end
 local replaced = search.search("abc", provider("abc", replacements))
+-- An older translation may still hold its paths while another query runs.
+local next_input = string.rep("b", search.max_input)
+search.search(next_input, provider(next_input, {edge("b", "新", -1)}))
 for finish = 1, 3 do
   local retained = describe("abc", replaced, finish)
   for rank = 1, search.beam_width do
