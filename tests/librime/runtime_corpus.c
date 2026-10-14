@@ -45,7 +45,7 @@ int main(int argc, char **argv) {
     if (!target) return 2;
     *target++=0;
     size_t length=strlen(keys);
-    if (!*name || !*target || strchr(target,'\t') || length<4 || length>128 ||
+    if (!*name || !*target || strchr(target,'\t') || length<2 || length>128 ||
         strspn(keys,"abcdefghijklmnopqrstuvwxyz")!=length) return 2;
     int before=failures, raw_ok=1, early_ok=1;
     RimeSessionId s=start();
