@@ -18,6 +18,7 @@ import tempfile
 import subprocess
 
 from check_product_version import VERSION
+from check_workflow_shell import check_qualification_commands
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = "local-runtime-evidence-v2"
@@ -116,6 +117,8 @@ def run(args):
         if subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip() != source:
             raise ValueError("source changed during qualification")
     clean()
+    if check_qualification_commands(__file__):
+        raise ValueError("qualification contains invalid shell syntax")
     output = args.out.resolve()
     target = args.target.resolve()
     if output.is_relative_to(ROOT) or target.is_relative_to(output) or output.is_relative_to(target):
@@ -172,9 +175,7 @@ pnpm --filter trainer build
 pnpm -r typecheck
 pnpm -r test
 pnpm --filter miniapp build:weapp
-node tests/security/frontend-audit.cjs
-mkdir "$EVIDENCE/frontend-security"
-cp artifacts/security/pnpm-audit.json artifacts/security/frontend-mitigation.json "$EVIDENCE/frontend-security/"
+node tests/security/frontend-audit.cjs --output-dir "$EVIDENCE/frontend-security"
 node --test tests/security/*.test.cjs""")
         step("native-prepare", """mkdir "$EVIDENCE/native-input"
 xhup-cli generate rime --output "$EVIDENCE/native-input/package"
@@ -198,7 +199,8 @@ python3 tests/lua/run_runtime_suite.py "$package"
 for script in run-exclusive-schema run-runtime-smoke run-deploy-audit run-ime-controls run-lua-audit run-context-ranker-audit; do
   bash "tests/librime/$script.sh" "$package"
 done
-xhup-cli doctor --user-data-dir "$package""", native=True)
+xhup-cli doctor --user-data-dir "$package"
+""", native=True)
         with ThreadPoolExecutor(max_workers=args.jobs) as executor:
             futures = [executor.submit(step, f"native-shard-{i}",
                 'python3 tests/librime/audit_shards.py run --root "$EVIDENCE/native-input" --out "$EVIDENCE/native-results" '

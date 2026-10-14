@@ -71,7 +71,8 @@ jobs:
             libxdo-dev \
             libssl-dev \
             libayatana-appindicator3-dev \
-            librsvg2-dev
+            librsvg2-dev \
+            rpm
 
       - name: 规范读音上游独立重建（固定提交及 SHA256）
         run: |
@@ -89,6 +90,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests/release -p 'test_distribution_sources.py'
           python3 -m unittest discover -s tests/release -p 'test_rime_archive.py'
+          python3 -m unittest discover -s tests/release -p 'test_linux_package_versions.py'
 
       - name: GLib 定界回移源码与许可门禁（不是忽略其它 advisories）
         run: |
@@ -123,12 +125,12 @@ jobs:
       # 工作流 run 块 shell 语法守卫:块内多行引号/here-doc 不配对时,bash 会在
       # 解析阶段整体失败(与运行分支无关),曾导致 rc-release 的「组装发布说明」
       # 步骤在创建草稿 Release 时以 `unexpected EOF while looking for matching`
-      # 失败(2.0.0-rc.2)。毫秒级、无第三方依赖。
-      - name: 工作流 run 块 shell 语法守卫
+      # 失败(2.0.0-rc.2)。行为回归使用本次编译的实际 CLI。
+      - name: 工作流语法与发布行为回归
         run: |
           python3 tests/release/check_workflow_shell.py
-          python3 -m unittest discover -s tests/release -p 'test_collect_qualification.py'
-          python3 -m unittest discover -s tests/release -p 'test_packaging_runtime_gates.py'
+          cargo build -p xhup-cli --locked
+          XHUP_CLI="$PWD/target/debug/xhup-cli" python3 -m unittest discover -s tests/release -p 'test_*.py'
 
       - name: 外部原生语料选择与统计工具回归（不冒充完整语料运行）
         run: python3 -m unittest discover -s tests/quality -p 'test_*.py'
@@ -298,7 +300,10 @@ jobs:
         run: python3 -m unittest discover -s tests/librime -p 'test_audit_input.py'
 
       - name: 编译逐键资格门禁（仅编译，不代表回归已通过）
-        run: cc -std=c11 -O2 -Wall -Wextra -Werror tests/librime/runtime_replay.c $(pkg-config --cflags --libs rime) -o /tmp/xhup-native-replay
+        run: |
+          rime_flags_text="$(pkg-config --cflags --libs rime)"
+          read -r -a rime_flags <<< "$rime_flags_text"
+          cc -std=c11 -O2 -Wall -Wextra -Werror tests/librime/runtime_replay.c "${rime_flags[@]}" -o /tmp/xhup-native-replay
 
       - name: 打印 librime 环境
         run: |

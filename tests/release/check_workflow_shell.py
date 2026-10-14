@@ -12,11 +12,15 @@
 Actions 的 shell 解析规则跳过:显式 `shell:`(pwsh/cmd/python…)或
 windows runner 上的默认 pwsh。
 
+同时检查本地资格入口中传给 step() 的静态 shell 字符串，防止 Python 三引号
+吞掉命令末尾的 shell 引号；只解析，不执行命令。本地完整验收也在重任务前预检。
+
 用法: python3 tests/release/check_workflow_shell.py [仓库根目录]
 """
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 import subprocess
@@ -168,13 +172,40 @@ def check(workflows_dir: str) -> int:
     return 0
 
 
+def check_qualification_commands(path: str) -> int:
+    """Parse literal qualification commands as shell, not as Python strings alone."""
+    if not os.path.isfile(path):
+        return 0
+    with open(path, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read(), filename=path)
+    failures = 0
+    checked = 0
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "step" and len(node.args) > 1
+                and isinstance(node.args[1], ast.Constant)
+                and isinstance(node.args[1].value, str)):
+            continue
+        checked += 1
+        result = subprocess.run(["bash", "-n"], input=node.args[1].value.encode(),
+                                capture_output=True)
+        if result.returncode:
+            failures += 1
+            print(f"FAIL {path}:{node.lineno}: {result.stderr.decode('utf-8', 'replace').strip()}")
+    print(f"本地资格静态 shell 命令：检查 {checked} 个，失败 {failures} 个")
+    return int(failures != 0)
+
+
 def main() -> int:
     root = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
     workflows_dir = os.path.join(root, ".github", "workflows")
     if not os.path.isdir(workflows_dir):
         print(f"找不到工作流目录: {workflows_dir}", file=sys.stderr)
         return 2
-    return check(workflows_dir)
+    workflow_result = check(workflows_dir)
+    qualification_result = check_qualification_commands(
+        os.path.join(root, "tests", "release", "local_qualification.py"))
+    return max(workflow_result, qualification_result)
 
 
 if __name__ == "__main__":
