@@ -12,6 +12,7 @@ schema:
   # 旧 flow wrapper 源文件仍保留为拥有文件/手动研究入口,不在部署图中。
   dependencies:
     - xhup_flow_user
+    - xhup_flow_alias_projection
   description: |
     XHUP Flow 2.0 智能化双拼音形方案。本方案需要 librime-lua 运行时支持
     (候选注释、有界原生边界规划与可选会话调序);在不支持或未启用 Lua 的
@@ -157,6 +158,7 @@ flow:
   # reset/import is explicit, and no second Lua persistence ledger is used.
   learning_max_updates: 65536
   joint_model_id: "{{JOINT_MODEL_ID}}"
+  alias_index_id: "{{ALIAS_INDEX_ID}}"
   # Protect exact native dictionary/user phrases; rerank only confident sentences.
   # native-prefix-v1 restores unconditional native first-choice protection.
   ranking_policy: joint-confidence-v1

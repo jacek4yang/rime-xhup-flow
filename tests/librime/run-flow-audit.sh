@@ -181,12 +181,14 @@ fi
 
 flow_dir=$work/flow
 prepare_deploy "$flow_dir" xhup_flow
-for dict in xhup_flow_user; do
+for dict in xhup_flow_user xhup_flow_alias_projection; do
   compile_dict_isolated "$dict" "$flow_dir"
 done
 
 # Legacy-binding qualification proves safe fallback, not new Phrase APIs.
 if [[ "${XHUP_REPLAY_VERIFY_READONLY:-0}" != 1 ]]; then
+  python3 "$SCRIPT_DIR/run_alias_projection.py" --deployed "$flow_dir" \
+    --output "$work/alias-projection" --shared-data-dir "$SHARED_DATA_DIR"
   joint_args=(--deployed "$flow_dir" --output "$work/joint-regression" --shared-data-dir "$SHARED_DATA_DIR")
   if [[ -n "$XHUP_CLI" ]]; then joint_args+=(--cli "$XHUP_CLI"); fi
   python3 "$SCRIPT_DIR/run_joint_regression.py" "${joint_args[@]}"

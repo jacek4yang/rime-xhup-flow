@@ -116,12 +116,25 @@ static void native_fallback_case(void) {
   r->destroy_session(s);
 }
 
+static void projection_unavailable_case(void) {
+  RimeSessionId s = start();
+  r->set_option(s, "joint_decoder", 1);
+  State state = type(s, "projection-unavailable", "ni", "你", NULL);
+  char status[96] = "";
+  r->get_property(s, "xhup_flow_joint_decoder_status", status, sizeof(status));
+  check(!strcmp(status, "configuration_or_api_unavailable"),
+        "missing or stale projection explicitly disables joint search");
+  selected_commit(s, &state, "你", "native input still commits with an unavailable projection");
+  r->destroy_session(s);
+}
+
 int main(int argc, char **argv) {
   if (argc != 3 && argc != 4) return 2;
   if (argc == 4 && strcmp(argv[3], "--learn") && strcmp(argv[3], "--learned")
       && strcmp(argv[3], "--quota") && strcmp(argv[3], "--seed-legacy")
       && strcmp(argv[3], "--recall-legacy") && strcmp(argv[3], "--recall-joint")
-      && strcmp(argv[3], "--learn-compound") && strcmp(argv[3], "--native-compound")) return 2;
+      && strcmp(argv[3], "--learn-compound") && strcmp(argv[3], "--native-compound")
+      && strcmp(argv[3], "--projection-unavailable")) return 2;
   r = rime_get_api();
   quick_hint_enabled = 1;
   RIME_STRUCT(RimeTraits, traits);
@@ -134,6 +147,7 @@ int main(int argc, char **argv) {
       compound_learning_case(!strcmp(argv[3], "--learn-compound"));
     else if (!strcmp(argv[3], "--learn") || !strcmp(argv[3], "--learned") || !strcmp(argv[3], "--quota"))
       learning_case(argv[3]);
+    else if (!strcmp(argv[3], "--projection-unavailable")) projection_unavailable_case();
     else encoded_learning_case(argv[3]);
     r->finalize();
     fprintf(stderr, "RESULT JOINT LEARNING checks=%d failures=%d\n", checks, failures);
