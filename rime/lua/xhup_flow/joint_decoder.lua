@@ -129,8 +129,9 @@ end
 
 -- Native emission retains segmentation/source metadata in node backpointers.
 -- Expand diagnostic arrays only when requested, not for every menu alternative.
-function M.describe(raw, node, start, diagnostics)
+function M.describe(raw, node, start, diagnostics, need_user_key)
   local edges, keys, texts, codes = {}, {}, {}, {}
+  local native_keys = (diagnostics ~= false or need_user_key) and {} or nil
   local sources, spans
   if diagnostics ~= false then sources, spans = {}, {} end
   local current = node
@@ -148,10 +149,15 @@ function M.describe(raw, node, start, diagnostics)
     end
     offset = offset + #edge.keys
     for _, code in ipairs(edge.codes or {}) do codes[#codes + 1] = code end
+    if native_keys then
+      if edge.native_key then native_keys[#native_keys + 1] = edge.native_key
+      else native_keys = nil end
+    end
   end
   return { start = start or 0, finish = offset, remaining = raw:sub(node.finish + 1),
     keys = keys, words = texts, sources = sources, spans = spans, codes = codes,
     text = table.concat(texts), preedit = table.concat(keys, " "),
+    canonical_key = native_keys and table.concat(native_keys) or nil,
     lexical = node.lexical, context = node.context, score = node.score,
     compatibility = node.compatibility,
     tie = node.serial, node = node }
@@ -218,15 +224,23 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score, shared, split_
     end
     local items, examined = {}, 0
     local sound = owner == memory and code:sub(1, 2) or nil
+    local last_id, spelling
     owner:dict_lookup(code, false, bound)
     stats.lookups = stats.lookups + 1
     for entry in owner:iter_dict() do
       examined = examined + 1
       stats.rows = stats.rows + 1
-      local id = owner == memory and entry.code:print() or nil
+      local native_code = owner == memory and entry.code or nil
+      local id = native_code and native_code:print() or nil
       if owner ~= memory or id:match("^%d+$") then
+        if id and id ~= last_id then
+          local decoded = memory.dict:decode(native_code)
+          assert(#decoded == 1 and type(decoded[1]) == "string"
+            and decoded[1]:match("^[a-z]+$"), "invalid canonical spelling")
+          spelling, last_id = decoded[1], id
+        end
         items[#items + 1] = { text = entry.text, weight = entry.weight,
-          id = id and tonumber(id) or nil, sound = sound }
+          id = id and tonumber(id) or nil, sound = sound, spelling = spelling }
       end
       -- Only eight accepted rows form lexical edges. Alias eligibility uses the
       -- separately verified 64-row projection, not this materialized shortlist.
@@ -297,7 +311,7 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score, shared, split_
       end
     end
     local seen = {}
-    local function add(code, text, codes, weight, source, fallback_score, sound)
+    local function add(code, text, codes, weight, source, fallback_score, sound, native_key)
       local key = code .. "\0" .. text
       if seen[key] then return end
       local split = primary and (#code < 4 or (#code == 4 and text ~= primary))
@@ -308,7 +322,8 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score, shared, split_
         if not finite(lexical) then return end
         edge = { keys = code, text = text,
           codes = type(codes) == "number" and { codes } or codes,
-          lexical = lexical, compatibility = split and -split_penalty or 0, source = source }
+          lexical = lexical, compatibility = split and -split_penalty or 0,
+          source = source, native_key = native_key }
         if prepared_count < 1024 then
           cache[key] = edge
           prepared_count = prepared_count + 1
@@ -326,7 +341,7 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score, shared, split_
         local items = lookup(memory, canonical, code, 64)
         for j = 1, math.min(8, #items) do
           local item = items[j]
-          add(code, item.text, item.id, item.weight, "canonical", nil, item.sound)
+          add(code, item.text, item.id, item.weight, "canonical", nil, item.sound, item.spelling .. " ")
         end
       end
     end
@@ -339,18 +354,19 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score, shared, split_
           local canonical_item = exact_text(item.text)
           if canonical_item then
             add(code, item.text, canonical_item.id, canonical_item.weight,
-              "static_alias", nil, canonical_item.sound)
+              "static_alias", nil, canonical_item.sound, canonical_item.spelling .. " ")
           elseif #item.text <= 128 then
-            local codes, lexical, characters = {}, 0, {}
+            local codes, lexical, characters, spellings = {}, 0, {}, {}
             for character in item.text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
               local primitive = exact_text(character)
               if not primitive or #codes == 32 then codes = {}; break end
               codes[#codes + 1] = primitive.id
               characters[#characters + 1] = character
+              spellings[#spellings + 1] = primitive.spelling .. " "
               lexical = lexical + score(character, primitive.weight, primitive.sound)
             end
             if #codes > 0 and table.concat(characters) == item.text then
-              add(code, item.text, codes, nil, "spelled_alias", lexical)
+              add(code, item.text, codes, nil, "spelled_alias", lexical, nil, table.concat(spellings))
             end
           end
         end
@@ -361,7 +377,6 @@ function M.lexicon(raw, memory, aliases, reverse, lengths, score, shared, split_
 end
 
 local function native_entry(path)
-  if path.native_entry then return path.native_entry end
   assert(#path.codes > 0 and #path.codes <= 1024, "native code budget exceeded")
   local entry = DictEntry()
   -- Code() returns a shared-pointer wrapper. This getter supplies the Code
@@ -372,7 +387,6 @@ local function native_entry(path)
     code:push(id)
   end
   entry.text, entry.code, entry.weight = path.text, code, path.score
-  path.native_entry = entry
   return entry
 end
 
@@ -380,10 +394,13 @@ end
 -- A trailing space + TAB separates canonical syllables from the target text.
 -- Predictive mode makes the native limit apply even to exact code matches.
 -- Only a byte-exact code/text record with an actual commit can affect ranking.
-function M.user_reward(path, memory, dictionary)
+function M.user_reward(path, dictionary)
   if not dictionary then return 0 end
-  local entry = native_entry(path)
-  local code = table.concat(memory.dict:decode(entry.code), " ") .. " "
+  assert(#path.codes > 0 and #path.codes <= 1024, "native code budget exceeded")
+  -- Each chunk was decoded from the real native ID, never the typed alias.
+  -- Allocate a DictEntry only after ranking and text deduplication, in candidate().
+  local code = path.canonical_key
+  assert(type(code) == "string" and code:byte(-1) == 32, "missing canonical user key")
   local found = dictionary:lookup_words(code .. "\t" .. path.text, true, 1)
   for learned in found:iter() do
     if learned.text == path.text and learned.custom_code == code
@@ -402,7 +419,6 @@ end
 function M.candidate(path, memory, language, quality)
   assert(memory.user_dict == nil and memory.lang_name == language, "native language/readonly mismatch")
   local entry = native_entry(path)
-  entry.weight = path.score
   local phrase = Phrase(memory, "phrase", path.start, path.finish, entry)
   phrase.preedit, phrase.quality = path.preedit, quality
   local candidate = phrase:toCandidate()
