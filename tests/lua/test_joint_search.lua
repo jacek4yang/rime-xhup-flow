@@ -98,7 +98,7 @@ DictEntry = function()
   return {code={push=function(self, id) self[#self + 1] = id end}}
 end
 local function native_entry(text, id, weight)
-  return { text = text, weight = weight or -1, code = { print = function() return tostring(id) end } }
+  return { text = text, weight = weight or -1, code = { id, print = function() return tostring(id) end } }
 end
 local function dictionary(rows)
   local decoded = {}
@@ -153,6 +153,25 @@ check(mixed[1].text == "就是你好" and mixed[1].preedit == "jqu nihc", "legal
 check(table.concat(mixed[1].codes, ",") == "7,11", "aliases resolve native IDs without replacing an exact canonical route")
 check(mixed[1].sources[1] == "static_alias" and mixed[1].sources[2] == "canonical", "source provenance distinguishes alias resolution")
 do
+  local selected = mixed[1]
+  local records = {
+    ["jqui nihc \t就是你好"] = {text="就是你好", custom_code="jqui nihc ",
+      remaining_code_length=0, commit_count=2, weight=1},
+  }
+  local learned = {lookup_words=function(_, prefix)
+    return {iter=function()
+      local row = records[prefix]
+      return function() local result = row; row = nil; return result end
+    end}
+  end}
+  check(search.user_reward(selected, learned) > 0,
+    "mixed alias learning reads canonical native syllables, not typed keys or another homophone route")
+  records["jqui nihc \t就是你好"].commit_count = 0
+  check(search.user_reward(selected, learned) == 0, "uncommitted records cannot personalize a path")
+  local missing = {codes={7,11}, text=selected.text, score=selected.score}
+  check(not pcall(search.user_reward, missing, learned), "missing canonical metadata fails closed")
+end
+do
   local memo = search.readonly_cache(native, aliases, reverse)
   local function signature(input, cache)
     local resolve, stats = search.lexicon(input, native, aliases, reverse, lengths,
@@ -161,7 +180,7 @@ do
     for _, node in ipairs(search.search(input, resolve).paths) do
       local path = search.describe(input, node)
       result[#result + 1] = table.concat({ path.finish, path.score, path.tie, path.text,
-        path.preedit, table.concat(path.codes, ","), path.remaining }, "|")
+        path.preedit, table.concat(path.codes, ","), path.canonical_key, path.remaining }, "|")
     end
     return table.concat(result, "\n"), stats
   end

@@ -314,12 +314,13 @@ local function rank_joint_paths(joint, input, segment, env, nodes, first, last)
   local candidates, seen, paths = {}, {}, {}
   local best_score, next_score
   local personalization = true
+  local user_dictionary = env.native.user_dict
   for index = first, last do
-    local path = joint.describe(input, nodes[index], segment.start, false)
+    local path = joint.describe(input, nodes[index], segment.start, false, user_dictionary ~= nil)
     path.user = 0
-    if personalization and env.native.user_dict then
+    if personalization and user_dictionary then
       env.user_lookup_count = env.user_lookup_count + 1
-      local ok, reward = pcall(joint.user_reward, path, env.memory, env.native.user_dict)
+      local ok, reward = pcall(joint.user_reward, path, user_dictionary)
       if ok then path.user = reward
       else personalization = false end
     end
