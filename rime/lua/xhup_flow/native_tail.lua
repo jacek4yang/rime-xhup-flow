@@ -314,7 +314,7 @@ local function joint_candidates(input, segment, env)
   local personalization = true
   env.user_lookup_count = 0
   for _, node in ipairs(result.paths) do
-    local path = joint.describe(input, node, segment.start)
+    local path = joint.describe(input, node, segment.start, false)
     path.user = 0
     if personalization and env.native.user_dict then
       env.user_lookup_count = env.user_lookup_count + 1

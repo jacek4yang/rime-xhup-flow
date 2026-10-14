@@ -103,8 +103,12 @@ function M.search(raw, edges_at, transition)
   return { paths = paths, truncated_edges = truncated }
 end
 
-function M.describe(raw, node, start)
-  local edges, keys, texts, sources, spans, codes = {}, {}, {}, {}, {}, {}
+-- Native emission retains segmentation/source metadata in node backpointers.
+-- Expand diagnostic arrays only when requested, not for every menu alternative.
+function M.describe(raw, node, start, diagnostics)
+  local edges, keys, texts, codes = {}, {}, {}, {}
+  local sources, spans
+  if diagnostics ~= false then sources, spans = {}, {} end
   local current = node
   while current.edge do
     edges[#edges + 1] = current.edge
@@ -113,8 +117,11 @@ function M.describe(raw, node, start)
   local offset = start or 0
   for i = #edges, 1, -1 do
     local edge = edges[i]
-    keys[#keys + 1], texts[#texts + 1], sources[#sources + 1] = edge.keys, edge.text, edge.source
-    spans[#spans + 1] = { start = offset, finish = offset + #edge.keys }
+    keys[#keys + 1], texts[#texts + 1] = edge.keys, edge.text
+    if spans then
+      sources[#sources + 1] = edge.source
+      spans[#spans + 1] = { start = offset, finish = offset + #edge.keys }
+    end
     offset = offset + #edge.keys
     for _, code in ipairs(edge.codes or {}) do codes[#codes + 1] = code end
   end
