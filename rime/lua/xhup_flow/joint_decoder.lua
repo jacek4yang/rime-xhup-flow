@@ -26,9 +26,10 @@ local function better(score, count, serial, other)
     (count < other.count or (count == other.count and serial < other.serial)))
 end
 
+local INFINITY = math.huge
 local function finite(value)
   return type(value) == "number" and value == value
-    and value ~= math.huge and value ~= -math.huge
+    and value ~= INFINITY and value ~= -INFINITY
 end
 
 -- edges_at(start) returns bounded lexical alternatives, in deterministic order.
@@ -37,25 +38,34 @@ end
 -- retained edges.
 -- start/finish are zero-based raw-key offsets, never virtual query offsets.
 function M.search(raw, edges_at, transition)
-  if #raw == 0 or #raw > M.max_input or raw:find("[^a-z]") then
+  local n = #raw
+  if n == 0 or n > M.max_input or raw:find("[^a-z]") then
     return { paths = {}, reason = "unsupported_input", truncated_edges = 0 }
   end
   local root = { finish = 0, score = 0, lexical = 0, context = 0,
     count = 0, serial = 0 }
   local beams = { [0] = { root } }
   local serial, truncated = 0, 0
-  for start = 0, #raw - 1 do
+  local width = M.beam_width
+  for start = 0, n - 1 do
     local beam = beams[start]
     if beam then
       local edges = edges_at(start)
       truncated = truncated + math.max(0, #edges - M.max_edges)
+      local last_keys, finish, valid_keys
       for i = 1, math.min(#edges, M.max_edges) do
         local edge = edges[i]
-        local finish = start + #edge.keys
-        if #edge.keys > 0 and #edge.keys <= M.max_edge and finish <= #raw
-          and raw:sub(start + 1, finish) == edge.keys and finite(edge.lexical) then
+        if i == 1 or edge.keys ~= last_keys then
+          local length = #edge.keys
+          finish = start + length
+          valid_keys = length > 0 and length <= M.max_edge and finish <= n
+            and raw:sub(start + 1, finish) == edge.keys
+          last_keys = edge.keys
+        end
+        if valid_keys and finite(edge.lexical) then
           local target = beams[finish]
           if not target then target = {}; beams[finish] = target end
+          local target_count = #target
           local last_previous, context, valid_context
           for j = 1, #beam do
             local previous = beam[j]
@@ -67,18 +77,18 @@ function M.search(raw, edges_at, transition)
             if valid_context then
               local score, count = previous.score + edge.lexical + context, previous.count + 1
               serial = serial + 1
-              if (#target < M.beam_width or better(score, count, serial, target[#target]))
+              if (target_count < width or better(score, count, serial, target[target_count]))
                 and finite(score) then
-                local position = #target + 1
+                local position = target_count + 1
                 while position > 1 and better(score, count, serial, target[position - 1]) do
                   position = position - 1
                 end
                 local node
-                if #target == M.beam_width then
+                if target_count == width then
                   -- finish > start: this beam has not expanded, so its evicted
                   -- node cannot be an ancestor. Never recycle an expanded node.
-                  node = target[#target]
-                  target[#target] = nil
+                  node = target[target_count]
+                  target[target_count] = nil
                   node.previous, node.edge, node.finish = previous, edge, finish
                   node.score, node.count, node.serial = score, count, serial
                   node.lexical = previous.lexical + edge.lexical
@@ -88,6 +98,7 @@ function M.search(raw, edges_at, transition)
                     score = score, count = count, serial = serial,
                     lexical = previous.lexical + edge.lexical,
                     context = previous.context + context }
+                  target_count = target_count + 1
                 end
                 table.insert(target, position, node)
               end
@@ -100,7 +111,7 @@ function M.search(raw, edges_at, transition)
   local paths = {}
   -- Keep each recent complete frontier, even when another path consumes a new
   -- ambiguous tail key. A valid prefix is not an implicit commit boundary.
-  for finish = #raw, math.max(1, #raw - M.max_pending), -1 do
+  for finish = n, math.max(1, n - M.max_pending), -1 do
     local beam = beams[finish]
     if beam then
       for rank = 1, #beam do paths[#paths + 1] = beam[rank] end
