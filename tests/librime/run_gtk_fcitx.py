@@ -68,6 +68,17 @@ Layout=
         path = destination / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
+    custom_text = None
+    if args.joint_decoder != "schema":
+        # This is the verified generator format, not an arbitrary YAML parser.
+        switches = contents["xhup_flow.schema.yaml"].decode().split("\nswitches:\n", 1)[1].split("\nengine:\n", 1)[0]
+        names = [line.removeprefix("  - name: ") for line in switches.splitlines()
+                 if line.startswith("  - name: ")]
+        if names.count("joint_decoder") != 1:
+            raise ValueError("expected one generated joint_decoder switch")
+        custom_text = f'patch:\n  "switches/@{names.index("joint_decoder")}/reset": {int(args.joint_decoder == "on")}\n'
+        with (destination / "xhup_flow.custom.yaml").open("x") as custom:
+            custom.write(custom_text)
     probe = Path(__file__).with_name("gtk_input_probe.c")
     flags = shlex.split(subprocess.check_output(["pkg-config", "--cflags", "--libs", "gtk+-3.0"], text=True))
     compile_command = ["cc", "-O2", "-Wall", "-Wextra", "-Werror", str(probe),
@@ -83,6 +94,8 @@ Layout=
         GDK_BACKEND="x11", TMPDIR=str(output))
     if args.sync_mode:
         environment["FCITX_ENABLE_SYNC_MODE"] = "1"
+    if args.trace_input:
+        environment["XHUP_TRACE_INPUT"] = "1"
     query_roots = {libraries, Path("/usr/lib") / sysconfig.get_config_var("MULTIARCH")}
     queries = {path.resolve() for root in query_roots for path in root.glob("libgtk-3*/gtk-query-immodules-3.0")}
     if len(queries) != 1:
@@ -100,6 +113,9 @@ Layout=
             ["git", "-C", str(args.source_root), "status", "--porcelain"], text=True).strip()),
         cold_control_burst=args.cold_control_burst,
         gtk_key_delivery="sync" if args.sync_mode else "distribution-default",
+        input_tracing=args.trace_input,
+        buffered_control_burst=args.buffered_control_burst,
+        joint_decoder=args.joint_decoder, isolated_custom_config=custom_text,
         lua_loading="distribution librime plugin loader; no LD_PRELOAD override")
     (output / "identity.json").write_text(json.dumps(identity, indent=2) + "\n")
     # Short, private socket path; no host service directories or secret agents.
@@ -125,6 +141,10 @@ Layout=
             command.append("--cold-control-burst")
         if args.sync_mode:
             command.append("--sync-mode")
+        if args.trace_input:
+            command.append("--trace-input")
+        if args.buffered_control_burst:
+            command.append("--buffered-control-burst")
         return subprocess.run([str(item) for item in command], env=environment).returncode
 
 
@@ -132,6 +152,11 @@ def inside(args):
     output = args.output
     bin_dir = args.prefix / "bin"
     ready = threading.Event()
+    monitor = monitor_log = None
+    if args.trace_input:
+        monitor_log = (output / "dbus-input.log").open("w")
+        monitor = subprocess.Popen(["dbus-monitor", "--session"],
+            stdout=monitor_log, stderr=subprocess.STDOUT)
     frontend = subprocess.Popen([str(bin_dir / "fcitx5"), "--disable=all",
         "--enable=keyboard,rime,dbus,dbusfrontend,xcb,xim,classicui", "--verbose=rime=5"],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -159,7 +184,10 @@ def inside(args):
             run([bin_dir / "fcitx5-remote", "-s", "rime"])
             run([bin_dir / "fcitx5-remote", "-o"])
             wait_for(ready.is_set, "frontend deployment success", timeout=240)
-            if args.cold_control_burst:
+            if args.buffered_control_burst:
+                run([bin_dir / "xdotool", "key", "--clearmodifiers", "--delay", "0",
+                     "Escape", "ctrl+a", "BackSpace", "q"])
+            elif args.cold_control_burst:
                 run([bin_dir / "xdotool", "key", "--clearmodifiers", "Escape", "ctrl+a", "BackSpace"])
             cases = (
                 ("q", "去"), ("jqu", "就是"), ("jbzqu", "进去"),
@@ -172,12 +200,13 @@ def inside(args):
                     if index:
                         run([bin_dir / "xdotool", "key", "--clearmodifiers", "Escape", "ctrl+a", "BackSpace"])
                         wait_for(lambda: (output / "committed.txt").read_text() == "", "clear committed text")
-                    run([bin_dir / "xdotool", "type", "--clearmodifiers", "--delay", "100", keys])
+                    if index or not args.buffered_control_burst:
+                        run([bin_dir / "xdotool", "type", "--clearmodifiers", "--delay", "100", keys])
                     wait_for(lambda: (output / "preedit.txt").read_text().replace(" ", "") == keys,
                              f"GTK preedit retains {keys}")
                     if (output / "committed.txt").read_text() != "":
                         raise AssertionError("IME committed before selection")
-                    (output / "capture.request").write_text("capture without keyboard side effects\n")
+                    (output / "capture.request").write_text(str(index))
                     wait_for(lambda: (output / f"screen-{index}.png").exists(), "actual candidate screenshot")
                     case["preedit_before_selection"] = (output / "preedit.txt").read_text()
                     run([bin_dir / "xdotool", "key", "space"])
@@ -197,7 +226,7 @@ def inside(args):
         report["error"] = str(error)
         raise
     finally:
-        for process in (probe, frontend):
+        for process in (probe, frontend, monitor):
             if process is not None and process.poll() is None:
                 process.terminate()
                 try:
@@ -206,6 +235,8 @@ def inside(args):
                     process.kill()
                     process.wait()
         logger.join(timeout=5)
+        if monitor_log:
+            monitor_log.close()
         (output / "result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     return 0
 
@@ -220,6 +251,12 @@ def main():
     parser.add_argument("--cold-control-burst", action="store_true")
     parser.add_argument("--sync-mode", action="store_true",
                         help="diagnose with upstream synchronous GTK key delivery; not the default")
+    parser.add_argument("--trace-input", action="store_true",
+                        help="record synthetic GTK events and the isolated D-Bus session for diagnosis")
+    parser.add_argument("--buffered-control-burst", action="store_true",
+                        help="diagnose controls and first character buffered together; preserves original cold case")
+    parser.add_argument("--joint-decoder", choices=("schema", "on", "off"), default="schema",
+                        help="explicit isolated user override; does not change the release package")
     parser.add_argument("--inside", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     args.package, args.output, args.prefix = args.package.resolve(), args.output.resolve(), args.prefix.resolve()
