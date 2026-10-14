@@ -15,7 +15,7 @@ class SummaryTests(unittest.TestCase):
                                       "commit_exact": 2/3, "pending_reachable": 0, "contract_failures": 1})
 
     def test_incomplete_duplicate_wrong_mode_rejected(self):
-        meta = {"cases": [{"id": "a", "characters": 2}]}
+        meta = {"cases": [{"id": "a", "characters": 2, "keys": 4}]}
         row = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": 0,
                "keys": 4, "commit_exact": True, "rank_contract": "complete_raw_span_v1",
                "complete_start": 0, "complete_end": 4, "page_size": 5, "first_page": True}
@@ -30,25 +30,45 @@ class SummaryTests(unittest.TestCase):
                     read_trace(path, meta, "planner")
 
     def test_complete_trace_and_missing_step_or_commit(self):
-        meta = {"cases": [{"id": "a", "characters": 2}]}
+        meta = {"cases": [{"id": "a", "characters": 2, "keys": 3}]}
         key = {"case": "a", "key": 97, "keypress_ns": 1, "key_to_menu_ns": 2, "bounded_probe_ns": 3}
         commit = {"case": "a", "event": "selection_commit"}
         result = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": 0,
-                  "keys": 4, "commit_exact": True, "rank_contract": "complete_raw_span_v1",
-                  "complete_start": 0, "complete_end": 4, "page_size": 5, "first_page": True}
+                  "keys": 3, "commit_exact": True, "rank_contract": "complete_raw_span_v1",
+                  "complete_start": 0, "complete_end": 3, "page_size": 5, "first_page": True}
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "trace"
-            records = [key]*8 + [commit, result]
+            records = [key]*7 + [commit, result]
             path.write_text("\n".join(map(json.dumps, records)))
             rows, timing = read_trace(path, meta, "planner")
-            self.assertEqual(timing["key_to_menu_ns"]["samples"], 8)
-            for incomplete in (records[1:], [key]*8 + [result]):
+            self.assertEqual(timing["key_to_menu_ns"]["samples"], 7)
+            for incomplete in (records[1:], [key]*7 + [result]):
                 path.write_text("\n".join(map(json.dumps, incomplete)))
                 with self.assertRaises(ValueError):
                     read_trace(path, meta, "planner")
 
+    def test_native_empty_menu_is_retained_as_a_miss_with_matching_frame_evidence(self):
+        meta = {"cases": [{"id": "a", "characters": 2, "keys": 3}]}
+        key = {"case": "a", "key": 97, "raw": "abc", "page_size": 0, "head": [],
+               "keypress_ns": 1, "key_to_menu_ns": 2, "bounded_probe_ns": 3}
+        result = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": -1,
+                  "keys": 3, "commit_exact": False, "rank_contract": "complete_raw_span_v1",
+                  "complete_start": 0, "complete_end": 0, "page_size": 0, "first_page": False,
+                  "pending_reachable": False, "contract_failures": 0}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trace"
+            path.write_text("\n".join(map(json.dumps, [key]*7 + [result])))
+            rows, _ = read_trace(path, meta, "planner")
+            report = rates(list(rows.values()))
+            self.assertEqual((report["cases"], report["top1"], report["first_page"], report["commit_exact"]),
+                             (1, 0, 0, 0))
+            for change in ({"head": ["错"]}, {"head": None}, {"raw": "ab"}, {"page_size": 5}):
+                path.write_text("\n".join(map(json.dumps, [key]*6 + [{**key, **change}, result])))
+                with self.subTest(change=change), self.assertRaises(ValueError):
+                    read_trace(path, meta, "planner")
+
     def test_partial_text_match_is_not_complete_recall(self):
-        meta = {"cases": [{"id": "a", "characters": 2}]}
+        meta = {"cases": [{"id": "a", "characters": 2, "keys": 4}]}
         key = {"case": "a", "key": 97, "keypress_ns": 1, "key_to_menu_ns": 2, "bounded_probe_ns": 3}
         result = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": 0,
                   "keys": 4, "commit_exact": False, "rank_contract": "complete_raw_span_v1",
@@ -96,7 +116,7 @@ class SummaryTests(unittest.TestCase):
         self.assertTrue(all(interval == [0,0] for interval in a["paired_delta"].values()))
 
     def test_first_page_requires_a_real_page_boundary_and_consistent_rank(self):
-        meta = {"cases": [{"id": "a", "characters": 2}]}
+        meta = {"cases": [{"id": "a", "characters": 2, "keys": 4}]}
         key = {"case": "a", "key": 97, "keypress_ns": 1, "key_to_menu_ns": 2, "bounded_probe_ns": 3}
         result = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": 8,
                   "keys": 4, "commit_exact": False, "rank_contract": "complete_raw_span_v1",

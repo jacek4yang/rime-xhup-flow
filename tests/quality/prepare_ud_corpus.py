@@ -68,7 +68,7 @@ def prepare(raw, inventory):
             case = f"{sentence_id}-chunk-{serial}"
             code = "".join(inventory[s] for s in syllables)
             rows.append(f"{case}\t{code}\t{text}")
-            cases.append({"id": case, "sentence": sentence_id, "characters": len(text),
+            cases.append({"id": case, "sentence": sentence_id, "characters": len(text), "keys": len(code),
                           "proper_name": any(proper for _, _, proper in run)})
             counts["eligible_chunks"] += 1
         run.clear()

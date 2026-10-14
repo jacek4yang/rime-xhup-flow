@@ -75,7 +75,7 @@ def prepare(raw, full, aliases):
                 case = f"{identity}-{mode}"
                 output.append(f"{case}\t{keys}\t{text}")
                 cases.append({"id": case, "sentence": sentence, "mode": mode,
-                              "characters": len(text), "proper_name": any(p for _, p in run),
+                              "characters": len(text), "keys": len(keys), "proper_name": any(p for _, p in run),
                               "same_input_as_full": keys == full_input, "segments": segments})
                 counts[f"cases_{mode}"] += 1
         run.clear()
