@@ -77,10 +77,14 @@ def main() -> None:
         assert '#@/db_name\txhup_flow_user' in lines, f'{label}: persistent identity changed'
 
     def save_snapshot(user: Path) -> Path:
+        # Export to an explicit path: `rime_dict_manager -b` writes into
+        # sync/<machine>/ on newer librime releases instead of the working
+        # directory, and -e output is exactly the format `-r` accepts.
+        snapshot = output / f'{user.name}-snapshot.tsv'
         command = ([str(args.cli.resolve()), 'learning', 'export', '--user-data-dir', str(user)]
-                   if args.cli else ['rime_dict_manager', '-b', 'xhup_flow_user'])
+                   if args.cli else ['rime_dict_manager', '-e', 'xhup_flow_user', str(snapshot)])
         subprocess.run(command, cwd=user, check=True, stdout=subprocess.DEVNULL)
-        return user / 'xhup_flow_user.userdb.txt'
+        return snapshot
 
     typing = prepare('typing', False)
     run(typing, 'typing')
@@ -157,12 +161,28 @@ def main() -> None:
         for line in lines:
             if not line or line.startswith('#'):
                 continue
-            code, text, values = line.split('\t')
-            fields = dict(item.split('=') for item in values.split())
+            first, second, values = line.split('\t')
+            # Modern librime exports text-first; the shipped legacy fixture
+            # predates that and is code-first. Distinguish by CJK presence.
+            if any(ord(character) > 0x2E80 for character in first):
+                text, code = first, second
+            else:
+                code, text = first, second
+            fields = {}
+            for item in values.split():
+                if '=' in item:
+                    key, _, value = item.partition('=')
+                    fields[key] = value
+                else:
+                    # Bare commit count: newer librime userdb exports render
+                    # packed values without the legacy c=/d=/t= triple.
+                    fields.setdefault('c', item)
             # UserDbMerger normalizes d/t to the snapshot clock using formula_d.
             # Compare effective probability state, not its equivalent timestamp.
-            records[code, text] = (int(fields['c']),
-                                  float(fields['d']) * math.exp((int(fields['t']) - tick) / 200))
+            commits = int(fields['c'])
+            decayed = (float(fields['d']) * math.exp((int(fields['t']) - tick) / 200)
+                       if 'd' in fields and 't' in fields else 0.0)
+            records[code, text] = (commits, decayed)
         return tick, records
     before_tick, before = state(backup)
     # Native encoded entries and ordinary recalled spellings have distinct keys.

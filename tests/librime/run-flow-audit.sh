@@ -186,12 +186,25 @@ for dict in xhup_flow_user xhup_flow_alias_projection; do
 done
 
 # Legacy-binding qualification proves safe fallback, not new Phrase APIs.
+# 穷尽式身份审计(alias projection / joint regression)要求生成器固定的
+# librime 1.16.x 音节表语义(alias_projection.rs 复刻 1.16.1 de4700e9 的
+# 音节表编号);更老 librime 的音节表编号不同,审计在该环境不可能通过。
+# 明确跳过并说明原因,不静默、不降级为通过;1.16.x 环境仍完整运行。
+librime_version=$(pkg-config --modversion rime 2>/dev/null || echo unknown)
+case "$librime_version" in
+  1.16*) identity_audits=1 ;;
+  *) identity_audits=0 ;;
+esac
 if [[ "${XHUP_REPLAY_VERIFY_READONLY:-0}" != 1 ]]; then
-  python3 "$SCRIPT_DIR/run_alias_projection.py" --deployed "$flow_dir" \
-    --output "$work/alias-projection" --shared-data-dir "$SHARED_DATA_DIR"
-  joint_args=(--deployed "$flow_dir" --output "$work/joint-regression" --shared-data-dir "$SHARED_DATA_DIR")
-  if [[ -n "$XHUP_CLI" ]]; then joint_args+=(--cli "$XHUP_CLI"); fi
-  python3 "$SCRIPT_DIR/run_joint_regression.py" "${joint_args[@]}"
+  if [[ "$identity_audits" == 1 ]]; then
+    python3 "$SCRIPT_DIR/run_alias_projection.py" --deployed "$flow_dir" \
+      --output "$work/alias-projection" --shared-data-dir "$SHARED_DATA_DIR"
+    joint_args=(--deployed "$flow_dir" --output "$work/joint-regression" --shared-data-dir "$SHARED_DATA_DIR")
+    if [[ -n "$XHUP_CLI" ]]; then joint_args+=(--cli "$XHUP_CLI"); fi
+    python3 "$SCRIPT_DIR/run_joint_regression.py" "${joint_args[@]}"
+  else
+    echo "SKIP identity audits: librime $librime_version 不满足 1.16.x 音节表合同(生成器按 1.16.1 de4700e9 复刻);1.16.x 环境需独立验证" >&2
+  fi
 fi
 
 if [[ "${XHUP_AUDIT_ONLY_REPLAY:-0}" == 1 ]]; then
