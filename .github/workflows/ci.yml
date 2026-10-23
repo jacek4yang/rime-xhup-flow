@@ -17,7 +17,10 @@ jobs:
     name: Rust workspace
     runs-on: ubuntu-latest
     # 30 分钟在 runner 慢时被全量测试吃满(2026-09-16 复现);45 留余量。
-    timeout-minutes: 45
+    # 2026-10-24:缓存键随 Cargo.lock 变化(如 tokio 安全升级)时冷缓存
+    # 全量重建使 check+clippy+test 超 45 分钟(整合 CI 复现,clippy 后超时),
+    # 60 留余量;命中缓存时依旧分钟级。
+    timeout-minutes: 60
 
     steps:
       - name: 检出仓库
