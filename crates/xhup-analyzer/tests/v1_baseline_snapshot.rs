@@ -94,14 +94,15 @@ fn canonical_counts_match_v1_release_snapshot() {
 
 // Portable Lua is compiled rather than byte-frozen. The complete hint mapping
 // is frozen independently by tests/lua/run_runtime_suite.py against v1 values.
+// The learning wrapper is not a Static artifact: its language name now matches
+// the unchanged persisted xhup_flow_user database. Native migration and exact
+// exported spellings are checked by the librime qualification, not header hashes.
 const FROZEN_STATIC_ARTIFACTS: &[&str] = &[
     "xhup_flow.dict.yaml",
     "xhup_flow_chars.dict.yaml",
     "xhup_flow_fixed_first_shortcuts.dict.yaml",
     "xhup_flow_flow.dict.yaml",
     "xhup_flow_flow.schema.yaml",
-    "xhup_flow_learn.dict.yaml",
-    "xhup_flow_learn.schema.yaml",
     "xhup_flow_shortcuts.dict.yaml",
     "xhup_flow_static.schema.yaml",
     "xhup_flow_word_shortcuts.dict.yaml",

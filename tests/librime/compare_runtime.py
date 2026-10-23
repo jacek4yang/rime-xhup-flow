@@ -29,6 +29,8 @@ def main():
     parser.add_argument("--repetitions", type=int, default=10)
     parser.add_argument("--learning", choices=("on", "off"), default="off")
     parser.add_argument("--quick-hint", choices=("on", "off"), default="on")
+    parser.add_argument("--baseline-joint", choices=("on", "off", "schema"), default="schema")
+    parser.add_argument("--candidate-joint", choices=("on", "off", "schema"), default="schema")
     parser.add_argument("--schema", choices=("xhup_flow", "xhup_flow_static"), default="xhup_flow")
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--complete-menu", action="store_true")
@@ -62,6 +64,7 @@ def main():
         "arguments": {key: str(value) if isinstance(value, Path) else value
                       for key, value in vars(args).items()},
         "user_state": "fresh copies omit *.userdb* and user.yaml on both sides",
+        "menu_page_size": 5,
         "gui_acceptance": False,
     }, indent=2) + "\n")
     all_rows = {label: [] for label in sources}
@@ -76,7 +79,8 @@ def main():
                        "--deployed", str(output / f"{label}-source"), "--plugin", str(args.plugin),
                        "--output", str(directory), "--trials", "1", "--repetitions", str(args.repetitions),
                        "--schema", args.schema, "--learning", args.learning,
-                       "--quick-hint", args.quick_hint]
+                       "--quick-hint", args.quick_hint,
+                       "--joint-decoder", getattr(args, f"{label}_joint")]
             for enabled, flag in ((args.profile, "--profile"), (args.complete_menu, "--complete-menu"),
                                   (args.sustained, "--sustained")):
                 if enabled:
@@ -110,7 +114,7 @@ def main():
                     result[field] = percentiles([row[field] for row in selected])
             cases[name] = result
         metrics[label] = {"cases": cases, "processes": process_summaries[label]}
-    report = {"instrumented": args.profile, "gui_acceptance": False,
+    report = {"instrumented": args.profile, "gui_acceptance": False, "menu_page_size": 5,
               "pairs": args.trials, "semantic_differences": differences, "metrics": metrics}
     (output / "comparison.json").write_text(json.dumps(report, indent=2) + "\n")
     if sha256(script) != script_hash:

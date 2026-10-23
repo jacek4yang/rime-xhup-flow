@@ -1,0 +1,22 @@
+# Rime user dictionary
+#@/db_name	xhup_flow_user
+#@/db_type	userdb
+#@/rime_version	1.16.1
+#@/tick	112
+#@/user_id	unknown
+hc 	好	c=4 d=3.48219 t=79
+hcn 	好	c=6 d=5.14647 t=81
+hcnz 	好	c=20 d=15.4737 t=111
+hduikeyi 	还是可以	c=2 d=1.76721 t=67
+jbz 	进	c=4 d=3.27312 t=92
+kafw 	咖啡	c=4 d=3.5256 t=99
+llzi 	量子	c=4 d=3.5081 t=100
+ni 	你	c=14 d=10.6722 t=110
+nihc 	你好	c=2 d=1.76721 t=62
+nir 	你	c=6 d=5.24905 t=76
+nirx 	你	c=10 d=8.35082 t=96
+qu 	去	c=14 d=10.7456 t=112
+sudu 	速度	c=2 d=1.76721 t=66
+uurufa 	输入法	c=2 d=1.76721 t=64
+vege 	这个	c=2 d=1.76721 t=63
+wojtde 	我觉得	c=2 d=1.76721 t=65

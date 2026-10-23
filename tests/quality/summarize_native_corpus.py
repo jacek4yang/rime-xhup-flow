@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 import random
 
-METRICS = ("top1", "top3", "top256", "commit_exact", "pending_reachable")
+METRICS = ("top1", "top3", "first_page", "top256", "commit_exact", "pending_reachable")
 SEED = 20261002
 REPLICATES = 2000
 
@@ -20,7 +20,7 @@ def quantile(values, fraction):
 
 def outcomes(row):
     rank = row["rank"]
-    return [int(rank == 0), int(0 <= rank < 3), int(rank >= 0),
+    return [int(rank == 0), int(0 <= rank < 3), int(row["first_page"]), int(rank >= 0),
             int(row["commit_exact"]), int(row["pending_reachable"])]
 
 
@@ -29,6 +29,7 @@ def read_trace(path, metadata, mode):
     rows, timing = {}, defaultdict(list)
     steps = defaultdict(int)
     commits = defaultdict(int)
+    last_steps = {}
     for line in path.read_text().splitlines():
         if not line.startswith("{"):
             continue  # audit deployment headings are not JSON records
@@ -40,6 +41,23 @@ def read_trace(path, metadata, mode):
                 raise ValueError("duplicate case or wrong mode")
             if type(row["rank"]) is not int or not -1 <= row["rank"] < 256:
                 raise ValueError("invalid rank")
+            if row.get("rank_contract") != "complete_raw_span_v1":
+                raise ValueError("trace lacks native full-consumption evidence")
+            span = (row.get("complete_start"), row.get("complete_end"))
+            if any(type(offset) is not int for offset in span):
+                raise ValueError("missing native candidate span")
+            expected_span = (0, row["keys"]) if row["rank"] >= 0 else (0, 0)
+            if span != expected_span:
+                raise ValueError("partial candidate cannot count as complete sentence recall")
+            page_size = row.get("page_size")
+            frame = last_steps.pop(row["case"], {})
+            empty_menu = (page_size == 0 and row["rank"] == -1 and frame.get("head") == []
+                          and type(frame.get("page_size")) is int and frame["page_size"] == 0
+                          and isinstance(frame.get("raw"), str) and len(frame["raw"]) == row["keys"])
+            if type(page_size) is not int or not (1 <= page_size <= 256 or empty_menu):
+                raise ValueError("missing or invalid visible page boundary")
+            if type(row.get("first_page")) is not bool or row["first_page"] != (0 <= row["rank"] < page_size):
+                raise ValueError("first-page outcome disagrees with complete candidate rank")
             if row["commit_exact"] and row["rank"] < 0:
                 raise ValueError("commit without reachable target")
             rows[row["case"]] = row
@@ -47,6 +65,7 @@ def read_trace(path, metadata, mode):
             commits[row["case"]] += 1
         elif "key" in row:
             steps[row["case"]] += 1
+            last_steps[row["case"]] = row
             for field in ("keypress_ns", "key_to_menu_ns", "bounded_probe_ns"):
                 if row[field] < 0:
                     raise ValueError("negative latency")
@@ -55,9 +74,12 @@ def read_trace(path, metadata, mode):
         raise ValueError("incomplete trace (never silently drop missing cases)")
     for case in metadata["cases"]:
         case_id = case["id"]
-        if rows[case_id]["keys"] != case["characters"] * 2:
+        keys = case.get("keys")
+        if type(keys) is not int or not 2 <= keys <= 128:
+            raise ValueError("explicit frozen key count required; regenerate corpus metadata")
+        if rows[case_id]["keys"] != keys:
             raise ValueError("input length does not match frozen fixture")
-        if steps[case_id] != case["characters"] * 2 + 4:
+        if steps[case_id] != keys + 4:
             raise ValueError("missing or duplicated per-key evidence")
         if rows[case_id]["commit_exact"] and commits[case_id] != 1:
             raise ValueError("missing or duplicated commit evidence")

@@ -125,16 +125,17 @@ function M.check_contract()
     table.insert(report.errors, "user_memory 模块加载失败: " .. tostring(um_or_err))
   end
 
-  -- 6. 检查 joint_decoder filter 模块(§11/§14 R3;守护诊断,默认透传)
+  -- 6. 联合搜索库不是候选包装 filter。
   local ok_jd, jd_or_err = pcall(require, "xhup_flow.joint_decoder")
   if ok_jd and type(jd_or_err) == "table" then
-    report.components.joint_decoder = {
-      ok = true,
-      has_init = type(jd_or_err.init) == "function",
-      has_func = type(jd_or_err.func) == "function",
-      available = jd_or_err.available == true,
-      reason = jd_or_err.reason,
-    }
+    local valid = type(jd_or_err.search) == "function"
+      and type(jd_or_err.describe) == "function"
+      and type(jd_or_err.candidate) == "function"
+    report.components.joint_decoder = { ok = valid, role = "bounded_search" }
+    if not valid then
+      report.ok = false
+      table.insert(report.errors, "joint_decoder 搜索接口不完整")
+    end
   else
     report.ok = false
     report.components.joint_decoder = { ok = false, error = tostring(jd_or_err) }

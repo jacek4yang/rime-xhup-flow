@@ -31,6 +31,15 @@ static void measure_complete_menu(RimeSessionId s, const char *name) {
       elapsed, count, exhausted ? "true" : "false", limit);
 }
 
+/* Outside the timed key path: an enabled-but-failed decoder is not a benchmark. */
+static int verify_joint(RimeSessionId s) {
+  if (!r->get_option(s, "joint_decoder")) return 1;
+  char status[96] = "";
+  r->get_property(s, "xhup_flow_joint_decoder_status", status, sizeof(status));
+  fprintf(stderr, "XHUP_JOINT_STATUS %s\n", status);
+  return !strcmp(status, "ready") || !strcmp(status, "bounded");
+}
+
 int main(int argc, char **argv) {
   complete_menu_mode = getenv("XHUP_MEASURE_COMPLETE_MENU") != NULL;
   const char *quick_hint = getenv("XHUP_MEASURE_QUICK_HINT");
@@ -75,6 +84,7 @@ int main(int argc, char **argv) {
       RimeSessionId s = persistent ? persistent : start();
       type(s, cases[i][0], cases[i][1], NULL, NULL);
       measure_complete_menu(s, cases[i][0]);
+      if (!verify_joint(s)) return 2;
       if (persistent) r->clear_composition(s); else r->destroy_session(s);
     }
     RimeSessionId s = persistent ? persistent : start();
@@ -83,6 +93,7 @@ int main(int argc, char **argv) {
     step(s, "middle-edit", 0xff08, NULL, NULL);
     step(s, "middle-edit", 'z', NULL, NULL);
     measure_complete_menu(s, "middle-edit");
+    if (!verify_joint(s)) return 2;
     if (persistent) r->clear_composition(s); else r->destroy_session(s);
     s = persistent ? persistent : start();
     for (int i = 0; i < 16; ++i) type(s, "long-128", "nihcnzqu", NULL, NULL);
@@ -91,6 +102,7 @@ int main(int argc, char **argv) {
     measure_complete_menu(s, "over-limit");
     for (int i = 0; i < 130; ++i) step(s, "backspace", 0xff08, NULL, NULL);
     measure_complete_menu(s, "backspace");
+    if (!verify_joint(s)) return 2;
     if (persistent) r->clear_composition(s); else r->destroy_session(s);
     FILE *memory = fopen("/proc/self/statm", "r");
     unsigned long total_pages, resident_pages;

@@ -214,6 +214,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         "data/xhup/official_char_code_oracle.tsv",
         "data/xhup/README.md",
         "data/corpus/conversation_kdconv.tsv",
+        "data/corpus/kdconv_bigram.tsv",
+        "data/corpus/README.md",
         "data/corpus/LICENSE.kdconv",
         "data/words/wanxiang_base_words.tsv",
         "data/words/wanxiang_extended_words.tsv",

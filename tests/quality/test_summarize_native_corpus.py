@@ -7,15 +7,18 @@ from summarize_native_corpus import intervals, rates, read_trace, prefix_contrac
 
 class SummaryTests(unittest.TestCase):
     def test_quality_misses_in_denominator(self):
-        rows = [{"rank": rank, "commit_exact": rank >= 0, "pending_reachable": False,
+        rows = [{"rank": rank, "first_page": 0 <= rank < 5,
+                 "commit_exact": rank >= 0, "pending_reachable": False,
                  "contract_failures": int(rank == 2)} for rank in (0, 2, -1)]
-        self.assertEqual(rates(rows), {"cases": 3, "top1": 1/3, "top3": 2/3, "top256": 2/3,
+        self.assertEqual(rates(rows), {"cases": 3, "top1": 1/3, "top3": 2/3,
+                                      "first_page": 2/3, "top256": 2/3,
                                       "commit_exact": 2/3, "pending_reachable": 0, "contract_failures": 1})
 
     def test_incomplete_duplicate_wrong_mode_rejected(self):
-        meta = {"cases": [{"id": "a", "characters": 2}]}
+        meta = {"cases": [{"id": "a", "characters": 2, "keys": 4}]}
         row = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": 0,
-               "keys": 4, "commit_exact": True}
+               "keys": 4, "commit_exact": True, "rank_contract": "complete_raw_span_v1",
+               "complete_start": 0, "complete_end": 4, "page_size": 5, "first_page": True}
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "trace"
             for content in ("", json.dumps(row)+"\n"+json.dumps(row),
@@ -27,22 +30,61 @@ class SummaryTests(unittest.TestCase):
                     read_trace(path, meta, "planner")
 
     def test_complete_trace_and_missing_step_or_commit(self):
-        meta = {"cases": [{"id": "a", "characters": 2}]}
+        meta = {"cases": [{"id": "a", "characters": 2, "keys": 3}]}
         key = {"case": "a", "key": 97, "keypress_ns": 1, "key_to_menu_ns": 2, "bounded_probe_ns": 3}
         commit = {"case": "a", "event": "selection_commit"}
         result = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": 0,
-                  "keys": 4, "commit_exact": True}
+                  "keys": 3, "commit_exact": True, "rank_contract": "complete_raw_span_v1",
+                  "complete_start": 0, "complete_end": 3, "page_size": 5, "first_page": True}
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "trace"
-            records = [key]*8 + [commit, result]
+            records = [key]*7 + [commit, result]
             path.write_text("\n".join(map(json.dumps, records)))
             rows, timing = read_trace(path, meta, "planner")
-            self.assertEqual(rows["a"], result)
-            self.assertEqual(timing["key_to_menu_ns"]["samples"], 8)
-            for incomplete in (records[1:], [key]*8 + [result]):
+            self.assertEqual(timing["key_to_menu_ns"]["samples"], 7)
+            for incomplete in (records[1:], [key]*7 + [result]):
                 path.write_text("\n".join(map(json.dumps, incomplete)))
                 with self.assertRaises(ValueError):
                     read_trace(path, meta, "planner")
+
+    def test_native_empty_menu_is_retained_as_a_miss_with_matching_frame_evidence(self):
+        meta = {"cases": [{"id": "a", "characters": 2, "keys": 3}]}
+        key = {"case": "a", "key": 97, "raw": "abc", "page_size": 0, "head": [],
+               "keypress_ns": 1, "key_to_menu_ns": 2, "bounded_probe_ns": 3}
+        result = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": -1,
+                  "keys": 3, "commit_exact": False, "rank_contract": "complete_raw_span_v1",
+                  "complete_start": 0, "complete_end": 0, "page_size": 0, "first_page": False,
+                  "pending_reachable": False, "contract_failures": 0}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trace"
+            path.write_text("\n".join(map(json.dumps, [key]*7 + [result])))
+            rows, _ = read_trace(path, meta, "planner")
+            report = rates(list(rows.values()))
+            self.assertEqual((report["cases"], report["top1"], report["first_page"], report["commit_exact"]),
+                             (1, 0, 0, 0))
+            for change in ({"head": ["错"]}, {"head": None}, {"raw": "ab"}, {"page_size": 5}):
+                path.write_text("\n".join(map(json.dumps, [key]*6 + [{**key, **change}, result])))
+                with self.subTest(change=change), self.assertRaises(ValueError):
+                    read_trace(path, meta, "planner")
+
+    def test_partial_text_match_is_not_complete_recall(self):
+        meta = {"cases": [{"id": "a", "characters": 2, "keys": 4}]}
+        key = {"case": "a", "key": 97, "keypress_ns": 1, "key_to_menu_ns": 2, "bounded_probe_ns": 3}
+        result = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": 0,
+                  "keys": 4, "commit_exact": False, "rank_contract": "complete_raw_span_v1",
+                  "complete_start": 0, "complete_end": 3, "text_rank": 0, "text_end": 3,
+                  "pending_reachable": True, "contract_failures": 0, "page_size": 5, "first_page": True}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trace"
+            for invalid in (result, {**result, "complete_end": 4, "rank_contract": "text_only"},
+                            {**result, "complete_end": 4, "complete_start": 1}):
+                path.write_text("\n".join(map(json.dumps, [key]*8 + [invalid])))
+                with self.assertRaises(ValueError):
+                    read_trace(path, meta, "planner")
+            miss = {**result, "rank": -1, "complete_end": 0, "first_page": False}
+            path.write_text("\n".join(map(json.dumps, [key]*8 + [miss])))
+            rows, _ = read_trace(path, meta, "planner")
+            self.assertEqual(rates(list(rows.values()))["top256"], 0)
 
     def test_offsetting_gains_cannot_hide_prefix_harm(self):
         baseline = {"a": {"rank": 0}, "b": {"rank": 1}, "c": {"rank": 9}}
@@ -67,11 +109,29 @@ class SummaryTests(unittest.TestCase):
     def test_cluster_resampling_is_paired_and_deterministic(self):
         cases = [{"id": str(i), "sentence": str(i//2)} for i in range(6)]
         rows = {c["id"]: {"rank": int(c["id"])%3-1, "commit_exact": False,
-                          "pending_reachable": False} for c in cases}
+                          "pending_reachable": False, "first_page": int(c["id"]) % 3 != 0} for c in cases}
         a = intervals(cases, rows, rows)
         self.assertEqual(a, intervals(cases, rows, rows))
         self.assertEqual(a["clusters_with_eligible_cases"], 3)
         self.assertTrue(all(interval == [0,0] for interval in a["paired_delta"].values()))
+
+    def test_first_page_requires_a_real_page_boundary_and_consistent_rank(self):
+        meta = {"cases": [{"id": "a", "characters": 2, "keys": 4}]}
+        key = {"case": "a", "key": 97, "keypress_ns": 1, "key_to_menu_ns": 2, "bounded_probe_ns": 3}
+        result = {"case": "a", "event": "corpus_result", "mode": "planner", "rank": 8,
+                  "keys": 4, "commit_exact": False, "rank_contract": "complete_raw_span_v1",
+                  "complete_start": 0, "complete_end": 4, "page_size": 9, "first_page": True,
+                  "pending_reachable": False, "contract_failures": 0}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trace"
+            path.write_text("\n".join(map(json.dumps, [key]*8 + [result])))
+            rows, _ = read_trace(path, meta, "planner")
+            self.assertEqual(rates(list(rows.values()))["first_page"], 1)
+            for changes in ({"page_size": 0}, {"page_size": True}, {"page_size": 257},
+                            {"first_page": False}, {"first_page": 1}, {"page_size": 5}):
+                path.write_text("\n".join(map(json.dumps, [key]*8 + [{**result, **changes}])))
+                with self.subTest(changes=changes), self.assertRaises(ValueError):
+                    read_trace(path, meta, "planner")
 
 
 if __name__ == "__main__":

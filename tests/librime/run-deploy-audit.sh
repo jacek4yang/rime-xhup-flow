@@ -6,10 +6,8 @@
 # 与其它审计脚本的差别:其它脚本用 rime_deployer --compile + 手工编译
 # 辅助词典搭建部署目录(聚焦 runtime 行为);本脚本模拟普通用户的真实
 # 部署路径 —— 把生成包放入干净目录后执行 `rime_deployer --build`,
-# 断言 xhup_flow 方案的 schema/dependencies 机制让两个 runtime 词典
-# (包含 PRIMARY/FIXED_FIRST 的主词典 + 单一原生组句/学习词典)自然产出
-# .table.bin,
-# 再用 runtime_smoke 对该部署跑真实输入冒烟。
+# 断言 schema/dependencies 让主词典、单一原生组句/学习词典和只读
+# 规范化索引自然产出部署二进制，再用 runtime_smoke 跑真实输入。
 #
 # 这是「辅助词典必须经真实 Rime deployment graph 编译」的回归守卫:
 # 绝不允许只靠测试手工编译掩盖部署缺陷(真机事故:缺失时简码/组句/
@@ -94,7 +92,8 @@ echo "rime_deployer --build 峰值 RSS: ${deploy_peak} KiB"
 fail=0
 for dict in \
   xhup_flow \
-  xhup_flow_learn; do
+  xhup_flow_user \
+  xhup_flow_alias_projection; do
   if [[ -f "$deploy_dir/build/$dict.table.bin" ]]; then
     echo "PASS  --build 产出 $dict.table.bin"
   else
@@ -102,6 +101,10 @@ for dict in \
     fail=1
   fi
 done
+if [[ ! -s "$deploy_dir/build/xhup_flow_alias_projection.reverse.bin" ]]; then
+  echo "FAIL --build 未产出只读规范化反查索引" >&2
+  fail=1
+fi
 if [[ -e "$deploy_dir/build/xhup_flow_flow.table.bin" ]]; then
   echo "FAIL unused duplicate Flow table compiled" >&2
   fail=1

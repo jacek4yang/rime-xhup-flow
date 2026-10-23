@@ -296,6 +296,7 @@ fn visit_module(
 pub(crate) fn compile_runtime(
     schemas: &[&str],
     native_edges: &str,
+    joint_scores: &str,
 ) -> Result<Vec<RuntimeLuaModule>, LuaBuildError> {
     let mut modules = BTreeMap::new();
     let mut insert = |module, filename, source_path, source: &str| {
@@ -331,6 +332,12 @@ pub(crate) fn compile_runtime(
         "lua/xhup_flow/data/native_edges.lua",
         "crates/xhup-generator/src/rime_flow.rs",
         native_edges,
+    )?;
+    insert(
+        "xhup_flow.data.joint_scores",
+        "lua/xhup_flow/data/joint_scores.lua",
+        "crates/xhup-generator/src/joint_scores.rs",
+        joint_scores,
     )?;
     insert(
         "xhup_flow.data.build_info",

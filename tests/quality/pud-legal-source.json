@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/UniversalDependencies/UD_Chinese-PUD",
+  "revision": "2849afd946a8c01b3e9acdf3e7afa8670cf2777d",
+  "path": "zh_pud-ud-test.conllu",
+  "blob": "126a653c0bc55838f07e86183bae7842001d06f5",
+  "sha256": "e12582af2e2bbc2e27155ca7dc12b6fc4a037dbc716e1f805d67e34ffb2596b3",
+  "fixture_sha256": "15455d2d9bdf33aa6a8f4ebacbd96b502fdf90449167f89a821d6b7e054fcc57",
+  "development": {
+    "cases": 519,
+    "sha256": "69a893fd97836b541707c050ebdbf9557143d5bfb396c8f6d08f8560b9be15e6"
+  },
+  "confirmation": {
+    "cases": 531,
+    "sha256": "13782e3e488022acfc64a4d0a00f4d73475a8f8fb0cf6600ab980405405d6ba9"
+  },
+  "upstream_notice_sha256": {
+    "README.md": "4abc2a54f3b38f8da61c9a751f26d8e3292c99461e9e7fe28b6ad545d3fbd4e7",
+    "LICENSE.txt": "b278eb53fe50b8bb7fa0d90fb8536c35fdcaa80f9d63812cb51db539555d2a89"
+  },
+  "license": "CC BY-SA 3.0; preserve upstream attribution and disclaimer; evaluation only, never production dictionary data",
+  "attribution": "UD Chinese-PUD / CoNLL 2017; DFKI translation, Google annotation, UD conversion; contributors and underlying text rights in the pinned upstream README.md and LICENSE.txt",
+  "scope": "Translated news/wiki; legal-code structural and ranking evaluation, not representative conversation or independently annotated pronunciation accuracy",
+  "status": "selection and encoding frozen before corpus inspection or candidate evaluation",
+  "selection": "Every maximal run of consecutive integer-ID Hanzi tokens; 2..32 Unicode characters; all characters must have a legal four-key code in the frozen character dictionary. Retain every excluded run and reason; no truncation or outcome filtering.",
+  "full_code": "For each character choose the legal four-key character-dictionary row by descending integer weight then ascending ASCII code. Alternative pronunciations remain legal; do not infer pronunciation from context.",
+  "alias_code": "For each original UD token choose the shortest code in the five frozen static dictionary layers, then descending integer weight, then ascending ASCII code. Never filter by target candidate rank. If no shorter alias exists, use the concatenated character full codes.",
+  "modes": {
+    "full": "Concatenate character full codes for the entire run",
+    "alternating": "Use alias_code for even zero-based token positions in the run and full codes for odd positions",
+    "shortest": "Use alias_code for every token; deliberately high-ambiguity stress mode"
+  },
+  "partition": "SHA256 of UTF-8 parent sent_id, first byte even development, odd confirmation; all modes and chunks of a parent stay together",
+  "reporting": "Report each mode separately, retain identical inputs across modes without treating them as independent evidence, record proper names and overlaps with previously observed fixtures. Retain all failures. Do not claim unknown training overlap is absent. Confirmation remains unobserved until parameters freeze.",
+  "dictionary_sha256": {
+    "xhup_flow_chars.dict.yaml": "8d3ecd726632e48675b9d6ab1d9727e0c7e2d747b654be56a346b649fa53b5b7",
+    "xhup_flow_words.dict.yaml": "7a7b573c1fc445c33d951e72bd3d503fced59f44d9d2c92f0fd385bb0c47d3f3",
+    "xhup_flow_shortcuts.dict.yaml": "14ea9e720119fbe1b18e512a9699597d858425d7d994e720179353f841ad9db2",
+    "xhup_flow_word_shortcuts.dict.yaml": "7223c91a0ab4090ff82f0b36bcc545f9c716439f067171a866d8e7473493da4f",
+    "xhup_flow_fixed_first_shortcuts.dict.yaml": "436968298cf8407308e48867b2d02d146339d05a2a74ceee64ed0dab22ff76ef"
+  }
+}

@@ -20,10 +20,12 @@
 //! version)与相同模板下,生成结果字节级一致。
 #![forbid(unsafe_code)]
 
+mod alias_projection;
 mod analysis;
 mod char_codes;
 mod fixed_first_shortcuts;
 mod frequency;
+mod joint_scores;
 pub mod knowledge;
 mod lua_build;
 mod lua_hints;

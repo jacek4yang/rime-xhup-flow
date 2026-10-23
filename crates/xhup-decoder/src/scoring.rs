@@ -56,8 +56,8 @@ impl BaselineScorer {
         self.segment_penalty
     }
 
-    /// Q10 固定点 log2(frequency + 1)。零频率是“无证据”而非不可达。
-    fn frequency_reward(frequency: u64) -> Score {
+    /// Q10 的确定性线性插值 log2(frequency + 1) 近似；零频率仍可达。
+    pub fn frequency_reward(frequency: u64) -> Score {
         log2_q10(frequency)
     }
 }

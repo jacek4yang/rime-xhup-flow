@@ -213,16 +213,17 @@ jobs:
           cp -r build/rime-package/lua "$work/"
           for dict in xhup_flow_chars xhup_flow_words xhup_flow_shortcuts \
                       xhup_flow_word_shortcuts xhup_flow_fixed_first_shortcuts \
-                      xhup_flow_flow xhup_flow_learn; do
+                      xhup_flow_flow xhup_flow_user xhup_flow_alias_projection; do
             compile_dict_via_wrapper "$work" "$dict"
           done
           rime_deployer --compile "$work/xhup_flow.schema.yaml" "$work" "$shared"
           rime_deployer --compile "$work/xhup_flow_static.schema.yaml" "$work" "$shared"
           # rime_deployer 把编译产物写入 <user_dir>/build/。
-          for bin in build/xhup_flow.table.bin build/xhup_flow_flow.table.bin; do
+          for bin in build/xhup_flow.table.bin build/xhup_flow_flow.table.bin \
+                     build/xhup_flow_alias_projection.reverse.bin; do
             [[ -s "$work/$bin" ]] || { echo "::error::编译产物缺失: $bin"; exit 1; }
           done
-          echo "librime 编译校验通过:两套方案与 PRIMARY/FIXED_FIRST/Flow 词典编译成功"
+          echo "librime 编译校验通过:两套方案、PRIMARY/FIXED_FIRST/Flow 词典及只读规范化索引编译成功"
 
       - name: 真实部署路径回归守卫（单一原生表、实际 Flow/Static 输入）
         run: tests/librime/run-deploy-audit.sh build/rime-package

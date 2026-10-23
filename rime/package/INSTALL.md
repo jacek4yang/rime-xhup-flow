@@ -24,16 +24,19 @@ clients: Weasel (Windows), Squirrel (macOS), Fcitx5-Rime / IBus-Rime
 | `xhup_flow_word_shortcuts.dict.yaml` | canonical v2 PRIMARY 词语简码(显式合并候选位) |
 | `xhup_flow_fixed_first_shortcuts.dict.yaml` | canonical v2 FIXED_FIRST 词语简码 |
 | `xhup_flow_flow.dict.yaml` | Flow 组句词典 |
-| `xhup_flow_learn.dict.yaml` | Flow 学习词典(导入组句词典并补充全码原语) |
+| `xhup_flow_user.dict.yaml` | 规范组句/学习词典；与既有用户库同名，不是用户数据库文件 |
 | `xhup_flow_flow.schema.yaml` | 词典编译 wrapper(同上) |
-| `xhup_flow_learn.schema.yaml` | 词典编译 wrapper(同上) |
+| `xhup_flow_user.schema.yaml` | 规范词典编译 wrapper |
 | `lua/xhup_flow/annotation.lua` | 候选注释格式化模块(极简纯 ASCII,清洗装饰标记) |
 | `lua/xhup_flow/quick_hint.lua` | 简码提示模块(追加纯 ASCII 简码注释) |
 | `lua/xhup_flow/init.lua` | Lua 命名空间入口与运行时合同自检模块 |
 | `lua/xhup_flow/data/quick_hints.lua` | 简码提示数据(生成器产出) |
 | `lua/xhup_flow/native_tail.lua` / `full_span.lua` | 有界原生边界候选与同文候选跨度处理 |
 | `lua/xhup_flow/context_ranker.lua` / `user_memory.lua` | 可选会话内上下文；不写按键日志或 TSV |
-| `lua/xhup_flow/joint_decoder.lua` | 不可用功能的兼容 shim，不是已交付联合解码器 |
+| `lua/xhup_flow/joint_decoder.lua` | 有界多路径编码/文本搜索与真实 Native Phrase 构造；联合搜索开关默认关闭，需通过独立质量门禁后才能作为默认策略 |
+| `lua/xhup_flow/data/native_edges.lua` | 从实际规范词典生成的前缀/码长投影 |
+| `lua/xhup_flow/data/joint_scores.lua` | 规范字词频及许可允许的 KDConv 上下文评分数据 |
+| `lua/xhup_flow/data/build_info.lua` / `xhup_flow.runtime-manifest.json` | 构建策略、工具、输入及完整产物身份 |
 | `xhup_flow.sources.tsv` | clean-v1 来源策略与完整登记 |
 | `NOTICE.md` / `licenses/` | 数据署名、项目改动及许可文本（再分发须保留） |
 | `INSTALL.md` | 本说明(部署时无需复制) |
@@ -47,7 +50,7 @@ clients: Weasel (Windows), Squirrel (macOS), Fcitx5-Rime / IBus-Rime
 - 本包完全遵循零 `rime.lua` 架构, 绝不触碰用户 `lua/` 目录下 `lua/xhup_flow/` 以外的任何文件。
 
 **为什么有 wrapper schema**:PRIMARY 与 FIXED_FIRST 是静态主词典的导入表；
-默认主方案只依赖 Learn wrapper，它完整导入 Flow YAML 词汇并供单一原生
+默认主方案只依赖 `xhup_flow_user` wrapper，它完整导入 Flow YAML 词汇并供单一原生
 组句/学习 provider 使用，不重复编译另一份 Flow table。
 Flow wrapper 保留作兼容/研究资源。wrapper 不在 `schema_list` 中，不供用户选择。
 

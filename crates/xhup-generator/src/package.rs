@@ -9,9 +9,9 @@
 //! 固定层包括一级简码、生产字符 2/3/4 码、canonical v2 词语简码与 hot
 //! 词语；同码次序由 merged_ranking 显式仲裁，Flow fallback 只追加候选。
 //!
-//! 模板是 `rime/templates/*.yaml.in` 源文件,唯一占位符为 `{{VERSION}}`
-//! (渲染为 crate 的 package version)。在相同规范数据、相同生成器源码
-//! (含 package version)与相同模板下,生成结果字节级一致。
+//! 模板是 `rime/templates/*.yaml.in` 源文件；版本、索引与模型身份均严格
+//! 渲染。在相同规范数据、生成器源码(含 package version)与模板下，
+//! 生成结果字节级一致。
 
 use crate::lua_build::{
     BUILD_STRATEGY, COMPILER_REVISION, LuaBuildError, NOTICE_SOURCES, build_inputs,
@@ -43,7 +43,8 @@ const RIME_STATIC_SCHEMA_FILENAME: &str = "xhup_flow_static.schema.yaml";
 
 /// 辅助词典的「编译 wrapper」schema(见 generate_rime_artifacts 文档)。
 const RIME_FLOW_WRAPPER_SCHEMA_FILENAME: &str = "xhup_flow_flow.schema.yaml";
-const RIME_LEARN_WRAPPER_SCHEMA_FILENAME: &str = "xhup_flow_learn.schema.yaml";
+const RIME_LEARN_WRAPPER_SCHEMA_FILENAME: &str = "xhup_flow_user.schema.yaml";
+const RIME_ALIAS_WRAPPER_SCHEMA_FILENAME: &str = "xhup_flow_alias_projection.schema.yaml";
 
 /// 顶层词典模板。
 const DICTIONARY_TEMPLATE: &str = include_str!("../../../rime/templates/xhup_flow.dict.yaml.in");
@@ -113,12 +114,16 @@ fn render_template(
     name: &str,
     schema_id: Option<&str>,
     index_id: Option<&str>,
+    model_id: Option<&str>,
+    alias_id: Option<&str>,
 ) -> Result<String, LuaBuildError> {
     let mut rendered = String::with_capacity(template.len());
     let mut rest = template;
     let mut versions = 0;
     let mut schemas = 0;
     let mut indexes = 0;
+    let mut models = 0;
+    let mut aliases = 0;
     while let Some(start) = rest.find("{{") {
         rendered.push_str(&rest[..start]);
         rest = &rest[start + 2..];
@@ -138,6 +143,14 @@ fn render_template(
                 indexes += 1;
                 rendered.push_str(index_id.expect("matched index placeholder"));
             }
+            "JOINT_MODEL_ID" if model_id.is_some() => {
+                models += 1;
+                rendered.push_str(model_id.expect("matched model placeholder"));
+            }
+            "ALIAS_INDEX_ID" if alias_id.is_some() => {
+                aliases += 1;
+                rendered.push_str(alias_id.expect("matched alias projection placeholder"));
+            }
             unknown => {
                 return Err(LuaBuildError::new(
                     name,
@@ -151,6 +164,8 @@ fn render_template(
     if versions != 1
         || schema_id.is_some() != (schemas > 0)
         || indexes != usize::from(index_id.is_some())
+        || models != usize::from(model_id.is_some())
+        || aliases != usize::from(alias_id.is_some())
         || rendered.contains("}}")
     {
         return Err(LuaBuildError::new(
@@ -206,27 +221,71 @@ pub fn generate_rime_artifacts() -> Result<Vec<RimeArtifact>, LuaBuildError> {
     let learn_dictionary = generate_rime_learn_dictionary();
     let (native_edges, index_id) =
         crate::rime_flow::generate_native_edge_index([&flow_dictionary, &learn_dictionary])?;
-    let schema = render_template(SCHEMA_TEMPLATE, RIME_SCHEMA_FILENAME, None, Some(&index_id))?;
+    let (joint_scores, model_id) = crate::joint_scores::generate(&flow_dictionary)?;
+    let shortcuts = generate_rime_shortcut_dictionary();
+    let characters = generate_rime_char_dictionary();
+    let word_shortcuts = generate_rime_word_shortcut_dictionary();
+    let words = generate_rime_word_dictionary();
+    let fixed_first = generate_rime_fixed_first_shortcut_dictionary();
+    let (alias_projection, alias_id) = crate::alias_projection::generate(
+        [&learn_dictionary, &flow_dictionary],
+        [
+            shortcuts.as_str(),
+            characters.as_str(),
+            word_shortcuts.as_str(),
+            words.as_str(),
+            fixed_first.as_str(),
+        ],
+    )?;
+    let schema = render_template(
+        SCHEMA_TEMPLATE,
+        RIME_SCHEMA_FILENAME,
+        None,
+        Some(&index_id),
+        Some(&model_id),
+        Some(&alias_id),
+    )?;
     let static_schema = render_template(
         STATIC_SCHEMA_TEMPLATE,
         RIME_STATIC_SCHEMA_FILENAME,
         None,
         None,
+        None,
+        None,
     )?;
-    let dictionary = render_template(DICTIONARY_TEMPLATE, RIME_DICTIONARY_FILENAME, None, None)?;
+    let dictionary = render_template(
+        DICTIONARY_TEMPLATE,
+        RIME_DICTIONARY_FILENAME,
+        None,
+        None,
+        None,
+        None,
+    )?;
     let flow_wrapper = render_template(
         DICT_COMPILE_WRAPPER_TEMPLATE,
         RIME_FLOW_WRAPPER_SCHEMA_FILENAME,
         Some("xhup_flow_flow"),
         None,
+        None,
+        None,
     )?;
     let learn_wrapper = render_template(
         DICT_COMPILE_WRAPPER_TEMPLATE,
         RIME_LEARN_WRAPPER_SCHEMA_FILENAME,
-        Some("xhup_flow_learn"),
+        Some(crate::rime_flow::LEARN_DICTIONARY_NAME),
+        None,
+        None,
         None,
     )?;
-    let lua_modules = compile_runtime(&[&schema, &static_schema], &native_edges)?;
+    let alias_wrapper = render_template(
+        DICT_COMPILE_WRAPPER_TEMPLATE,
+        RIME_ALIAS_WRAPPER_SCHEMA_FILENAME,
+        Some(crate::alias_projection::NAME),
+        None,
+        None,
+        None,
+    )?;
+    let lua_modules = compile_runtime(&[&schema, &static_schema], &native_edges, &joint_scores)?;
     let mut artifacts = vec![
         RimeArtifact {
             filename: "default.custom.yaml",
@@ -241,19 +300,19 @@ pub fn generate_rime_artifacts() -> Result<Vec<RimeArtifact>, LuaBuildError> {
         },
         RimeArtifact {
             filename: RIME_SHORTCUT_DICTIONARY_FILENAME,
-            contents: generate_rime_shortcut_dictionary(),
+            contents: shortcuts,
         },
         RimeArtifact {
             filename: RIME_CHAR_DICTIONARY_FILENAME,
-            contents: generate_rime_char_dictionary(),
+            contents: characters,
         },
         RimeArtifact {
             filename: RIME_WORD_SHORTCUT_DICTIONARY_FILENAME,
-            contents: generate_rime_word_shortcut_dictionary(),
+            contents: word_shortcuts,
         },
         RimeArtifact {
             filename: RIME_WORD_DICTIONARY_FILENAME,
-            contents: generate_rime_word_dictionary(),
+            contents: words,
         },
         RimeArtifact {
             filename: RIME_DICTIONARY_FILENAME,
@@ -261,7 +320,7 @@ pub fn generate_rime_artifacts() -> Result<Vec<RimeArtifact>, LuaBuildError> {
         },
         RimeArtifact {
             filename: RIME_FIXED_FIRST_SHORTCUT_DICTIONARY_FILENAME,
-            contents: generate_rime_fixed_first_shortcut_dictionary(),
+            contents: fixed_first,
         },
         RimeArtifact {
             filename: RIME_FLOW_DICTIONARY_FILENAME,
@@ -278,6 +337,14 @@ pub fn generate_rime_artifacts() -> Result<Vec<RimeArtifact>, LuaBuildError> {
         RimeArtifact {
             filename: RIME_LEARN_WRAPPER_SCHEMA_FILENAME,
             contents: learn_wrapper,
+        },
+        RimeArtifact {
+            filename: crate::alias_projection::FILENAME,
+            contents: alias_projection,
+        },
+        RimeArtifact {
+            filename: RIME_ALIAS_WRAPPER_SCHEMA_FILENAME,
+            contents: alias_wrapper,
         },
         RimeArtifact {
             filename: RIME_SCHEMA_FILENAME,
@@ -308,6 +375,9 @@ pub fn generate_rime_artifacts() -> Result<Vec<RimeArtifact>, LuaBuildError> {
                 RIME_WORD_DICTIONARY_FILENAME => "crates/xhup-generator/src/rime_words.rs",
                 RIME_FIXED_FIRST_SHORTCUT_DICTIONARY_FILENAME => {
                     "crates/xhup-generator/src/rime_fixed_first_shortcuts.rs"
+                }
+                crate::alias_projection::FILENAME => {
+                    "crates/xhup-generator/src/alias_projection.rs"
                 }
                 RIME_FLOW_DICTIONARY_FILENAME | RIME_LEARN_DICTIONARY_FILENAME => {
                     "crates/xhup-generator/src/rime_flow.rs"
@@ -404,7 +474,7 @@ mod tests {
             ("version: {{VERSION}}\nschema: {{SCHEMA_ID}}", None),
             ("version: {{VERSION}}", Some("xhup_flow")),
         ] {
-            assert!(render_template(source, "fixture.yaml", schema, None).is_err());
+            assert!(render_template(source, "fixture.yaml", schema, None, None, None).is_err());
         }
     }
 }

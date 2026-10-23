@@ -44,7 +44,7 @@ compile_package_dict_isolated() {
   local dir="$work/compile-$dict"
   mkdir -p "$dir"
   cp "$PACKAGE_DIR/$dict.dict.yaml" "$dir/"
-  if [[ "$dict" == xhup_flow_learn ]]; then
+  if [[ "$dict" == xhup_flow_user ]]; then
     cp "$PACKAGE_DIR/xhup_flow_flow.dict.yaml" "$dir/"
   fi
   compile_dict_via_wrapper "$dir" "$dict"
@@ -105,7 +105,7 @@ rime_deployer --compile "$smoke_dir/xhup_flow.schema.yaml" "$smoke_dir" \
   "$SHARED_DATA_DIR" >/dev/null
 rime_deployer --compile "$smoke_dir/xhup_flow_static.schema.yaml" "$smoke_dir" \
   "$SHARED_DATA_DIR" >/dev/null
-for dict in xhup_flow_learn; do
+for dict in xhup_flow_user; do
   compile_package_dict_isolated "$dict" "$smoke_dir"
 done
 
