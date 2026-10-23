@@ -78,11 +78,25 @@ def main():
     command = ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-o", str(output / "probe"),
                str(root / "runtime_alias_projection.c"), *flags]
     subprocess.run(command, check=True)
+    log_dir = output / "rime-logs"
+    log_dir.mkdir()
     with (output / "native.stdout").open("wb") as stdout, (output / "native.stderr").open("wb") as stderr:
-        subprocess.run([str(output / "probe"), str(user), str(args.shared_data_dir)],
+        subprocess.run([str(output / "probe"), str(user), str(args.shared_data_dir), str(log_dir)],
                        stdout=stdout, stderr=stderr, check=True)
     if "lua error" in (output / "native.stderr").read_text().lower():
         raise ValueError("native Lua audit failed; see native.stderr")
+    if not result_path.exists():
+        stderr_tail = (output / "native.stderr").read_text(encoding="utf-8", errors="replace")[-2000:]
+        logs = sorted(log_dir.iterdir())
+        log_tail = ""
+        if logs:
+            newest = max(logs, key=lambda path: path.stat().st_mtime)
+            log_tail = newest.read_text(encoding="utf-8", errors="replace")[-4000:]
+        raise ValueError(
+            "native audit produced no result receipt; probe stderr tail:\n"
+            f"{stderr_tail}\nrime logs: {[path.name for path in logs]}\n"
+            f"newest rime log tail:\n{log_tail}"
+        )
     if json.loads(result_path.read_text()) != {"records": records, "texts": len(wanted)}:
         raise ValueError("native audit did not verify the complete projection inventory")
     identities = {}

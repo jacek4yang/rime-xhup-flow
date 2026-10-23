@@ -2,14 +2,17 @@
 #include "runtime_module.h"
 
 int main(int argc, char **argv) {
-  if (argc != 3) return 2;
+  if (argc != 3 && argc != 4) return 2;
   RimeApi *api = rime_get_api();
   RIME_STRUCT(RimeTraits, traits);
   traits.user_data_dir = argv[1];
   traits.shared_data_dir = argv[2];
   traits.app_name = "xhup.alias-projection-audit";
   traits.min_log_level = 2;
-  traits.log_dir = "";
+  /* Capture rime/glog output next to the other audit artifacts; the driver
+     quotes it when the Lua receipt is missing, otherwise an init failure is
+     only visible in glog files outside the work tree. */
+  traits.log_dir = argc == 4 ? argv[3] : "";
   xhup_initialize(api, &traits);
   RimeSessionId session = api->create_session();
   int selected = session && api->select_schema(session, "xhup_flow");
