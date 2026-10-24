@@ -80,9 +80,16 @@ def main() -> None:
         # Export to an explicit path: `rime_dict_manager -b` writes into
         # sync/<machine>/ on newer librime releases instead of the working
         # directory, and -e output is exactly the format `-r` accepts.
-        snapshot = output / f'{user.name}-snapshot.tsv'
-        command = ([str(args.cli.resolve()), 'learning', 'export', '--user-data-dir', str(user)]
-                   if args.cli else ['rime_dict_manager', '-e', 'xhup_flow_user', str(snapshot)])
+        # The product CLI always writes its canonical snapshot filename
+        # (its import validates that exact name), so stage it in the output
+        # directory under that name via --output-dir.
+        if args.cli:
+            snapshot = output / 'xhup_flow_user.userdb.txt'
+            command = [str(args.cli.resolve()), 'learning', 'export',
+                       '--user-data-dir', str(user), '--output-dir', str(output)]
+        else:
+            snapshot = output / f'{user.name}-snapshot.tsv'
+            command = ['rime_dict_manager', '-e', 'xhup_flow_user', str(snapshot)]
         subprocess.run(command, cwd=user, check=True, stdout=subprocess.DEVNULL)
         return snapshot
 

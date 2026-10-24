@@ -26,7 +26,13 @@ fn validate(bytes: &[u8]) -> Result<(), LearningError> {
             "missing standard Rime snapshot header or embedded NUL",
         ));
     }
+    // 截断守卫 1:完整导出的每一行都以换行结束;任何中途截断(记录或
+    // 头部之内)都会丢失最终换行。fail-closed,不把截断文件当合法备份。
+    if !text.ends_with('\n') {
+        return Err(invalid("snapshot is truncated (missing final newline)"));
+    }
     let mut metadata = BTreeMap::new();
+    let mut records = 0usize;
     for line in text.lines() {
         // Rime TsvReader trims trailing whitespace before recognizing metadata.
         let line = line.trim_end();
@@ -46,6 +52,8 @@ fn validate(bytes: &[u8]) -> Result<(), LearningError> {
             ) {
                 return Err(invalid("unsupported metadata key"));
             }
+        } else if !line.is_empty() && !line.starts_with('#') {
+            records += 1;
         }
     }
     let identity = metadata
@@ -88,6 +96,13 @@ fn validate(bytes: &[u8]) -> Result<(), LearningError> {
         .is_some_and(|v| v.parse::<u64>().is_err())
     {
         return Err(invalid("invalid learning tick"));
+    }
+    // 截断守卫 2:Flow 快照至少携带一条学习记录。头部完整但零记录的
+    // 文件(恰好截断在记录边界)不得作为「恢复成功」的空操作通过。
+    if records == 0 {
+        return Err(invalid(
+            "snapshot contains no learning records (empty or truncated backup)",
+        ));
     }
     Ok(())
 }
@@ -187,6 +202,25 @@ mod tests {
         ] {
             assert!(validate(fixture(name).as_bytes()).is_err());
         }
+    }
+
+    #[test]
+    fn truncation_and_empty_snapshots_fail_closed() {
+        let good = fixture(FLOW_USER_DICT_NAME);
+        // 头部完整但零数据记录(恰好截断在记录边界)。
+        let header_only = good.split("jb zq ").next().unwrap().to_owned();
+        // 记录中途截断:头 + 首条记录前半,无最终换行。
+        let mid_record = format!("{header_only}jb zq \t进");
+        for text in [header_only, mid_record] {
+            let error = validate(text.as_bytes()).unwrap_err();
+            let rendered = format!("{error}");
+            assert!(
+                rendered.contains("truncated") || rendered.contains("no learning records"),
+                "unexpected rejection reason: {rendered}"
+            );
+        }
+        // 完整快照仍然通过。
+        validate(good.as_bytes()).unwrap();
     }
 
     #[test]

@@ -163,11 +163,23 @@ regression tests, per the task guardrails.
    syllabary numbering differs, so the exhaustive identity audits are
    version-scoped in `run-flow-audit.sh` (explicit SKIP with the reason below
    1.16). No assertion was weakened; on 1.16.x both audits run in full.
-3. Upstream librime 1.16.1 defect: `rime_dict_manager -e` exports text-first
-   records with packed values while `-r` restores code-first records with
-   `c=/d=/t=` values; snapshots therefore do not round-trip (columns swap and
-   commit counts reset). Legacy code-first snapshots restore faithfully. The
-   product path `xhup-cli learning import` must be verified separately.
+3. librime 1.16.1 snapshot formats (2026-10-24, product-path verification
+   completed): `-e`/`-b` exports write text-first records with packed values
+   while legacy snapshots are code-first with `c=/d=/t=` triples - a
+   column-order difference, not corruption. `xhup-cli learning export`
+   (product `-b` path, validated + staged) round-trips through `learning
+   import` with full data identity: records, codes, commit counts and tick
+   survive; `d`/`t` are renormalized by UserDbMerger to the snapshot clock
+   (verified numerically equivalent via `d*exp((t-tick)/200)`), and recall
+   behavior after restore is asserted by the joint regression (`--cli`
+   mode, run on librime 1.16.1 with the pinned Lua plugin). Two real defects
+   were found and fixed during this verification: `run_joint_regression.py
+   --cli` staged snapshots at a path the product import can never accept
+   (wrong filename), and the snapshot validator accepted header-only /
+   mid-record-truncated files as "empty" backups, reporting a false
+   successful restore (now fail-closed: missing final newline and
+   zero-record snapshots are rejected; all 14 truncation offsets verified
+   rejected).
 4. `ci.yml` Rust job timeout raised 45 -> 60 minutes: cold-cache rebuilds
    (cache keys changed by Cargo.lock updates, and pre-existing caches expired
    after 7 days) exceeded 45 minutes at the test stage.
