@@ -5,7 +5,8 @@
  * 生成);时间戳由调用方注入以保持导出确定性。V3 保存跨天复习证据,
  * V2 记录迁移为未验证回忆;损坏 / 未知结构抛 {@link BackupError}。
  * 备份体积超过 {@link MAX_BACKUP_JSON_CHARS} 直接拒绝(可操作的错误提示),
- * 防止误选超大文件卡死解析。
+ * 防止误选超大文件卡死解析;导出侧同样拒绝超出上限的结果 ——
+ * 当前版本导出的合法备份必须能被当前版本重新导入(容量不变量)。
  */
 
 import type { ItemProgress } from "./progress";
@@ -18,13 +19,23 @@ import type { HintMode, PracticeMode, SessionLength } from "../practice/types";
 import type { LessonEvidence } from "../learning-path/lesson-state";
 
 export const BACKUP_KIND = "xhup-flow-trainer-backup";
+/**
+ * 共享备份文档版本(V3:跨天复习证据)。与桌面 STORAGE_VERSION / 小程序
+ * STORE_VERSION 是三套独立版本系统:备份文档是跨端交换格式,不随宿主
+ * 本机存储的架构演进升版;字段级兼容策略见下方版本策略注释。
+ */
 export const BACKUP_VERSION = 3;
 
 /**
- * 备份 JSON 字符长度上限(约 2 MB;按 UTF-16 码元计,偏保守)。
- * 正常备份远小于该值;超出几乎必然是选错了文件。
+ * 备份 JSON 字符长度上限(16 MiB,按 UTF-16 码元计)。
+ * 实测锚定(2026-10-24,桌面 Node 26):真实结构的稀疏进度约 290 字节
+ * /条(紧凑序列化,60% 含复习对象),重度用户 2 万条约 5.7 MB;43k 条
+ * (≈ 全部单字+词条数据集)约 16.7 MB,JSON.parse 约 100 ms —— 对显式
+ * 的用户导入动作完全可接受。旧 2 MiB 上限在约 4.8k 条(重度用户数月)
+ * 即被突破,且导出侧无守卫,曾出现「导出成功但自家导入拒绝」的
+ * 不变量违反;现两端一致拒绝。
  */
-export const MAX_BACKUP_JSON_CHARS = 2 * 1024 * 1024;
+export const MAX_BACKUP_JSON_CHARS = 16 * 1024 * 1024;
 
 /**
  * 版本策略(里程碑 44):`lessonEvidence` 作为「可选字段」加入版本 2。
@@ -106,7 +117,13 @@ export function exportBackup(
     lessonEvidence: data.lessonEvidence ?? {},
     confusions: data.confusions ?? {},
   };
-  return `${JSON.stringify(backup, null, 2)}\n`;
+  // 紧凑序列化:机器消费的备份文档,冗余空白只损耗一半容量。
+  // 导出守卫:绝不出产出当前版本无法重新导入的备份(容量不变量)。
+  const json = `${JSON.stringify(backup)}\n`;
+  if (json.length > MAX_BACKUP_JSON_CHARS) {
+    fail(`导出的备份过大(${json.length} 字符,上限 ${MAX_BACKUP_JSON_CHARS});进度条目过多,请联系开发者`);
+  }
+  return json;
 }
 
 function fail(reason: string): never {

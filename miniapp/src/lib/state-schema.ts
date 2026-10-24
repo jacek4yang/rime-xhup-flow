@@ -30,7 +30,12 @@ import {
   type SessionLength,
 } from "@xhup/trainer-core";
 
-/** V3:独立回忆与跨天复习;保留旧存储键以原位迁移。 */
+/**
+ * 小程序本机存储文档版本(V3:独立回忆与跨天复习;保留旧存储键原位迁移)。
+ * 与桌面端 STORAGE_VERSION、共享备份 BACKUP_VERSION 是三套独立版本系统:
+ * 各自描述自己介质的迁移链,数字不同不代表不兼容;跨端交换一律走共享
+ * 备份文档(见 trainer-core/learning/backup.ts)。
+ */
 export const STORE_VERSION = 3;
 
 /** 本机持久化键(带版本;旧 v1 进度键仅在迁移时读取)。 */
