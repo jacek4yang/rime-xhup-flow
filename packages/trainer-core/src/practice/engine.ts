@@ -61,6 +61,12 @@ export type SessionState = {
   hadError: boolean;
   usedAnswerHint: boolean;
   questionActiveMs: number;
+  /**
+   * 本题实际接收的字母键事件数(正确前缀键 + 错键;退格/重试/确认属
+   * 修正类,不进击键分母)。每题重置;完成事件与会话内进度更新都用它,
+   * 保证「各题事件击键数之和 = 会话累计 keystrokes」。
+   */
+  keystrokesThisQuestion: number;
   wrongKeysThisQuestion: number;
   /** 本题按过的键(去重;键位统计用),每题重置。 */
   wrongKeys: string[];
@@ -181,6 +187,7 @@ export function createSession(
     hadError: false,
     usedAnswerHint: false,
     questionActiveMs: 0,
+    keystrokesThisQuestion: 0,
     wrongKeysThisQuestion: 0,
     wrongKeys: [] as string[],
     confusionsThisQuestion: {},
@@ -241,6 +248,7 @@ export function typeKey(
         ...state,
         hadError: true,
         wrongKeysThisQuestion: state.wrongKeysThisQuestion + 1,
+        keystrokesThisQuestion: state.keystrokesThisQuestion + 1,
         wrongKeys: state.wrongKeys.includes(key)
           ? state.wrongKeys
           : [...state.wrongKeys, key],
@@ -266,6 +274,7 @@ export function typeKey(
     matchedCode: effective,
     typed,
     keystrokes: state.keystrokes + 1,
+    keystrokesThisQuestion: state.keystrokesThisQuestion + 1,
     lastWrongKey: null,
   };
   if (typed !== effective ||
@@ -298,6 +307,7 @@ function completeQuestion(
     outcome, routeUsed, independentRecall: outcome === "perfect",
     usedAnswerHint: state.usedAnswerHint, wrongKeyEvents: state.wrongKeysThisQuestion,
     questionMs, chars: state.current.charCount, now,
+    keystrokes: state.keystrokesThisQuestion,
   });
   const progressById = new Map(state.progressById);
   progressById.set(id, updated);
@@ -336,7 +346,7 @@ function completeQuestion(
         item: state.current,
         outcome,
         routeUsed,
-        keystrokes: activeCode(state).length + state.wrongKeysThisQuestion,
+        keystrokes: state.keystrokesThisQuestion,
         wrongKeyEvents: state.wrongKeysThisQuestion,
         wrongKeys: state.wrongKeys,
         confusions: state.confusionsThisQuestion,
@@ -390,6 +400,7 @@ export function advance(
       hadError: false,
       usedAnswerHint: false,
       questionActiveMs: 0,
+      keystrokesThisQuestion: 0,
       wrongKeysThisQuestion: 0,
       wrongKeys: [],
       confusionsThisQuestion: {},

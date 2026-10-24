@@ -12,7 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { localDateKey } from "@xhup/trainer-core";
+import { dailyCpm, dailyKpm, localDateKey } from "@xhup/trainer-core";
 import { aggregateWeakness } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
 import { useTrainerIndex } from "@/lib/trainer-context";
@@ -53,14 +53,9 @@ function last14Days(
     points.push({
       dateKey,
       minutes: Math.round(stats.practiceMs / 60000),
-      kpm:
-        stats.practiceMs < 1000
-          ? null
-          : stats.keystrokes / (stats.practiceMs / 60000),
-      cpm:
-        stats.practiceMs < 1000 || stats.chars === 0
-          ? null
-          : stats.chars / (stats.practiceMs / 60000),
+      // 按日速率口径在共享核心(不足 1 秒 → null),与小程序同源。
+      kpm: dailyKpm(stats),
+      cpm: dailyCpm(stats),
     });
   }
   return points;

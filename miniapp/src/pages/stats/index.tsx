@@ -14,11 +14,11 @@ import { View, Text } from "@tarojs/components";
 import { useDidShow } from "@tarojs/taro";
 import {
   accuracy,
-  cpm,
+  dailyCpm,
+  dailyKpm,
   emptyDailyStats,
   formatDuration,
   formatPercent,
-  kpm,
   localDateKey,
 } from "@xhup/trainer-core";
 import { useTrainerData, withTrainerData } from "../../lib/trainer-data";
@@ -83,8 +83,9 @@ function Stats() {
 
   const totalDays = Object.keys(state.daily).length;
   const accuracyValue = accuracy(today.keystrokes, today.wrongKeyEvents);
-  const kpmValue = kpm(today.keystrokes, today.practiceMs);
-  const cpmValue = cpm(today.chars, today.practiceMs);
+  // 按日速率口径在共享核心(不足 1 秒 → null),与桌面趋势条同源。
+  const kpmValue = dailyKpm(today);
+  const cpmValue = dailyCpm(today);
   const keysPerChar = today.chars > 0 ? today.keystrokes / today.chars : null;
 
   if (totalDays === 0) {
