@@ -30,6 +30,41 @@ describe("默认状态", () => {
   });
 });
 
+describe("accuracyEwma(V4)", () => {
+  it("旧数据(无该字段)迁移为 null,不伪造历史表现", () => {
+    const sanitized = sanitizePersisted({
+      progress: {
+        "char-2-a": {
+          attempts: 12, correct: 10, wrong: 2, streak: 3, mastery: 55,
+          lastSeenAt: 1788710400000, avgLatencyMs: 1400,
+        },
+      },
+    });
+    expect(sanitized.progress["char-2-a"]).toMatchObject({ accuracyEwma: null });
+    expect(STORAGE_VERSION).toBe(4);
+  });
+
+  it("按题键级准确率进入 EWMA:满分样本即首值,部分命中按权重混合", () => {
+    const now = Date.now();
+    useTrainerStore.getState().recordQuestionResult({
+      id: "行:xk", outcome: "perfect", routeUsed: "primary",
+      keystrokes: 2, wrongKeyEvents: 0, wrongKeys: [], chars: 1,
+      corrections: 0, practiceMs: 1000, questionMs: 1000,
+      usedAnswerHint: false, independentRecall: true, bestStreak: 1, now,
+    });
+    expect(useTrainerStore.getState().progress["行:xk"].accuracyEwma).toBe(1);
+    useTrainerStore.getState().recordQuestionResult({
+      id: "行:xk", outcome: "imperfect", routeUsed: "primary",
+      keystrokes: 10, wrongKeyEvents: 5, wrongKeys: [], chars: 1,
+      corrections: 0, practiceMs: 1000, questionMs: 1000,
+      usedAnswerHint: false, independentRecall: false, bestStreak: 0,
+      now: now + 1000,
+    });
+    // 1 * 0.7 + 0.5 * 0.3 = 0.85
+    expect(useTrainerStore.getState().progress["行:xk"].accuracyEwma).toBeCloseTo(0.85, 6);
+  });
+});
+
 describe("recordQuestionResult", () => {
   it("稀疏创建条目进度并累计当日统计(含汉字数与修正)", () => {
     const now = Date.now();

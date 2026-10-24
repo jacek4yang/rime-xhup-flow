@@ -133,6 +133,14 @@ function validateProgress(value: unknown): Record<string, ItemProgress> {
       lastSeenAt: typeof raw.lastSeenAt === "number" ? raw.lastSeenAt : null,
       avgLatencyMs:
         typeof raw.avgLatencyMs === "number" ? raw.avgLatencyMs : null,
+      // V4 起携带;旧备份缺省 → null(不伪造历史表现)。
+      accuracyEwma:
+        typeof raw.accuracyEwma === "number" &&
+        Number.isFinite(raw.accuracyEwma) &&
+        raw.accuracyEwma >= 0 &&
+        raw.accuracyEwma <= 1
+          ? raw.accuracyEwma
+          : null,
       review,
     };
     // 空进度条目丢弃(备份只存见过的条目)。

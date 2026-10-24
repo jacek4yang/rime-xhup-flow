@@ -48,6 +48,16 @@ describe("跨天独立回忆", () => {
     expect(sentence.review!.level).toBe(2);
   });
 
+  it("间隔按 epoch 计算,不受本地时区/夏令时切换影响", () => {
+    // 2026-03-08 美国夏令时切换日;从切换前 2 小时起的第一级间隔
+    // 仍是精确 24h epoch,而不是"次日同一本地时刻"。
+    const beforeDst = Date.UTC(2026, 2, 8, 6, 0, 0); // UTC 06:00,当地 01:00 EST
+    const first = applyQuestionProgress(emptyProgress(), { ...answer, now: beforeDst });
+    expect(first.review!.dueAt - beforeDst).toBe(DAY);
+    const advanced = applyQuestionProgress(first, { ...answer, now: first.review!.dueAt });
+    expect(advanced.review!.dueAt - first.review!.dueAt).toBe(3 * DAY);
+  });
+
   it("历史满掌握记录不捏造独立回忆,新题不当作到期旧题", () => {
     const legacy = { ...emptyProgress(), attempts: 20, mastery: 100 };
     expect(isReviewDue(legacy, 0)).toBe(true);

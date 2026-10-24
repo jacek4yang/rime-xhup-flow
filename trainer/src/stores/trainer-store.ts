@@ -171,7 +171,7 @@ export type TrainerActions = {
 export type TrainerStore = TrainerData & TrainerActions;
 
 export const STORAGE_KEY = "xhup-flow.trainer.v2";
-export const STORAGE_VERSION = 3;
+export const STORAGE_VERSION = 4;
 
 function defaultData(): TrainerData {
   return {
@@ -221,7 +221,11 @@ function isProgress(value: unknown): value is Omit<ItemProgress, "review"> & { r
     isNumber(value.streak) &&
     isNumber(value.mastery) &&
     (value.lastSeenAt === null || isNumber(value.lastSeenAt)) &&
-    (value.avgLatencyMs === null || isNumber(value.avgLatencyMs))
+    (value.avgLatencyMs === null || isNumber(value.avgLatencyMs)) &&
+    // V4 起记录准确率 EWMA;旧数据缺省 → null(不伪造历史表现)。
+    (value.accuracyEwma === null ||
+      value.accuracyEwma === undefined ||
+      (isNumber(value.accuracyEwma) && value.accuracyEwma >= 0 && value.accuracyEwma <= 1))
   );
 }
 
@@ -308,6 +312,7 @@ function migrateProgressV1(value: unknown): Record<string, ItemProgress> {
       mastery: isNumber(entry.mastery) ? entry.mastery : 0,
       lastSeenAt: isNumber(entry.lastSeenAt) ? entry.lastSeenAt : null,
       avgLatencyMs: null,
+      accuracyEwma: null,
       review: null,
     };
   }
@@ -364,7 +369,12 @@ export function sanitizePersisted(value: unknown): TrainerData {
     sessionLength,
     lastMode: pickEnum(value.lastMode, MODES, defaults.lastMode),
     progress: Object.fromEntries(Object.entries(pickRecord(value.progress, isProgress))
-      .map(([id, progress]) => [id, { ...progress, review: parseSpacedReview(progress.review) }])),
+      .map(([id, progress]) => [id, {
+        ...progress,
+        // V4 起记录;旧数据缺省 → null(不伪造历史表现)。
+        accuracyEwma: progress.accuracyEwma ?? null,
+        review: parseSpacedReview(progress.review),
+      }])),
     daily: pickRecord(value.daily, isDailyStats),
     keyErrors: Object.fromEntries(
       Object.entries(

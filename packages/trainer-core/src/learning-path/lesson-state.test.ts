@@ -45,8 +45,10 @@ describe("deriveLessonState", () => {
     ).toBe("practicing");
   });
 
-  it("掌握度与表现均达标且活动新鲜 → mastered", () => {
-    const related = [progress({ attempts: 10, correct: 10, mastery: 90, lastSeenAt: NOW })];
+  it("掌握度与表现均达标、样本充分且最近练习新鲜 → mastered", () => {
+    const related = Array.from({ length: DEFAULT_LESSON_THRESHOLDS.minPracticedItems }, () =>
+      progress({ attempts: 10, correct: 10, mastery: 90, lastSeenAt: NOW }),
+    );
     expect(
       deriveLessonState(
         evidence({
@@ -62,8 +64,27 @@ describe("deriveLessonState", () => {
     ).toBe("mastered");
   });
 
-  it("达标但最近活动超出 recency 窗口 → needs-review(久未巩固)", () => {
-    const related = [progress({ attempts: 10, correct: 10, mastery: 90, lastSeenAt: NOW })];
+  it("样本不足(已练条目 < minPracticedItems)→ practicing,不声称整章掌握", () => {
+    const related = [progress({ attempts: 10, correct: 10, mastery: 100, lastSeenAt: NOW })];
+    expect(
+      deriveLessonState(
+        evidence({
+          openedAt: NOW,
+          practiceSessions: 3,
+          practiceAttempts: 30,
+          lastPracticeAt: NOW,
+          bestAccuracy: 1,
+        }),
+        related,
+        NOW,
+      ),
+    ).toBe("practicing");
+  });
+
+  it("最近练习超出 recency 窗口 → needs-review(久未巩固)", () => {
+    const related = Array.from({ length: DEFAULT_LESSON_THRESHOLDS.minPracticedItems }, () =>
+      progress({ attempts: 10, correct: 10, mastery: 90, lastSeenAt: NOW }),
+    );
     const stale = NOW - DEFAULT_LESSON_THRESHOLDS.recencyMs - 1;
     expect(
       deriveLessonState(
@@ -78,6 +99,64 @@ describe("deriveLessonState", () => {
         NOW,
       ),
     ).toBe("needs-review");
+  });
+
+  it("重新打开页面不延长「已掌握」:openedAt 新鲜但练习陈旧 → needs-review", () => {
+    const related = Array.from({ length: DEFAULT_LESSON_THRESHOLDS.minPracticedItems }, () =>
+      progress({ attempts: 10, correct: 10, mastery: 90, lastSeenAt: NOW }),
+    );
+    const stale = NOW - DEFAULT_LESSON_THRESHOLDS.recencyMs - 1;
+    expect(
+      deriveLessonState(
+        evidence({
+          openedAt: NOW,
+          practiceSessions: 3,
+          practiceAttempts: 30,
+          lastPracticeAt: stale,
+          bestAccuracy: 1,
+        }),
+        related,
+        NOW,
+      ),
+    ).toBe("needs-review");
+  });
+
+  it("表现优先用按题准确率 EWMA(近期真实表现),终身最佳代理不再永续达标", () => {
+    const related = Array.from({ length: DEFAULT_LESSON_THRESHOLDS.minPracticedItems }, () =>
+      progress({ attempts: 10, correct: 10, mastery: 90, accuracyEwma: 0.5, lastSeenAt: NOW }),
+    );
+    expect(
+      deriveLessonState(
+        evidence({
+          openedAt: NOW,
+          practiceSessions: 3,
+          practiceAttempts: 30,
+          lastPracticeAt: NOW,
+          bestAccuracy: 1,
+        }),
+        related,
+        NOW,
+      ),
+    ).toBe("practicing");
+  });
+
+  it("关联条目全部没有 EWMA(迁移历史)时回退 bestAccuracy 兼容代理", () => {
+    const related = Array.from({ length: DEFAULT_LESSON_THRESHOLDS.minPracticedItems }, () =>
+      progress({ attempts: 10, correct: 10, mastery: 90, accuracyEwma: null, lastSeenAt: NOW }),
+    );
+    expect(
+      deriveLessonState(
+        evidence({
+          openedAt: NOW,
+          practiceSessions: 3,
+          practiceAttempts: 30,
+          lastPracticeAt: NOW,
+          bestAccuracy: 0.5,
+        }),
+        related,
+        NOW,
+      ),
+    ).toBe("practicing");
   });
 
   it("表现曾达标但平均掌握度回落(练习量足够)→ needs-review(掌握衰减)", () => {
@@ -167,12 +246,17 @@ describe("chapterRelatedItems / chapterRelatedProgress", () => {
 });
 
 describe("deriveAllLessonStates", () => {
-  it("按 LEARN_CHAPTERS 顺序输出全部章节状态", () => {
+  it("按 LEARN_CHAPTERS 顺序输出全部章节状态与覆盖数", () => {
     const index = makeIndex();
     const states = deriveAllLessonStates(index, {}, {}, NOW);
     expect(states.map((entry) => entry.chapter.id)).toEqual(
       LEARN_CHAPTERS.map((chapter) => chapter.id),
     );
     expect(states.every((entry) => entry.state === "not-started")).toBe(true);
+    const double = states.find((entry) => entry.chapter.id === "double")!;
+    expect(double.relatedTotal).toBe(index.pools["char-2"].length);
+    expect(double.practicedCount).toBe(0);
+    const overview = states.find((entry) => entry.chapter.id === "overview")!;
+    expect(overview.relatedTotal).toBe(0);
   });
 });

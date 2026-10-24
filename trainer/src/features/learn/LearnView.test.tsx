@@ -3,7 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { TrainerDataset } from "@xhup/trainer-core";
 import { buildTrainerIndex, LEARN_CHAPTERS } from "@xhup/trainer-core";
@@ -46,6 +46,14 @@ describe("LearnView", () => {
     renderLearn();
     expect(screen.getByText("小鹤音形是什么")).toBeInTheDocument();
     expect(screen.getByText(/音码层就是双拼/)).toBeInTheDocument();
+  });
+
+  it("有练习小节的章节展示覆盖数(已练/关联),无练习章节不显示", async () => {
+    renderLearn();
+    // 首章(overview)无练习小节 → 无覆盖行;
+    // 切到双拼章 → 覆盖行出现,practiced=0/关联池总数。
+    fireEvent.click(screen.getByRole("button", { name: /双拼:两键一个音/ }));
+    expect(screen.getByText(/已练 0\/\d+ 关联条目/)).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "学习" })).toBeInTheDocument();
   });
 

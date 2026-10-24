@@ -46,6 +46,7 @@ function validBackupJson(): string {
           mastery: 55,
           lastSeenAt: 1788710400000,
           avgLatencyMs: 1400,
+          accuracyEwma: null,
           review: null,
         },
       },
