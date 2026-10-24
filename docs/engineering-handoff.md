@@ -9,6 +9,36 @@ Free of secrets and personal data by policy.
 - Main: `92173c92c4e037eb63310eed355875416971279b`.
 - Remote branches: `main` only (verified with `git ls-remote --heads origin`).
 
+## M4 CLI + M3 independent quality evaluation (2026-10-25)
+
+- Product-path learning management verified end to end on librime 1.16.1
+  (WSL, pinned Lua plugin, Linux xhup-cli built from main): export -> import
+  round-trip preserves records/codes/counts/tick exactly (d/t renormalized by
+  UserDbMerger, numerically equivalent via d*exp((t-tick)/200)); recall after
+  restore asserted by the joint regression in `--cli` mode. Two defects found
+  and fixed (PR #248): `run_joint_regression.py --cli` staged snapshots at a
+  path/ filename the product import can never accept, and the snapshot
+  validator accepted header-only / mid-record truncated files as "empty"
+  backups, reporting a false successful restore (now fail-closed; 14
+  truncation offsets verified rejected). The earlier "-e/-r round-trip
+  defect" note is corrected: column order differs but data round-trips.
+- Independent frozen-corpus quality evaluation (#229 dataset, UD_Chinese-PUD
+  pinned revision, all manifest hashes verified) on the current tree:
+  confirmation partition (531 cases, untouched), joint ON vs OFF — exact
+  commit 32.2% -> 98.3% (full-code), top-1 31.6% -> 78.5%, alternating and
+  shortest modes similarly improved; 2 retained ranking regressions (0.38%,
+  both shortest-alias, commit still exact). Full report:
+  `docs/independent-quality-evaluation-v2.1.md`. Quality gate for
+  default-on now has both sides of evidence; joint search stays default-OFF.
+- Paired performance qualification of joint ON vs OFF (#225 protocol: 5
+  AB/BA pairs x 10 reps, CPU 0/8, learning on/off, 4 groups): **FAIL** -
+  225/288 latency ratios exceed the 1.10 budget (key-to-menu p95/p99
+  1.6-1.8x; single-scenario p99 ~5x, a first-query warm-up lead), peak RSS
+  1.35-1.37x (+12.6 MiB joint caches); first-session within budget
+  (0.95-1.07x). Report: `docs/joint-decoder-performance-qualification.md`.
+  The default-on decision is therefore blocked on optimization, not on
+  quality.
+
 ## M1 hardening + M2 delivery record (2026-10-24, PRs #242-#246)
 
 Five disjoint PRs, each with failing repro first, all CI-green on their
@@ -163,11 +193,23 @@ regression tests, per the task guardrails.
    syllabary numbering differs, so the exhaustive identity audits are
    version-scoped in `run-flow-audit.sh` (explicit SKIP with the reason below
    1.16). No assertion was weakened; on 1.16.x both audits run in full.
-3. Upstream librime 1.16.1 defect: `rime_dict_manager -e` exports text-first
-   records with packed values while `-r` restores code-first records with
-   `c=/d=/t=` values; snapshots therefore do not round-trip (columns swap and
-   commit counts reset). Legacy code-first snapshots restore faithfully. The
-   product path `xhup-cli learning import` must be verified separately.
+3. librime 1.16.1 snapshot formats (2026-10-24, product-path verification
+   completed): `-e`/`-b` exports write text-first records with packed values
+   while legacy snapshots are code-first with `c=/d=/t=` triples - a
+   column-order difference, not corruption. `xhup-cli learning export`
+   (product `-b` path, validated + staged) round-trips through `learning
+   import` with full data identity: records, codes, commit counts and tick
+   survive; `d`/`t` are renormalized by UserDbMerger to the snapshot clock
+   (verified numerically equivalent via `d*exp((t-tick)/200)`), and recall
+   behavior after restore is asserted by the joint regression (`--cli`
+   mode, run on librime 1.16.1 with the pinned Lua plugin). Two real defects
+   were found and fixed during this verification: `run_joint_regression.py
+   --cli` staged snapshots at a path the product import can never accept
+   (wrong filename), and the snapshot validator accepted header-only /
+   mid-record-truncated files as "empty" backups, reporting a false
+   successful restore (now fail-closed: missing final newline and
+   zero-record snapshots are rejected; all 14 truncation offsets verified
+   rejected).
 4. `ci.yml` Rust job timeout raised 45 -> 60 minutes: cold-cache rebuilds
    (cache keys changed by Cargo.lock updates, and pre-existing caches expired
    after 7 days) exceeded 45 minutes at the test stage.
