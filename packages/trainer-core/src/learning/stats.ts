@@ -1,6 +1,7 @@
 /**
  * 统计计算工具(纯函数):准确率、KPM、本地日期键、时长格式化。
  */
+import type { DailyStats } from "./daily-stats";
 
 /** 本地日历日键,格式 YYYY-MM-DD。不能用 toISOString(那是 UTC)。 */
 export function localDateKey(date: Date = new Date()): string {
@@ -46,4 +47,21 @@ export function formatPercent(ratio: number | null): string {
 export function cpm(chars: number, elapsedMs: number): number | null {
   if (chars <= 0 || elapsedMs < 1000) return null;
   return chars / (elapsedMs / 60000);
+}
+
+/**
+ * 按日 KPM:练习不足 1 秒的统计日没有速率意义,返回 null。
+ * 桌面趋势条与小程序"今日"芯片共用此口径,消除两端差异。
+ */
+export function dailyKpm(
+  stats: Pick<DailyStats, "keystrokes" | "practiceMs">,
+): number | null {
+  return stats.practiceMs < 1000 ? null : kpm(stats.keystrokes, stats.practiceMs);
+}
+
+/** 按日 CPM:与 dailyKpm 同一口径(不足 1 秒或无汉字 → null)。 */
+export function dailyCpm(
+  stats: Pick<DailyStats, "chars" | "practiceMs">,
+): number | null {
+  return stats.practiceMs < 1000 ? null : cpm(stats.chars, stats.practiceMs);
 }

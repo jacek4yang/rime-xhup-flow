@@ -6,11 +6,12 @@
  * 键字比 / 退格修正 / 掌握度分桶 / 键位错误 Top 5 / 按日聚合。
  * 同一份 fixture + 同一套共享核心纯函数 ⇒ 任何平台算出完全相同的数值。
  *
- * 已知口径差异(如实记录,不在测试里掩盖):
+ * 口径状态(如实记录):
  * - 掌握度分桶边界(0-19 / 20-39 / 40-59 / 60-79 / 80-100)内联在桌面端
  *   StatsView 组件里,不在共享核心中;本测试按同一公式复刻并断言。
- * - 桌面端 TrendBars 的按日 KPM/CPM 有 practiceMs < 1000 的额外保护;
- *   共享核心 kpm/cpm 只挡零值。低于 1 秒的练习日两端会不同(见下)。
+ * - 按日 KPM/CPM 的「不足 1 秒 → null」口径已收入共享核心
+ *   dailyKpm/dailyCpm(桌面趋势条与小程序今日芯片共用),低于 1 秒的
+ *   练习日两端一致显示空值(见下)。
  * - 连续练习天数(dayStreak)以「今天」为基准回溯,含真实时钟,不可
  *   确定性地断言;其输入只有 daily 记录本身,两端一致。
  */
@@ -19,6 +20,8 @@ import { describe, expect, it } from "vitest";
 import {
   accuracy,
   cpm,
+  dailyCpm,
+  dailyKpm,
   formatDuration,
   formatPercent,
   kpm,
@@ -150,15 +153,19 @@ describe("统计口径一致性:序列化 fixture → 共享核心 → 展示数
     ]);
   });
 
-  it("已知口径差异:practiceMs < 1000 的练习日,桌面端按日 KPM/CPM 显示为空而共享核心有值", () => {
+  it("统一口径:practiceMs < 1000 的练习日,按日 KPM/CPM 两端一致显示为空", () => {
     const shortDay = imported.daily["2026-08-25"];
-    // 桌面端 StatsView:last14Days 对 practiceMs < 1000 直接置 null。
     expect(shortDay.practiceMs).toBeLessThan(1000);
-    // 共享核心 kpm 只挡零输入/零时长,因此这里会算出数值。
-    // 小程序统计页如采用共享核心口径,短练习日会显示数值而非空;
-    // 该差异已在此如实记录,不影响长练习日(≥1s)的完全一致。
+    // 共享核心 dailyKpm/dailyCpm:不足 1 秒的统计日没有速率意义 → null。
+    // 桌面趋势条与小程序"今日"芯片都消费这两个函数,不再分叉。
+    expect(dailyKpm(shortDay)).toBeNull();
+    expect(dailyCpm(shortDay)).toBeNull();
+    // 会话内实时 KPM(kpm)不设该门槛:那是活跃计时中的即时读数,
+    // 与按日统计是两个语义;此处锚定其行为不变。
     expect(kpm(shortDay.keystrokes, shortDay.practiceMs)).toBeCloseTo(600, 6);
-    // CPM 两端口径恰好一致:核心与桌面端都在 <1s 时返回 null。
     expect(cpm(shortDay.chars, shortDay.practiceMs)).toBeNull();
+    // ≥1s 的练习日两端与核心完全一致(见「今日指标」用例)。
+    expect(dailyKpm(imported.daily["2026-09-06"])).toBeCloseTo(48);
+    expect(dailyCpm(imported.daily["2026-09-06"])).toBeCloseTo(16);
   });
 });
