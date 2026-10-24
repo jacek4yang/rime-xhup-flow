@@ -9,6 +9,29 @@ Free of secrets and personal data by policy.
 - Main: `92173c92c4e037eb63310eed355875416971279b`.
 - Remote branches: `main` only (verified with `git ls-remote --heads origin`).
 
+## M4 CLI + M3 independent quality evaluation (2026-10-25)
+
+- Product-path learning management verified end to end on librime 1.16.1
+  (WSL, pinned Lua plugin, Linux xhup-cli built from main): export -> import
+  round-trip preserves records/codes/counts/tick exactly (d/t renormalized by
+  UserDbMerger, numerically equivalent via d*exp((t-tick)/200)); recall after
+  restore asserted by the joint regression in `--cli` mode. Two defects found
+  and fixed (PR #248): `run_joint_regression.py --cli` staged snapshots at a
+  path/ filename the product import can never accept, and the snapshot
+  validator accepted header-only / mid-record truncated files as "empty"
+  backups, reporting a false successful restore (now fail-closed; 14
+  truncation offsets verified rejected). The earlier "-e/-r round-trip
+  defect" note is corrected: column order differs but data round-trips.
+- Independent frozen-corpus quality evaluation (#229 dataset, UD_Chinese-PUD
+  pinned revision, all manifest hashes verified) on the current tree:
+  confirmation partition (531 cases, untouched), joint ON vs OFF — exact
+  commit 32.2% -> 98.3% (full-code), top-1 31.6% -> 78.5%, alternating and
+  shortest modes similarly improved; 2 retained ranking regressions (0.38%,
+  both shortest-alias, commit still exact). Full report:
+  `docs/independent-quality-evaluation-v2.1.md`. Quality gate for
+  default-on is now evidence-backed; the remaining blocker is the paired
+  performance qualification (#225). Joint search stays default-OFF.
+
 ## M1 hardening + M2 delivery record (2026-10-24, PRs #242-#246)
 
 Five disjoint PRs, each with failing repro first, all CI-green on their
