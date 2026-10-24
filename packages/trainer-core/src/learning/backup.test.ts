@@ -129,12 +129,70 @@ describe("importBackup", () => {
     expect(Object.keys(restored.confusions)).toEqual(["k>m@shape1", "x>z@sound1"]);
   });
 
-  it("拒绝超过 2 MB 的备份(可操作的错误提示)", () => {
+  it("拒绝超过上限的备份(可操作的错误提示)", () => {
     const backup = exportBackup(sampleData(), 1700);
     expect(backup.length).toBeLessThan(MAX_BACKUP_JSON_CHARS);
     const oversized = " ".repeat(MAX_BACKUP_JSON_CHARS + 1);
     expect(() => importBackup(oversized)).toThrow(/过大/);
     expect(() => importBackup(backup)).not.toThrow();
+  });
+
+  it("容量不变量:重度规模(1.2 万条真实结构进度)导出 < 上限且可完整重新导入", () => {
+    // 旧 2 MiB 上限在约 4.8k 条即被突破且导出无守卫(导出成功/导入被拒)。
+    // 现锚定:12,000 条(60% 含复习对象,EWMA 混合 null)紧凑导出仍远低于
+    // 16 MiB,且导入后逐字段保真。
+    const progress: Record<string, import("./progress").ItemProgress> = {};
+    for (let i = 0; i < 12_000; i += 1) {
+      progress[`字${i % 7000}:code${i}`] = {
+        attempts: 12, correct: 10, wrong: 2, streak: 3, mastery: 55 + (i % 40),
+        lastSeenAt: 1_788_710_400_000, avgLatencyMs: 1400,
+        accuracyEwma: i % 3 === 0 ? null : 0.85,
+        review: i % 5 < 3 ? {
+          version: 1, level: i % 6, dueAt: 1_788_710_400_000,
+          lastAttemptAt: 1_788_710_400_000,
+          lastIndependentAt: i % 2 ? 1_788_710_400_000 : null,
+          lastResult: "recalled", questionMs: 3000, wrongKeyEvents: 0,
+          usedAnswerHint: false, routeUsed: "primary", lapses: i % 2,
+        } : null,
+      };
+    }
+    const backup = exportBackup({ ...sampleData(), progress }, 1700);
+    expect(backup.length).toBeGreaterThan(2 * 1024 * 1024); // 旧上限必被突破
+    expect(backup.length).toBeLessThan(MAX_BACKUP_JSON_CHARS);
+    const restored = importBackup(backup);
+    expect(Object.keys(restored.progress)).toHaveLength(12_000);
+    // i=0:EWMA null(i%3===0)且含复习对象;i=2:EWMA 0.85;i=8:无复习对象(8%5≥3)。
+    expect(restored.progress["字0:code0"]!).toMatchObject({ attempts: 12, accuracyEwma: null });
+    expect(restored.progress["字0:code0"]!.review).toMatchObject({ level: 0, lastResult: "recalled" });
+    expect(restored.progress["字2:code2"]!.accuracyEwma).toBeCloseTo(0.85);
+    expect(restored.progress["字8:code8"]!.review).toBeNull();
+  });
+
+  it("导出守卫:超出上限的数据集导出直接失败,不产出无法重导入的备份", () => {
+    // ~60k 条含复习对象的条目 ≈ >16 MiB(紧凑),导出必须拒绝。
+    const progress: Record<string, import("./progress").ItemProgress> = {};
+    for (let i = 0; i < 60_000; i += 1) {
+      progress[`字${i}:code${i}`] = {
+        attempts: 12, correct: 10, wrong: 2, streak: 3, mastery: 60,
+        lastSeenAt: 1_788_710_400_000, avgLatencyMs: 1400, accuracyEwma: 0.85,
+        review: {
+          version: 1, level: 2, dueAt: 1_788_710_400_000,
+          lastAttemptAt: 1_788_710_400_000, lastIndependentAt: 1_788_710_400_000,
+          lastResult: "recalled", questionMs: 3000, wrongKeyEvents: 0,
+          usedAnswerHint: false, routeUsed: "primary", lapses: 1,
+        },
+      };
+    }
+    expect(() => exportBackup({ ...sampleData(), progress }, 1700))
+      .toThrow(/备份过大/);
+  });
+
+  it("前向兼容边界:未知新增字段被当前与旧版本一致忽略(只读已知字段)", () => {
+    const backup = JSON.parse(exportBackup(sampleData(), 1700));
+    backup.progress["行:xk"].futureField = { anything: true };
+    backup.futureSection = "unknown";
+    const restored = importBackup(JSON.stringify(backup));
+    expect(restored.progress["行:xk"].attempts).toBe(3);
   });
 
   it("拒绝非法 lessonEvidence 结构", () => {

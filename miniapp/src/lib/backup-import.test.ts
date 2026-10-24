@@ -102,9 +102,10 @@ describe("parseBackupForImport:解析与预览分离", () => {
       kind: "invalid",
     });
 
+    // 导出为紧凑 JSON(无空格);负向样本按紧凑形态替换。
     const badProgress = validBackupJson().replace(
-      '"mastery": 55',
-      '"mastery": -1',
+      '"mastery":55',
+      '"mastery":-1',
     );
     expect(parseBackupForImport(badProgress)).toMatchObject({
       ok: false,

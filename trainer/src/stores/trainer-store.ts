@@ -171,6 +171,12 @@ export type TrainerActions = {
 export type TrainerStore = TrainerData & TrainerActions;
 
 export const STORAGE_KEY = "xhup-flow.trainer.v2";
+/**
+ * 桌面端 zustand persist 架构版本(V4:条目准确率 EWMA)。
+ * 与小程序 STORE_VERSION、共享备份 BACKUP_VERSION 是三套独立版本系统:
+ * 各自描述自己介质的迁移链,数字不同不代表不兼容;跨端交换一律走共享
+ * 备份文档(见 trainer-core/learning/backup.ts)。
+ */
 export const STORAGE_VERSION = 4;
 
 function defaultData(): TrainerData {
