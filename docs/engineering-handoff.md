@@ -38,6 +38,18 @@ Free of secrets and personal data by policy.
   (0.95-1.07x). Report: `docs/joint-decoder-performance-qualification.md`.
   The default-on decision is therefore blocked on optimization, not on
   quality.
+- Joint hot-path optimization round 1 (`perf/joint-scores-compact`):
+  instrumentation attributed 21.8 of 22.6 ms first-query warm-up to loading
+  the joint score model (Lua table constructors over 736 KB). The generator
+  now emits packed string projections with lazy memoized decoding
+  (representation-only; joint regression, exhaustive alias audit and Lua
+  suites all PASS; semantic-difference rows identical). Re-qualified on the
+  same #225 protocol: scorer load 21.8 -> 2.85 ms, single p99 ratio 5.3x ->
+  1.8x, RSS ratio 1.35-1.37x -> 1.29-1.30x, key-to-menu p95/p99
+  1.6-1.8x -> 1.35-1.69x. Still FAIL overall (216/288 latency ratios over
+  budget): the remaining overage is the steady-state per-keystroke beam
+  search cost. Joint stays default-OFF; next optimization leads are an
+  incremental lattice across keystrokes or a native implementation.
 
 ## M1 hardening + M2 delivery record (2026-10-24, PRs #242-#246)
 

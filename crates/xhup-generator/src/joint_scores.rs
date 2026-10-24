@@ -90,12 +90,7 @@ pub(crate) fn generate(flow: &str) -> Result<(String, String), LuaBuildError> {
         sha256(CONTEXT.as_bytes())
     )
     .unwrap();
-    writeln!(
-        out,
-        "  context_pairs = {},",
-        pairs.len()
-    )
-    .unwrap();
+    writeln!(out, "  context_pairs = {},", pairs.len()).unwrap();
     // Packed projections: "\003 key \002 item \001 item ..." sections. The
     // runtime decodes a row lazily on first access and memoizes it; values
     // are identical to the historical table form. The packed form keeps the
@@ -119,12 +114,7 @@ pub(crate) fn generate(flow: &str) -> Result<(String, String), LuaBuildError> {
             characters_packed.push_str("\\001");
         }
     }
-    writeln!(
-        out,
-        "  characters_packed = \"{}\",",
-        characters_packed
-    )
-    .unwrap();
+    writeln!(out, "  characters_packed = \"{}\",", characters_packed).unwrap();
     let mut transitions_packed = String::new();
     for (left, right, count) in pairs {
         transitions_packed.push_str("\\003");
@@ -136,12 +126,7 @@ pub(crate) fn generate(flow: &str) -> Result<(String, String), LuaBuildError> {
         let reward = (BaselineScorer::frequency_reward(count) / 4).min(2048);
         write!(transitions_packed, "|{reward}\\001").unwrap();
     }
-    writeln!(
-        out,
-        "  transitions_packed = \"{}\",",
-        transitions_packed
-    )
-    .unwrap();
+    writeln!(out, "  transitions_packed = \"{}\",", transitions_packed).unwrap();
     out.push_str("}\n");
     let identity = sha256(out.as_bytes());
     writeln!(out, "model.identity = \"{identity}\"\nreturn model").unwrap();
