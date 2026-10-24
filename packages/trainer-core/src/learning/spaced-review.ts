@@ -33,6 +33,8 @@ export type RecallEvidence = {
   questionMs: number;
   chars: number;
   now: number;
+  /** 本题总键数(供核心计算键级准确率 EWMA;缺省 = 无有效样本)。 */
+  keystrokes?: number;
 };
 
 export function independentRecall(evidence: RecallEvidence): boolean {

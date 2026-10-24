@@ -9,6 +9,7 @@
  */
 
 import { independentRecall, updateSpacedReview, type RecallEvidence, type SpacedReview } from "./spaced-review";
+import { accuracy } from "./stats";
 
 export type ItemProgress = {
   /** 完成展示次数(无论完美与否)。 */
@@ -25,6 +26,8 @@ export type ItemProgress = {
   lastSeenAt: number | null;
   /** 完成耗时指数滑动平均(ms;无有效样本为 null)。 */
   avgLatencyMs: number | null;
+  /** 按题键级准确率指数滑动平均(0..1;null = 无有效样本或迁移历史)。 */
+  accuracyEwma: number | null;
   /** null = 尚无新版独立回忆证据(包括迁移的历史记录)。 */
   review: SpacedReview | null;
 };
@@ -38,6 +41,7 @@ export function emptyProgress(): ItemProgress {
     mastery: 0,
     lastSeenAt: null,
     avgLatencyMs: null,
+    accuracyEwma: null,
     review: null,
   };
 }
@@ -46,6 +50,8 @@ const MASTERY_MAX = 100;
 const IMPERFECT_PENALTY = 15;
 /** 延迟滑动平均的新样本权重(0..1);0.3 ≈ 最近 3-4 题的加权。 */
 const LATENCY_ALPHA = 0.3;
+/** 准确率滑动平均的新样本权重(与延迟同一量级)。 */
+const ACCURACY_ALPHA = 0.3;
 
 /** 更新完成耗时滑动平均(负值/非有限样本忽略,保持原值)。 */
 export function nextAvgLatency(
@@ -74,6 +80,7 @@ export function applyPerfect(
     mastery: Math.min(MASTERY_MAX, progress.mastery + Math.min(8, 3 + streak)),
     lastSeenAt: now,
     avgLatencyMs: nextAvgLatency(progress.avgLatencyMs, latencyMs),
+    accuracyEwma: progress.accuracyEwma,
     review: progress.review,
   };
 }
@@ -92,8 +99,21 @@ export function applyImperfect(
     mastery: Math.max(0, progress.mastery - IMPERFECT_PENALTY),
     lastSeenAt: now,
     avgLatencyMs: nextAvgLatency(progress.avgLatencyMs, latencyMs),
+    accuracyEwma: progress.accuracyEwma,
     review: progress.review,
   };
+}
+
+/** 更新准确率滑动平均(缺失/越界样本忽略,保持原值)。 */
+export function nextAccuracyEwma(
+  previous: number | null,
+  accuracy: number | null,
+): number | null {
+  if (accuracy === null || !Number.isFinite(accuracy) || accuracy < 0 || accuracy > 1) {
+    return previous;
+  }
+  if (previous === null) return accuracy;
+  return previous * (1 - ACCURACY_ALPHA) + accuracy * ACCURACY_ALPHA;
 }
 
 /** 会话和两个持久化宿主共享同一个记账入口。 */
@@ -101,5 +121,12 @@ export function applyQuestionProgress(progress: ItemProgress, evidence: RecallEv
   const updated = independentRecall(evidence)
     ? applyPerfect(progress, evidence.now, evidence.questionMs)
     : applyImperfect(progress, evidence.now, evidence.questionMs);
-  return { ...updated, review: updateSpacedReview(progress.review, evidence) };
+  const perQuestionAccuracy = evidence.keystrokes === undefined
+    ? null
+    : accuracy(evidence.keystrokes, evidence.wrongKeyEvents);
+  return {
+    ...updated,
+    accuracyEwma: nextAccuracyEwma(progress.accuracyEwma, perQuestionAccuracy),
+    review: updateSpacedReview(progress.review, evidence),
+  };
 }

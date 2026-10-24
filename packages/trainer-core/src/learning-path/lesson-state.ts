@@ -1,5 +1,5 @@
 /**
- * 章节学习状态推导(纯函数,确定性;里程碑 44)。
+ * 章节学习状态推导(纯函数,确定性;里程碑 44,任务书 §2.2 修订)。
  *
  * 状态只从真实学习证据推导:章节页的打开/练习记录({@link LessonEvidence})
  * 加上该章节练习模式关联条目的稀疏进度。打开过章节页面 ≠ 掌握;
@@ -8,12 +8,17 @@
  * 状态是「建议标签」而不是访问闸门(ADVISORY,永不锁课):任何状态下,
  * 章节内容与练习入口都保持可用,宿主 UI 只做展示,不做门控。
  *
- * 已知限制(诚实记录,不虚构数据):
- * - 引擎未持久化逐题「首次尝试是否完美」,这里以 bestAccuracy(练习中
- *   单题键级准确率的最佳值,由宿主在每题完成时上报)作为最近练习表现
- *   的代理;
- * - 「曾经掌握」没有独立标记,由 bestAccuracy 达标而当前平均掌握度回落
- *   来推断「掌握衰减 → 建议复习」。
+ * 真实性边界(诚实记录,不虚构数据):
+ * - 章节关联条目池通常很大(数千条),「已掌握」只对**已练习样本**成立,
+ *   绝不声称整章覆盖;覆盖数(已练/关联总数)由本模块返回,宿主必须展示;
+ * - 样本充分性:已练条目少于 `minPracticedItems` 时不可声称「已掌握」,
+ *   无论平均掌握度多高;
+ * - 练习表现优先用按题键级准确率的 EWMA(ItemProgress.accuracyEwma,
+ *   近期真实表现);关联条目全部没有 EWMA(迁移历史)时才回退到宿主上报的
+ *   历史 bestAccuracy 代理,该代理是终身最佳单题值,只作兼容、不作为
+ *   新数据的首选依据;
+ * - 「曾经掌握」没有独立标记,由表现达标而当前平均掌握度回落来推断
+ *   「掌握衰减 → 建议复习」。
  */
 
 import type { ItemProgress } from "../learning/progress";
@@ -42,7 +47,8 @@ export type LessonEvidence = {
   practiceAttempts: number;
   /** 最近一次练习完成时间(epoch ms);从未练习为 null。 */
   lastPracticeAt: number | null;
-  /** 练习中单题键级准确率的最佳值(0..1);无有效样本为 null。 */
+  /** 练习中单题键级准确率的最佳值(0..1);无有效样本为 null。
+   *  旧版代理:仅当关联条目全部没有 accuracyEwma 时用于兼容回退。 */
   bestAccuracy: number | null;
 };
 
@@ -60,20 +66,23 @@ export function emptyLessonEvidence(): LessonEvidence {
 export type LessonStateThresholds = {
   /** 关联条目平均掌握度达到该值才算「掌握候选」。 */
   mastery: number;
-  /** 练习准确率代理(bestAccuracy)达到该值才算「表现达标」。 */
+  /** 练习表现(准确率 EWMA,回退 bestAccuracy)达到该值才算「表现达标」。 */
   accuracy: number;
-  /** 最近活动(打开/练习)在该时间窗内才算「保持」。 */
+  /** 最近练习(仅练习,不含打开页面)在该时间窗内才算「保持」。 */
   recencyMs: number;
+  /** 「已掌握」要求的最少已练不同条目数(样本充分性)。 */
+  minPracticedItems: number;
 };
 
 export const DEFAULT_LESSON_THRESHOLDS: LessonStateThresholds = {
   mastery: 80,
   accuracy: 0.8,
   recencyMs: 7 * 24 * 60 * 60 * 1000,
+  minPracticedItems: 20,
 };
 
 /**
- * 「掌握衰减」判定的最低练习量:bestAccuracy 是单题代理,样本太少时
+ * 「掌握衰减」判定的最低练习量:表现代理样本太少时
  * (如只完美打对一题)不足以声称「曾经掌握后回落」,按 practicing 处理。
  */
 export const MIN_DECAY_ATTEMPTS = 10;
@@ -84,14 +93,17 @@ export const MIN_DECAY_ATTEMPTS = 10;
  * 1. 无任何证据 → `not-started`;
  * 2. 有证据(打开过页面/发起过练习)但从未完成任何题 → `learning`;
  * 3. 有练习但关联条目尚无进度记录 → `practicing`;
- * 4. bestAccuracy 达标且平均掌握度回落到阈值以下(练习量足够)→
+ * 4. 表现达标且平均掌握度回落到阈值以下(练习量足够)→
  *    `needs-review`(掌握衰减);
- * 5. 平均掌握度与 bestAccuracy 均达标:最近活动在 recency 窗口内 →
- *    `mastered`;超出窗口 → `needs-review`(久未巩固,建议回炉);
- * 6. 其余(平均掌握度或表现未达标)→ `practicing`。
+ * 5. 样本充分(已练条目 ≥ minPracticedItems)且平均掌握度与表现均达标:
+ *    最近**练习**在 recency 窗口内 → `mastered`;超出窗口 →
+ *    `needs-review`(久未巩固,建议回炉)。打开页面只算浏览,
+ *    不延长「已掌握」的新鲜度;
+ * 6. 其余(样本不足,或平均掌握度/表现未达标)→ `practicing`。
  *
  * 平均掌握度只统计见过的关联条目(attempts > 0);关联条目全部未见过
- * 时按第 3 条处理。
+ * 时按第 3 条处理。`relatedTotal` 用于宿主展示覆盖数,不参与状态判定
+ * (关联池常达数千条,覆盖率门禁不可行)。
  */
 export function deriveLessonState(
   evidence: LessonEvidence | undefined,
@@ -118,7 +130,7 @@ export function deriveLessonState(
 
   const totalMastery = practiced.reduce((sum, p) => sum + p.mastery, 0);
   const avgMastery = totalMastery / practiced.length;
-  const bestAccuracy = evidence.bestAccuracy ?? 0;
+  const performance = practicedPerformance(practiced, evidence);
 
   const enoughVolume =
     evidence.practiceAttempts >= MIN_DECAY_ATTEMPTS ||
@@ -126,21 +138,40 @@ export function deriveLessonState(
 
   if (
     enoughVolume &&
-    bestAccuracy >= thresholds.accuracy &&
+    performance >= thresholds.accuracy &&
     avgMastery < thresholds.mastery
   ) {
     return "needs-review";
   }
 
   if (
+    practiced.length >= thresholds.minPracticedItems &&
     avgMastery >= thresholds.mastery &&
-    bestAccuracy >= thresholds.accuracy
+    performance >= thresholds.accuracy
   ) {
-    const lastActivity = Math.max(evidence.openedAt ?? 0, evidence.lastPracticeAt ?? 0);
+    const lastActivity = evidence.lastPracticeAt ?? 0;
     return lastActivity >= now - thresholds.recencyMs ? "mastered" : "needs-review";
   }
 
   return "practicing";
+}
+
+/**
+ * 章节练习表现(0..1):优先用关联条目按题键级准确率 EWMA 的均值
+ * (近期真实表现);全部条目都没有 EWMA(迁移历史)时回退到宿主上报的
+ * 历史 bestAccuracy 代理。
+ */
+export function practicedPerformance(
+  practiced: readonly ItemProgress[],
+  evidence: LessonEvidence,
+): number {
+  const withEwma = practiced
+    .map((progress) => progress.accuracyEwma)
+    .filter((value): value is number => value !== null);
+  if (withEwma.length > 0) {
+    return withEwma.reduce((sum, value) => sum + value, 0) / withEwma.length;
+  }
+  return evidence.bestAccuracy ?? 0;
 }
 
 /** 章节关联条目 = 该章节所有练习小节的模式对应池中的全部条目。 */
@@ -180,19 +211,35 @@ export function chapterRelatedProgress(
   return progress;
 }
 
-/** 全部章节的建议状态(按 LEARN_CHAPTERS 顺序;供列表徽标使用)。 */
+/** 章节状态与覆盖信息(覆盖数供宿主展示,不让「已掌握」冒充整章掌握)。 */
+export type LessonStateSummary = {
+  chapter: LearnChapter;
+  state: LessonState;
+  /** 章节关联条目总数(0 = 无练习小节的章节)。 */
+  relatedTotal: number;
+  /** 已实际练习过的不同关联条目数。 */
+  practicedCount: number;
+};
+
+/** 全部章节的建议状态与覆盖(按 LEARN_CHAPTERS 顺序;供列表徽标使用)。 */
 export function deriveAllLessonStates(
   index: TrainerIndex,
   progressById: Record<string, ItemProgress>,
   lessonEvidence: Record<string, LessonEvidence>,
   now: number,
-): { chapter: LearnChapter; state: LessonState }[] {
-  return LEARN_CHAPTERS.map((chapter) => ({
-    chapter,
-    state: deriveLessonState(
-      lessonEvidence[chapter.id],
-      chapterRelatedProgress(chapter, index, progressById),
-      now,
-    ),
-  }));
+): LessonStateSummary[] {
+  return LEARN_CHAPTERS.map((chapter) => {
+    const related = chapterRelatedItems(chapter, index);
+    const progress = chapterRelatedProgress(chapter, index, progressById);
+    return {
+      chapter,
+      state: deriveLessonState(
+        lessonEvidence[chapter.id],
+        progress,
+        now,
+      ),
+      relatedTotal: related.length,
+      practicedCount: progress.length,
+    };
+  });
 }

@@ -156,6 +156,14 @@ function sanitizeProgressEntry(value: unknown): ItemProgress | null {
     typeof value.avgLatencyMs === "number" && Number.isFinite(value.avgLatencyMs) && value.avgLatencyMs >= 0
       ? value.avgLatencyMs
       : base.avgLatencyMs;
+  // V4 起记录准确率 EWMA;旧数据缺省 → null(不伪造历史表现)。
+  const accuracyEwma =
+    typeof value.accuracyEwma === "number" &&
+    Number.isFinite(value.accuracyEwma) &&
+    value.accuracyEwma >= 0 &&
+    value.accuracyEwma <= 1
+      ? value.accuracyEwma
+      : base.accuracyEwma;
   return {
     attempts,
     correct: typeof value.correct === "number" && Number.isFinite(value.correct) ? value.correct : base.correct,
@@ -164,6 +172,7 @@ function sanitizeProgressEntry(value: unknown): ItemProgress | null {
     mastery: typeof value.mastery === "number" && Number.isFinite(value.mastery) ? value.mastery : base.mastery,
     lastSeenAt,
     avgLatencyMs,
+    accuracyEwma,
     review: parseSpacedReview(value.review),
   };
 }

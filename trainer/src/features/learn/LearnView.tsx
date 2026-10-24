@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useNow } from "@/lib/use-now";
 import type { I18nKey, LessonState } from "@xhup/trainer-core";
 import { useI18n } from "@/lib/use-i18n";
 import { useTrainerIndex } from "@/lib/trainer-context";
@@ -84,15 +85,18 @@ export function LearnView({
     [index.dataset.entries],
   );
 
-  // 各章节建议状态(打开时刻的一次性快照;纯展示,不门控)。
+  // 各章节建议状态与覆盖(低频时钟驱动,跨到期/零点/恢复前台自动刷新;
+  // 纯展示,不门控)。
+  const now = useNow();
   const lessonStates = useMemo(
-    () => deriveAllLessonStates(index, progress, lessonEvidence, Date.now()),
-    [index, progress, lessonEvidence],
+    () => deriveAllLessonStates(index, progress, lessonEvidence, now),
+    [index, progress, lessonEvidence, now],
   );
   const stateById = useMemo(
     () => new Map(lessonStates.map((entry) => [entry.chapter.id, entry.state])),
     [lessonStates],
   );
+  const currentSummary = lessonStates.find((entry) => entry.chapter.id === chapter.id);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 lg:flex-row lg:gap-6">
@@ -152,6 +156,14 @@ export function LearnView({
             </div>
             <h2 className="text-xl font-semibold tracking-tight">{chapter.title}</h2>
             <p className="text-sm text-muted-foreground">{chapter.summary}</p>
+            {currentSummary && currentSummary.relatedTotal > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {t("learn.coverage", {
+                  practiced: currentSummary.practicedCount,
+                  total: currentSummary.relatedTotal,
+                })}
+              </p>
+            )}
           </header>
 
           {chapter.sections.map((section, sectionIndex) => (
