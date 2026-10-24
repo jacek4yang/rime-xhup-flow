@@ -367,7 +367,7 @@ do
 end
 
 local stale_model = {identity="old", policy="joint-frequency-context-shape-v3",
-  primary_full_code_split_penalty=9544, total_reward=0, characters={}, transitions={}}
+  primary_full_code_split_penalty=9544, total_reward=0, characters_packed="", transitions_packed=""}
 check(not pcall(search.scorer, stale_model, "new"), "a cached model from another deployment cannot score candidates")
 check(not pcall(search.scorer, stale_model), "missing schema/model binding fails closed")
 

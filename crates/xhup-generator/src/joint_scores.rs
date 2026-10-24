@@ -11,23 +11,6 @@ use crate::lua_build::{LuaBuildError, sha256};
 const CONTEXT: &str = include_str!("../../../data/corpus/kdconv_bigram.tsv");
 const MAX_PAIRS: usize = 16_384;
 
-fn quoted(out: &mut String, value: &str) {
-    out.push('"');
-    for character in value.chars() {
-        match character {
-            '"' | '\\' => {
-                out.push('\\');
-                out.push(character);
-            }
-            '\0'..='\u{1f}' | '\u{7f}' => {
-                write!(out, "\\{:03}", u32::from(character)).unwrap();
-            }
-            _ => out.push(character),
-        }
-    }
-    out.push('"');
-}
-
 pub(crate) fn generate(flow: &str) -> Result<(String, String), LuaBuildError> {
     let error = |message| LuaBuildError::new("joint_scores", message);
     let mut characters = BTreeMap::<char, u64>::new();
@@ -107,49 +90,61 @@ pub(crate) fn generate(flow: &str) -> Result<(String, String), LuaBuildError> {
         sha256(CONTEXT.as_bytes())
     )
     .unwrap();
-    writeln!(out, "  context_pairs = {}, characters = {{", pairs.len()).unwrap();
+    writeln!(out, "  context_pairs = {},", pairs.len()).unwrap();
+    // Packed projections: "\003 key \002 item \001 item ..." sections. The
+    // runtime decodes a row lazily on first access and memoizes it; values
+    // are identical to the historical table form. The packed form keeps the
+    // module load at string-literal cost (table-constructor execution of the
+    // historical form measured 21.8 ms per process) and avoids resident Lua
+    // hash tables for rows a session never queries.
+    let mut characters_packed = String::new();
     for (sound, characters) in readings {
-        writeln!(out, "    [\"{}{}\"] = {{", sound[0], sound[1]).unwrap();
+        characters_packed.push_str("\\003");
+        let mut sound_key = String::new();
+        for character in sound.iter() {
+            sound_key.push((*character).into());
+        }
+        escaped(&mut characters_packed, &sound_key);
+        characters_packed.push_str("\\002");
         for (character, frequency) in characters {
-            out.push_str("      [");
-            quoted(&mut out, character.encode_utf8(&mut [0; 4]));
-            writeln!(
-                out,
-                "] = {},",
-                BaselineScorer::frequency_reward(frequency) - denominator
-            )
-            .unwrap();
+            escaped(&mut characters_packed, character.encode_utf8(&mut [0; 4]));
+            characters_packed.push('|');
+            let reward = BaselineScorer::frequency_reward(frequency) - denominator;
+            write!(characters_packed, "{reward}").unwrap();
+            characters_packed.push_str("\\001");
         }
-        out.push_str("    },\n");
     }
-    out.push_str("  }, transitions = {\n");
-    let mut previous = None;
+    writeln!(out, "  characters_packed = \"{}\",", characters_packed).unwrap();
+    let mut transitions_packed = String::new();
     for (left, right, count) in pairs {
-        if previous != Some(left) {
-            if previous.is_some() {
-                out.push_str("    },\n");
-            }
-            out.push_str("    [");
-            quoted(&mut out, left);
-            out.push_str("] = {\n");
-            previous = Some(left);
-        }
-        out.push_str("      [");
-        quoted(&mut out, right);
+        transitions_packed.push_str("\\003");
+        escaped(&mut transitions_packed, left);
+        transitions_packed.push_str("\\002");
         // Conservative, bounded count evidence, not a calibrated conditional
         // language probability. Parameters are fixed before new dev evaluation.
-        writeln!(
-            out,
-            "] = {},",
-            (BaselineScorer::frequency_reward(count) / 4).min(2048)
-        )
-        .unwrap();
+        escaped(&mut transitions_packed, right);
+        let reward = (BaselineScorer::frequency_reward(count) / 4).min(2048);
+        write!(transitions_packed, "|{reward}\\001").unwrap();
     }
-    if previous.is_some() {
-        out.push_str("    },\n");
-    }
-    out.push_str("  },\n}\n");
+    writeln!(out, "  transitions_packed = \"{}\",", transitions_packed).unwrap();
+    out.push_str("}\n");
     let identity = sha256(out.as_bytes());
     writeln!(out, "model.identity = \"{identity}\"\nreturn model").unwrap();
     Ok((out, identity))
+}
+
+/// Escape a packed-projection fragment into a portable Lua string literal.
+/// Control bytes (including the \001/\002/\003 delimiters) always emit as
+/// three-digit decimal escapes so the delimiter bytes stay unambiguous.
+fn escaped(out: &mut String, value: &str) {
+    for character in value.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\0'..='\u{1f}' | '\u{7f}' => {
+                write!(out, "\\{:03}", u32::from(character)).unwrap();
+            }
+            _ => out.push(character),
+        }
+    }
 }

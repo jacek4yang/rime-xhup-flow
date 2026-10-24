@@ -4,6 +4,24 @@ local M = { max_input = 128, beam_width = 8,
   max_edge = 32, max_edges = 256, max_pending = 7 }
 local LOG_Q10 = 1024 / math.log(2)
 
+-- Packed projection row: "\3 key \2 item \1 item ... \3 next-key ...".
+-- Keys (sounds, words, "<s>") never contain the control delimiters, so a
+-- plain find of "\3" .. key .. "\2" locates exactly one section. Rows decode
+-- lazily on first access and memoize; values equal the historical table form.
+local function packed_row(packed, key)
+  local header = "\3" .. key .. "\2"
+  local start = string.find(packed, header, 1, true)
+  if not start then return nil end
+  local from = start + #header
+  local stop = string.find(packed, "\3", from, true) or #packed + 1
+  local row = {}
+  for item in string.gmatch(string.sub(packed, from, stop - 1), "[^\1]+") do
+    local text, value = string.match(item, "^(.-)|(-?%d+)$")
+    row[text] = tonumber(value)
+  end
+  return row
+end
+
 function M.scorer(data, identity)
   data = data or require("xhup_flow.data.joint_scores")
   assert(data.policy == "joint-frequency-context-shape-v3", "unsupported joint scoring policy")
@@ -11,15 +29,27 @@ function M.scorer(data, identity)
   assert(type(data.primary_full_code_split_penalty) == "number"
     and data.primary_full_code_split_penalty >= 0
     and data.primary_full_code_split_penalty <= 32768, "invalid shape compatibility cost")
+  assert(type(data.characters_packed) == "string"
+    and type(data.transitions_packed) == "string", "stale joint scoring model")
   local scale = LOG_Q10
   local offset = math.log(100000000) * scale - data.total_reward
+  local character_rows, transition_rows = {}, {}
   return function(text, weight, sound)
-    local readings = data.characters[sound]
-    local character = readings and readings[text]
+    local row = character_rows[sound]
+    if row == nil then
+      row = packed_row(data.characters_packed, sound) or false
+      character_rows[sound] = row
+    end
+    local character = row and row[text] or nil
     if character then return character end
     return math.floor(weight * scale + offset)
   end, function(previous, edge)
-    local row = data.transitions[previous and previous.text or "<s>"]
+    local key = previous and previous.text or "<s>"
+    local row = transition_rows[key]
+    if row == nil then
+      row = packed_row(data.transitions_packed, key) or false
+      transition_rows[key] = row
+    end
     return row and row[edge.text] or 0
   end, data.primary_full_code_split_penalty
 end
