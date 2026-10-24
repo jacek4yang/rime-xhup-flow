@@ -29,8 +29,15 @@ Free of secrets and personal data by policy.
   shortest modes similarly improved; 2 retained ranking regressions (0.38%,
   both shortest-alias, commit still exact). Full report:
   `docs/independent-quality-evaluation-v2.1.md`. Quality gate for
-  default-on is now evidence-backed; the remaining blocker is the paired
-  performance qualification (#225). Joint search stays default-OFF.
+  default-on now has both sides of evidence; joint search stays default-OFF.
+- Paired performance qualification of joint ON vs OFF (#225 protocol: 5
+  AB/BA pairs x 10 reps, CPU 0/8, learning on/off, 4 groups): **FAIL** -
+  225/288 latency ratios exceed the 1.10 budget (key-to-menu p95/p99
+  1.6-1.8x; single-scenario p99 ~5x, a first-query warm-up lead), peak RSS
+  1.35-1.37x (+12.6 MiB joint caches); first-session within budget
+  (0.95-1.07x). Report: `docs/joint-decoder-performance-qualification.md`.
+  The default-on decision is therefore blocked on optimization, not on
+  quality.
 
 ## M1 hardening + M2 delivery record (2026-10-24, PRs #242-#246)
 
