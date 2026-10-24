@@ -18,7 +18,15 @@ import {
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { itemAccuracy, listReviewItems, isReviewDue } from "@xhup/trainer-core";
+import { useNow } from "@/lib/use-now";
+import {
+  explainReviewStatus,
+  formatDueIn,
+  itemAccuracy,
+  listReviewItems,
+  isReviewDue,
+  type ReviewHoldReason,
+} from "@xhup/trainer-core";
 import { aggregateWeakness, keyHeatmap, topConfusions, positionLabel } from "@xhup/trainer-core";
 import { confusionId } from "@xhup/trainer-core";
 import { formatPercent } from "@xhup/trainer-core";
@@ -54,13 +62,23 @@ function heatClass(count: number): string {
   return "bg-destructive/10";
 }
 
+/** 复习状态原因码 → 文案键(显式映射,保持 I18nKey 类型安全)。 */
+const REVIEW_REASON_LABELS: Record<ReviewHoldReason, I18nKey> = {
+  unverified: "review.reason.unverified",
+  "due-now": "review.reason.dueNow",
+  "not-due": "review.reason.notDue",
+  hesitant: "review.reason.hesitant",
+  lapsed: "review.reason.lapsed",
+  capped: "review.reason.capped",
+};
+
 export function WeaknessCenter({
   onPracticeEntries,
 }: {
   onPracticeEntries: (entries: TrainingItem[]) => void;
 }) {
   const index = useTrainerIndex();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const progress = useTrainerStore((state) => state.progress);
   const keyErrors = useTrainerStore((state) => state.keyErrors);
   const confusions = useTrainerStore((state) => state.confusions);
@@ -69,7 +87,7 @@ export function WeaknessCenter({
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const now = Date.now();
+  const now = useNow();
   const weakItems = useMemo(() => listReviewItems(index, progress, now), [index, progress, now]);
   const report = useMemo(
     () =>
@@ -162,7 +180,9 @@ export function WeaknessCenter({
         </Card>
       ) : (
         <div className="flex flex-col gap-2">
-          {filtered.map(({ item, progress: itemProgress }) => (
+          {filtered.map(({ item, progress: itemProgress }) => {
+            const status = explainReviewStatus(itemProgress, now);
+            return (
             <Card key={item.id} className="px-4 py-3">
               <div className="flex flex-wrap items-center gap-3">
                 <label className="flex cursor-pointer items-center gap-3">
@@ -201,8 +221,17 @@ export function WeaknessCenter({
                   <Progress value={itemProgress.mastery / 100} className="h-1.5" />
                 </div>
               </div>
+              <p className="mt-1 w-full text-xs text-muted-foreground">
+                {status.nextDueAt !== null && !status.due
+                  ? `${t("review.nextDue", {
+                      duration: formatDueIn(status.nextDueInMs ?? 0, language),
+                    })} · `
+                  : ""}
+                {t(REVIEW_REASON_LABELS[status.reason])}
+              </p>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 

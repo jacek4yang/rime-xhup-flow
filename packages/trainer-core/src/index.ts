@@ -19,6 +19,7 @@ export * from "./practice/hints";
 // 学习域
 export * from "./learning/progress";
 export * from "./learning/spaced-review";
+export * from "./learning/review-status";
 export * from "./learning/daily-stats";
 export * from "./learning/weakness";
 export * from "./learning/review";

@@ -1,8 +1,10 @@
 import type { QuestionOutcome, QuestionRoute } from "../practice/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const INTERVAL_DAYS = [1, 3, 7, 14, 30, 90] as const;
-const RETRY_MS = 10 * 60 * 1000;
+/** 复习等级升级间隔(天);公开给宿主展示升级条件。 */
+export const INTERVAL_DAYS = [1, 3, 7, 14, 30, 90] as const;
+/** 失败后的重试等待(ms);公开给宿主解释「何时可重试」。 */
+export const RETRY_MS = 10 * 60 * 1000;
 export const RECALL_HESITATION_MS_PER_CHAR = 8000;
 
 type RecallResult = "recalled" | "hesitant" | "error" | "hinted" | "alternate";
