@@ -5,9 +5,67 @@ Free of secrets and personal data by policy.
 
 ## Snapshot
 
-- Date: 2026-10-24 (updated after milestone M1 learning-path work).
-- Main: `0e4a4c74d2a08207f2d3f9689abf9c272b5f716d`.
+- Date: 2026-10-24 (updated after M1 hardening + M2 delivery).
+- Main: `92173c92c4e037eb63310eed355875416971279b`.
 - Remote branches: `main` only (verified with `git ls-remote --heads origin`).
+
+## M1 hardening + M2 delivery record (2026-10-24, PRs #242-#246)
+
+Five disjoint PRs, each with failing repro first, all CI-green on their
+branches, merged sequentially, then revalidated on the combined tree.
+
+- `#242` (squash `af5e07d`) keystroke counting contract. The completion event
+  derived `keystrokes` from code length (`activeCode().length + wrong`), so
+  backspace-retyped keys, route-switch retypes and abandoned prefixes were
+  invisible to per-question events while the session counter counted real
+  letter-key events; daily stats and chapter per-question accuracy inherited
+  the understated denominator. The engine's internal `applyQuestionProgress`
+  call also omitted `keystrokes`, so in-session `progressById.accuracyEwma`
+  was always null (host stores updated it - a three-way divergence).
+  Fix: per-question counter incremented exactly where the session counter
+  increments, reset per question; event and engine evidence share it.
+  Invariant test: sum of per-question event keystrokes equals session
+  keystrokes. Also unified the sub-1s daily KPM/CPM rule into shared
+  `dailyKpm`/`dailyCpm` (desktop trend + miniapp today chips). Six-scenario
+  x four-dimension stats semantics anchored as tests; B5 review contract
+  untouched.
+- `#243` (squash `70a4aa4`) chapter evidence sufficiency + derivation cost.
+  Counterexample: 19 migrated items (null EWMA, high mastery) + 1 new-evidence
+  item (EWMA 1.0) -> chapter marked mastered on one new sample. New rule:
+  when any new evidence exists, `mastered` needs >= `minNewEvidenceItems`
+  (default 5); zero-new-evidence keeps the legacy bestAccuracy fallback (V3
+  users' states stable). Performance on the real dataset (28,851 entries,
+  mastery chapter 117k related items, 4,259 practiced): 67.65ms -> 4.36ms per
+  full derivation pass (15.5x) via per-(index,chapter) WeakMap memoization
+  and inverted traversal over progressById; results byte-identical to the
+  naive path (equivalence test).
+- `#244` (squash `7fe2f68`) twelve-mode behavioral combos (engine level, real
+  data): illegal keys rejected wholesale; exactly one completion event per
+  question and one session-completed; mid-session finish settles time once
+  with no extra events; hint flow (learn intent + on-error trigger ->
+  revealAnswer) never counts as independent recall; pre-existing progress
+  accumulates rather than resets with stable ids; production level1 real
+  full-code alternate route.
+- `#245` (squash `6f41937`) backup capacity invariant. Real-structure probe:
+  ~4,800 progress entries (heavy user, months) already exceed the old 2 MiB
+  import cap in pretty form, and export had no guard - "export succeeds,
+  own import rejects". Fix: compact serialization (machine-consumed doc),
+  cap raised to 16 MiB (measured: 43,577 entries ~ 16.7 MB, JSON.parse ~100
+  ms), export-side guard throws BackupError over the cap. Also documented
+  the three independent version systems (desktop STORAGE_VERSION=4 zustand
+  persist, miniapp STORE_VERSION=3 local doc, shared BACKUP_VERSION=3
+  cross-host exchange) without merging numbers; unknown-field forward
+  compatibility anchored.
+- `#246` (squash `92173c9`) miniapp learn-center honest coverage. The miniapp
+  has no lessonEvidence bookkeeping, so chapter *state* is not derivable
+  locally: no state badges, no fabricated history; real coverage counts
+  (practiced/related) are derived from local progress via
+  `chapterCoverageById` (evidence map deliberately empty; return type has no
+  state field) and shown per chapter, refreshed on page re-show.
+
+Post-merge combined-tree validation (local, 2026-10-24): core 242/242,
+trainer 89/89, miniapp 76+1, three typechecks clean, both production builds
+pass; cloud CI dispatched on main (run `40122221928`).
 
 ## M1 learning-path and review-level record (2026-10-24)
 
@@ -119,13 +177,11 @@ regression tests, per the task guardrails.
 
 ## Pending work (priority order)
 
-1. Trainer end-to-end regression (milestone M2): the controlled-time
-   scheduling matrix is covered by core/component tests (day-0, early
-   repeat, due boundaries, hesitant/hint/wrong/alternate, level-6 cap,
-   legacy migration no-fabrication, backup round-trip, DST-invariant epoch
-   intervals); remaining gaps are the twelve-mode practice sweep, statistics
-   consistency (wrong keys / backspace / alternate route counters), backup
-   import edge cases, and miniapp/desktop behavior parity checks.
+1. Trainer M2 residuals: real-host UI automation on desktop Tauri (current
+   component tests run in jsdom); miniapp on-device WeChat DevTools
+   acceptance stays UNVERIFIED; the "typing accuracy vs recall quality"
+   split counters (documented in the penalty audit below) remain a proposed
+   semantic change awaiting a dedicated decision PR.
 2. Behavior acceptance on real frontends for `#150`/`#151`/`#219`/`#223`. The
    runtime-level `#223` contract is proven on librime 1.16.1 (joint
    regression); the GTK3/Fcitx cold-start issue `#219` remains open, and real
