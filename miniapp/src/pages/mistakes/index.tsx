@@ -4,12 +4,14 @@
  * (aggregateWeakness)。「练这些」把薄弱条目直接送进会话页(src=weak)。
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View, Text } from "@tarojs/components";
 import { useDidShow } from "@tarojs/taro";
 import {
   aggregateWeakness,
   confusionId,
+  explainReviewStatus,
+  formatDueIn,
   itemAccuracy,
   keyHeatmap,
   listReviewItems,
@@ -23,12 +25,27 @@ import { useAppState } from "../../lib/store";
 import { useI18n } from "../../lib/i18n";
 import { ROUTES, navigateToOrRedirect } from "../../lib/navigation";
 
+/** 复习状态原因码 → 文案键(显式映射;键存在于共享核心 i18n 表)。 */
+const REVIEW_REASON_KEYS = {
+  unverified: "review.reason.unverified",
+  "due-now": "review.reason.dueNow",
+  "not-due": "review.reason.notDue",
+  hesitant: "review.reason.hesitant",
+  lapsed: "review.reason.lapsed",
+  capped: "review.reason.capped",
+} as const;
+
 function Mistakes() {
   const { trainerIndex } = useTrainerData();
   const state = useAppState();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [, setTick] = useState(0);
   useDidShow(() => setTick((n) => n + 1));
+  // 页面停留期间跨过复习到期时间/零点时,低频(每分钟)刷新一次快照。
+  useEffect(() => {
+    const timer = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(timer);
+  }, []);
   const now = Date.now();
 
   const weakItems = useMemo<WeakListEntry[]>(
@@ -87,13 +104,23 @@ function Mistakes() {
                 <Text>{t("review.practiceThese", { n: weakItems.length })}</Text>
               </View>
             </View>
-            {weakItems.slice(0, 50).map(({ item, progress }) => (
+            {weakItems.slice(0, 50).map(({ item, progress }) => {
+              const status = explainReviewStatus(progress, now);
+              return (
               <View className="weak-row" key={item.id}>
                 <Text className="weak-target">{item.target}</Text>
                 <Text className="weak-code">{item.primaryCode}</Text>
                 {isReviewDue(progress, now) && <Text>{t("review.due")}</Text>}
                 <Text>{progress.review
                   ? t("review.level", { n: progress.review.level }) : t("review.unverified")}</Text>
+                <Text className="weak-meta">
+                  {status.nextDueAt !== null && !status.due
+                    ? `${t("review.nextDue", {
+                        duration: formatDueIn(status.nextDueInMs ?? 0, language),
+                      })} · `
+                    : ""}
+                  {t(REVIEW_REASON_KEYS[status.reason])}
+                </Text>
                 <Text className="weak-meta">
                   {t("common.mastery", { n: progress.mastery })} ·{" "}
                   {t("common.wrongCount", { n: progress.wrong })} ·{" "}
@@ -103,7 +130,8 @@ function Mistakes() {
                     : formatAccuracy(itemAccuracy(progress))}
                 </Text>
               </View>
-            ))}
+              );
+            })}
           </View>
 
           {Object.keys(heat).length > 0 && (
