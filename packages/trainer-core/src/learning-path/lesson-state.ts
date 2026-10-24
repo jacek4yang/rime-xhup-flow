@@ -72,6 +72,13 @@ export type LessonStateThresholds = {
   recencyMs: number;
   /** 「已掌握」要求的最少已练不同条目数(样本充分性)。 */
   minPracticedItems: number;
+  /**
+   * 「已掌握」要求的最少新证据条目数(accuracyEwma 非 null)。
+   * 只要存在新证据,就必须达到该数量才验证整章表现;全部为迁移历史
+   * (零新证据)时维持 bestAccuracy 兼容回退。防止单个新样本沿用
+   * 终身最佳代理的达标(混合数据下的复发路径)。
+   */
+  minNewEvidenceItems: number;
 };
 
 export const DEFAULT_LESSON_THRESHOLDS: LessonStateThresholds = {
@@ -79,6 +86,7 @@ export const DEFAULT_LESSON_THRESHOLDS: LessonStateThresholds = {
   accuracy: 0.8,
   recencyMs: 7 * 24 * 60 * 60 * 1000,
   minPracticedItems: 20,
+  minNewEvidenceItems: 5,
 };
 
 /**
@@ -95,10 +103,11 @@ export const MIN_DECAY_ATTEMPTS = 10;
  * 3. 有练习但关联条目尚无进度记录 → `practicing`;
  * 4. 表现达标且平均掌握度回落到阈值以下(练习量足够)→
  *    `needs-review`(掌握衰减);
- * 5. 样本充分(已练条目 ≥ minPracticedItems)且平均掌握度与表现均达标:
- *    最近**练习**在 recency 窗口内 → `mastered`;超出窗口 →
- *    `needs-review`(久未巩固,建议回炉)。打开页面只算浏览,
- *    不延长「已掌握」的新鲜度;
+ * 5. 样本充分(已练条目 ≥ minPracticedItems)且平均掌握度与表现均达标
+ *    且新证据充分(存在 accuracyEwma 时 ≥ minNewEvidenceItems;全为迁移
+ *    历史时沿用 bestAccuracy 回退):最近**练习**在 recency 窗口内 →
+ *    `mastered`;超出窗口 → `needs-review`(久未巩固,建议回炉)。
+ *    打开页面只算浏览,不延长「已掌握」的新鲜度;
  * 6. 其余(样本不足,或平均掌握度/表现未达标)→ `practicing`。
  *
  * 平均掌握度只统计见过的关联条目(attempts > 0);关联条目全部未见过
@@ -147,13 +156,32 @@ export function deriveLessonState(
   if (
     practiced.length >= thresholds.minPracticedItems &&
     avgMastery >= thresholds.mastery &&
-    performance >= thresholds.accuracy
+    performance >= thresholds.accuracy &&
+    newEvidenceSufficient(practiced, thresholds)
   ) {
     const lastActivity = evidence.lastPracticeAt ?? 0;
     return lastActivity >= now - thresholds.recencyMs ? "mastered" : "needs-review";
   }
 
   return "practicing";
+}
+
+/**
+ * 新证据充分性:全部为迁移历史(零新证据)时沿用兼容回退;
+ * 一旦存在新证据(accuracyEwma 非 null),必须达到 minNewEvidenceItems
+ * 才允许「已掌握」。新证据少于阈值时按 practicing 处理,不把单个新
+ * 样本当成整章表现的验证。
+ */
+function newEvidenceSufficient(
+  practiced: readonly ItemProgress[],
+  thresholds: LessonStateThresholds,
+): boolean {
+  let known = 0;
+  for (const progress of practiced) {
+    if (progress.accuracyEwma !== null) known += 1;
+    if (known >= thresholds.minNewEvidenceItems) return true;
+  }
+  return known === 0;
 }
 
 /**
@@ -179,6 +207,27 @@ export function chapterRelatedItems(
   chapter: LearnChapter,
   index: TrainerIndex,
 ): TrainingItem[] {
+  return relatedItemsFor(chapter, index);
+}
+
+/**
+ * 关联条目列表缓存(WeakMap,按 index 身份)。章节关联池随数据集固定
+ * (mastery 章节实测 117k 条目),而状态推导每分钟刷新;重复物化没有
+ * 意义。纯记忆化:同输入同输出,不改变任何计算结果。
+ */
+const relatedItemsCache = new WeakMap<TrainerIndex, Map<string, TrainingItem[]>>();
+
+function relatedItemsFor(
+  chapter: LearnChapter,
+  index: TrainerIndex,
+): TrainingItem[] {
+  let byChapter = relatedItemsCache.get(index);
+  if (!byChapter) {
+    byChapter = new Map();
+    relatedItemsCache.set(index, byChapter);
+  }
+  const cached = byChapter.get(chapter.id);
+  if (cached) return cached;
   const seen = new Set<string>();
   const items: TrainingItem[] = [];
   for (const section of chapter.sections) {
@@ -191,7 +240,24 @@ export function chapterRelatedItems(
       }
     }
   }
+  byChapter.set(chapter.id, items);
   return items;
+}
+
+/** 关联条目 ID 集合缓存(反向成员判定;deriveAllLessonStates 用)。 */
+const relatedIdsCache = new WeakMap<TrainerIndex, Map<string, Set<string>>>();
+
+function chapterRelatedIds(chapter: LearnChapter, index: TrainerIndex): Set<string> {
+  let byChapter = relatedIdsCache.get(index);
+  if (!byChapter) {
+    byChapter = new Map();
+    relatedIdsCache.set(index, byChapter);
+  }
+  const cached = byChapter.get(chapter.id);
+  if (cached) return cached;
+  const ids = new Set(relatedItemsFor(chapter, index).map((item) => item.id));
+  byChapter.set(chapter.id, ids);
+  return ids;
 }
 
 /**
@@ -221,25 +287,33 @@ export type LessonStateSummary = {
   practicedCount: number;
 };
 
-/** 全部章节的建议状态与覆盖(按 LEARN_CHAPTERS 顺序;供列表徽标使用)。 */
+/** 全部章节的建议状态与覆盖(按 LEARN_CHAPTERS 顺序;供列表徽标使用)。
+ * 反向遍历:按 progressById(通常数千条)查每章的关联 ID 集合,而不是
+ * 按每章关联条目(最大 117k)查进度表;结果与 chapterRelatedProgress
+ * 路径完全一致(顺序无关的聚合)。 */
 export function deriveAllLessonStates(
   index: TrainerIndex,
   progressById: Record<string, ItemProgress>,
   lessonEvidence: Record<string, LessonEvidence>,
   now: number,
 ): LessonStateSummary[] {
-  return LEARN_CHAPTERS.map((chapter) => {
-    const related = chapterRelatedItems(chapter, index);
-    const progress = chapterRelatedProgress(chapter, index, progressById);
+  const practicedById = Object.entries(progressById);
+  const summaries = LEARN_CHAPTERS.map((chapter) => {
+    const ids = chapterRelatedIds(chapter, index);
+    const practiced: ItemProgress[] = [];
+    for (const [id, progress] of practicedById) {
+      if (progress.attempts > 0 && ids.has(id)) practiced.push(progress);
+    }
     return {
       chapter,
       state: deriveLessonState(
         lessonEvidence[chapter.id],
-        progress,
+        practiced,
         now,
       ),
-      relatedTotal: related.length,
-      practicedCount: progress.length,
+      relatedTotal: ids.size,
+      practicedCount: practiced.length,
     };
   });
+  return summaries;
 }
