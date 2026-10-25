@@ -51,6 +51,30 @@ Free of secrets and personal data by policy.
   search cost. Joint stays default-OFF; next optimization leads are an
   incremental lattice across keystrokes or a native implementation.
 
+## Release qualification round (2026-10-25, main `65c78c2`)
+
+Full gate evidence consolidated in `docs/release-qualification-2026-10-25.md`:
+
+- #225 release budget vs v2.0.0: **PASS**. Semantic differences 0 in every
+  paired group (frozen static contract holds). First-session and RSS within
+  budget everywhere (the #225 first-session blocker is resolved). p95 clean;
+  5x10-sampled p99 tails are shared-host noise by reproducibility evidence
+  (scenario identity changes across runs; the one twice-failing cell passes
+  0/72 at 4x sampling). One campaign (perf3) was invalidated and re-run
+  clean because a package install ran concurrently during measurement.
+- Real GTK/Fcitx frontend (GTK 3.24.52 / Fcitx5 5.1.19 / Xvfb / private
+  D-Bus, hash-verified package): joint ON passes the #223 six cases 6/6
+  through actual preedit/commit with screenshots — the two original
+  failures commit correctly. Joint OFF retains the #223 failures by design
+  (native path unchanged). #219 reproduces (cold control-key burst loses
+  the first composition, async delivery) and passes with
+  FCITX_ENABLE_SYNC_MODE=1 — upstream-attributed, mitigation documented,
+  no key-replay hack.
+- Release decision: GA stays blocked on #219 (upstream), #150 (Weasel
+  unverified on this host), and the joint switch remaining default-OFF
+  (steady-state perf). RC 2.1.0-rc.2 is supportable with this evidence;
+  publishing awaits owner authorization.
+
 ## M1 hardening + M2 delivery record (2026-10-24, PRs #242-#246)
 
 Five disjoint PRs, each with failing repro first, all CI-green on their
