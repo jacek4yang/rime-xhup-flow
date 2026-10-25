@@ -51,6 +51,30 @@ Free of secrets and personal data by policy.
   search cost. Joint stays default-OFF; next optimization leads are an
   incremental lattice across keystrokes or a native implementation.
 
+## Steady-state joint analysis + platform smokes (2026-10-25)
+
+- Joint per-keystroke cost decomposition (phase instrumentation on the perf
+  scenarios, current main): lexicon ~0.01 ms (fully memoized), ranking
+  ~0.1 ms, **search 0.35 -> 3.1 ms linear in input length — 95%+ of the
+  joint overhead is the pure-Lua beam search itself**. The search already
+  recycles nodes and deduplicates transition lookups; an append-only
+  incremental lattice only helps inputs longer than 2x max_edge (64+ keys),
+  so the 1.10 feature-on budget is structurally unreachable in pure Lua at
+  the qualified search bounds (beam 8, 256 edges). Moving the search to a
+  native module or a differently-bounded incremental design is an
+  architecture decision reserved for the owner; no silent bound changes.
+- Confirmation-set regressions dissected: `icdal` target rank 0 -> 1 (mild
+  reorder) and `mdz` rank 2 -> 8 (higher-frequency character compounds such
+  as 买在/卖在 outrank the corpus target 埋在) — frequency-model variance,
+  not a defect; both samples are now observed on the confirmation partition
+  and must NOT be tuned against (contamination policy). Retained.
+- Windows desktop real host: `pnpm -C trainer tauri build --bundles nsis`
+  succeeds on the development host; the built exe launches with the correct
+  window title ("XHUP Flow · 小鹤音形训练", ~26 MB working set) and exits
+  cleanly — smoke tier verified locally. Full UI automation on the desktop
+  host remains a residual; official installers (nsis+msi) come from the
+  packaging workflow.
+
 ## Release qualification round (2026-10-25, main `65c78c2`)
 
 Full gate evidence consolidated in `docs/release-qualification-2026-10-25.md`:
